@@ -53,5 +53,8 @@
   "peerDependencies": {
     "@agent-router/server": "0.7.0-alpha.1",
     "@olorinm/agent-environment": "0.1.0-alpha.1"
+  },
+  "allowScripts": {
+    "@larksuite/cli@1.0.97": true
   }
 }

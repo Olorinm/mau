@@ -27,6 +27,13 @@ async function save(path, value) {
   await writeFile(path, JSON.stringify(value), { mode: 0o600 });
 }
 async function open() {
+  const app = express();
+  server = app.listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
+  const origin = "http://127.0.0.1:" + server.address().port;
+  const settings = JSON.parse(await readFile(options, "utf8"));
+  settings.publicHomeserver = origin;
+  await save(options, settings);
   mau = createMau(
     {
       serverName: "example.test",
@@ -59,14 +66,16 @@ async function open() {
     } },
   );
   service = mau.router.service;
-  const app = express();
   // Existing owner session verification stays in the Matrix authentication boundary.
   app.get("/_matrix/client/v3/account/whoami", (_req, res) =>
     res.json({ user_id: owner }),
   );
+  app.post("/_matrix/client/v3/login", express.json(), (req, res) => {
+    assert.equal(req.body.identifier.user, owner);
+    assert.equal(req.body.password, "fixture-password");
+    res.json({ access_token: "fixture-owner", user_id: owner });
+  });
   app.use(mau.app);
-  server = app.listen(0, "127.0.0.1");
-  await new Promise((r) => server.once("listening", r));
   await service.start();
   return "http://127.0.0.1:" + server.address().port;
 }
@@ -127,7 +136,9 @@ try {
     assert.ok(!r.stdout.includes("fixture-private-cloud-key"));
     return r.stdout ? JSON.parse(r.stdout) : null;
   };
-  await cli("login", "--url", base, "--token-file", tokenFile);
+  const passwordFile = join(root, "password");
+  await writeFile(passwordFile, "fixture-password", { mode: 0o600 });
+  await cli("login", "--url", base, "--user", owner, "--password-file", passwordFile);
   const result = await cli("setup", "helper", "--environment", "cloud");
   assert.equal(result.environment.state, "ready");
   assert.equal((await cli("check")).checks[0].status, "verified");

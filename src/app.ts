@@ -9,6 +9,7 @@ import { EnvironmentManager, environmentOptionsSchema, type Environments } from 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
   connectionsFile: z.string().min(1).optional(),
+  publicHomeserver: z.url().optional(),
 }).strict();
 export const apiRoot = "/_mau/v1";
 
@@ -19,6 +20,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
 } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
+  const publicHomeserver = new URL(options.publicHomeserver ?? `https://${config.serverName}`);
+  if (!["https:", "http:"].includes(publicHomeserver.protocol) || publicHomeserver.username ||
+      publicHomeserver.password || publicHomeserver.search || publicHomeserver.hash || publicHomeserver.pathname !== "/")
+    throw new Error("invalid_public_homeserver_url");
   let environments: EnvironmentManager;
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
     ...(dependencies.router ? { dependencies: dependencies.router } : {}),
@@ -38,7 +43,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
   product.use(express.json({ limit: "16kb" }));
   product.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  product.get("/info", (_req, res) => res.json({ homeserver: config.homeserver }));
+  // Login needs the public account endpoint, never the internal Matrix service address.
+  product.get("/info", (_req, res) => res.json({ homeserver: publicHomeserver.origin }));
   product.use(async (req, res, next) => {
     res.locals.owner = await router.service.authenticate(req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "");
     next();

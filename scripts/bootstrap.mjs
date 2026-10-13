@@ -44,3 +44,5 @@ for (const name of ["router", "environment"]) {
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
+// Router's official Feishu authorization/tool bridge needs its platform binary.
+execFileSync("npm", ["rebuild", "@larksuite/cli", "--ignore-scripts=false"], { cwd: root, stdio: "inherit" });

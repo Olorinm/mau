@@ -278,6 +278,7 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
 });
 it("Mau creates the Router identity under the same owner and Router no longer exposes provisioning", async () => {
   const f = await fixture();
+  expect((await f.api("/info")).data).toEqual({ homeserver: "https://example.test" });
   const denied = await f.api("/agents", { name: "other", profileId: "cloud" }, "bob");
   expect(denied.status).toBe(403);
   expect(f.service.agents(bob)).toHaveLength(0);

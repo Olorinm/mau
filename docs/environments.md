@@ -12,6 +12,10 @@ channel authorization and delivery. Host owns native execution and sessions.
 2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-environment). Mau allocates sandboxes, not clusters or networks.
 3. Install Host and the native kernel in the template. Start Host with `serve --ready-file ...`; preserve Host state, native sessions and workspace on durable paths.
 4. Copy [mau.json](../examples/mau.json) and [Host config](../examples/cloud/host-profile.json) outside the repository. Supply private Environment `providers.json` and API-key files. Paths resolve relative to `mau.json`; adjust them when moving files.
+The optional `publicHomeserver` in Mau configuration is the public Matrix login
+origin (defaults to `https://MATRIX_SERVER_NAME`). It must be reachable by users;
+the private `MATRIX_HOMESERVER_URL` is never returned to clients.
+
 5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
 6. Optional `connectionsFile` points to Router's private JSON containing `mailServices`. All channel connection logic stays in Router.
 
