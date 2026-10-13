@@ -20,10 +20,10 @@ communication routes use `/_agent-router/v1`.
 
 ## Build
 
-Requires Node.js 24+, npm, tar and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
+Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
 `components.json` pins immutable source revisions, including the Router split in
-[PR #52](https://github.com/Olorinm/agent-router/pull/52). Bootstrap builds the public Router revision and downloads the pinned Environment
-archive from this private repository, then installs the components. No sibling
+[PR #52](https://github.com/Olorinm/agent-router/pull/52). Bootstrap downloads the pinned Router and Environment
+archives from this private repository, then installs the components. No sibling
 checkouts or cross-repository CI credentials are required. Package-lock integrity
 checks cover the archives; the source revisions remain recorded for audit.
 
@@ -34,7 +34,7 @@ npm test
 node dist/cli.js --help
 ```
 
-To test locally built component archives:
+To use local copies of the pinned component archives (with the same lockfile checksums):
 
 ```sh
 node scripts/bootstrap.mjs --router-archive /path/router.tgz \

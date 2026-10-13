@@ -1,7 +1,12 @@
 {
   "router": {
     "repository": "Olorinm/agent-router",
-    "revision": "46bcab6f7cad0b34b0336521ccd886059ee3daef"
+    "revision": "46bcab6f7cad0b34b0336521ccd886059ee3daef",
+    "archive": {
+      "repository": "Olorinm/mau",
+      "tag": "components-20261013",
+      "asset": "agent-router-server-0.7.0-alpha.1.tgz"
+    }
   },
   "environment": {
     "repository": "Olorinm/agent-environment",
