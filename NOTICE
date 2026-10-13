@@ -1,0 +1,7 @@
+Mau
+Copyright 2026 Mau contributors
+
+The environment coordinator, SQLite journal and lifecycle verification fixtures
+were extracted and adapted from Olorinm/agent-router at commit
+cff1bf2 (Apache License 2.0). Agent Router, Agent Host and Agent Environment
+remain separate projects, consumed through their public packages and protocols.

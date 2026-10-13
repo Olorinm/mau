@@ -1,0 +1,57 @@
+{
+  "name": "@olorinm/mau",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Mau: an agent product composed from Agent Router, Host and Environment.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Olorinm/mau.git"
+  },
+  "bin": {
+    "mau": "dist/cli.js",
+    "mau-server": "dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "examples",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "verify:packages": "npm run build && node scripts/verify-packages.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@agent-router/server": "file:.packages/agent-router.tgz",
+    "@olorinm/agent-environment": "file:.packages/agent-environment.tgz",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "@agent-router/server": "0.7.0-alpha.1",
+    "@olorinm/agent-environment": "0.1.0-alpha.1"
+  }
+}

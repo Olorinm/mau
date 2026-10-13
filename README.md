@@ -1,0 +1,76 @@
+# Mau
+
+Mau is an agent product built from three independently reusable components:
+
+| Component | Responsibility |
+| --- | --- |
+| [Agent Router](https://github.com/Olorinm/agent-router) | Accounts, Agent identities, channels, conversation routing and task delivery |
+| [Agent Host](https://github.com/Olorinm/agent-host) | Native Agent execution, sessions, tools and approvals |
+| [Agent Environment](https://github.com/Olorinm/agent-environment) | Provision, pause, resume and destroy execution environments |
+| Mau | Product CLI/API, environment profiles, Host bootstrap and lifecycle coordination |
+
+User/platform → Router → Host → native kernel. Environment supplies the Host's
+execution environment. Mau assembles these components; it does not implement a
+model loop. Scheduling is not part of this release.
+
+Mau embeds Router in one server process. Router remains separately installable
+and runnable. Mau uses only its public package exports; all account authentication
+and ownership checks still belong to Router. Product routes use `/_mau/v1` and
+communication routes use `/_agent-router/v1`.
+
+## Build
+
+Requires Node.js 24+, npm, tar and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
+`components.json` pins immutable source revisions, including the Router split in
+[PR #52](https://github.com/Olorinm/agent-router/pull/52). Bootstrap builds the public Router revision and downloads the pinned Environment
+archive from this private repository, then installs the components. No sibling
+checkouts or cross-repository CI credentials are required. Package-lock integrity
+checks cover the archives; the source revisions remain recorded for audit.
+
+```sh
+node scripts/bootstrap.mjs
+npm run build
+npm test
+node dist/cli.js --help
+```
+
+To test locally built component archives:
+
+```sh
+node scripts/bootstrap.mjs --router-archive /path/router.tgz \
+  --environment-archive /path/environment.tgz
+```
+
+An independent consumer installs all required archives together:
+`npm install ./router.tgz ./environment.tgz ./mau.tgz`. Host is installed in the
+execution image, not the Mau server. The CLI is `mau`; the server is `mau-server`.
+
+## Use
+
+The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
+account; Mau does not register a second identity. Password/token files are local
+private files, not positional command-line secrets.
+
+```sh
+mau login --url https://mau.example --user '@alice:agents.example' \
+  --password-file /private/account-password
+mau options
+mau setup helper --environment cloud-codex
+mau channel-connect feishu
+mau check
+mau status
+mau pause
+mau resume
+```
+
+Existing account bearer tokens can be supplied using `login --token-file FILE`.
+Use `agents` and `use NAME` to switch Agents. `--no-wait` returns durable progress;
+closing the CLI does not cancel provisioning. `reconcile` resolves an interrupted
+operation without allocating a replacement; `destroy` explicitly removes an
+environment. Channel pairing/authorization remains implemented by Router.
+
+See [environment setup](docs/environments.md) · [中文部署说明](docs/environments.zh-CN.md)
+and [verification](docs/verification.md). Examples contain placeholders only.
+Production configuration, credentials, environment IDs and live state are private.
+
+License: [Apache-2.0](LICENSE). Source attribution: [NOTICE](NOTICE).

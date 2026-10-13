@@ -1,0 +1,19 @@
+{
+  "router": {
+    "repository": "Olorinm/agent-router",
+    "revision": "5671c1330102d93b16d0a9b493e0fafe400cde38"
+  },
+  "environment": {
+    "repository": "Olorinm/agent-environment",
+    "revision": "d76af21d39c9e0a3ed0f4fdc29bc26b8008f7e5e",
+    "archive": {
+      "repository": "Olorinm/mau",
+      "tag": "components-20261013",
+      "asset": "agent-environment-0.1.0-alpha.1.tgz"
+    }
+  },
+  "host": {
+    "repository": "Olorinm/agent-host",
+    "revision": "f65d6e1809faac532b5c6258390437d8ff6945d7"
+  }
+}

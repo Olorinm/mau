@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: node scripts/bootstrap.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build the pinned Host package
+        env:
+          HOST_SOURCE: ${{ runner.temp }}/host-source
+        run: |
+          git clone --filter=blob:none https://github.com/Olorinm/agent-host.git "$HOST_SOURCE"
+          git -C "$HOST_SOURCE" checkout "$(node -p 'JSON.parse(require("fs").readFileSync("components.json")).host.revision')"
+          npm --prefix "$HOST_SOURCE" ci --ignore-scripts --no-audit --no-fund
+          npm --prefix "$HOST_SOURCE" run build
+          (cd "$HOST_SOURCE" && npm pack --silent --pack-destination "$RUNNER_TEMP")
+      - name: Verify independent archives and native session continuation
+        run: |
+          npm run verify:packages -- --environment-archive .packages/agent-environment.tgz \
+            --host-archive "$RUNNER_TEMP/olorinm-agent-host-0.1.0-alpha.8.tgz" \
+            --host-fixture "$RUNNER_TEMP/host-source/test/fixtures/codex-server.mjs"
