@@ -12,12 +12,23 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../", import.meta.url);
 const temporary = await mkdtemp(join(tmpdir(), "mau-cli-consumer-"));
 const version = JSON.parse(await readFile(new URL("package.json", root))).version;
-let requests = 0;
-const server = createServer((req, res) => {
-  assert.equal(req.url, "/_mau/v1/account");
+let requests = 0, recovered = false;
+const failed = { id: "recovery", kind: "feishu", state: "failed", error: "feishu_creation_outcome_unknown",
+  recovery: { action: "authorize_existing_app", appId: "cli_fixture", domain: "lark", personalTools: false } };
+const server = createServer(async (req, res) => {
   assert.equal(req.headers.authorization, "Bearer test-owner");
   requests++; res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({ owner: "@alice:example.test" }));
+  if (req.url === "/_mau/v1/account") res.end(JSON.stringify({ owner: "@alice:example.test" }));
+  else if (req.url === "/_mau/v1/agents") res.end(JSON.stringify({ data: [{ agent: { id: "helper", name: "helper" } }] }));
+  else if (req.url === "/_agent-router/v1/agents/helper/connections") {
+    let raw = ""; for await (const chunk of req) raw += chunk;
+    assert.deepEqual(JSON.parse(raw), { kind: "feishu", appId: "cli_fixture", domain: "lark", personalTools: false });
+    recovered = true;
+    res.end(JSON.stringify({ id: "recovering", kind: "feishu", state: "binding", expiresAt: new Date(Date.now() + 60_000).toISOString() }));
+  } else if (req.url === "/_agent-router/v1/agents/helper/connection-jobs/recovering") res.end(JSON.stringify({ id: "recovering", state: "ready" }));
+  else if (req.url === "/_agent-router/v1/agents/helper/connection-jobs/recovery") res.end(JSON.stringify(failed));
+  else if (req.url === "/_agent-router/v1/agents/helper/connection-jobs") res.end(JSON.stringify({ data: [failed] }));
+  else { res.writeHead(404); res.end("{}"); }
 });
 try {
   const [archive] = JSON.parse(execFileSync(process.execPath,
@@ -40,7 +51,18 @@ try {
   await cli("login", "--allow-http", "--url", base, "--token-file", token);
   const session = JSON.parse(await readFile(join(temporary, "config/session.json"), "utf8"));
   assert.equal(session.owner, "@alice:example.test"); assert.equal(requests, 1);
-  console.log("PASS: fresh global CLI install without registry dependencies, executable command, version/help and login persistence.");
+  await cli("use", "helper", "--allow-http");
+  assert.equal(JSON.parse(await cli("channel-connect", "feishu", "--app-id", "cli_fixture", "--domain", "lark", "--messaging-only", "--allow-http")).state, "ready");
+  assert.equal(recovered, true);
+  assert.deepEqual(JSON.parse(await cli("channel-jobs", "--allow-http")).data, [failed]);
+  await assert.rejects(cli("channel-job", "recovery", "--allow-http"), error => {
+    assert.deepEqual(JSON.parse(error.stdout), failed);
+    assert.match(error.stderr, /mau channel-connect feishu --app-id cli_fixture --domain lark --messaging-only/);
+    assert.match(error.stderr, /feishu_creation_outcome_unknown/); return true;
+  });
+  await assert.rejects(cli("channel-connect", "matrix", "--app-id", "cli_fixture"), /app_id_requires_feishu_channel_connect/);
+  await assert.rejects(cli("channel-connect", "feishu", "--app-id", "bad id"), /invalid_feishu_app_id/);
+  console.log("PASS: independent CLI install, login/selection, existing app recovery, binding polling and durable job recovery instructions.");
 } finally {
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   await rm(temporary, { recursive: true, force: true });

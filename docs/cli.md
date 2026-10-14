@@ -3,7 +3,7 @@
 Install Node.js 24 or later, then install the public client archive directly:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.5/olorinm-mau-cli-0.1.0-alpha.5.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.6/olorinm-mau-cli-0.1.0-alpha.6.tgz
 mau --version
 ```
 
@@ -69,3 +69,34 @@ mau workspaces
 Use an operator-provided profile with workspace support. Omitting `--workspace`
 creates an independent persistent workspace. The same account can share one
 workspace among Agents; credentials and native sessions remain per environment.
+
+## Recover Feishu setup
+
+Recovery requires Mau CLI 0.1.0-alpha.6 and Router 0.7.0-alpha.3 or later. App consent connects bot messaging immediately. Personal tools
+request separate authorization when needed, or with `mau channel-auth feishu begin`
+and `mau channel-auth feishu complete`. `--messaging-only` omits personal tools.
+
+If your app is already created but Mau setup expired, keep that app and use its
+App ID from the developer console:
+
+```sh
+mau use helper
+mau channel-jobs
+mau channel-connect feishu --app-id cli_YOUR_EXISTING_APP_ID
+mau check
+```
+
+The official consent page reauthorizes the selected app; no App Secret needs to be
+copied into the CLI or chat. Keep `--domain lark` and `--messaging-only` if used in
+the original setup. If credentials were saved before binding failed, retry reuses
+them. An app already assigned to another Agent cannot be reused here.
+
+Feishu consent follows the official SDK's reported expiry and fallback; Router
+does not impose a separate ten-minute consent limit. Recent job history survives service
+restarts; an interrupted SDK poll requires a new consent flow for the existing
+app. `channel-job ID` observes a still-running job. Failed jobs include recovery
+instructions. Do not delete a pending marker to force creation of a second bot.
+
+`mau check` reports missing connections explicitly and checks the Feishu bot and
+personal authorization separately. Host readiness alone does not verify messaging;
+send a real message to test the complete conversation path.

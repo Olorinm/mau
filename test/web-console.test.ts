@@ -174,3 +174,32 @@ it.skipIf(!built)("an unknown channel setup job stops polling and asks to restar
   expect(reads).toBe(1);
   expect(errors).toEqual([]);
 }, 30_000);
+
+it.skipIf(!built)("recovers a failed Feishu app with its original ID and polls binding", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  const failed = { id: "feishu-failed", kind: "feishu", state: "failed", error: "feishu_creation_outcome_unknown",
+    expiresAt: new Date(Date.now() - 60_000).toISOString(), recovery: { action: "authorize_existing_app", appId: "cli_existing", domain: "lark", personalTools: false } };
+  await page.route("**/connection-jobs", route => route.fulfill({ json: { data: [failed] } }));
+  await page.route("**/connection-jobs/feishu-failed", route => route.fulfill({ json: failed }));
+  let requested: unknown;
+  await page.route("**/connections", route => {
+    requested = route.request().postDataJSON();
+    return route.fulfill({ status: 202, json: { id: "recovered", kind: "feishu", state: "binding", expiresAt: new Date(Date.now() + 60_000).toISOString() } });
+  });
+  await page.route("**/connection-jobs/recovered", route => route.fulfill({ json: { id: "recovered", kind: "feishu", state: "ready", expiresAt: new Date().toISOString() } }));
+  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+  await page.locator(".agent-ui-settings-row", { hasText: "飞书" }).getByRole("button").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "恢复连接" }).click();
+  await see(dialog.getByLabel("已有应用 App ID")).toHaveValue("cli_existing");
+  await see(dialog.getByRole("radio", { name: "Lark（国际）" })).toBeChecked();
+  await dialog.getByLabel("已有应用 App ID").fill("");
+  await see(dialog.getByRole("button", { name: "开始连接" })).toBeDisabled();
+  await dialog.getByLabel("已有应用 App ID").fill("cli_existing");
+  await dialog.getByRole("button", { name: "开始连接" }).click();
+  await see(dialog).toHaveCount(0, { timeout: 10_000 });
+  expect(requested).toEqual({ kind: "feishu", appId: "cli_existing", domain: "lark", personalTools: false });
+  expect(errors).toEqual([]);
+}, 30_000);
