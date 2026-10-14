@@ -1,227 +1,19 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { statSync } from "node:fs";
 import { join } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
-import { RouterError as WorkError } from "@agent-router/server";
-import { createMau } from "../src/app.js";
-import { privateFile } from "../src/files.js";
+import { createHash } from "node:crypto";
 import { DurableStore } from "../src/store.js";
-import { EnvironmentManager, type EnvironmentProvider } from "../src/environments.js";
+import { EnvironmentManager } from "../src/environments.js";
 import { sshKeyId } from "../src/ssh.js";
 import { connectSshTunnel } from "../src/ssh-transport.js";
+import { alice, bob, mauFixture, root } from "./fixtures/mau.js";
 
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
   vi.unstubAllGlobals();
 });
-const alice = "@alice:example.test",
-  bob = "@bob:example.test",
-  root = "/_mau/v1";
-async function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "router-cloud-"));
-  cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
-  const cloud = new Map<
-    string,
-    {
-      metadata: Record<string, string>;
-      state: string;
-      files: Map<string, string | Uint8Array>;
-    }
-  >();
-  let creates = 0,
-    pauses = 0,
-    loseCreate = false;
-  const provider: EnvironmentProvider = {
-    async create(input) {
-      creates++;
-      const ref = { provider: "volc", id: randomUUID() };
-      cloud.set(ref.id, {
-        state: "running",
-        metadata: input.metadata,
-        files: new Map(),
-      });
-      if (loseCreate) throw new Error("private-cloud-key");
-      return ref;
-    },
-    async list(metadata) {
-      return [...cloud]
-        .filter(([, v]) =>
-          Object.entries(metadata).every(([k, x]) => v.metadata[k] === x),
-        )
-        .map(([id]) => ({ id, provider: "volc" }));
-    },
-    async info(id) {
-      return { state: cloud.get(id)?.state ?? "missing" };
-    },
-    async resume(id) {
-      if (!cloud.has(id)) throw new Error("missing");
-      cloud.get(id)!.state = "running";
-      return { state: "running" };
-    },
-    async pause(id) {
-      pauses++;
-      cloud.get(id)!.state = "paused";
-    },
-    async destroy(id) {
-      cloud.delete(id);
-    },
-    async setTimeout() {},
-    async httpEndpoint(id) {
-      return {
-        url: `https://host.fixture/${id}`,
-        headers: { "e2b-traffic-access-token": "private-traffic-token" },
-      };
-    },
-    async *exec(id, argv, options) {
-      if (argv[0] === "mv") {
-        const f = cloud.get(id)!.files;
-        f.set(argv[3]!, f.get(argv[2]!)!);
-        f.delete(argv[2]!);
-      }
-      options.onExit({ exitCode: 0 });
-    },
-    async writeFile(id, path, value) {
-      cloud.get(id)!.files.set(path, value);
-    },
-  };
-  const actualFetch = fetch;
-  vi.stubGlobal(
-    "fetch",
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.hostname !== "host.fixture") return actualFetch(input, init);
-      const id = url.pathname.split("/")[1]!,
-        instance = cloud.get(id)!;
-      expect(new Headers(init?.headers).get("authorization")).toBe(
-        "Bearer " + instance.files.get("/home/user/.agent-host-service/token"),
-      );
-      expect(new Headers(init?.headers).get("e2b-traffic-access-token")).toBe(
-        "private-traffic-token",
-      );
-      if (url.pathname.endsWith("/health"))
-        return Response.json({ protocolVersion: 1 });
-      if (url.pathname.endsWith("/runtimes/inspect"))
-        return Response.json({ id: "personal", available: true });
-      if (url.pathname.endsWith("/runtimes"))
-        return Response.json({ runtimes: [{ id: "personal" }] });
-      return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
-    },
-  );
-  const optionsFile = join(directory, "onboarding.json"),
-    hostConfigFile = join(directory, "profile.json");
-  privateFile(hostConfigFile, {
-    stateDirectory: "state",
-    runtimes: [
-      { id: "personal", kernel: "codex", cwd: "/home/user/workspace" },
-    ],
-  });
-  privateFile(optionsFile, {
-    environments: {
-      configFile: "providers.json",
-      profiles: [
-        {
-          id: "cloud",
-          label: "Cloud",
-          provider: "volc",
-          template: "tools",
-          kernel: "codex",
-          runtimeId: "personal",
-          hostConfigFile,
-          owners: [alice],
-        },
-      ],
-    },
-  });
-  const mau = createMau(
-    {
-      serverName: "example.test",
-      homeserver: "https://matrix.fixture",
-      publicUrl: "http://127.0.0.1" + root,
-      stateDir: directory,
-      asToken: "a".repeat(48),
-      hsToken: "h".repeat(48),
-    },
-    optionsFile,
-    { environments: async () => ({ provider: () => provider }), router: {
-      provision: async () => {},
-      authenticate: async (token) => {
-        if (token === "alice") return alice;
-        if (token === "bob") return bob;
-        throw new WorkError("account_session_invalid", 401);
-      },
-      transport: (agent) => ({
-        identity: async () => agent.matrixId,
-        sync: async (since) => {
-          await new Promise((r) => setTimeout(r, 10));
-          return { next_batch: since ?? "0" };
-        },
-        state: async () => [],
-        history: async () => ({ events: [] }),
-        createRoom: async () => "!fixture:example.test",
-        join: async () => {},
-        send: async () => "$fixture",
-        stop: () => {},
-      }),
-    } },
-  );
-  const service = mau.router.service;
-  const server = mau.app.listen(0, "127.0.0.1");
-  mau.attach(server);
-  await new Promise<void>((r) => server.once("listening", r));
-  cleanup.push(
-    () =>
-      new Promise<void>((r) => {
-        server.closeAllConnections();
-        server.close(() => r());
-      }),
-  );
-  cleanup.push(() => mau.close());
-  const base = `http://127.0.0.1:${(server.address() as any).port}`;
-  const api = async (path: string, body?: unknown, owner = "alice", prefix = root) => {
-    const response = await fetch(base + prefix + path, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        authorization: "Bearer " + owner,
-        "content-type": "application/json",
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    return { status: response.status, data: (await response.json()) as any };
-  };
-  const agent = await service.create(alice, "helper");
-  const path = `/agents/${agent.id}/environment`;
-  const settled = async () => {
-    for (let n = 0; n < 200; n++) {
-      const result = (await api(path)).data;
-      if (!result.busy) return result;
-      await new Promise((r) => setTimeout(r, 10));
-    }
-    throw new Error("fixture_timeout");
-  };
-  return {
-    base,
-    directory,
-    cloud,
-    provider,
-    service,
-    mau,
-    api,
-    agent,
-    path,
-    settled,
-    get creates() {
-      return creates;
-    },
-    get pauses() {
-      return pauses;
-    },
-    loseCreate: () => {
-      loseCreate = true;
-    },
-  };
-}
+const fixture = (workspaceBackend?: any) => mauFixture(cleanup, {}, workspaceBackend);
 
 it("owner-scoped durable allocation publishes verified bootstrap once and binds a private Host", async () => {
   const f = await fixture();
@@ -561,4 +353,70 @@ it("SSH requires an assigned owner, explicit profile support and a ready environ
   expect((await f.api(f.path + "/pause", {})).status).toBe(202);
   expect((await f.settled()).state).toBe("paused");
   expect((await f.api(path, { publicKey: key })).data.error).toBe("environment_not_ready");
+});
+
+function workspaceFixture() {
+  const objects = new Map<string, Uint8Array>();
+  const key = (owner: string, id: string, path: string) => `${owner}/${id}/${path}`;
+  const store = {
+    async put(input: any) { objects.set(key(input.tenantId, input.workspaceId, input.path), new Uint8Array(input.body)); return { path: input.path, size: input.body.length }; },
+    async stat(owner: string, id: string, path: string) { const value = objects.get(key(owner, id, path)); return value ? { path, size: value.length, contentType: 'application/octet-stream' } : null; },
+    async list(owner: string, id: string) { const prefix = key(owner, id, ''); return [...objects].filter(([k]) => k.startsWith(prefix)).map(([k,v]) => ({ path: k.slice(prefix.length), size: v.length })); },
+    async delete(owner: string, id: string, path: string) { return objects.delete(key(owner, id, path)); },
+    async createSignedReadUrl() { return 'https://storage.fixture/file?signature=private'; },
+  };
+  return { store, objects,
+    prepare: vi.fn(async (owner: string, id: string) => ({ kind: 'volcengine-tos-static', target: { bucket: 'fixture', prefix: `${owner}/${id}/`, mountPath: '/home/user/workspace' }, template: 'shared-template', metadata: { workspace: id } })),
+    verify: vi.fn(async () => {}),
+  };
+}
+it('workspaces are owner-scoped, explicitly shared and retained after an Agent is destroyed', async () => {
+  const backend = workspaceFixture(), f = await fixture(backend);
+  const workspace = (await f.api('/workspaces', { name: 'Team' })).data;
+  expect((await f.api('/workspaces', undefined, 'bob')).data.data).toEqual([]);
+  expect((await f.api(`/workspaces/${workspace.id}`, undefined, 'bob')).status).toBe(404);
+  expect((await f.api(f.path, { profileId: 'cloud', workspaceId: workspace.id })).status).toBe(202);
+  expect((await f.settled()).workspaceId).toBe(workspace.id);
+  expect(backend.verify).toHaveBeenCalledTimes(1);
+  expect(backend.prepare.mock.calls[0]![0]).toMatch(/^[a-f0-9]{64}$/);
+  const second = await f.service.create(alice, 'coworker');
+  await f.mau.environments.begin(alice, second.id, 'cloud', workspace.id);
+  for(let n=0;n<200 && f.mau.environments.summary(alice,second.id)?.busy;n++) await new Promise(r=>setTimeout(r,10));
+  expect(f.mau.environments.summary(alice,second.id)?.state).toBe('ready');
+  expect(backend.prepare.mock.calls[0]).toEqual(backend.prepare.mock.calls[1]);
+  const bytes = Uint8Array.from([0,255,128,10]);
+  const url = f.base + root + `/workspaces/${workspace.id}/file?path=${encodeURIComponent('素材/%2f.bin')}`;
+  const response = await fetch(url,{method:'PUT',headers:{authorization:'Bearer alice','content-type':'application/octet-stream'},body:bytes});
+  expect(response.status).toBe(200);
+  expect([...backend.objects.values()][0]).toEqual(bytes);
+  expect((await f.api(`/workspaces/${workspace.id}/files`)).data.data).toHaveLength(1);
+  expect((await fetch(url,{method:'PUT',headers:{authorization:'Bearer bob','content-type':'application/octet-stream'},body:bytes})).status).toBe(404);
+  expect((await f.api(`/workspaces/${workspace.id}/download?path=../secret`)).status).toBe(400);
+  await f.api(f.path+'/destroy',{}); expect((await f.settled()).state).toBe('deleted');
+  expect((await f.api(`/workspaces/${workspace.id}/files`)).data.data).toHaveLength(1);
+});
+it('mount failures prevent private bootstrap and are rechecked after recovery and resume', async () => {
+  const backend = workspaceFixture(); backend.verify.mockRejectedValueOnce(new Error('secret storage diagnostics'));
+  const f = await fixture(backend);
+  await f.api(f.path,{profileId:'cloud'});
+  const failed = await f.settled(); expect(failed.error).toBe('workspace_mount_unavailable');
+  expect([...f.cloud.values()][0]!.files.size).toBe(0);
+  const workspaceId = failed.workspaceId;
+  await f.api(f.path+'/reconcile',{}); expect((await f.settled()).state).toBe('ready');
+  expect(f.creates).toBe(1);
+  await f.api(f.path+'/pause',{}); await f.settled();
+  const before=backend.verify.mock.calls.length;
+  await f.api(f.path+'/resume',{}); expect((await f.settled()).workspaceId).toBe(workspaceId);
+  expect(backend.verify.mock.calls.length).toBeGreaterThan(before);
+  expect((await f.api('/workspaces')).data.data).toHaveLength(1);
+  const other=(await f.api('/workspaces',{name:'Other'})).data;
+  expect((await f.api(f.path,{profileId:'cloud',workspaceId:other.id})).status).toBe(409);
+});
+it('unknown creates keep the original Workspace binding and reconcile without allocating twice', async () => {
+  const backend=workspaceFixture(), f=await fixture(backend);f.loseCreate();
+  await f.api(f.path,{profileId:'cloud'});const failed=await f.settled();
+  await f.api(f.path+'/reconcile',{});const ready=await f.settled();
+  expect(ready.state).toBe('ready');expect(ready.workspaceId).toBe(failed.workspaceId);
+  expect(f.creates).toBe(1);expect(backend.prepare).toHaveBeenCalledTimes(1);
+  expect(backend.verify).toHaveBeenCalledTimes(1);
 });

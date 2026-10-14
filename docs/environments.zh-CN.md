@@ -10,7 +10,7 @@ Mau 负责产品开通、环境绑定、Host 初始化、续期、暂停恢复�
 
 将 [mau.json](../examples/mau.json) 与 [Host 配置](../examples/cloud/host-profile.json) 复制到仓库外，准备私有 providers.json 和密钥文件，调整相对路径。环境方案指定允许的 Router 账号、云模板、内核和 Host 配置。个人登录状态通过私有文件注入，不进入共享镜像。
 
-设置 Matrix 服务配置、`MAU_CONFIG_FILE` 和 `MAU_STATE` 后运行 `mau-server`。完整变量与代理要求见[英文说明](environments.md)。Mau 进程内组合 Router；同一服务身份和渠道只能有一个消费者。
+设置 Matrix 服务配置、`MAU_CONFIG_FILE` 和 `MAU_STATE` 后运行 `mau-server`；可选 `MAU_WEB_ROOT` 同域提供 [Web 控制台](web.zh-CN.md)。完整变量与代理要求见[英文说明](environments.md)。Mau 进程内组合 Router；同一服务身份和渠道只能有一个消费者。
 
 ```sh
 mau login --url https://mau.example --user '@alice:agents.example' --password-file /private/password
@@ -29,6 +29,8 @@ mau resume
 
 方案可显式设置 `idlePauseSeconds`：空闲后暂停环境，仅在存在可投递且已授权的工作时唤醒。默认不自动暂停；手动暂停不会被消息自动唤醒。
 
+已有绑定的云服务、模板、内核、runtime ID、Host 目录和端口不能修改；显示名、账号、指令、时长、空闲和初始化文件设置可以修改。
+
 公开仓库只有通用模板。真实地址、资源 ID、部署拓扑、凭据和用户数据留在私有配置中。旧 Router 产品入口已删除，没有兼容别名或自动生产数据迁移。
 
 ## SSH
@@ -46,3 +48,5 @@ SSH 原始字节流通过 HTTPS 的 `Upgrade: mau-ssh` 隧道传输，前置代�
 
 每个 Agent 最多同时有 8 个连接或开通请求。活动连接阻止空闲暂停和手动生命周期操作，续期仍继续；暂停后必须先恢复再连接。
 SSH 使用者能够读写执行用户已有的文件和凭据；SSH 入口不改变环境原有的网络和凭据策略。
+
+共享持久文件和产品 API 见[共享工作区](workspaces.md)。

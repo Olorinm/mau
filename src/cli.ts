@@ -12,9 +12,10 @@ const help = `Mau — your agent product
   mau login --url URL --token-file FILE
   mau login --url URL --user MATRIX_ID --password-file FILE
   mau options
-  mau setup NAME --environment PROFILE
+  mau setup NAME --environment PROFILE [--workspace ID]
+  mau workspaces | workspace-create NAME
   mau agents | use NAME | status | check
-  mau environment-create PROFILE
+  mau environment-create PROFILE [--workspace ID]
   mau pause | resume | destroy | reconcile
   mau ssh NAME [-- COMMAND...]
   mau channel-connect matrix|feishu|weixin|telegram|grove-mail
@@ -31,6 +32,7 @@ const options = {
   help: { type: "boolean" }, version: { type: "boolean" }, url: { type: "string" },
   user: { type: "string" }, "password-file": { type: "string" }, "token-file": { type: "string" },
   environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
+  workspace: { type: "string" },
   "bot-token-file": { type: "string" }, domain: { type: "string" }, "messaging-only": { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
@@ -71,14 +73,16 @@ async function request(base: string, path: string, token: string | undefined, bo
 async function main() {
   const { values, positionals } = parseArgs({ options, allowPositionals: true });
   const [command, ...args] = positionals;
-  if (values.version) { output({ product: "mau", version: "0.1.0-alpha.3" }); return; }
+  if (values.version) { output({ product: "mau", version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version }); return; }
   if (values.help || !command) { process.stdout.write(help); return; }
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
     use: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
     destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
+  arity.workspaces = [0, 0]; arity["workspace-create"] = [1, 1];
   const count = arity[command];
   if (!count || args.length < count[0] || args.length > count[1]) fail("invalid_command_arguments");
   if (values.environment && command !== "setup") fail("environment_option_requires_setup");
+  if (values.workspace && !["setup", "environment-create"].includes(command)) fail("workspace_option_requires_environment");
   const allowHTTP = values["allow-http"] ?? false;
   if (command === "login") {
     if (!values.url) fail("url_required");
@@ -123,6 +127,8 @@ async function main() {
     return status;
   };
   if (command === "options") { output(await product("/options")); return; }
+  if (command === "workspaces") { output(await product("/workspaces")); return; }
+  if (command === "workspace-create") { output(await product("/workspaces", { name: args[0] })); return; }
   if (command === "agents") { output(await product("/agents")); return; }
   if (command === "ssh") {
     const list = await product("/agents");
@@ -140,7 +146,7 @@ async function main() {
   }
   if (command === "setup") {
     if (!values.environment) fail("environment_profile_required");
-    const result = await product("/agents", { name: args[0], profileId: values.environment });
+    const result = await product("/agents", { name: args[0], profileId: values.environment, ...(values.workspace ? { workspaceId: values.workspace } : {}) });
     select(result.agent.id);
     await pollEnvironment(result.agent.id, result.environment);
     output(await product(`/agents/${encodeURIComponent(result.agent.id)}`)); return;
@@ -151,7 +157,7 @@ async function main() {
   if (command === "check") { output(await routing(path + "/check", {})); return; }
   if (["environment-create", "pause", "resume", "destroy", "reconcile"].includes(command)) {
     const target = command === "environment-create" ? "" : "/" + command;
-    const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0] } : {});
+    const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0], ...(values.workspace ? { workspaceId: values.workspace } : {}) } : {});
     output(await pollEnvironment(session.agentId!, status)); return;
   }
   const pollConnection = async (job: any) => {

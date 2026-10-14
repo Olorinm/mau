@@ -12,9 +12,9 @@
   },
   "environment": {
     "repository": "Olorinm/agent-environment",
-    "revision": "7794d2b7a41e00cb47a0de9b0acd9e17f8d0f691",
-    "version": "0.2.0-alpha.1",
-    "integrity": "sha512-qDOGOELH1y5cJvVHoWvGuX0/a0Y8bf2JOZKXYzchJ72QKxYDFCU1mrKHzFiZ5H82aOr2RAEuSyhDnjCcvlG/dw==",
+    "revision": "d85a5f7dc7fd165849c9cce9385ee84081d16bb3",
+    "version": "0.2.0-alpha.2",
+    "integrity": "sha512-N4EoxQH/NeVC7qATL8j4s0U4YIqLgOt2mWI9y+zYb9+c12/SCRqF0R2xJuCuFiHIbAIyUZ3M6O1KzYWluzbw5Q==",
     "distribution": "private-release",
     "upstream": {
       "repository": "BroZhong/open-managed-agents",
@@ -22,13 +22,24 @@
     },
     "archive": {
       "repository": "Olorinm/agent-environment",
-      "tag": "v0.2.0-alpha.1",
-      "asset": "olorinm-agent-environment-0.2.0-alpha.1.tar"
+      "tag": "v0.2.0-alpha.2",
+      "asset": "olorinm-agent-environment-0.2.0-alpha.2.tar"
     }
   },
   "host": {
     "repository": "Olorinm/agent-host",
     "revision": "bd44a0477c359afbfd5459809f89d8516f2a25e9",
     "version": "0.1.0-alpha.9"
+  },
+  "ui": {
+    "repository": "Olorinm/agent-ui",
+    "revision": "d2e3803b42793d52354eea4043330ea8b7e5693f",
+    "archive": {
+      "repository": "Olorinm/agent-ui",
+      "tag": "v0.1.0-alpha.2",
+      "asset": "olorinm-agent-ui-0.1.0-alpha.2.tgz"
+    },
+    "version": "0.1.0-alpha.2",
+    "integrity": "sha512-Wsig2p9OWySTn7CqCs55zv4XgkSc4r42HMiZ2CoIsTt08e+n3fnelBcgODtr7hsxpgLvLvv01bU4ShOt9T/QGw=="
   }
 }
