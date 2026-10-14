@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { RouterError as WorkError, ServiceHttp, HttpAgentHost, type ConnectionConfiguration, type ManagedService } from "@agent-router/server";
+import type { EnvironmentProvider as ComponentProvider, EnvironmentRef as Ref } from "@olorinm/agent-environment";
 import { DurableStore } from "./store.js";
 import { privateFile } from "./files.js";
 
@@ -40,6 +41,7 @@ export const environmentOptionsSchema = z
             port: z.number().int().min(1).max(65535).default(37420),
             lifetimeSeconds: z.number().int().min(600).max(86400).default(3600),
             onTimeout: z.enum(["kill", "pause"]).default("kill"),
+            idlePauseSeconds: z.number().int().min(600).max(2_592_000).optional(),
             files: z
               .array(
                 z
@@ -59,34 +61,8 @@ export const environmentOptionsSchema = z
   })
   .strict();
 type Profile = z.infer<typeof environmentOptionsSchema>["profiles"][number];
-type Ref = { provider: string; id: string };
-export interface EnvironmentProvider {
-  create(input: {
-    template: string;
-    timeoutSeconds: number;
-    onTimeout: "kill" | "pause";
-    metadata: Record<string, string>;
-  }): Promise<Ref>;
-  list(metadata: Record<string, string>): Promise<Array<Ref>>;
-  info(id: string): Promise<{ state: string }>;
-  resume(id: string, seconds: number): Promise<{ state: string }>;
-  pause(id: string): Promise<void>;
-  destroy(id: string): Promise<void>;
-  setTimeout(id: string, seconds: number): Promise<void>;
-  httpEndpoint(
-    id: string,
-    port: number,
-  ): Promise<{ url: string; headers: Record<string, string> }>;
-  exec(
-    id: string,
-    argv: string[],
-    options: {
-      onExit: (result: { exitCode: number | null }) => void;
-      timeoutSeconds: number;
-    },
-  ): AsyncIterable<{ stream: string; text: string }>;
-  writeFile(id: string, path: string, data: string | Uint8Array): Promise<void>;
-}
+export type EnvironmentProvider = Pick<ComponentProvider,
+  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "writeFile">;
 export interface Environments {
   provider(id: string): EnvironmentProvider;
 }
@@ -96,6 +72,7 @@ type Phase =
   | "ready"
   | "pausing"
   | "paused"
+  | "sleeping"
   | "resuming"
   | "deleting"
   | "deleted"
@@ -114,18 +91,27 @@ interface Binding {
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
 const collection = "environments";
-// Display labels and account assignment are not native execution identity.
-const profileHash = ({
-  owners: _owners,
-  label: _label,
-  ...execution
-}: Profile) => hash(JSON.stringify(execution));
+// Only what identifies the created environment and its Host endpoint. Labels, owners,
+// instructions, lifetime and bootstrap sources may change without stranding existing Agents.
+const profileHash = (p: Profile) =>
+  hash(
+    JSON.stringify([p.provider, p.template, p.kernel, p.runtimeId, p.directory, p.port]),
+  );
+// One failed renewal request is not evidence the environment stopped. Three 30-second
+// attempts stay well inside the shortest 600-second lifetime.
+const renewalAttempts = 3;
 
 /** Product-owned provisioning journal; the external module alone operates cloud resources. */
 export class EnvironmentManager {
   readonly options: z.infer<typeof environmentOptionsSchema>;
   private readonly store: DurableStore;
-  private readonly jobs = new Map<string, Promise<void>>();
+  private readonly jobs = new Map<
+    string,
+    { kind: "operation" | "upkeep"; promise: Promise<void> }
+  >();
+  private readonly renewalFailures = new Map<string, number>();
+  // Last Host request per Agent. In memory: a restart only restarts the idle window.
+  private readonly activity = new Map<string, number>();
   private readonly lease = randomUUID();
   private timer: ReturnType<typeof setInterval> | undefined;
   private manager: Promise<Environments> | undefined;
@@ -319,9 +305,14 @@ export class EnvironmentManager {
     for (const file of profile.files) readFileSync(file.source);
     return content;
   }
-  private launch(record: Binding, operation: () => Promise<void>) {
+  private launch(
+    record: Binding,
+    operation: () => Promise<void>,
+    kind: "operation" | "upkeep" = "operation",
+  ) {
     if (this.jobs.has(record.agentId))
       throw new WorkError("environment_operation_running", 409);
+    if (kind === "operation") this.renewalFailures.delete(record.agentId);
     const job = Promise.resolve()
       .then(() => {
         this.assertOpen();
@@ -344,7 +335,7 @@ export class EnvironmentManager {
       .finally(() => {
         this.jobs.delete(record.agentId);
       });
-    this.jobs.set(record.agentId, job);
+    this.jobs.set(record.agentId, { kind, promise: job });
     // A journal failure must stop new work, without an unhandled rejection.
     void job.catch(() => this.controller.abort());
   }
@@ -461,6 +452,7 @@ export class EnvironmentManager {
     record.phase = "ready";
     delete record.error;
     this.save(record);
+    this.activity.set(record.agentId, Date.now());
   }
   http(
     agentId: string,
@@ -486,6 +478,7 @@ export class EnvironmentManager {
           record.ref.id,
           profile.port,
         );
+        coordinator.activity.set(agentId, Date.now());
         const headers = new Headers(endpoint.headers);
         new Headers(options.headers).forEach((v, k) => headers.set(k, v));
         return new ServiceHttp(
@@ -517,101 +510,129 @@ export class EnvironmentManager {
       await delay(1000, undefined, { signal: this.controller.signal });
     }
   }
-  action(
+  async action(
     owner: string,
     agentId: string,
     action: "resume" | "pause" | "destroy" | "reconcile",
   ) {
     this.assertOpen();
     this.service.owned(agentId, owner);
+    // Renewal is background upkeep; a lifecycle request waits for it instead of failing.
+    const running = this.jobs.get(agentId);
+    if (running?.kind === "upkeep") await running.promise.catch(() => {});
+    this.assertOpen();
     const record = this.binding(agentId);
     if (!record) throw new WorkError("environment_not_configured", 404);
     if (this.jobs.has(agentId))
       throw new WorkError("environment_operation_running", 409);
     if (record.phase === "deleted")
       throw new WorkError("environment_deleted_create_new_agent", 409);
-    this.launch(record, async () => {
-      const provider = await this.provider(record);
-      if (!record.ref) {
-        const found = await provider.list({
-          "mau-operation": record.operationId,
-        });
-        if (found.length !== 1)
-          throw new WorkError(
-            "environment_creation_requires_operator_reconciliation",
-            409,
-          );
-        record.ref = { provider: record.provider, id: found[0]!.id };
-        this.save(record);
-      }
-      const id = record.ref.id;
-      if (action === "destroy" || action === "pause") {
-        // Stop workers and reject active/uncertain native work before cloud lifecycle changes.
-        await this.configuration.withStoppedRuntime(
-          owner, agentId,
-          async () => {
-            record.phase = action === "destroy" ? "deleting" : "pausing";
-            delete record.error;
-            this.save(record);
-            if (action === "destroy") {
-              await provider.destroy(id);
-              record.phase = "deleted";
-            } else {
-              await provider.pause(id);
-              const deadline = Date.now() + 180_000;
-              while ((await provider.info(id)).state !== "paused") {
-                this.assertOpen();
-                if (Date.now() > deadline)
-                  throw new WorkError("environment_pause_unconfirmed", 409);
-                await delay(1000, undefined, {
-                  signal: this.controller.signal,
-                });
-              }
-              record.phase = "paused";
-            }
-            this.save(record);
-          },
-          async () => {
-            record.phase = "needs_action";
-            record.error = "environment_lifecycle_unconfirmed";
-            this.save(record);
-          },
-        );
-        return;
-      }
-      const state = (await provider.info(id)).state;
-      if (state === "missing")
+    this.launch(record, () => this.lifecycle(owner, record, action));
+    return this.view(record);
+  }
+  /** Router calls this while deliverable work waits; only an idle-paused environment wakes. */
+  wake(agentId: string, binding: string) {
+    try {
+      const record = this.binding(agentId);
+      if (record?.operationId !== binding || record.phase !== "sleeping" || this.jobs.has(agentId)) return;
+      this.assertOpen();
+      this.launch(record, () => this.lifecycle(this.service.agent(agentId).owner, record, "resume"));
+    } catch {
+      /* Router asks again on its next tick. */
+    }
+  }
+  private async lifecycle(
+    owner: string,
+    record: Binding,
+    action: "resume" | "pause" | "destroy" | "reconcile" | "sleep",
+  ) {
+    const agentId = record.agentId;
+    if (action === "pause" && record.phase === "sleeping") {
+      // Already paused in the cloud; only stop waking it for new messages.
+      record.phase = "paused";
+      this.save(record);
+      return;
+    }
+    const provider = await this.provider(record);
+    if (!record.ref) {
+      const found = await provider.list({
+        "mau-operation": record.operationId,
+      });
+      if (found.length !== 1)
         throw new WorkError(
-          "environment_missing_explicit_replacement_required",
+          "environment_creation_requires_operator_reconciliation",
           409,
         );
-      if (action === "reconcile" && state === "paused") {
-        record.phase = "paused";
-        delete record.error;
-        this.save(record);
-        return;
-      }
-      const profile = this.profile(record);
-      record.phase = "resuming";
+      record.ref = { provider: record.provider, id: found[0]!.id };
+      this.save(record);
+    }
+    const id = record.ref.id;
+    if (action === "destroy" || action === "pause" || action === "sleep") {
+      // Stop workers and reject active/uncertain native work before cloud lifecycle changes.
+      await this.configuration.withStoppedRuntime(
+        owner, agentId,
+        async () => {
+          record.phase = action === "destroy" ? "deleting" : "pausing";
+          delete record.error;
+          this.save(record);
+          if (action === "destroy") {
+            await provider.destroy(id);
+            record.phase = "deleted";
+          } else {
+            await provider.pause(id);
+            const deadline = Date.now() + 180_000;
+            while ((await provider.info(id)).state !== "paused") {
+              this.assertOpen();
+              if (Date.now() > deadline)
+                throw new WorkError("environment_pause_unconfirmed", 409);
+              await delay(1000, undefined, {
+                signal: this.controller.signal,
+              });
+            }
+            record.phase = action === "sleep" ? "sleeping" : "paused";
+          }
+          this.save(record);
+        },
+        async () => {
+          record.phase = "needs_action";
+          record.error = "environment_lifecycle_unconfirmed";
+          this.save(record);
+        },
+      );
+      return;
+    }
+    const state = (await provider.info(id)).state;
+    if (state === "missing")
+      throw new WorkError(
+        "environment_missing_explicit_replacement_required",
+        409,
+      );
+    if (action === "reconcile" && state === "paused") {
+      record.phase = "paused";
       delete record.error;
       this.save(record);
-      if (
-        (await provider.resume(id, profile.lifetimeSeconds)).state !== "running"
-      )
-        throw new WorkError("environment_resume_pending", 409);
-      const config = this.configuration.configuration(
-        this.service.agent(agentId),
-      );
-      if (!config?.host?.binding)
-        await this.bootstrap(owner, record, provider, profile);
-      else {
-        await this.ready(record, profile);
-        record.phase = "ready";
-        delete record.error;
-        this.save(record);
-      }
-    });
-    return this.view(record);
+      return;
+    }
+    const profile = this.profile(record);
+    record.phase = "resuming";
+    delete record.error;
+    this.save(record);
+    if (
+      (await provider.resume(id, profile.lifetimeSeconds)).state !== "running"
+    )
+      throw new WorkError("environment_resume_pending", 409);
+    const config = this.configuration.configuration(
+      this.service.agent(agentId),
+    );
+    if (!config?.host?.binding)
+      await this.bootstrap(owner, record, provider, profile);
+    else {
+      await this.ready(record, profile);
+      record.phase = "ready";
+      delete record.error;
+      this.save(record);
+    }
+    this.activity.set(agentId, Date.now());
   }
   assertReady(agentId: string, operationId: string) {
     const b = this.binding(agentId);
@@ -628,13 +649,47 @@ export class EnvironmentManager {
         this.jobs.has(record.agentId)
       )
         continue;
-      this.launch(record, async () => {
-        const profile = this.profile(record),
-          provider = await this.provider(record);
-        if ((await provider.info(record.ref!.id)).state !== "running")
-          throw new WorkError("environment_not_running_resume_required", 409);
-        await provider.setTimeout(record.ref!.id, profile.lifetimeSeconds);
-      });
+      const idle = this.options.profiles.find((p) => p.id === record.profileId)?.idlePauseSeconds;
+      if (!this.activity.has(record.agentId)) this.activity.set(record.agentId, Date.now());
+      if (idle && Date.now() - this.activity.get(record.agentId)! >= idle * 1000) {
+        this.launch(
+          record,
+          async () => {
+            try {
+              await this.lifecycle(this.service.agent(record.agentId).owner, record, "sleep");
+            } catch (error) {
+              // Active or unresolved runs count as activity; try again after another idle window.
+              if (!(error instanceof WorkError && error.message === "agent_has_active_or_unknown_run")) throw error;
+              this.activity.set(record.agentId, Date.now());
+            }
+          },
+          "upkeep",
+        );
+        continue;
+      }
+      this.launch(
+        record,
+        async () => {
+          const profile = this.profile(record),
+            provider = await this.provider(record),
+            id = record.ref!.id;
+          let state: string;
+          try {
+            state = (await provider.info(id)).state;
+            if (state === "running")
+              await provider.setTimeout(id, profile.lifetimeSeconds);
+          } catch (error) {
+            const failures = (this.renewalFailures.get(record.agentId) ?? 0) + 1;
+            this.renewalFailures.set(record.agentId, failures);
+            if (failures < renewalAttempts) return;
+            throw error;
+          }
+          this.renewalFailures.delete(record.agentId);
+          if (state !== "running")
+            throw new WorkError("environment_not_running_resume_required", 409);
+        },
+        "upkeep",
+      );
     }
   }
   async close() {

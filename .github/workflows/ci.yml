@@ -14,8 +14,38 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
-          cache: npm
-      - run: node scripts/bootstrap.mjs
+      # Do not cache npm here: its file-package cache contains private Environment source.
+      - run: npm install --global npm@11.16.0
+      - id: pins
+        run: |
+          node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
+          import fs from 'node:fs';
+          const pins=JSON.parse(fs.readFileSync('components.json'));
+          console.log('environment_revision='+pins.environment.revision);
+          console.log('environment_version='+pins.environment.version);
+          console.log('host_version='+pins.host.version);
+          JS
+      - name: Read the pinned private Environment source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Olorinm/agent-environment
+          ref: ${{ steps.pins.outputs.environment_revision }}
+          path: .components/environment
+          ssh-key: ${{ secrets.ENVIRONMENT_READ_KEY }}
+          persist-credentials: false
+      - name: Reproduce the immutable Environment archive
+        env:
+          ENVIRONMENT_VERSION: ${{ steps.pins.outputs.environment_version }}
+        run: |
+          npm --prefix .components/environment ci --include=dev --ignore-scripts --no-audit --no-fund
+          (cd .components/environment && npm pack --pack-destination "$RUNNER_TEMP")
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {gunzipSync} from 'node:zlib';
+          const name=process.env.RUNNER_TEMP+'/olorinm-agent-environment-'+process.env.ENVIRONMENT_VERSION;
+          fs.writeFileSync(name+'.tar',gunzipSync(fs.readFileSync(name+'.tgz')));
+          JS
+      - run: node scripts/bootstrap.mjs --environment-archive "$RUNNER_TEMP/olorinm-agent-environment-${{ steps.pins.outputs.environment_version }}.tar"
         env:
           GH_TOKEN: ${{ github.token }}
       - run: node_modules/.bin/lark-cli --version
@@ -32,6 +62,6 @@ jobs:
           (cd "$HOST_SOURCE" && npm pack --silent --pack-destination "$RUNNER_TEMP")
       - name: Verify independent archives and native session continuation
         run: |
-          npm run verify:packages -- --environment-archive .packages/agent-environment.tgz \
-            --host-archive "$RUNNER_TEMP/olorinm-agent-host-0.1.0-alpha.8.tgz" \
+          npm run verify:packages -- --environment-archive .packages/agent-environment.tar \
+            --host-archive "$RUNNER_TEMP/olorinm-agent-host-${{ steps.pins.outputs.host_version }}.tgz" \
             --host-fixture "$RUNNER_TEMP/host-source/test/fixtures/codex-server.mjs"

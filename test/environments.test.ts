@@ -198,6 +198,7 @@ async function fixture() {
     throw new Error("fixture_timeout");
   };
   return {
+    base,
     directory,
     cloud,
     provider,
@@ -343,11 +344,41 @@ it("concurrent requests allocate once and changing account assignments preserves
   expect(requests.every((r) => r.status === 202)).toBe(true);
   expect(requests[0]!.data.operationId).toBe(requests[1]!.data.operationId);
   expect((await f.settled()).state).toBe("ready");
-  f.mau.environments.options.profiles[0]!.owners.push(bob);
-  f.mau.environments.options.profiles[0]!.label = "Renamed display label";
+  const profile = f.mau.environments.options.profiles[0]!;
+  profile.owners.push(bob);
+  profile.label = "Renamed display label";
+  profile.instructions = "Revised instructions";
+  profile.lifetimeSeconds = 7200;
   await f.api(f.path + "/resume", {});
   expect((await f.settled()).state).toBe("ready");
   expect(f.creates).toBe(1);
+  // The Host endpoint is execution identity; changing it must not reach the old environment.
+  profile.port = 37421;
+  await f.api(f.path + "/resume", {});
+  expect((await f.settled()).error).toBe("environment_profile_changed");
+});
+it("retrying setup with the same name reuses the Agent after an environment failure", async () => {
+  const f = await fixture();
+  const hostConfigFile = f.mau.environments.options.profiles[0]!.hostConfigFile;
+  f.mau.environments.options.profiles[0]!.hostConfigFile = join(f.directory, "missing.json");
+  expect((await f.api("/agents", { name: "helper", profileId: "cloud" })).status).toBe(500);
+  f.mau.environments.options.profiles[0]!.hostConfigFile = hostConfigFile;
+  const retried = await f.api("/agents", { name: "helper", profileId: "cloud" });
+  expect(retried.status).toBe(202);
+  expect(retried.data.agent.id).toBe(f.agent.id);
+  expect((await f.settled()).state).toBe("ready");
+  expect(f.service.agents(alice)).toHaveLength(1);
+});
+it("malformed and oversized request bodies are client errors", async () => {
+  const f = await fixture();
+  const post = (body: string) => fetch(f.base + root + f.path, { method: "POST", body,
+    headers: { authorization: "Bearer alice", "content-type": "application/json" } });
+  const malformed = await post("{");
+  expect(malformed.status).toBe(400);
+  expect(await malformed.json()).toEqual({ error: "invalid_request" });
+  const oversized = await post(JSON.stringify({ profileId: "x".repeat(20_000) }));
+  expect(oversized.status).toBe(413);
+  expect(await oversized.json()).toEqual({ error: "request_too_large" });
 });
 it("renewal failure stays visible and requires reconciliation without replacing the environment", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -358,9 +389,12 @@ it("renewal failure stays visible and requires reconciliation without replacing 
     const renew = vi
       .spyOn(f.provider, "setTimeout")
       .mockRejectedValue(new Error("private-cloud-error"));
+    // Transient request failures keep the environment usable.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect((await f.settled()).state).toBe("ready");
     await vi.advanceTimersByTimeAsync(30_000);
     const failed = await f.settled();
-    expect(renew).toHaveBeenCalledOnce();
+    expect(renew).toHaveBeenCalledTimes(3);
     expect(failed.state).toBe("needs_action");
     expect(JSON.stringify(failed)).not.toContain("private-cloud-error");
     renew.mockRestore();
@@ -372,7 +406,100 @@ it("renewal failure stays visible and requires reconciliation without replacing 
     vi.useRealTimers();
   }
 });
+it("a confirmed stopped environment needs action at the first renewal", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    const f = await fixture();
+    await f.api(f.path, { profileId: "cloud" });
+    await f.settled();
+    [...f.cloud.values()][0]!.state = "paused";
+    await vi.advanceTimersByTimeAsync(30_000);
+    const failed = await f.settled();
+    expect(failed.state).toBe("needs_action");
+    expect(failed.error).toBe("environment_not_running_resume_required");
+  } finally {
+    for (const close of cleanup.splice(0).reverse()) await close();
+    vi.useRealTimers();
+  }
+});
+it("a lifecycle request waits for a running renewal instead of failing", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    const f = await fixture();
+    await f.api(f.path, { profileId: "cloud" });
+    await f.settled();
+    let release!: () => void;
+    const renew = vi.spyOn(f.provider, "setTimeout")
+      .mockImplementation(() => new Promise<void>((r) => { release = r; }));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(renew).toHaveBeenCalledOnce();
+    const pause = f.api(f.path + "/pause", {});
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    expect((await pause).status).toBe(202);
+    expect((await f.settled()).state).toBe("paused");
+  } finally {
+    for (const close of cleanup.splice(0).reverse()) await close();
+    vi.useRealTimers();
+  }
+});
 
+it("an idle environment sleeps and only deliverable work wakes it through Router's binding hook", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    const f = await fixture();
+    f.mau.environments.options.profiles[0]!.idlePauseSeconds = 600;
+    await f.api(f.path, { profileId: "cloud" });
+    const { operationId } = await f.settled();
+    // Backdate the last Host request instead of moving the clock under Router's leases.
+    const idle = () => (f.mau.environments as any).activity.set(f.agent.id, Date.now() - 601_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await f.settled()).state).toBe("ready");
+    idle();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await f.settled()).state).toBe("sleeping");
+    expect(f.pauses).toBe(1);
+    const hosts = f.mau.router.connections.hosts!;
+    expect(() => hosts.assertReady(f.agent.id, operationId)).toThrow("environment_not_ready");
+    hosts.wake!(f.agent.id, "another-binding");
+    expect((await f.settled()).state).toBe("sleeping");
+    hosts.wake!(f.agent.id, operationId);
+    expect((await f.settled()).state).toBe("ready");
+    expect(f.creates).toBe(1);
+    // An explicit pause is the owner's decision; new messages do not override it.
+    idle();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await f.settled()).state).toBe("sleeping");
+    await f.api(f.path + "/pause", {});
+    expect((await f.settled()).state).toBe("paused");
+    hosts.wake!(f.agent.id, operationId);
+    expect((await f.settled()).state).toBe("paused");
+    expect(f.pauses).toBe(2);
+  } finally {
+    for (const close of cleanup.splice(0).reverse()) await close();
+    vi.useRealTimers();
+  }
+});
+it("active or unresolved runs keep an idle environment awake without recording an error", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    const f = await fixture();
+    f.mau.environments.options.profiles[0]!.idlePauseSeconds = 600;
+    await f.api(f.path, { profileId: "cloud" });
+    await f.settled();
+    const runtime = await f.service.runtime(f.agent.id);
+    runtime.connector.store.set("communication_runs", "fixture-run", { phase: "unknown" });
+    (f.mau.environments as any).activity.set(f.agent.id, Date.now() - 601_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const state = await f.settled();
+    expect(state.state).toBe("ready");
+    expect(state.error).toBeUndefined();
+    expect(f.pauses).toBe(0);
+  } finally {
+    for (const close of cleanup.splice(0).reverse()) await close();
+    vi.useRealTimers();
+  }
+});
 it("a second coordinator cannot acquire the same journal and a stale owner cannot mutate cloud resources", async () => {
   const f = await fixture();
   expect(() => new EnvironmentManager(f.mau.router.connections, f.service,

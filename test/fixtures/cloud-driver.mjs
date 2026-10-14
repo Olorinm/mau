@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { SandboxNotFoundError, CommandExitError } from "e2b";
+import { SandboxNotFoundError, CommandExitError } from "@olorinm/agent-environment/sdk";
 import {
   createVolcengineProvider,
   EnvironmentManager,
@@ -62,8 +62,10 @@ const handle = () => ({
         env: { ...process.env, ...options.envs },
       });
       children.add(child);
-      child.stdout.on("data", (b) => options.onStdout(String(b)));
-      child.stderr.on("data", (b) => options.onStderr(String(b)));
+      for (const stream of ["stdout", "stderr"]) child[stream].on("data", bytes => {
+        options[stream === "stdout" ? "onStdoutBytes" : "onStderrBytes"]?.(bytes);
+        options[stream === "stdout" ? "onStdout" : "onStderr"]?.(String(bytes));
+      });
       const waiting = new Promise((r, j) => {
         child.once("error", j);
         child.once("close", (code) => {

@@ -3,7 +3,7 @@
 [简体中文](environments.zh-CN.md)
 
 Mau owns environment profiles, provisioning, the operation journal, Host bootstrap,
-Agent/environment binding and lifetime renewal. Router owns account identity,
+Agent/environment binding, lifetime renewal and idle pause/wake. Router owns account identity,
 channel authorization and delivery. Host owns native execution and sessions.
 
 ## Configure the server
@@ -56,10 +56,20 @@ Missing environments are never silently replaced. Provider-retained snapshots
 may require separate cleanup.
 
 Ready environments renew every 30 seconds. `lifetimeSeconds` must be at least 600.
-Cloud timeout policy applies during longer Mau outages. Volcengine currently uses
-explicit pause and `kill` on expiry; choose durable storage accordingly. Execution
-profile settings are immutable for existing bindings; display labels and account
-assignments may change without changing execution identity.
+A renewal request may fail twice; the third consecutive failure, or a confirmed
+stopped environment, becomes `needs_action`. Cloud timeout policy applies during
+longer Mau outages. Volcengine currently uses explicit pause and `kill` on expiry;
+choose durable storage accordingly.
+
+Optional `idlePauseSeconds` (600 to 2592000) pauses a ready environment after no
+Host requests for that long, using the same guarded pause. The state is `sleeping`.
+Router keeps receiving messages; when deliverable work waits, it asks Mau to wake
+the environment, and the first reply waits for resume. Active or unresolved runs
+count as activity. An explicit `mau pause` is never woken by messages.
+
+Provider, template, kernel, runtime ID, Host directory and port identify an
+existing binding and must not change. Labels, owners, instructions, lifetime, idle
+and bootstrap file settings may change.
 
 Host requests use Environment's application endpoint/traffic token and a separate
 per-Agent Host token. Cloud management credentials stay in Mau. Private gateways
