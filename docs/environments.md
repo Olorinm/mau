@@ -115,3 +115,5 @@ Resume a paused environment before connecting. Client authentication expires aft
 ten minutes and established sessions after eight hours. Shell access exposes the
 execution user's existing files and credentials; it does not change the existing
 network or model-credential policy.
+
+See [shared workspaces](workspaces.md).

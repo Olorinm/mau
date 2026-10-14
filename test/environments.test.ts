@@ -19,7 +19,7 @@ afterEach(async () => {
 const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
-async function fixture() {
+async function fixture(workspaceBackend?: any) {
   const directory = mkdtempSync(join(tmpdir(), "router-cloud-"));
   cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
   const cloud = new Map<
@@ -130,6 +130,7 @@ async function fixture() {
           runtimeId: "personal",
           hostConfigFile,
           owners: [alice],
+          ...(workspaceBackend ? { workspace: true } : {}),
         },
       ],
     },
@@ -144,7 +145,8 @@ async function fixture() {
       hsToken: "h".repeat(48),
     },
     optionsFile,
-    { environments: async () => ({ provider: () => provider }), router: {
+    { environments: async () => ({ provider: () => provider }),
+      ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
       provision: async () => {},
       authenticate: async (token) => {
         if (token === "alice") return alice;
@@ -561,4 +563,70 @@ it("SSH requires an assigned owner, explicit profile support and a ready environ
   expect((await f.api(f.path + "/pause", {})).status).toBe(202);
   expect((await f.settled()).state).toBe("paused");
   expect((await f.api(path, { publicKey: key })).data.error).toBe("environment_not_ready");
+});
+
+function workspaceFixture() {
+  const objects = new Map<string, Uint8Array>();
+  const key = (owner: string, id: string, path: string) => `${owner}/${id}/${path}`;
+  const store = {
+    async put(input: any) { objects.set(key(input.tenantId, input.workspaceId, input.path), new Uint8Array(input.body)); return { path: input.path, size: input.body.length }; },
+    async stat(owner: string, id: string, path: string) { const value = objects.get(key(owner, id, path)); return value ? { path, size: value.length, contentType: 'application/octet-stream' } : null; },
+    async list(owner: string, id: string) { const prefix = key(owner, id, ''); return [...objects].filter(([k]) => k.startsWith(prefix)).map(([k,v]) => ({ path: k.slice(prefix.length), size: v.length })); },
+    async delete(owner: string, id: string, path: string) { return objects.delete(key(owner, id, path)); },
+    async createSignedReadUrl() { return 'https://storage.fixture/file?signature=private'; },
+  };
+  return { store, objects,
+    prepare: vi.fn(async (owner: string, id: string) => ({ kind: 'volcengine-tos-static', target: { bucket: 'fixture', prefix: `${owner}/${id}/`, mountPath: '/home/user/workspace' }, template: 'shared-template', metadata: { workspace: id } })),
+    verify: vi.fn(async () => {}),
+  };
+}
+it('workspaces are owner-scoped, explicitly shared and retained after an Agent is destroyed', async () => {
+  const backend = workspaceFixture(), f = await fixture(backend);
+  const workspace = (await f.api('/workspaces', { name: 'Team' })).data;
+  expect((await f.api('/workspaces', undefined, 'bob')).data.data).toEqual([]);
+  expect((await f.api(`/workspaces/${workspace.id}`, undefined, 'bob')).status).toBe(404);
+  expect((await f.api(f.path, { profileId: 'cloud', workspaceId: workspace.id })).status).toBe(202);
+  expect((await f.settled()).workspaceId).toBe(workspace.id);
+  expect(backend.verify).toHaveBeenCalledTimes(1);
+  expect(backend.prepare.mock.calls[0]![0]).toMatch(/^[a-f0-9]{64}$/);
+  const second = await f.service.create(alice, 'coworker');
+  await f.mau.environments.begin(alice, second.id, 'cloud', workspace.id);
+  for(let n=0;n<200 && f.mau.environments.summary(alice,second.id)?.busy;n++) await new Promise(r=>setTimeout(r,10));
+  expect(f.mau.environments.summary(alice,second.id)?.state).toBe('ready');
+  expect(backend.prepare.mock.calls[0]).toEqual(backend.prepare.mock.calls[1]);
+  const bytes = Uint8Array.from([0,255,128,10]);
+  const url = f.base + root + `/workspaces/${workspace.id}/file?path=${encodeURIComponent('素材/%2f.bin')}`;
+  const response = await fetch(url,{method:'PUT',headers:{authorization:'Bearer alice','content-type':'application/octet-stream'},body:bytes});
+  expect(response.status).toBe(200);
+  expect([...backend.objects.values()][0]).toEqual(bytes);
+  expect((await f.api(`/workspaces/${workspace.id}/files`)).data.data).toHaveLength(1);
+  expect((await fetch(url,{method:'PUT',headers:{authorization:'Bearer bob','content-type':'application/octet-stream'},body:bytes})).status).toBe(404);
+  expect((await f.api(`/workspaces/${workspace.id}/download?path=../secret`)).status).toBe(400);
+  await f.api(f.path+'/destroy',{}); expect((await f.settled()).state).toBe('deleted');
+  expect((await f.api(`/workspaces/${workspace.id}/files`)).data.data).toHaveLength(1);
+});
+it('mount failures prevent private bootstrap and are rechecked after recovery and resume', async () => {
+  const backend = workspaceFixture(); backend.verify.mockRejectedValueOnce(new Error('secret storage diagnostics'));
+  const f = await fixture(backend);
+  await f.api(f.path,{profileId:'cloud'});
+  const failed = await f.settled(); expect(failed.error).toBe('workspace_mount_unavailable');
+  expect([...f.cloud.values()][0]!.files.size).toBe(0);
+  const workspaceId = failed.workspaceId;
+  await f.api(f.path+'/reconcile',{}); expect((await f.settled()).state).toBe('ready');
+  expect(f.creates).toBe(1);
+  await f.api(f.path+'/pause',{}); await f.settled();
+  const before=backend.verify.mock.calls.length;
+  await f.api(f.path+'/resume',{}); expect((await f.settled()).workspaceId).toBe(workspaceId);
+  expect(backend.verify.mock.calls.length).toBeGreaterThan(before);
+  expect((await f.api('/workspaces')).data.data).toHaveLength(1);
+  const other=(await f.api('/workspaces',{name:'Other'})).data;
+  expect((await f.api(f.path,{profileId:'cloud',workspaceId:other.id})).status).toBe(409);
+});
+it('unknown creates keep the original Workspace binding and reconcile without allocating twice', async () => {
+  const backend=workspaceFixture(), f=await fixture(backend);f.loseCreate();
+  await f.api(f.path,{profileId:'cloud'});const failed=await f.settled();
+  await f.api(f.path+'/reconcile',{});const ready=await f.settled();
+  expect(ready.state).toBe('ready');expect(ready.workspaceId).toBe(failed.workspaceId);
+  expect(f.creates).toBe(1);expect(backend.prepare).toHaveBeenCalledTimes(1);
+  expect(backend.verify).toHaveBeenCalledTimes(1);
 });
