@@ -25,3 +25,17 @@ local operations. Earlier live acceptance belongs to the pre-split integration;
 it does not prove this Mau package is deployed. This change does not modify live
 resources or user accounts. Cloud storage and real model/channel access need
 separate deployment-specific acceptance.
+
+The OMA extraction keeps the original sandbox implementation, native filesystem,
+workspace attestation and command-byte patch in Agent Environment. Mau consumes
+its public provider types and uses `/sdk` in its transport fixture, so exception
+class identity and byte callbacks match the installed shared runtime. Mau keeps
+its persistent Host coordination; OMA's per-Turn policy is not imposed on it.
+
+Validated for this branch: 10 Mau lifecycle/bootstrap tests and the independent four-archive
+consumer above. The shared package additionally passes the original 119 OMA
+sandbox tests, 21 provider/CLI tests and a fresh install with scripts disabled,
+including original bytes, split UTF-8, BOM and public TypeScript declarations.
+The OMA consumer branch passes Pi, Session Router and relevant API tests.
+The new shared package is local/unpublished; public CI and release require an
+authorized distributable archive in `components.json` first.

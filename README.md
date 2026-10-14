@@ -21,25 +21,21 @@ communication routes use `/_agent-router/v1`.
 ## Build
 
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
-`components.json` pins immutable source revisions, including the Router split in
-[PR #52](https://github.com/Olorinm/agent-router/pull/52). Bootstrap downloads the pinned Router and Environment
-archives from this repository's public GitHub Releases, then installs the components. No sibling
-checkouts or cross-repository CI credentials are required. Package-lock integrity
-checks cover the archives; the source revisions remain recorded for audit.
+`components.json` pins component source revisions. Router is downloaded from the
+existing public release. This branch uses Agent Environment 0.2.0-alpha.1, extracted
+from OMA; its archive is currently local and unpublished pending upstream
+redistribution authorization. Supply that exact archive explicitly. The lockfile
+checks its integrity; bootstrap does not fall back to the old 0.1 implementation.
 
 ```sh
-node scripts/bootstrap.mjs
+node scripts/bootstrap.mjs --environment-archive /path/agent-environment.tgz
 npm run build
 npm test
 node dist/cli.js --help
 ```
 
-To use local copies of the pinned component archives (with the same lockfile checksums):
-
-```sh
-node scripts/bootstrap.mjs --router-archive /path/router.tgz \
-  --environment-archive /path/environment.tgz
-```
+Use `--router-archive /path/router.tgz` as well when supplying both local archives.
+See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:
 `npm install ./router.tgz ./environment.tgz ./mau.tgz`. Host is installed in the

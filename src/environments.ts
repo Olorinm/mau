@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { RouterError as WorkError, ServiceHttp, HttpAgentHost, type ConnectionConfiguration, type ManagedService } from "@agent-router/server";
+import type { EnvironmentProvider as ComponentProvider, EnvironmentRef as Ref } from "@olorinm/agent-environment";
 import { DurableStore } from "./store.js";
 import { privateFile } from "./files.js";
 
@@ -59,34 +60,8 @@ export const environmentOptionsSchema = z
   })
   .strict();
 type Profile = z.infer<typeof environmentOptionsSchema>["profiles"][number];
-type Ref = { provider: string; id: string };
-export interface EnvironmentProvider {
-  create(input: {
-    template: string;
-    timeoutSeconds: number;
-    onTimeout: "kill" | "pause";
-    metadata: Record<string, string>;
-  }): Promise<Ref>;
-  list(metadata: Record<string, string>): Promise<Array<Ref>>;
-  info(id: string): Promise<{ state: string }>;
-  resume(id: string, seconds: number): Promise<{ state: string }>;
-  pause(id: string): Promise<void>;
-  destroy(id: string): Promise<void>;
-  setTimeout(id: string, seconds: number): Promise<void>;
-  httpEndpoint(
-    id: string,
-    port: number,
-  ): Promise<{ url: string; headers: Record<string, string> }>;
-  exec(
-    id: string,
-    argv: string[],
-    options: {
-      onExit: (result: { exitCode: number | null }) => void;
-      timeoutSeconds: number;
-    },
-  ): AsyncIterable<{ stream: string; text: string }>;
-  writeFile(id: string, path: string, data: string | Uint8Array): Promise<void>;
-}
+export type EnvironmentProvider = Pick<ComponentProvider,
+  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "writeFile">;
 export interface Environments {
   provider(id: string): EnvironmentProvider;
 }

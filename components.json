@@ -10,11 +10,13 @@
   },
   "environment": {
     "repository": "Olorinm/agent-environment",
-    "revision": "d76af21d39c9e0a3ed0f4fdc29bc26b8008f7e5e",
-    "archive": {
-      "repository": "Olorinm/mau",
-      "tag": "components-20261013",
-      "asset": "agent-environment-0.1.0-alpha.1.tgz"
+    "revision": "c79526d555278b5e70eb368ecb0c7806980ef3df",
+    "version": "0.2.0-alpha.1",
+    "integrity": "sha512-wRRCI3PfzfsisdES+U/JNxdiabhpi+p+z4tCsCHboB9psrB33PZiNdnxKIRh3qqZ6uloo32uorVjP1bEPUxWlQ==",
+    "distribution": "local-unpublished",
+    "upstream": {
+      "repository": "BroZhong/open-managed-agents",
+      "revision": "e04695152219a91c2ecdff41955dfc3fab73b438"
     }
   },
   "host": {
