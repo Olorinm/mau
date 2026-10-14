@@ -91,3 +91,27 @@ select existing identities. `--no-wait` returns progress; closing the terminal d
 not cancel provisioning. `check` verifies configuration and HTTP/runtime access,
 not real model authentication. Router's former product commands and provisioning
 routes are deleted, with no compatibility aliases or automatic state migration.
+
+
+## SSH access
+
+Add `"ssh": { "port": 37421 }` to an assigned environment profile to enable
+`mau ssh NAME`. Choose a port different from the Host service port. The environment
+image must contain Node.js, OpenSSH server/client and `/run/sshd`; see
+[Dockerfile.ssh](../examples/cloud/Dockerfile.ssh). Host keys are generated per
+environment and must not be shared in an image.
+
+Mau uses Environment's existing exec, file and application-endpoint interfaces;
+OMA and Host are unchanged. It starts OpenSSH as the existing execution user.
+Both setup and connection check account ownership. The CLI generates a temporary
+Ed25519 identity, checks the Host key returned over the authenticated API, and
+carries native SSH over an HTTPS `Upgrade: mau-ssh` tunnel. Front proxies and
+provider application gateways must preserve HTTP Upgrade. No public per-container
+SSH port is required. Custom HTTP entrypoints must call `mau.attach(server)`.
+
+Each Agent allows up to eight connections or setup requests. Active SSH sessions
+block lifecycle changes and idle pause while normal environment renewal continues.
+Resume a paused environment before connecting. Client authentication expires after
+ten minutes and established sessions after eight hours. Shell access exposes the
+execution user's existing files and credentials; it does not change the existing
+network or model-credential policy.

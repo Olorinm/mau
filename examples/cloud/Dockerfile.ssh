@@ -1,0 +1,8 @@
+# Extend your existing Debian-based Host image; its entrypoint remains unchanged.
+ARG HOST_IMAGE
+FROM ${HOST_IMAGE}
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server \
+    && mkdir -p /run/sshd && rm -f /etc/ssh/ssh_host_* && rm -rf /var/lib/apt/lists/*
+# Mau starts sshd as the Environment provider's existing execution user, never root.
+# Host keys are generated per environment at first connection, not baked into the image.

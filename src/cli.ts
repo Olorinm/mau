@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { parseArgs } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { privateFile } from "./files.js";
+import { runSsh } from "./ssh-client.js";
 
 const help = `Mau — your agent product
 
@@ -15,6 +16,7 @@ const help = `Mau — your agent product
   mau agents | use NAME | status | check
   mau environment-create PROFILE
   mau pause | resume | destroy | reconcile
+  mau ssh NAME [-- COMMAND...]
   mau channel-connect matrix|feishu|weixin|telegram|grove-mail
   mau channel-job ID | channel-pair ID --pairing-code-file FILE
   mau channel-auth CONNECTION [status|begin|complete]
@@ -69,11 +71,11 @@ async function request(base: string, path: string, token: string | undefined, bo
 async function main() {
   const { values, positionals } = parseArgs({ options, allowPositionals: true });
   const [command, ...args] = positionals;
-  if (values.version) { output({ product: "mau", version: "0.1.0-alpha.2" }); return; }
+  if (values.version) { output({ product: "mau", version: "0.1.0-alpha.3" }); return; }
   if (values.help || !command) { process.stdout.write(help); return; }
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
     use: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
-    destroy: [0, 0], reconcile: [0, 0], "channel-connect": [1, 1], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
+    destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
   const count = arity[command];
   if (!count || args.length < count[0] || args.length > count[1]) fail("invalid_command_arguments");
   if (values.environment && command !== "setup") fail("environment_option_requires_setup");
@@ -122,6 +124,14 @@ async function main() {
   };
   if (command === "options") { output(await product("/options")); return; }
   if (command === "agents") { output(await product("/agents")); return; }
+  if (command === "ssh") {
+    const list = await product("/agents");
+    const agent = list.data.find((a: any) => a.agent.name === args[0]);
+    if (!agent) fail("agent_not_found");
+    process.exitCode = await runSsh(url, session.token, agent.agent.id,
+      publicKey => product(`/agents/${encodeURIComponent(agent.agent.id)}/ssh`, { publicKey }), args.slice(1), controller.signal);
+    return;
+  }
   if (command === "use") {
     const list = await product("/agents");
     const selected = list.data.find((a: any) => a.agent.name === args[0]);

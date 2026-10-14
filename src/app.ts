@@ -3,6 +3,8 @@ import { rateLimit } from "express-rate-limit";
 import { readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { z } from "zod";
+import type { Server } from "node:http";
+import { attachSsh, sshKeyId } from "./ssh.js";
 import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
 
@@ -67,6 +69,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.status(202).json(summary(res.locals.owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
+  product.post("/agents/:id/ssh", async (req, res) => {
+    const { publicKey } = z.object({ publicKey: z.string().max(128) }).strict().parse(req.body);
+    sshKeyId(publicKey);
+    res.json(await environments.prepareSsh(res.locals.owner, String(req.params.id), publicKey));
+  });
   product.get("/agents/:id/environment", (req, res) => res.json(environments.summary(res.locals.owner, String(req.params.id)) ?? { state: "unconfigured", busy: false }));
   product.post("/agents/:id/environment", async (req, res) => {
     const { profileId } = z.object({ profileId: z.string().min(1).max(48) }).strict().parse(req.body);
@@ -88,6 +95,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
         : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed" });
   });
+  const sshServers = new Set<() => void>();
   return { app, router, environments, start: () => router.start(),
-    close: async () => { await environments.close(); await router.close(); } };
+    attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
+      (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
+    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); } };
 }

@@ -15,7 +15,7 @@ try {
   await mkdir(join(temporary, "dist"));
   // The client uses Node built-ins only. Never copy server code, peer dependencies,
   // private Environment archives, source maps or local operator configuration.
-  for (const file of ["cli.js", "files.js"])
+  for (const file of ["cli.js", "files.js", "ssh-client.js", "ssh-transport.js"])
     await copyFile(new URL("dist/" + file, root), join(temporary, "dist", file));
   await chmod(join(temporary, "dist/cli.js"), 0o755);
   for (const file of ["LICENSE", "NOTICE"])

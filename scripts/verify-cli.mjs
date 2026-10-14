@@ -23,7 +23,7 @@ try {
   const [archive] = JSON.parse(execFileSync(process.execPath,
     [fileURLToPath(new URL("scripts/pack-cli.mjs", root)), "--pack-destination", temporary], { encoding: "utf8" }));
   assert.deepEqual(archive.files.map(f => f.path).sort(),
-    ["LICENSE", "NOTICE", "README.md", "dist/cli.js", "dist/files.js", "package.json"].sort());
+    ["LICENSE", "NOTICE", "README.md", "dist/cli.js", "dist/files.js", "dist/ssh-client.js", "dist/ssh-transport.js", "package.json"].sort());
   // A fresh cache and unreachable registry prove no server/private peer is fetched.
   execFileSync("npm", ["install", "--global", "--prefix", temporary,
     "--cache", join(temporary, "cache"), "--registry", "http://127.0.0.1:9",

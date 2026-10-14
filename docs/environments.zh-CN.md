@@ -30,3 +30,19 @@ mau resume
 方案可显式设置 `idlePauseSeconds`：空闲后暂停环境，仅在存在可投递且已授权的工作时唤醒。默认不自动暂停；手动暂停不会被消息自动唤醒。
 
 公开仓库只有通用模板。真实地址、资源 ID、部署拓扑、凭据和用户数据留在私有配置中。旧 Router 产品入口已删除，没有兼容别名或自动生产数据迁移。
+
+## SSH
+
+SSH 复用 Environment 的公开命令执行、文件写入和应用端口接口，OMA 与 Host 无需修改。
+在方案中添加 `"ssh": { "port": 37421 }` 开启；该端口须与 Host 端口不同。
+镜像需要 Node.js、OpenSSH server/client 和 `/run/sshd`，可参考
+[Dockerfile.ssh](../examples/cloud/Dockerfile.ssh)。不要在共享镜像中保留 SSH Host 私钥。
+
+`mau ssh NAME` 首次连接时生成独立 Host key，以环境原有执行用户启动 OpenSSH。
+账号归属在开通和建立连接时分别检查；客户端使用临时 Ed25519 key，并校验服务返回的 Host 公钥。
+SSH 原始字节流通过 HTTPS 的 `Upgrade: mau-ssh` 隧道传输，前置代理和环境应用端口网关必须支持 HTTP Upgrade。
+容器只运行内部 HTTP 桥接入口，不需要对公网逐个开放 22 端口。
+使用 `createMau` 自行启动 HTTP server 时，调用 `mau.attach(server)` 接入升级请求。
+
+每个 Agent 最多同时有 8 个连接或开通请求。活动连接阻止空闲暂停和手动生命周期操作，续期仍继续；暂停后必须先恢复再连接。
+SSH 使用者能够读写执行用户已有的文件和凭据；SSH 入口不改变环境原有的网络和凭据策略。
