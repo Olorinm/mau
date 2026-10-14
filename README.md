@@ -48,9 +48,9 @@ node dist/cli.js --help
 ```
 
 Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
-when supplying the pinned archives locally. Bootstrap rebuilds the web console's
-`@olorinm/agent-ui` from its pinned public source; `--ui-archive /path/agent-ui.tar`
-supplies that archive instead.
+when supplying the pinned archives locally. The web console's
+[Agent UI](https://github.com/Olorinm/agent-ui) release is public too;
+`--ui-archive /path/agent-ui.tgz` supplies it locally.
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:

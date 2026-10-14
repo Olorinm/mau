@@ -4,7 +4,7 @@
 
 Mau Web 控制台提供登录、新建员工、查看与控制运行环境、连接渠道和自检。它只调用现有的 Mau（`/_mau/v1`）与 Router（`/_agent-router/v1`）接口，密码登录和退出时直接访问公开的 Matrix 服务器。本版本不含聊天、模型配置、凭证和文件。
 
-界面组件来自 `@olorinm/agent-ui/app`（从 OpenGrove 抽出、放在 Agent Host 的 UI 包里）。连接层（`web/src/api`）、文案和布局属于 Mau。`components.json` 固定 UI 源码版本，bootstrap 会重新构建为未压缩的 npm tar，并按 `web/package-lock.json` 校验字节。
+界面组件来自 `@olorinm/agent-ui/app`（[Agent UI](https://github.com/Olorinm/agent-ui)，从 OpenGrove 抽出）。连接层（`web/src/api`）、文案和布局属于 Mau。`components.json` 固定 Agent UI 的发布版本，bootstrap 下载后按 `web/package-lock.json` 校验字节。
 
 ## 开发
 

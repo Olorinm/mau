@@ -8,10 +8,10 @@ Router (`/_agent-router/v1`) routes, plus the public Matrix homeserver for passw
 sign-in and sign-out. Chat, model settings, credentials and files are not part of
 this release.
 
-UI components come from `@olorinm/agent-ui/app` (extracted from OpenGrove into
-Agent Host's UI package). Mau owns the connection layer (`web/src/api`), copy and
-layout. `components.json` pins the UI source revision; bootstrap rebuilds it as an
-uncompressed npm tar and verifies the bytes against `web/package-lock.json`.
+UI components come from `@olorinm/agent-ui/app` ([Agent UI](https://github.com/Olorinm/agent-ui),
+extracted from OpenGrove). Mau owns the connection layer (`web/src/api`), copy and
+layout. `components.json` pins the Agent UI release; bootstrap downloads it and
+verifies the bytes against `web/package-lock.json`.
 
 ## Develop
 

@@ -32,10 +32,14 @@
     "version": "0.1.0-alpha.9"
   },
   "ui": {
-    "repository": "Olorinm/agent-host",
-    "revision": "88185f17616d9f1e26ba1e76952b3670f3f736da",
-    "workspace": "@olorinm/agent-ui",
+    "repository": "Olorinm/agent-ui",
+    "revision": "d2e3803b42793d52354eea4043330ea8b7e5693f",
+    "archive": {
+      "repository": "Olorinm/agent-ui",
+      "tag": "v0.1.0-alpha.2",
+      "asset": "olorinm-agent-ui-0.1.0-alpha.2.tgz"
+    },
     "version": "0.1.0-alpha.2",
-    "integrity": "sha512-spPloPmtMlRwpeLxR81Sm12/aBKZata4QB4ZC52dU8SfqtdiiHXAsDVci3+zR69su+yvkWQzxhj0yQdOe+BtFA=="
+    "integrity": "sha512-Wsig2p9OWySTn7CqCs55zv4XgkSc4r42HMiZ2CoIsTt08e+n3fnelBcgODtr7hsxpgLvLvv01bU4ShOt9T/QGw=="
   }
 }

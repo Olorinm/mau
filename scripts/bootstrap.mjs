@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 // Install separately built components; application code imports only their public package exports.
-import { mkdir, copyFile, readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, copyFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 const { values } = parseArgs({ options: {
   "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" },
 } });
@@ -25,8 +24,9 @@ async function verifyArchive(name, path) {
   if (actual !== expected || pins[name].integrity && pins[name].integrity !== expected)
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
-for (const name of ["router", "environment"]) {
-  const destination = new URL(name === "environment" ? "agent-environment.tar" : "agent-router.tgz", packages);
+const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", ui: "agent-ui.tgz" };
+for (const name of ["router", "environment", "ui"]) {
+  const destination = new URL(archives[name], packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);
     await verifyArchive(name, destination);
@@ -46,25 +46,6 @@ for (const name of ["router", "environment"]) {
   } finally { await rm(temporary, { recursive: true, force: true }); }
   await verifyArchive(name, destination);
 }
-// The web console's shared UI is reproduced from its public source revision as an uncompressed npm tar.
-const ui = new URL("agent-ui.tar", packages);
-if (values["ui-archive"]) await copyFile(resolve(values["ui-archive"]), ui);
-else {
-  const { repository, revision, workspace, version } = pins.ui;
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision))
-    throw new Error("immutable_component_revision_required");
-  const temporary = await mkdtemp(join(tmpdir(), "mau-ui-"));
-  try {
-    const source = join(temporary, "source");
-    execFileSync("git", ["clone", "--filter=blob:none", "--no-checkout", `https://github.com/${repository}.git`, source], { stdio: "inherit" });
-    execFileSync("git", ["-C", source, "checkout", "--quiet", revision], { stdio: "inherit" });
-    execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: source, stdio: "inherit" });
-    execFileSync("npm", ["pack", "--workspace", workspace, "--pack-destination", temporary, "--silent"], { cwd: source, stdio: "inherit" });
-    const name = workspace.replace(/^@/, "").replace("/", "-") + `-${version}.tgz`;
-    await writeFile(ui, gunzipSync(await readFile(join(temporary, name))));
-  } finally { await rm(temporary, { recursive: true, force: true }); }
-}
-await verifyArchive("ui", ui);
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });
 // Router's official Feishu authorization/tool bridge needs its platform binary.
