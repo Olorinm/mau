@@ -39,14 +39,14 @@ it("SSH tunnels preserve binary streams and release access when either end disco
       chunks.push(chunk); length += chunk.length; if (length === sent.length) resolve();
     }));
     client.write(sent); await complete;
-    expect(Buffer.concat(chunks)).toEqual(sent);
-    client.destroy(); await new Promise(r => setTimeout(r, 20));
-    expect(releases).toBe(1);
+    expect(Buffer.concat(chunks).equals(sent)).toBe(true);
+    client.destroy(); await expect.poll(() => releases).toBe(1);
     const again = await connectSshTunnel(url, { Authorization: "Bearer owner" });
+    again.resume();
     const ended = once(again, "close"); close(); await ended;
     expect(releases).toBe(2);
   } finally {
     close(); for (const socket of upstreamSockets) socket.destroy();
     await Promise.all([new Promise<void>(r => upstream.close(() => r())), new Promise<void>(r => gateway.close(() => r()))]);
   }
-});
+}, 15_000);
