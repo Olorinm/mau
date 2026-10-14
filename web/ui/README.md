@@ -7,8 +7,8 @@ This is an alpha package, distributed as a build archive. It is not published to
 For product-neutral page layouts, navigation, conversations, form surfaces and
 file editing, see the separate [Agent Frontend package](frontend/README.md).
 It takes caller-owned data and callbacks and has no backend or product protocol dependency.
-It accepts a product-owned service adapter and does not add application runtime
-dependencies to this component package.
+The separate page package does not add application runtime dependencies to this
+low-level component package.
 
 ```sh
 # From this repository:
