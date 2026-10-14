@@ -41,5 +41,16 @@
     },
     "version": "0.1.0-alpha.2",
     "integrity": "sha512-Wsig2p9OWySTn7CqCs55zv4XgkSc4r42HMiZ2CoIsTt08e+n3fnelBcgODtr7hsxpgLvLvv01bU4ShOt9T/QGw=="
+  },
+  "frontend": {
+    "repository": "Olorinm/agent-ui",
+    "revision": "aedef925bbcc2ffe978a5d816382d7156f155a78",
+    "version": "0.1.0-alpha.1",
+    "integrity": "sha512-xMx1wp+nWnGveOomEbh9hw/Am35X241Ka2WKUN477SfPslz0dcRcCdXVgoibHRxAXNk+rd8TIAvooyYoarCy4Q==",
+    "archive": {
+      "repository": "Olorinm/agent-ui",
+      "tag": "frontend-v0.1.0-alpha.1",
+      "asset": "olorinm-agent-frontend-0.1.0-alpha.1.tgz"
+    }
   }
 }

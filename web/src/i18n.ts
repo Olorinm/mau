@@ -1,6 +1,8 @@
 import { createContext, useContext } from "react";
 
 const zh = {
+  "composer.send": "发送消息",
+  "composer.stop": "停止",
   "app.name": "Mau",
   "app.tagline": "你的云端 Agent",
   "common.cancel": "取消",
@@ -157,6 +159,8 @@ const zh = {
 
 export type MessageKey = keyof typeof zh;
 const en: Record<MessageKey, string> = {
+  "composer.send": "Send message",
+  "composer.stop": "Stop running",
   "app.name": "Mau",
   "app.tagline": "Your cloud agents",
   "common.cancel": "Cancel",

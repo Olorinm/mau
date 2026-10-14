@@ -5,7 +5,6 @@ import { dirname, resolve, join } from "node:path";
 import { z } from "zod";
 import type { Server } from "node:http";
 import { attachSsh, sshKeyId } from "./ssh.js";
-import { hostGateway } from "./host-gateway.js";
 import { webConsole } from "./web.js";
 import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
@@ -50,6 +49,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   if (serving.webRoot) app.use(webConsole(serving.webRoot, publicHomeserver.origin));
   const product = express.Router();
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
+  product.use(express.json({ limit: "16kb" }));
   product.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   // Login needs the public account endpoint, never the internal Matrix service address.
   product.get("/info", (_req, res) => res.json({ homeserver: publicHomeserver.origin }));
@@ -57,8 +57,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.locals.owner = await router.service.authenticate(req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "");
     next();
   });
-  product.use("/agents/:id/host", hostGateway(environments));
-  product.use(express.json({ limit: "16kb" }));
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
   product.get("/options", (_req, res) => res.json({
     environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, workspace }) => ({ id, label, kernel, workspace: workspace === true })),

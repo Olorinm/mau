@@ -347,3 +347,12 @@ body {
     display: none;
   }
 }
+
+/* Product-specific content inside the shared presentation layouts. */
+.mau-agent-detail { padding:24px; overflow:auto; }
+.mau-unconnected { display:grid; place-items:center; min-height:100%; background:var(--c-surface); border-radius:var(--r-lg); }
+.cloud-auth-panel > .agent-ui-button { width:100%; margin-top:20px; }
+.cloud-auth-panel .mau-login-links { margin-top:18px; }
+.mau-field select { padding:8px; border:1px solid var(--c-border); border-radius:8px; background:var(--c-surface); color:var(--c-text); }
+.af-list-panel .mau-error { padding:8px; }
+@media(max-width:760px){.mau-agent-detail{padding:16px}.mau-owner{max-width:100px}}

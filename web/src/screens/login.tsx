@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Button } from "@olorinm/agent-ui/app";
+import { AuthLayout, AuthField, AuthSubmit, SaplingPlaceholder, ConstellationPlaceholder } from "@olorinm/agent-frontend";
 import { ApiError } from "../api/http";
 import { loginWithPassword, loginWithToken, type Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
@@ -21,48 +21,39 @@ export function LoginScreen(props: { onSignedIn(session: Session): void; onToggl
   };
   const ready = mode === "password" ? user.trim() && password : token.trim();
   return (
-    <div className="agent-app mau-login">
-      <form className="mau-login-card" onSubmit={submit}>
-        <div className="mau-login-heading">
-          <strong className="mau-wordmark">{t("app.name")}</strong>
-          <h1>{t("login.title")}</h1>
-          <p>{t("login.subtitle")}</p>
-        </div>
+    <AuthLayout brand={t("app.name")} logo={<SaplingPlaceholder />} title={t("login.title")}
+      description={t("login.subtitle")} illustration={<ConstellationPlaceholder brand={t("app.name")} />}
+      onSubmit={submit} toolbar={<button type="button" className="mau-link" onClick={props.onToggleLanguage}>{t("language.toggle")}</button>}>
         {mode === "password" ? (
           <>
-            <label className="mau-field">
-              <span>{t("login.user")}</span>
+            <AuthField label={t("login.user")}>
               <input value={user} onChange={(e) => setUser(e.target.value)} placeholder={t("login.userPlaceholder")}
                 autoComplete="username" autoCapitalize="none" spellCheck={false} required />
-            </label>
-            <label className="mau-field">
-              <span>{t("login.password")}</span>
+            </AuthField>
+            <AuthField label={t("login.password")}>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password" required />
-            </label>
+            </AuthField>
           </>
         ) : (
-          <label className="mau-field">
-            <span>{t("login.token")}</span>
+          <AuthField label={t("login.token")}>
             <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" required />
-            <small>{t("login.tokenHint")}</small>
-          </label>
+
+          </AuthField>
         )}
         {login.error ? (
           <p className="mau-error" role="alert">
             {errorMessage(t, login.error instanceof ApiError ? login.error.code : "request_failed")}
           </p>
         ) : null}
-        <Button type="submit" variant="primary" disabled={!ready || login.isPending}>
+        <AuthSubmit disabled={!ready || login.isPending}>
           {login.isPending ? t("common.loading") : t("login.submit")}
-        </Button>
+        </AuthSubmit>
         <div className="mau-login-links">
           <button type="button" className="mau-link" onClick={() => { login.reset(); setMode(mode === "password" ? "token" : "password"); }}>
             {mode === "password" ? t("login.useToken") : t("login.usePassword")}
           </button>
-          <button type="button" className="mau-link" onClick={props.onToggleLanguage}>{t("language.toggle")}</button>
         </div>
-      </form>
-    </div>
+    </AuthLayout>
   );
 }

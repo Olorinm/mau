@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ChatProvider, defaultLabels, type ChatTranslate } from "@olorinm/agent-ui";
 import { ConfirmProvider, ToastProvider } from "@olorinm/agent-ui/app";
-import "@olorinm/agent-ui/app.css";
+import "@olorinm/agent-frontend/style.css";
 import "./styles.css";
 import { ApiError } from "./api/http";
 import { App } from "./app";

@@ -50,7 +50,9 @@ node dist/cli.js --help
 Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
 when supplying the pinned archives locally. The web console's
 [Agent UI](https://github.com/Olorinm/agent-ui) release is public too;
-`--ui-archive /path/agent-ui.tgz` supplies it locally.
+`--ui-archive /path/agent-ui.tgz` supplies it locally. The separate product-neutral
+page package uses `--frontend-archive /path/agent-frontend.tgz`; it contains no
+backend adapter. Both UI archives are pinned and checked against the web lockfile.
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:

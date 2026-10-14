@@ -203,3 +203,51 @@ it.skipIf(!built)("recovers a failed Feishu app with its original ID and polls b
   expect(requested).toEqual({ kind: "feishu", appId: "cli_existing", domain: "lark", personalTools: false });
   expect(errors).toEqual([]);
 }, 30_000);
+
+it.skipIf(!built)("composes generic pages with Mau-owned messages and never calls a native kernel or Bridge", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  page.setDefaultTimeout(5000);
+  await page.screenshot({path:"/tmp/mau-neutral-login.png"});
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  const requests:string[]=[];const transactions:string[]=[];let accepted=false;
+  page.on('request',request=>requests.push(new URL(request.url()).pathname));
+  const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, content-type","Access-Control-Allow-Methods":"GET, POST, PUT, OPTIONS"};
+  await page.route('https://example.test/_matrix/client/v3/**',async route=>{
+    const request=route.request(),url=new URL(request.url());
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers:cors});
+    if(url.pathname.endsWith('/createRoom')){
+      expect(request.postDataJSON().invite).toEqual([f.agent.matrixId]);
+      return route.fulfill({json:{room_id:'!direct:example.test'},headers:cors});
+    }
+    if(url.pathname.includes('/send/')){
+      transactions.push(url.pathname.split('/').at(-1)!);
+      expect(request.postDataJSON()).toEqual({msgtype:'m.text',body:'hello from Mau'});
+      if(transactions.length===1)return route.fulfill({status:503,json:{errcode:'M_UNKNOWN'},headers:cors});
+      accepted=true;return route.fulfill({json:{event_id:'sent'},headers:cors});
+    }
+    if(url.pathname.endsWith('/sync'))return route.fulfill({headers:cors,json:{next_batch:'cursor',rooms:{join:accepted?{
+      '!direct:example.test':{state:{events:[{type:'m.room.member',state_key:f.agent.matrixId,content:{membership:'join'}},{type:'m.room.member',state_key:'@alice:example.test',content:{membership:'join'}}]},timeline:{events:[{event_id:'sent',type:'m.room.message',sender:'@alice:example.test',origin_server_ts:1,content:{msgtype:'m.text',body:'hello from Mau'}},{event_id:'reply',type:'m.room.message',sender:f.agent.matrixId,origin_server_ts:2,content:{msgtype:'m.text',body:'Reply received through account messaging'}}]}}
+    }:{}}}});
+    return route.fulfill({status:501,json:{error:'unexpected_fixture_request'},headers:cors});
+  });
+  await page.reload();await see(agentRow(page,'helper')).toBeVisible();
+  await page.screenshot({path:"/tmp/mau-neutral-agents.png"});
+  await page.getByRole('button',{name:'消息',exact:true}).click();
+  await page.getByLabel('开始对话').selectOption(f.agent.id);
+  await page.getByRole('button',{name:'打开对话',exact:true}).click();
+  await page.getByPlaceholder('发送消息…').fill('hello from Mau');
+  await page.getByRole('button',{name:'发送消息',exact:true}).click();
+  await see(page.getByRole('button',{name:'放弃重试',exact:true})).toBeVisible();
+  await see(page.getByPlaceholder('发送消息…')).toHaveValue('hello from Mau');
+  await page.getByRole('button',{name:'重试',exact:true}).click();
+  await see(page.locator('.thread-message-content').getByText('Reply received through account messaging')).toBeVisible();
+  expect(transactions).toHaveLength(2);expect(transactions[0]).toBe(transactions[1]);
+  await see(page.getByPlaceholder('发送消息…')).toHaveValue('');
+  await page.screenshot({path:"/tmp/mau-neutral-messages.png"});
+  expect(requests.some(path=>path.includes('/ask/')||path.includes('/host/')||path.includes('/bridge')||path.includes('/auth/session'))).toBe(false);
+  await page.getByRole('button',{name:'应用',exact:true}).click();
+  await see(page.getByText('尚未接入',{exact:true})).toBeVisible();
+  for(const name of ['钱包','提现','直接内核聊天'])await see(page.getByRole('button',{name,exact:true})).toHaveCount(0);
+  expect(errors).toEqual([]);
+},30_000);
