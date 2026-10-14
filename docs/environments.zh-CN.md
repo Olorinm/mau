@@ -4,7 +4,7 @@
 
 Mau 负责产品开通、环境绑定、Host 初始化、续期、暂停恢复和操作恢复。Router 负责账号、渠道凭据、消息归属与投递；Host 保留原生内核；Environment 操作云资源。
 
-使用 Node.js 24+ 和已登录的 GitHub CLI。Environment 目前为私有组件，固定安装包通过此私有仓库分发，CI 只需本仓库的读取权限。运行 `node scripts/bootstrap.mjs` 构建并安装固定版本的独立组件包，再运行 `npm run build`。无需相邻源码仓库。
+使用 Node.js 24+ 和已登录的 GitHub CLI。固定版本的 Router、Environment 安装包通过 Mau 的公开 GitHub Releases 分发，Environment 源码仓库的可见性单独管理。运行 `node scripts/bootstrap.mjs` 下载并安装这些独立组件包，再运行 `npm run build`。无需相邻源码仓库或私有组件仓库的访问权限。
 
 运营者准备已有 Matrix Application Service、沙箱服务和模板。模板安装 Host 与原生内核，以 `serve --ready-file` 等待私有配置；Host 状态、原生会话和工作区需要持久化。
 

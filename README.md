@@ -23,7 +23,7 @@ communication routes use `/_agent-router/v1`.
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
 `components.json` pins immutable source revisions, including the Router split in
 [PR #52](https://github.com/Olorinm/agent-router/pull/52). Bootstrap downloads the pinned Router and Environment
-archives from this private repository, then installs the components. No sibling
+archives from this repository's public GitHub Releases, then installs the components. No sibling
 checkouts or cross-repository CI credentials are required. Package-lock integrity
 checks cover the archives; the source revisions remain recorded for audit.
 
