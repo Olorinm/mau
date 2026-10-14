@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": true,
   "description": "Mau: an agent product composed from Agent Router, Host and Environment.",
   "type": "module",
@@ -58,7 +58,7 @@
   },
   "peerDependencies": {
     "@agent-router/server": "0.7.0-alpha.2",
-    "@olorinm/agent-environment": "0.2.0-alpha.1"
+    "@olorinm/agent-environment": "0.2.0-alpha.2"
   },
   "allowScripts": {
     "@larksuite/cli@1.0.97": true

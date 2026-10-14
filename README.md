@@ -34,14 +34,15 @@ The build steps below are for running or developing the server.
 
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
 `components.json` pins component source revisions and immutable release archives.
-Router and Host releases are public. Agent Environment 0.2.0-alpha.1 is extracted
-from OMA and distributed in its private repository; the signed-in GitHub account
-must have access. Bootstrap verifies the actual archive bytes against the lockfile.
+Router and Host releases are public. Agent Environment 0.2.0-alpha.2 is a
+private OMA-derived build. This branch pins its local source commit and archive;
+pass `--environment-archive` with that archive until a private release exists.
+The signed-in GitHub account must have access to any private component source. Bootstrap verifies the actual archive bytes against the lockfile.
 Environment uses an uncompressed npm tar archive so CI can reproduce the same
 bytes across platforms without differences from gzip implementations.
 
 ```sh
-node scripts/bootstrap.mjs
+node scripts/bootstrap.mjs --environment-archive /private/agent-environment.tar
 npm run build
 npm test
 node dist/cli.js --help
@@ -89,3 +90,5 @@ and [verification](docs/verification.md). Examples contain placeholders only.
 Production configuration, credentials, environment IDs and live state are private.
 
 License: [Apache-2.0](LICENSE). Source attribution: [NOTICE](NOTICE).
+
+Shared persistent files: [workspaces](docs/workspaces.md).

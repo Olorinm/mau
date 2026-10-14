@@ -8,6 +8,7 @@ import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
 import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
+import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
@@ -20,6 +21,7 @@ export const apiRoot = "/_mau/v1";
 export function createMau(config: ServiceConfig, optionsFile: string, dependencies: {
   router?: Omit<ServiceDependencies, "configure">;
   environments?: () => Promise<Environments>;
+  workspaces?: () => Promise<WorkspaceBackend>;
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
@@ -39,7 +41,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     },
   });
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
-    base, join(config.stateDir, "mau"), dependencies.environments);
+    base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustedProxies ?? false);
@@ -57,18 +59,48 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
   product.get("/options", (_req, res) => res.json({
-    environments: environments.profiles(res.locals.owner).map(({ id, label, kernel }) => ({ id, label, kernel })),
+    environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, workspace }) => ({ id, label, kernel, workspace: workspace === true })),
   }));
+  const filePath = z.string().min(1).max(1023).refine(value => {
+    try { validateArtifactPath(value); return true; } catch { return false; }
+  });
+  product.get("/workspaces", (_req, res) => res.json({ data: environments.workspaces.list(res.locals.owner) }));
+  product.post("/workspaces", (req, res) => {
+    const { name } = z.object({ name: z.string().trim().min(1).max(100) }).strict().parse(req.body);
+    res.status(201).json(environments.workspaces.create(res.locals.owner, name));
+  });
+  product.get("/workspaces/:id", (req, res) => res.json(environments.workspaces.view(
+    environments.workspaces.owned(res.locals.owner, String(req.params.id)))));
+  product.get("/workspaces/:id/files", async (req, res) => {
+    const { prefix } = z.object({ prefix: filePath.optional() }).strict().parse(req.query);
+    res.json({ data: await environments.workspaces.files(res.locals.owner, String(req.params.id), prefix) });
+  });
+  product.put("/workspaces/:id/file", express.raw({ type: "application/octet-stream", limit: "16mb" }), async (req, res) => {
+    const { path } = z.object({ path: filePath }).strict().parse(req.query);
+    if (!Buffer.isBuffer(req.body)) throw new RouterError("binary_body_required", 400);
+    res.json(await environments.workspaces.put(res.locals.owner, String(req.params.id), path, req.body));
+  });
+  product.delete("/workspaces/:id/file", async (req, res) => {
+    const { path } = z.object({ path: filePath }).strict().parse(req.query);
+    res.json({ deleted: await environments.workspaces.remove(res.locals.owner, String(req.params.id), path) });
+  });
+  product.get("/workspaces/:id/download", async (req, res) => {
+    const { path } = z.object({ path: filePath }).strict().parse(req.query);
+    res.json(await environments.workspaces.download(res.locals.owner, String(req.params.id), path));
+  });
   const summary = (owner: string, id: string) => ({
     ...router.connections.summary(router.service.owned(id, owner)),
     environment: environments.summary(owner, id),
   });
   product.get("/agents", (_req, res) => res.json({ data: router.service.agents(res.locals.owner).map(a => summary(a.owner, a.id)) }));
   product.post("/agents", async (req, res) => {
-    const input = z.object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), profileId: z.string().min(1).max(48) }).strict().parse(req.body);
-    if (!environments.profiles(res.locals.owner).some(p => p.id === input.profileId)) throw new RouterError("environment_profile_not_assigned", 403);
+    const input = z.object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), profileId: z.string().min(1).max(48), workspaceId: z.uuid().optional() }).strict().parse(req.body);
+    const profile = environments.profiles(res.locals.owner).find(p => p.id === input.profileId);
+    if (!profile) throw new RouterError("environment_profile_not_assigned", 403);
+    if (input.workspaceId && !profile.workspace) throw new RouterError("environment_workspace_not_supported", 409);
+    if (input.workspaceId) environments.workspaces.owned(res.locals.owner, input.workspaceId);
     const agent = await router.service.create(res.locals.owner, input.name);
-    await environments.begin(res.locals.owner, agent.id, input.profileId);
+    await environments.begin(res.locals.owner, agent.id, input.profileId, input.workspaceId);
     res.status(202).json(summary(res.locals.owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
@@ -79,8 +111,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   product.get("/agents/:id/environment", (req, res) => res.json(environments.summary(res.locals.owner, String(req.params.id)) ?? { state: "unconfigured", busy: false }));
   product.post("/agents/:id/environment", async (req, res) => {
-    const { profileId } = z.object({ profileId: z.string().min(1).max(48) }).strict().parse(req.body);
-    res.status(202).json(await environments.begin(res.locals.owner, String(req.params.id), profileId));
+    const { profileId, workspaceId } = z.object({ profileId: z.string().min(1).max(48), workspaceId: z.uuid().optional() }).strict().parse(req.body);
+    res.status(202).json(await environments.begin(res.locals.owner, String(req.params.id), profileId, workspaceId));
   });
   product.post("/agents/:id/environment/:action", async (req, res) => {
     z.object({}).strict().parse(req.body);

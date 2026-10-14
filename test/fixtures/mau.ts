@@ -8,11 +8,12 @@ import { RouterError as WorkError } from "@agent-router/server";
 import { createMau } from "../../src/app.js";
 import { privateFile } from "../../src/files.js";
 import type { EnvironmentProvider } from "../../src/environments.js";
+import type { WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
 export const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
-export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string } = {}) {
+export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string } = {}, workspaceBackend?: WorkspaceBackend) {
   const directory = mkdtempSync(join(tmpdir(), "router-cloud-"));
   cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
   const cloud = new Map<
@@ -123,6 +124,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
           runtimeId: "personal",
           hostConfigFile,
           owners: [alice],
+          ...(workspaceBackend ? { workspace: true } : {}),
         },
       ],
     },
@@ -137,7 +139,8 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       hsToken: "h".repeat(48),
     },
     optionsFile,
-    { environments: async () => ({ provider: () => provider }), router: {
+    { environments: async () => ({ provider: () => provider }),
+      ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
       provision: async () => {},
       authenticate: async (token) => {
         if (token === "alice") return alice;
