@@ -21,20 +21,22 @@ communication routes use `/_agent-router/v1`.
 ## Build
 
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
-`components.json` pins component source revisions. Router is downloaded from the
-existing public release. This branch uses Agent Environment 0.2.0-alpha.1, extracted
-from OMA; its archive is currently local and unpublished pending upstream
-redistribution authorization. Supply that exact archive explicitly. The lockfile
-checks its integrity; bootstrap does not fall back to the old 0.1 implementation.
+`components.json` pins component source revisions and immutable release archives.
+Router and Host releases are public. Agent Environment 0.2.0-alpha.1 is extracted
+from OMA and distributed in its private repository; the signed-in GitHub account
+must have access. Bootstrap verifies the actual archive bytes against the lockfile.
+Environment uses an uncompressed npm tar archive so CI can reproduce the same
+bytes across platforms without differences from gzip implementations.
 
 ```sh
-node scripts/bootstrap.mjs --environment-archive /path/agent-environment.tgz
+node scripts/bootstrap.mjs
 npm run build
 npm test
 node dist/cli.js --help
 ```
 
-Use `--router-archive /path/router.tgz` as well when supplying both local archives.
+Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
+when supplying the pinned archives locally.
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:

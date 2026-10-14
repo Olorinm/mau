@@ -1,26 +1,34 @@
 {
   "router": {
     "repository": "Olorinm/agent-router",
-    "revision": "46bcab6f7cad0b34b0336521ccd886059ee3daef",
+    "revision": "33e12ab064dd0d665ea4f21befdfc494d360ef0a",
     "archive": {
-      "repository": "Olorinm/mau",
-      "tag": "components-20261013",
-      "asset": "agent-router-server-0.7.0-alpha.1.tgz"
-    }
+      "repository": "Olorinm/agent-router",
+      "tag": "v0.7.0-alpha.2",
+      "asset": "agent-router-server-0.7.0-alpha.2.tgz"
+    },
+    "version": "0.7.0-alpha.2",
+    "integrity": "sha512-HUifh1CMjPpqMPGYF9h9iu6JeO4qVC0R3oJE6OsnfKEdXrImVQid4x1wTYzBVi3Q1vCNoIsWanzC3U+rrsGZSw=="
   },
   "environment": {
     "repository": "Olorinm/agent-environment",
     "revision": "7794d2b7a41e00cb47a0de9b0acd9e17f8d0f691",
     "version": "0.2.0-alpha.1",
-    "integrity": "sha512-tasIHKn+98IcknF4rbjysGb1VvbUg7j4yhZTg4fJQXkxjsKzGvKaylhL5KvRnh1j3ZoquMQpQsA5Mkxw7nMikQ==",
-    "distribution": "local-unpublished",
+    "integrity": "sha512-qDOGOELH1y5cJvVHoWvGuX0/a0Y8bf2JOZKXYzchJ72QKxYDFCU1mrKHzFiZ5H82aOr2RAEuSyhDnjCcvlG/dw==",
+    "distribution": "private-release",
     "upstream": {
       "repository": "BroZhong/open-managed-agents",
       "revision": "e04695152219a91c2ecdff41955dfc3fab73b438"
+    },
+    "archive": {
+      "repository": "Olorinm/agent-environment",
+      "tag": "v0.2.0-alpha.1",
+      "asset": "olorinm-agent-environment-0.2.0-alpha.1.tar"
     }
   },
   "host": {
     "repository": "Olorinm/agent-host",
-    "revision": "f65d6e1809faac532b5c6258390437d8ff6945d7"
+    "revision": "bd44a0477c359afbfd5459809f89d8516f2a25e9",
+    "version": "0.1.0-alpha.9"
   }
 }

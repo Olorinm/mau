@@ -4,5 +4,6 @@
 !tsconfig.json
 !.packages/
 !.packages/*.tgz
+!.packages/*.tar
 !src/
 !src/**

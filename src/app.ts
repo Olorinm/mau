@@ -30,6 +30,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
     hosts: {
       assertReady: (id, binding) => environments.assertReady(id, binding),
+      wake: (id, binding) => environments.wake(id, binding),
       host: (id, binding) => environments.host(id, binding),
       http: (id, binding) => environments.http(id, binding),
     },
@@ -71,17 +72,21 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const { profileId } = z.object({ profileId: z.string().min(1).max(48) }).strict().parse(req.body);
     res.status(202).json(await environments.begin(res.locals.owner, String(req.params.id), profileId));
   });
-  product.post("/agents/:id/environment/:action", (req, res) => {
+  product.post("/agents/:id/environment/:action", async (req, res) => {
     z.object({}).strict().parse(req.body);
     const action = z.enum(["pause", "resume", "destroy", "reconcile"]).parse(req.params.action);
-    res.status(202).json(environments.action(res.locals.owner, String(req.params.id), action));
+    res.status(202).json(await environments.action(res.locals.owner, String(req.params.id), action));
   });
   product.use((_req, res) => res.status(404).json({ error: "not_found" }));
   app.use(apiRoot, product);
   app.use(router.app);
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(error instanceof RouterError ? error.status : error instanceof z.ZodError ? 400 : 500)
-      .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request" : "operation_failed" });
+    // Body parser rejections (malformed JSON, oversized bodies) are client errors.
+    const parser = error instanceof Error && "type" in error && "status" in error &&
+      typeof error.status === "number" && error.status >= 400 && error.status < 500 ? error.status : undefined;
+    res.status(error instanceof RouterError ? error.status : error instanceof z.ZodError ? 400 : parser ?? 500)
+      .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
+        : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed" });
   });
   return { app, router, environments, start: () => router.start(),
     close: async () => { await environments.close(); await router.close(); } };

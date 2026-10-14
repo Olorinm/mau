@@ -69,7 +69,7 @@ async function request(base: string, path: string, token: string | undefined, bo
 async function main() {
   const { values, positionals } = parseArgs({ options, allowPositionals: true });
   const [command, ...args] = positionals;
-  if (values.version) { output({ product: "mau", version: "0.1.0-alpha.1" }); return; }
+  if (values.version) { output({ product: "mau", version: "0.1.0-alpha.2" }); return; }
   if (values.help || !command) { process.stdout.write(help); return; }
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
     use: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],

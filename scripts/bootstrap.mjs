@@ -22,7 +22,7 @@ async function verifyArchive(name, path) {
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
 for (const name of ["router", "environment"]) {
-  const destination = new URL(`agent-${name}.tgz`, packages);
+  const destination = new URL(name === "environment" ? "agent-environment.tar" : "agent-router.tgz", packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);
     await verifyArchive(name, destination);
@@ -34,7 +34,7 @@ for (const name of ["router", "environment"]) {
   const temporary = await mkdtemp(join(tmpdir(), "mau-component-"));
   try {
     // Install exact archives, not platform-dependent repacks of source. npm ci
-    // verifies their lockfile integrity. CI only needs this repository's token.
+    // verifies their lockfile integrity. Private releases require repository access.
     if (!distribution) throw new Error(`${name} is not distributed yet; pass --${name}-archive with the pinned local archive (see README).`);
     execFileSync("gh", ["release", "download", distribution.tag, "--repo", distribution.repository,
       "--pattern", distribution.asset, "--dir", temporary], { stdio: "inherit" });

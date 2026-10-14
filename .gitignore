@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .packages/
+.components/
 state/
 .env
 *.tgz
