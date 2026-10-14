@@ -99,7 +99,8 @@ personal authorization are reported separately in checks.
 
 Mau displays joined account rooms involving its owned Agents. Starting a new
 conversation selects an owned Agent explicitly; a group containing another
-participant is not silently reused for a direct conversation. The product adapter
+participant is not silently reused for a direct conversation. Existing groups are
+marked as groups with participant counts and sender identities. The product adapter
 uses Matrix sync cursors and displays recent text/notice messages. A limited
 history is marked as such. Other message kinds and older-history pagination are
 not implemented in this first account-messaging integration.

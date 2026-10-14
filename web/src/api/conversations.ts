@@ -3,11 +3,11 @@ import type { AgentSummary } from './client';
 import type { Session } from './session';
 
 export interface ConversationMessage { id: string; sender: string; text: string; timestamp: number }
-export interface ConversationView { id: string; title: string; agentId: string; messages: ConversationMessage[]; limited: boolean }
+export interface ConversationView { id: string; title: string; agentId: string; group: boolean; participants: number; messages: ConversationMessage[]; limited: boolean }
 interface MatrixEvent { event_id?: string; type?: string; sender?: string; state_key?: string; origin_server_ts?: number; content?: Record<string, unknown>; redacts?: string }
 interface JoinedRoom { state?: { events?: MatrixEvent[] }; timeline?: { events?: MatrixEvent[]; limited?: boolean } }
 interface Sync { next_batch: string; rooms?: { join?: Record<string, JoinedRoom>; leave?: Record<string, unknown> } }
-interface RoomState { members: Map<string,string>; messages: Map<string,ConversationMessage>; limited: boolean }
+interface RoomState { name?: string; members: Map<string,string>; messages: Map<string,ConversationMessage>; limited: boolean }
 
 /** Mau's account messaging adapter. No OpenGrove format or native kernel execution is involved. */
 export class MauConversations {
@@ -35,9 +35,10 @@ export class MauConversations {
     if(typeof data.next_batch!=='string')throw new ApiError('invalid_response',200);
     for(const id of Object.keys(data.rooms?.leave??{}))this.rooms.delete(id);
     for(const [id,joined] of Object.entries(data.rooms?.join??{})){
-      const room=this.rooms.get(id)??{members:new Map(),messages:new Map(),limited:false};
+      const room:RoomState=this.rooms.get(id)??{members:new Map(),messages:new Map(),limited:false};
       const timeline=joined.timeline?.events??[];
       for(const event of [...(joined.state?.events??[]),...timeline]) {
+        if(event.type==='m.room.name'&&typeof event.content?.name==='string')room.name=event.content.name;
         if(event.type==='m.room.member'&&event.state_key&&typeof event.content?.membership==='string')room.members.set(event.state_key,event.content.membership);
       }
       // Show only rooms involving the account's own Agents, not unrelated personal rooms.
@@ -69,7 +70,9 @@ export class MauConversations {
     return [...this.rooms].flatMap(([id,room])=>{
       const member=[...room.members].find(([member,membership])=>this.owned.has(member)&&['join','invite'].includes(membership));
       const agent=member&&this.owned.get(member[0]);
-      return agent?[{id,title:agent.name,agentId:agent.id,messages:[...room.messages.values()].sort((a,b)=>a.timestamp-b.timestamp),limited:room.limited}]:[];
+      const participants=[...room.members].filter(([,membership])=>['join','invite'].includes(membership));
+      const group=participants.some(([id])=>id!==this.session.owner&&id!==agent?.matrixId);
+      return agent?[{id,title:room.name||agent.name,agentId:agent.id,group,participants:participants.length,messages:[...room.messages.values()].sort((a,b)=>a.timestamp-b.timestamp),limited:room.limited}]:[];
     });
   }
   async start(agentId:string):Promise<string>{

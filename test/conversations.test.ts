@@ -30,6 +30,7 @@ it('uses owned Agent identities, never silently reuses a group, and preserves se
   throw new Error('unexpected_request');
  }));
  const api=new MauConversations(session,[agent]);await api.sync();
+ expect(api.snapshot()[0]).toMatchObject({group:true,participants:3});
  await expect(api.start('not-owned')).rejects.toMatchObject({code:'agent_not_found'});
  expect(await api.start(agent.agent.id)).toBe('direct');
  const body=JSON.parse(String(calls.find(([url])=>url.endsWith('/createRoom'))![1]!.body));expect(body.invite).toEqual([agent.agent.matrixId]);
