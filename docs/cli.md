@@ -3,11 +3,12 @@
 Install Node.js 24 or later, then install the public client archive directly:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.2/olorinm-mau-cli-0.1.0-alpha.2.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.3/olorinm-mau-cli-0.1.0-alpha.3.tgz
 mau --version
 ```
 
-This package needs only Node.js. It does not install the Mau server, Router, Host,
+This package uses Node.js; SSH additionally requires local `ssh` and `ssh-keygen`.
+It does not install the Mau server, Router, Host,
 or the private Environment package. It is distributed through GitHub Releases;
 `npm install -g @olorinm/mau-cli` from the npm registry is not available.
 
@@ -27,7 +28,25 @@ Follow the links or QR codes to connect your own channel. To select an Agent tha
 already exists, use `mau agents` and `mau use NAME` instead of `setup`.
 One account can own several Agents. Each cloud Agent gets its own environment;
 logging in alone does not allocate a container. `mau pause` and `mau resume`
-operate on the selected Agent. The CLI does not currently provide SSH access.
+operate on the selected Agent.
+
+When the environment profile enables SSH, connect to an existing Agent:
+
+```sh
+mau ssh helper
+mau ssh helper -- uname -a
+```
+
+The first command opens an interactive shell; the second executes a command and
+preserves its exit status. The service checks account ownership and tunnels native
+OpenSSH through its HTTPS endpoint. No container IP, cloud API key or deployment
+SSH key is needed. Temporary client keys are removed when the command exits; new
+authentication expires after ten minutes. The host key is verified against the
+authenticated service response. An SSH session lasts at most eight hours.
+
+Resume a paused environment with `mau use helper` and `mau resume` first. Close
+active SSH sessions before pausing or destroying it. Shell access uses the same
+execution user and can read the files and credentials available to that user.
 
 The local session is stored in `~/.config/mau/session.json`. Run login again if
 the server reports an expired account session. `MAU_CONFIG_DIR` selects a separate

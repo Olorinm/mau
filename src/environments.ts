@@ -8,6 +8,7 @@ import { RouterError as WorkError, ServiceHttp, HttpAgentHost, type ConnectionCo
 import type { EnvironmentProvider as ComponentProvider, EnvironmentRef as Ref } from "@olorinm/agent-environment";
 import { DurableStore } from "./store.js";
 import { privateFile } from "./files.js";
+import { prepareSsh, type SshConnection } from "./ssh.js";
 
 const key = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
 const remotePath = z
@@ -39,6 +40,7 @@ export const environmentOptionsSchema = z
             instructions: z.string().max(200_000).optional(),
             directory: remotePath.default("/home/user/.agent-host-service"),
             port: z.number().int().min(1).max(65535).default(37420),
+            ssh: z.object({ port: z.number().int().min(1024).max(65535).default(37421) }).strict().optional(),
             lifetimeSeconds: z.number().int().min(600).max(86400).default(3600),
             onTimeout: z.enum(["kill", "pause"]).default("kill"),
             idlePauseSeconds: z.number().int().min(600).max(2_592_000).optional(),
@@ -103,6 +105,8 @@ const renewalAttempts = 3;
 
 /** Product-owned provisioning journal; the external module alone operates cloud resources. */
 export class EnvironmentManager {
+  private readonly sshActive = new Map<string, number>();
+  private readonly sshPreparing = new Map<string, Promise<unknown>>();
   readonly options: z.infer<typeof environmentOptionsSchema>;
   private readonly store: DurableStore;
   private readonly jobs = new Map<
@@ -135,6 +139,7 @@ export class EnvironmentManager {
     )
       throw new Error("duplicate_environment_profile");
     for (const p of this.options.profiles) {
+      if (p.ssh?.port === p.port) throw new Error("ssh_port_conflicts_with_host");
       p.hostConfigFile = resolve(base, p.hostConfigFile);
       for (const f of p.files) f.source = resolve(base, f.source);
     }
@@ -510,6 +515,50 @@ export class EnvironmentManager {
       await delay(1000, undefined, { signal: this.controller.signal });
     }
   }
+  private async acquireSsh(owner: string, agentId: string) {
+    this.assertOpen(); this.service.owned(agentId, owner);
+    const running = this.jobs.get(agentId);
+    if (running?.kind === "upkeep") await running.promise.catch(() => {});
+    this.assertOpen();
+    const record = this.binding(agentId);
+    if (!record?.ref || record.phase !== "ready" || this.jobs.has(agentId))
+      throw new WorkError("environment_not_ready", 409);
+    const profile = this.profile(record);
+    if (!profile.ssh) throw new WorkError("ssh_not_enabled", 409);
+    const count = this.sshActive.get(agentId) ?? 0;
+    if (count >= 8) throw new WorkError("ssh_connection_limit", 429);
+    this.sshActive.set(agentId, count + 1); this.activity.set(agentId, Date.now());
+    let released = false;
+    return { record, profile, port: profile.ssh.port, release: () => {
+      if (released) return; released = true;
+      const remaining = (this.sshActive.get(agentId) ?? 1) - 1;
+      if (remaining) this.sshActive.set(agentId, remaining); else this.sshActive.delete(agentId);
+      this.activity.set(agentId, Date.now());
+    } };
+  }
+  async prepareSsh(owner: string, agentId: string, publicKey: string) {
+    const lease = await this.acquireSsh(owner, agentId);
+    const previous = this.sshPreparing.get(agentId);
+    const pending = (async () => {
+      await previous?.catch(() => {});
+      this.assertOpen();
+      return prepareSsh(await this.provider(lease.record), lease.record.ref!.id,
+        lease.profile.directory, join(this.directory, "agents", agentId), lease.port, publicKey);
+    })();
+    this.sshPreparing.set(agentId, pending);
+    try { return await pending; }
+    finally { lease.release(); if (this.sshPreparing.get(agentId) === pending) this.sshPreparing.delete(agentId); }
+  }
+  async connectSsh(owner: string, agentId: string, keyId: string): Promise<SshConnection> {
+    const lease = await this.acquireSsh(owner, agentId);
+    try {
+      const provider = await this.provider(lease.record);
+      const endpoint = await provider.httpEndpoint(lease.record.ref!.id, lease.port);
+      const token = readFileSync(join(this.directory, "agents", agentId, "ssh-token"), "utf8");
+      return { url: new URL("/ssh", endpoint.url), headers: { ...endpoint.headers,
+        Authorization: "Bearer " + token, "X-Mau-Ssh-Key": keyId }, release: lease.release };
+    } catch (error) { lease.release(); throw error; }
+  }
   async action(
     owner: string,
     agentId: string,
@@ -525,6 +574,7 @@ export class EnvironmentManager {
     if (!record) throw new WorkError("environment_not_configured", 404);
     if (this.jobs.has(agentId))
       throw new WorkError("environment_operation_running", 409);
+    if (this.sshActive.has(agentId)) throw new WorkError("environment_has_active_ssh", 409);
     if (record.phase === "deleted")
       throw new WorkError("environment_deleted_create_new_agent", 409);
     this.launch(record, () => this.lifecycle(owner, record, action));
@@ -651,7 +701,7 @@ export class EnvironmentManager {
         continue;
       const idle = this.options.profiles.find((p) => p.id === record.profileId)?.idlePauseSeconds;
       if (!this.activity.has(record.agentId)) this.activity.set(record.agentId, Date.now());
-      if (idle && Date.now() - this.activity.get(record.agentId)! >= idle * 1000) {
+      if (idle && !this.sshActive.has(record.agentId) && Date.now() - this.activity.get(record.agentId)! >= idle * 1000) {
         this.launch(
           record,
           async () => {
@@ -697,6 +747,7 @@ export class EnvironmentManager {
     clearInterval(this.timer);
     clearInterval(this.leaseTimer);
     this.controller.abort();
+    await Promise.allSettled(this.sshPreparing.values());
     await Promise.allSettled(this.jobs.values());
     this.store.releaseLease(this.lease);
     this.store.close();

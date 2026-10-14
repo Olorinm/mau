@@ -8,6 +8,8 @@ import { createMau } from "../src/app.js";
 import { privateFile } from "../src/files.js";
 import { DurableStore } from "../src/store.js";
 import { EnvironmentManager, type EnvironmentProvider } from "../src/environments.js";
+import { sshKeyId } from "../src/ssh.js";
+import { connectSshTunnel } from "../src/ssh-transport.js";
 
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => {
@@ -166,6 +168,7 @@ async function fixture() {
   );
   const service = mau.router.service;
   const server = mau.app.listen(0, "127.0.0.1");
+  mau.attach(server);
   await new Promise<void>((r) => server.once("listening", r));
   cleanup.push(
     () =>
@@ -522,4 +525,40 @@ it("a second coordinator cannot acquire the same journal and a stale owner canno
   expect((await f.api(f.path + "/pause", {})).status).toBe(503);
   expect(f.pauses).toBe(0);
   expect(f.creates).toBe(1);
+});
+
+it("SSH requires an assigned owner, explicit profile support and a ready environment; active connections protect lifecycle", async () => {
+  const f = await fixture();
+  const key = "ssh-ed25519 " + Buffer.concat([Buffer.from("AAAAC3NzaC1lZDI1NTE5AAAAIA==", "base64"), Buffer.alloc(32, 7)]).toString("base64");
+  const path = `/agents/${f.agent.id}/ssh`;
+  expect((await f.api(path, { publicKey: key })).status).toBe(409);
+  await f.api(f.path, { profileId: "cloud" }); await f.settled();
+  expect((await f.api(path, { publicKey: key })).data.error).toBe("ssh_not_enabled");
+  f.mau.environments.options.profiles[0]!.ssh = { port: 37421 };
+  expect((await f.api(path, { publicKey: key }, "bob")).status).toBe(404);
+  expect((await f.api(path, { publicKey: key + "\ncommand=bad" })).status).toBe(400);
+  const exec = f.provider.exec.bind(f.provider);
+  f.provider.exec = async function* (id, argv, options) {
+    if (argv[0] === "node" && argv[2] === "prepare") {
+      yield { stream: "stdout", text: JSON.stringify({ username: "user", hostKey: key }) };
+      options?.onExit?.({ exitCode: 0 }); return;
+    }
+    yield* exec(id, argv, options);
+  };
+  const prepared = await f.api(path, { publicKey: key });
+  expect(prepared.status).toBe(200);
+  expect(prepared.data).toEqual({ username: "user", hostKey: key, keyId: sshKeyId(key) });
+  expect(JSON.stringify(prepared.data)).not.toMatch(/private-traffic|Bearer|ssh-token/);
+  // Upgrade must repeat authentication and ownership checks, bypassing neither via HTTP Upgrade.
+  await expect(connectSshTunnel(new URL(path + "/" + sshKeyId(key), f.base), { Authorization: "Bearer bob" }))
+    .rejects.toThrow("ssh_connection_rejected");
+  const lease = await f.mau.environments.connectSsh(alice, f.agent.id, sshKeyId(key));
+  expect(lease.url.pathname).toBe("/ssh");
+  expect(lease.headers["e2b-traffic-access-token"]).toBe("private-traffic-token");
+  expect((await f.api(f.path + "/pause", {})).data.error).toBe("environment_has_active_ssh");
+  expect((await f.api(f.path + "/destroy", {})).data.error).toBe("environment_has_active_ssh");
+  lease.release(); lease.release();
+  expect((await f.api(f.path + "/pause", {})).status).toBe(202);
+  expect((await f.settled()).state).toBe("paused");
+  expect((await f.api(path, { publicKey: key })).data.error).toBe("environment_not_ready");
 });
