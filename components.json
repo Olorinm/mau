@@ -10,9 +10,9 @@
   },
   "environment": {
     "repository": "Olorinm/agent-environment",
-    "revision": "c79526d555278b5e70eb368ecb0c7806980ef3df",
+    "revision": "7794d2b7a41e00cb47a0de9b0acd9e17f8d0f691",
     "version": "0.2.0-alpha.1",
-    "integrity": "sha512-wRRCI3PfzfsisdES+U/JNxdiabhpi+p+z4tCsCHboB9psrB33PZiNdnxKIRh3qqZ6uloo32uorVjP1bEPUxWlQ==",
+    "integrity": "sha512-tasIHKn+98IcknF4rbjysGb1VvbUg7j4yhZTg4fJQXkxjsKzGvKaylhL5KvRnh1j3ZoquMQpQsA5Mkxw7nMikQ==",
     "distribution": "local-unpublished",
     "upstream": {
       "repository": "BroZhong/open-managed-agents",
