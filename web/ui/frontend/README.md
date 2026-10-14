@@ -43,6 +43,12 @@ DOM resource requests do not pass through the Fetch adapter. `fetch` receives th
 original Request/body/signal and must preserve cancellation and streaming. The
 package never overrides `window.fetch`.
 
+`productControls` can mount product-owned controls in the titlebar, for example an
+execution-environment selector. `unavailableFeatures` maps named views or settings
+sections to an explanation. Their navigation entries remain visible; entering
+one renders the explanation instead of implying an unconnected service works.
+Without this configuration, all original views render as before.
+
 `passwordLogin` optionally accepts `{ account, password }` and authenticates with
 the embedding product. The existing login page then renders account/password
 inputs with the original layout and styles. Resolve only after the real account

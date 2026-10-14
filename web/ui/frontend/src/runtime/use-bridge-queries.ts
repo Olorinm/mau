@@ -1,3 +1,4 @@
+import { frontendOptions } from "../host";
 import { openGroveClient } from "../opengrove-client";
 import { authSessionRecoveryOptions } from "./auth-session-recovery";
 import { useEffect } from "react";
@@ -172,7 +173,7 @@ export function useBridgeQueries(input: {
     }),
     queryFn: () => getAppStoreCatalog(),
     ...appStoreCatalogQueryPolicy,
-    enabled: protectedQueriesEnabled && appStoreCatalogQueryPolicy.enabled,
+    enabled: protectedQueriesEnabled && appStoreCatalogQueryPolicy.enabled && !frontendOptions().unavailableFeatures?.["app-store"],
   });
   const providerCatalogKey = providerModelCatalogKey(settingsQuery.data?.settings);
   const providerModelsQuery = useQuery({
@@ -293,7 +294,7 @@ export function useBridgeQueries(input: {
   const clientUpdateQuery = useQuery({
     queryKey: ["client-update"],
     queryFn: () => fetchJson<ClientUpdateResponse>("/auth/client-update", { headers: bridgeHeaders(false) }),
-    enabled: authPolicy.clientUpdateEnabled,
+    enabled: authPolicy.clientUpdateEnabled && !frontendOptions().unavailableFeatures?.["settings.updates"],
     refetchInterval: 6 * 60 * 60_000,
     refetchIntervalInBackground: true,
     staleTime: 60 * 60_000,

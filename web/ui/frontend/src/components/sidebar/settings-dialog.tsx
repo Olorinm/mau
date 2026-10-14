@@ -1,3 +1,4 @@
+import { FeatureBoundary } from "../app-shell/feature-boundary";
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { useIconStylePreference } from "../../appearance";
@@ -620,6 +621,7 @@ export function SettingsDialog(props: {
             <p>{sectionDescription(visibleActiveSection, t)}</p>
           </header>
 
+          <FeatureBoundary feature={`settings.${visibleActiveSection}`}>
           {skeletonLoading ? <SettingsLoadingState /> : null}
 
           {!skeletonLoading && visibleActiveSection === "mode" ? (
@@ -777,6 +779,7 @@ export function SettingsDialog(props: {
           {!skeletonLoading && props.error ? (
             <p className="settings-warning">{rawDiagnosticText(props.error)}</p>
           ) : null}
+          </FeatureBoundary>
         </div>
       </main>
       {providerDeleteTarget ? (

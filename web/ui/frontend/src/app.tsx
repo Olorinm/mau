@@ -1,3 +1,4 @@
+import { FeatureBoundary } from "./components/app-shell/feature-boundary";
 import { interactionDecisionBodySchema, createArtifactOperation } from "@opengrove/protocol";
 import { openGroveClient } from "./opengrove-client";
 import { useBlocker } from "react-router";
@@ -484,7 +485,7 @@ export function App() {
   const extensionsQuery = useQuery({
     queryKey: ["extensions"],
     queryFn: () => openGroveClient.extensions.collection.list(),
-    enabled: bridgeProtectedQueriesEnabled && extensionsInventoryNeeded,
+    enabled: bridgeProtectedQueriesEnabled && extensionsInventoryNeeded && !frontendOptions().unavailableFeatures?.extensions,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -2241,6 +2242,7 @@ export function App() {
       />
 
       <main className="workspace">
+        <FeatureBoundary feature={activeView}>
         {activeView === "chat" ? (
           <ChatWorkspaceView
             empty={messages.length === 0}
@@ -2481,6 +2483,7 @@ export function App() {
             }}
           />
         ) : null}
+        </FeatureBoundary>
       </main>
     </div>
   );

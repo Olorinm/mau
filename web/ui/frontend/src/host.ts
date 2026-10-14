@@ -1,7 +1,13 @@
+import type { ReactNode } from "react";
+
 /** Services belong to the embedding product; UI code never installs a global fetch hook. */
 export interface FrontendOptions {
   /** Absolute service base URL, including its API path and trailing slash. */
   apiBase: string;
+  /** Product controls such as an execution-environment selector; navigation stays intact. */
+  productControls?: ReactNode;
+  /** Explain unavailable service integrations in place, without deleting their entries. */
+  unavailableFeatures?: Partial<Record<FrontendFeature, string>>;
   /** The adapter returns responses matching the frontend contracts. */
   fetch?: typeof globalThis.fetch;
   /** Authentication headers, applied only to requests inside apiBase. */
@@ -61,3 +67,6 @@ export async function frontendFetch(input: RequestInfo | URL, init?: RequestInit
   }
   return (host.fetch ?? globalThis.fetch.bind(globalThis))(input, { ...init, headers });
 }
+
+export type FrontendFeature = "app-store" | "app" | "extensions" |
+  `settings.${"mode" | "kernels" | "ops" | "providers" | "apps" | "voice" | "network" | "desktop" | "updates" | "appearance"}`;

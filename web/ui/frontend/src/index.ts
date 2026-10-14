@@ -1,6 +1,6 @@
 import { configureFrontend, type FrontendHandle, type FrontendOptions } from './host';
 
-export type { FrontendBootstrap, FrontendHandle, FrontendOptions } from './host';
+export type { FrontendBootstrap, FrontendFeature, FrontendHandle, FrontendOptions } from './host';
 
 let mounted = false;
 

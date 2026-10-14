@@ -2,6 +2,8 @@ export const consumerEntry = `import { mountFrontend } from '@olorinm/agent-fron
 import '@olorinm/agent-frontend/style.css';
 window.frontendTestHandle = await mountFrontend(document.getElementById('root'), {
   apiBase: new URL('/fixture-api/', location.href).href,
+  productControls: new URLSearchParams(location.search).has('gaps') ? 'Fixture product control' : undefined,
+  unavailableFeatures: new URLSearchParams(location.search).has('gaps') ? { 'app-store': 'Fixture App Store is not connected', 'settings.desktop': 'Fixture desktop is not connected' } : undefined,
   productName: 'Mau', storageNamespace: 'frontend-test',
   passwordLogin: new URLSearchParams(location.search).has('password-login') ? async credentials => {
     window.frontendTestCredentials = credentials;

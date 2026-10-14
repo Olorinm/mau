@@ -65,6 +65,15 @@ export async function checkBrowser(url) {
     await page.locator('button[type=submit]').click();
     await expect(page.locator('.app-shell')).toBeVisible();
     assert.deepEqual(await page.evaluate(() => window.frontendTestCredentials), { account: 'fixture-owner', password: ' fixture-password ' });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(url + '/?gaps=1&view=app-store');
+    await expect(page.getByText('尚未接入', { exact: true })).toBeVisible();
+    await expect(page.getByText('Fixture App Store is not connected')).toBeVisible();
+    await expect(page.getByText('Fixture product control')).toBeVisible();
+    await expect(page.locator('#app-main-navigation').getByText('App 商店', { exact: true })).toBeVisible();
+    await page.goto(url + '/?gaps=1&view=settings');
+    await page.getByRole('button', { name: '桌面端', exact: true }).click();
+    await expect(page.getByText('Fixture desktop is not connected')).toBeVisible();
     assert.deepEqual([...unexpected], [], 'all fixture calls must be explicitly supported');
     assert.deepEqual(errors, [], 'no browser errors');
     console.log('Browser acceptance passed: full navigation, settings, branding, dark/mobile, email/password gates, credential callback, disposal. Fixtures only; no live model execution.');

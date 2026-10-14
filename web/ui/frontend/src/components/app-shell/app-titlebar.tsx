@@ -1,3 +1,4 @@
+import { frontendOptions } from "../../host";
 import { Download, History, LoaderCircle, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { ClientUpdateResponse } from "../../bridge";
 import type { OpenGroveDesktopClientUpdateState, OpenGroveDesktopSourceUpdateState } from "../../desktop-api";
@@ -93,6 +94,7 @@ export function AppTitlebar(props: {
         onRetry={props.onAccountRetry}
       />
       <div className="app-titlebar-drag-space" aria-hidden="true" />
+      {frontendOptions().productControls}
       {props.developerModeVisible ? (
         <AppChatButton
           open={props.developerModeOpen}
