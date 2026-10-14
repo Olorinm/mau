@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "#protocol": [
+        "./contracts/protocol/index.ts"
+      ],
+      "@opengrove/protocol": [
+        "./contracts/protocol/index.ts"
+      ],
+      "@opengrove/client": [
+        "./contracts/client/index.ts"
+      ],
+      "@opengrove/agent-protocol": [
+        "./contracts/agent-protocol/index.ts"
+      ],
+      "@opengrove/agent-protocol/locale-registry": [
+        "./contracts/agent-protocol/locale-registry.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "shared/**/*.ts"
+  ]
+}

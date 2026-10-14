@@ -1,0 +1,20 @@
+@import "@olorinm/agent-ui/thread.css";
+
+.modal-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg);
+  color: var(--c-text);
+  padding: var(--sp-3);
+  font: inherit;
+  line-height: var(--lh-normal);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.modal-textarea:focus {
+  border-color: var(--c-muted);
+  outline: 0;
+}
