@@ -1,0 +1,349 @@
+/* Mau console layout. Colors, type and spacing come from @olorinm/agent-ui/app tokens. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--c-bg);
+}
+
+.mau-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+.mau-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  border-bottom: 1px solid var(--c-line-06);
+  padding: var(--sp-3) var(--sp-6);
+}
+
+.mau-brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.mau-brand strong,
+.mau-wordmark {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+.mau-brand span,
+.mau-muted {
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.mau-account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.mau-owner {
+  overflow: hidden;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mau-main {
+  min-height: 0;
+  overflow: auto;
+}
+
+.mau-agents {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: var(--sp-6);
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: var(--sp-6);
+}
+
+.mau-agents[data-compact] {
+  grid-template-columns: minmax(0, 1fr);
+  padding: var(--sp-4);
+}
+
+.mau-list,
+.mau-detail,
+.mau-agent {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.mau-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.mau-section-heading h2,
+.mau-agent-title h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.mau-row-selected {
+  background: var(--c-surface-active);
+}
+
+.mau-placeholder {
+  padding: var(--sp-8) 0;
+  text-align: center;
+}
+
+.mau-agent-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.mau-agent-title {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.mau-agent-title span {
+  overflow: hidden;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mau-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.mau-actions:empty {
+  display: none;
+}
+
+.mau-danger {
+  justify-content: flex-end;
+  border-top: 1px solid var(--c-line-06);
+  padding-top: var(--sp-4);
+}
+
+.mau-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--c-error);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.mau-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--c-link);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.mau-login {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--sp-6);
+}
+
+.mau-login-card {
+  display: grid;
+  gap: var(--sp-4);
+  width: min(380px, 100%);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  padding: var(--sp-8) var(--sp-6);
+  box-shadow: var(--shadow-lg);
+}
+
+.mau-login-heading {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.mau-login-heading h1 {
+  font-size: var(--modal-title-font-size);
+  font-weight: var(--fw-bold);
+}
+
+.mau-login-heading p {
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.mau-login-links {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.mau-dialog {
+  width: min(460px, 100%);
+}
+
+.mau-form {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.mau-field {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.mau-field legend {
+  margin-bottom: var(--sp-2);
+  padding: 0;
+}
+
+.mau-field small,
+.mau-check small {
+  display: block;
+  color: var(--c-text-2);
+  font-weight: var(--fw-normal);
+  line-height: var(--lh-normal);
+}
+
+.mau-field input,
+.mau-field select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-normal);
+  padding: 0 var(--sp-3);
+}
+
+.mau-field input:focus,
+.mau-field select:focus {
+  border-color: var(--c-accent);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
+}
+
+.mau-field input[aria-invalid="true"] {
+  border-color: var(--c-error);
+}
+
+.mau-choice,
+.mau-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--c-text);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+  cursor: pointer;
+}
+
+.mau-choice span {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.mau-choice small {
+  color: var(--c-text-2);
+}
+
+.mau-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--sp-2);
+}
+
+.mau-channel-choice {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-1);
+  min-height: 56px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  cursor: pointer;
+  font: inherit;
+  padding: var(--sp-3);
+  text-align: left;
+}
+
+.mau-channel-choice:hover:not(:disabled) {
+  background: var(--c-surface-hover);
+}
+
+.mau-channel-choice:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.mau-link-code {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-3);
+}
+
+.mau-link-code svg {
+  border-radius: var(--r-md);
+  background: var(--og-white);
+}
+
+.mau-inline-form {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.mau-inline-panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+@media (max-width: 640px) {
+  .mau-header {
+    padding: var(--sp-3) var(--sp-4);
+  }
+
+  .mau-brand span,
+  .mau-owner {
+    display: none;
+  }
+}

@@ -23,7 +23,7 @@ communication routes use `/_agent-router/v1`.
 With Node.js 24+, install the client from the public release:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.3/olorinm-mau-cli-0.1.0-alpha.3.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.5/olorinm-mau-cli-0.1.0-alpha.5.tgz
 mau --version
 ```
 
@@ -35,21 +35,22 @@ The build steps below are for running or developing the server.
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
 `components.json` pins component source revisions and immutable release archives.
 Router and Host releases are public. Agent Environment 0.2.0-alpha.2 is a
-private OMA-derived build. This branch pins its local source commit and archive;
-pass `--environment-archive` with that archive until a private release exists.
+private OMA-derived release. Bootstrap downloads its pinned archive from the private repository.
 The signed-in GitHub account must have access to any private component source. Bootstrap verifies the actual archive bytes against the lockfile.
 Environment uses an uncompressed npm tar archive so CI can reproduce the same
 bytes across platforms without differences from gzip implementations.
 
 ```sh
-node scripts/bootstrap.mjs --environment-archive /private/agent-environment.tar
+node scripts/bootstrap.mjs
 npm run build
 npm test
 node dist/cli.js --help
 ```
 
 Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
-when supplying the pinned archives locally.
+when supplying the pinned archives locally. The web console's
+[Agent UI](https://github.com/Olorinm/agent-ui) release is public too;
+`--ui-archive /path/agent-ui.tgz` supplies it locally.
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:
@@ -57,6 +58,9 @@ An independent consumer installs all required archives together:
 execution image, not the Mau server. The CLI is `mau`; the server is `mau-server`.
 
 ## Use
+
+The [web console](docs/web.md) (`MAU_WEB_ROOT`) covers sign-in, agents, environments,
+channels and checks in a browser. The CLI offers the same operations.
 
 The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
 account; Mau does not register a second identity. Password/token files are local

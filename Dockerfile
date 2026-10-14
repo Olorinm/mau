@@ -9,6 +9,10 @@ RUN npm rebuild @larksuite/cli --ignore-scripts=false
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
+COPY web/package.json web/package-lock.json web/
+RUN npm --prefix web ci --ignore-scripts --no-audit --no-fund
+COPY web/ web/
+RUN npm run build:web
 
 FROM node:24-bookworm-slim
 WORKDIR /app
@@ -16,8 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/web/dist ./web
 COPY package.json ./
-ENV HOST=0.0.0.0 PORT=8790 MAU_STATE=/data/mau
+ENV HOST=0.0.0.0 PORT=8790 MAU_STATE=/data/mau MAU_WEB_ROOT=/app/web
 USER node
 EXPOSE 8790
 CMD ["node", "dist/main.js"]

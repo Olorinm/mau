@@ -1,6 +1,7 @@
 # Verification
 
-Run `npm run typecheck`, `npm test` and `npm run build` after bootstrap.
+Run `npm run typecheck`, `npm test` and `npm run build` after bootstrap. `npm run test:web`
+builds the [web console](web.md) and adds its connection-layer and browser tests.
 Lifecycle regressions cover owner isolation, concurrent allocation, private
 bootstrap files, lost responses, unknown execution guards, pause/resume,
 missing environments, renewal failures and coordinator leases.

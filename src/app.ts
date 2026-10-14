@@ -5,6 +5,7 @@ import { dirname, resolve, join } from "node:path";
 import { z } from "zod";
 import type { Server } from "node:http";
 import { attachSsh, sshKeyId } from "./ssh.js";
+import { webConsole } from "./web.js";
 import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
 import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-environment/workspace";
@@ -21,7 +22,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   router?: Omit<ServiceDependencies, "configure">;
   environments?: () => Promise<Environments>;
   workspaces?: () => Promise<WorkspaceBackend>;
-} = {}) {
+} = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
   const publicHomeserver = new URL(options.publicHomeserver ?? `https://${config.serverName}`);
@@ -44,6 +45,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustedProxies ?? false);
+  // The console only reads its own files; product and Router routes keep their own handlers.
+  if (serving.webRoot) app.use(webConsole(serving.webRoot, publicHomeserver.origin));
   const product = express.Router();
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
   product.use(express.json({ limit: "16kb" }));

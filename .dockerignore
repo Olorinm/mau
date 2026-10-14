@@ -7,3 +7,7 @@
 !.packages/*.tar
 !src/
 !src/**
+!web/
+!web/**
+web/node_modules
+web/dist

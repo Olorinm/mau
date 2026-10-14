@@ -6,23 +6,27 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
-const { values } = parseArgs({ options: { "router-archive": { type: "string" }, "environment-archive": { type: "string" } } });
+const { values } = parseArgs({ options: {
+  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" },
+} });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
 await mkdir(packages, { recursive: true });
 const pins = JSON.parse(await readFile(new URL("components.json", root), "utf8"));
 const lock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
+const webLock = JSON.parse(await readFile(new URL("web/package-lock.json", root), "utf8"));
 async function verifyArchive(name, path) {
-  const packageName = name === "router" ? "@agent-router/server" : "@olorinm/agent-environment";
-  const expected = lock.packages[`node_modules/${packageName}`]?.integrity;
+  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", ui: "@olorinm/agent-ui" }[name];
+  const expected = (name === "ui" ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
   const actual = "sha512-" + createHash("sha512").update(await readFile(path)).digest("base64");
   // npm ci may satisfy a file: dependency from its integrity cache without
   // opening the supplied archive. Check the actual bytes before invoking npm.
   if (actual !== expected || pins[name].integrity && pins[name].integrity !== expected)
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
-for (const name of ["router", "environment"]) {
-  const destination = new URL(name === "environment" ? "agent-environment.tar" : "agent-router.tgz", packages);
+const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", ui: "agent-ui.tgz" };
+for (const name of ["router", "environment", "ui"]) {
+  const destination = new URL(archives[name], packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);
     await verifyArchive(name, destination);
@@ -43,5 +47,6 @@ for (const name of ["router", "environment"]) {
   await verifyArchive(name, destination);
 }
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
+execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });
 // Router's official Feishu authorization/tool bridge needs its platform binary.
 execFileSync("npm", ["rebuild", "@larksuite/cli", "--ignore-scripts=false"], { cwd: root, stdio: "inherit" });
