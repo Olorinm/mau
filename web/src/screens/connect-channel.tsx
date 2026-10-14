@@ -24,6 +24,7 @@ export function ConnectChannelDialog(props: {
   const connected = new Set(props.summary.connections.map((c) => c.kind));
   const [kind, setKind] = useState<ChannelKind | null>(props.job?.kind ?? null);
   const [job, setJob] = useState<ConnectionJob | null>(props.job ?? null);
+  const [recovery, setRecovery] = useState<ConnectionJob["recovery"]>();
   const done = (channel: ChannelKind) => {
     toast({ kind: "success", title: channel === "matrix" ? t("connect.matrixReady") : t("connect.ready", { channel: t(`channel.${channel}`) }) });
     props.onConnected();
@@ -39,9 +40,10 @@ export function ConnectChannelDialog(props: {
       <DialogContent className="mau-dialog" aria-describedby={undefined}>
         <DialogTitle>{kind ? t(`channel.${kind}`) : t("connect.title")}</DialogTitle>
         {job ? (
-          <JobProgress session={props.session} agentId={agentId} initial={job} onReady={() => done(job.kind)} />
+          <JobProgress session={props.session} agentId={agentId} initial={job} onReady={() => done(job.kind)}
+            onRecover={(next) => { setRecovery(next); setJob(null); connect.reset(); }} />
         ) : kind ? (
-          <ChannelForm kind={kind} summary={props.summary} session={props.session} pending={connect.isPending}
+          <ChannelForm recovery={recovery} kind={kind} summary={props.summary} session={props.session} pending={connect.isPending}
             onBack={props.job ? undefined : () => { connect.reset(); setKind(null); }}
             onSubmit={(body) => connect.mutate(body)}>
             {error ? <p className="mau-error" role="alert">{errorMessage(t, error)}</p> : null}
@@ -70,14 +72,17 @@ function ChannelForm(props: {
   summary: AgentSummary;
   session: Session;
   pending: boolean;
+  recovery: ConnectionJob["recovery"];
   children: ReactNode;
   onBack: (() => void) | undefined;
   onSubmit(body: ConnectionRequest): void;
 }) {
   const { t } = useI18n();
-  const [domain, setDomain] = useState<"feishu" | "lark">("feishu");
+  const [domain, setDomain] = useState<"feishu" | "lark">(props.recovery?.domain ?? "feishu");
   const hostReady = !!props.summary.host;
-  const [personalTools, setPersonalTools] = useState(hostReady);
+  const [personalTools, setPersonalTools] = useState(props.recovery?.personalTools ?? hostReady);
+  const [appId, setAppId] = useState(props.recovery?.appId ?? "");
+  const existingRequired = props.recovery?.action === "authorize_existing_app";
   const [token, setToken] = useState("");
   const [mail, setMail] = useState({ serviceId: "", inboxId: "", ownerEmail: "", apiKey: "" });
   const mailServices = useQuery({
@@ -89,7 +94,11 @@ function ChannelForm(props: {
   const serviceId = mail.serviceId || services[0]?.id || "";
   const body = (): ConnectionRequest | null => {
     switch (props.kind) {
-      case "feishu": return { kind: "feishu", domain, personalTools: hostReady && personalTools };
+      case "feishu": {
+        const id = appId.trim();
+        if (existingRequired && !id || id && !/^cli_[a-zA-Z0-9_]{1,128}$/.test(id)) return null;
+        return { kind: "feishu", domain, personalTools: hostReady && personalTools, ...(id ? { appId: id } : {}) };
+      }
       case "weixin": return { kind: "weixin" };
       case "matrix": return { kind: "matrix" };
       case "telegram": return token.trim() ? { kind: "telegram", token: token.trim() } : null;
@@ -108,6 +117,11 @@ function ChannelForm(props: {
     <form className="mau-form" onSubmit={submit}>
       {props.kind === "feishu" ? (
         <>
+          <label className="mau-field">
+            <span>{t("connect.appId")}</span>
+            <input value={appId} onChange={(e) => setAppId(e.target.value)} autoComplete="off" required={existingRequired} placeholder="cli_…" />
+            <small>{t(existingRequired ? "connect.recoveryHint" : "connect.appIdHint")}</small>
+          </label>
           <fieldset className="mau-field">
             <legend>{t("connect.domain")}</legend>
             {(["feishu", "lark"] as const).map((value) => (
@@ -167,7 +181,7 @@ function ChannelForm(props: {
   );
 }
 
-function JobProgress(props: { session: Session; agentId: string; initial: ConnectionJob; onReady(): void }) {
+function JobProgress(props: { session: Session; agentId: string; initial: ConnectionJob; onReady(): void; onRecover(recovery: ConnectionJob["recovery"]): void }) {
   const { t, language } = useI18n();
   const router = routerApi(props.session.token);
   const [code, setCode] = useState("");
@@ -176,7 +190,7 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
     queryFn: () => router.job(props.agentId, props.initial.id),
     initialData: props.initial,
     // Keep polling through temporary network/server failures, but stop for expired
-    // jobs and permanent client errors. Router keeps setup jobs for ten minutes.
+    // jobs and permanent client errors. The server supplies each job deadline.
     refetchInterval: (query) => {
       const { data, error } = query.state;
       const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429;
@@ -195,9 +209,18 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
   }, [current.state]);
   const expired = job.error instanceof ApiError && job.error.code === "setup_job_not_found" ||
     !terminal(current) && !(Date.parse(current.expiresAt) > Date.now());
-  if (expired) return <p className="mau-error" role="alert">{t("job.expired")}</p>;
-  if (current.state === "failed")
-    return <p className="mau-error" role="alert">{t("job.failed")}{current.error ? ` · ${errorMessage(t, current.error)}` : ""}</p>;
+  if (expired || current.state === "failed") return (
+    <div className="mau-form">
+      <p className="mau-error" role="alert">{expired ? t("job.expired") : t("job.failed")}
+        {current.error ? ` · ${errorMessage(t, current.error)}` : ""}</p>
+      {current.kind === "feishu" ? <>
+        <p>{t("connect.recoveryHint")}</p>
+        <Button onClick={() => props.onRecover(current.recovery ?? { action: "authorize_existing_app", domain: "feishu", personalTools: false })}>
+          {t("connect.recover")}
+        </Button>
+      </> : null}
+    </div>
+  );
   const expires = new Intl.DateTimeFormat(language, { timeStyle: "short" }).format(new Date(current.expiresAt));
   return (
     <div className="mau-form" aria-live="polite">

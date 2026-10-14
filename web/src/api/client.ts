@@ -25,13 +25,14 @@ export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 export interface ConnectionJob {
   id: string;
   kind: "feishu" | "weixin" | "telegram";
-  state: "starting" | "waiting" | "application" | "authorization" | "telegram_pairing" | "pairing" | "ready" | "failed";
+  state: "starting" | "binding" | "waiting" | "application" | "authorization" | "telegram_pairing" | "pairing" | "ready" | "failed";
   expiresAt: string;
   url?: string;
   error?: string;
+  recovery?: { action: "retry" | "retry_binding" | "authorize_existing_app"; appId?: string; domain: "feishu" | "lark"; personalTools: boolean };
 }
 export type ConnectionRequest =
-  | { kind: "feishu"; domain: "feishu" | "lark"; personalTools: boolean }
+  | { kind: "feishu"; appId?: string; domain: "feishu" | "lark"; personalTools: boolean }
   | { kind: "weixin" }
   | { kind: "telegram"; token: string }
   | { kind: "matrix" }

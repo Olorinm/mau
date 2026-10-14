@@ -47,7 +47,9 @@ export function AgentDetail(props: { session: Session; summary: AgentSummary; on
   const profile = profiles.find((p) => p.id === environment?.profileId);
   const state = environment?.state ?? "unconfigured";
   const busy = !!environment?.busy || lifecycle.isPending || configure.isPending;
-  const pending = (jobs.data ?? []).filter((job) => !["ready", "failed"].includes(job.state) && Date.parse(job.expiresAt) > Date.now());
+  const latest = (jobs.data ?? []).filter((job, index, all) => !all.slice(index + 1).some(next => next.kind === job.kind));
+  const pending = latest.filter(job => !connections.some(connection => connection.kind === job.kind) &&
+    (job.state === "failed" && job.recovery || !["ready", "failed"].includes(job.state) && Date.parse(job.expiresAt) > Date.now()));
   const time = (iso: string) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
 
   const destroy = async () => {
@@ -114,7 +116,7 @@ export function AgentDetail(props: { session: Session; summary: AgentSummary; on
         action={<Button disabled={checks.isPending} onClick={() => checks.mutate()}>{t("check.run")}</Button>}>
         {checks.data ? checks.data.map((check, index) => (
           <ObjectSettingsRow key={`${check.kind}:${check.connectionId ?? index}`}
-            title={check.kind === "host" ? t("check.host") : isChannel(check.kind) ? t(`channel.${check.kind}`) : check.kind}
+            title={check.kind === "host" ? t("check.host") : check.kind === "feishu_personal" ? t("feishu.personal") : check.kind === "connections" ? t("channels.title") : isChannel(check.kind) ? t(`channel.${check.kind}`) : check.kind}
             detail={check.detail}
             value={<ProductStatus compact tone={checkTone[check.status] ?? "neutral"} label={t(`check.${check.status}`)} />} />
         )) : <ObjectSettingsRow title={t("check.empty")} />}

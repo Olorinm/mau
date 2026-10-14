@@ -3,7 +3,7 @@
 Install Node.js 24 or later, then install the public client archive directly:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.5/olorinm-mau-cli-0.1.0-alpha.5.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.6/olorinm-mau-cli-0.1.0-alpha.6.tgz
 mau --version
 ```
 
@@ -72,8 +72,7 @@ workspace among Agents; credentials and native sessions remain per environment.
 
 ## Recover Feishu setup
 
-These recovery commands require matching client and Router builds containing the
-recovery change. App consent connects bot messaging immediately. Personal tools
+Recovery requires Mau CLI 0.1.0-alpha.6 and Router 0.7.0-alpha.3 or later. App consent connects bot messaging immediately. Personal tools
 request separate authorization when needed, or with `mau channel-auth feishu begin`
 and `mau channel-auth feishu complete`. `--messaging-only` omits personal tools.
 

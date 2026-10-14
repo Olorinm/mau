@@ -75,3 +75,12 @@ switching, sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing
 build fails rather than skips. Cloud lifecycle, Matrix and channels are fixtures;
 QR scanning, real Matrix sign-in and channel authorization need deployment-specific
 acceptance.
+
+## Recover an existing Feishu app
+
+On Feishu connection failures, choose **Recover connection** and enter the original
+App ID from the developer console. The console preserves known App ID, region and
+personal-tool choices. The official consent page restores access to that app;
+no App Secret is copied. Saved credentials are reused when only binding failed.
+Failed setup jobs remain available after a Router restart. Bot messaging and
+personal authorization are reported separately in checks.
