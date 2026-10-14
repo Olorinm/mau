@@ -21,7 +21,7 @@
 
 .af-shell { display:grid; grid-template-columns:196px minmax(0,1fr); grid-template-rows:44px minmax(0,1fr); height:100%; min-height:0; background:var(--app-shell-bg,var(--c-bg)); color:var(--c-text); font-family:var(--font-sans); }
 .af-shell[data-navigation-open="false"] { grid-template-columns:minmax(0,1fr); }
-.af-shell .app-titlebar { grid-column:1/-1; }
+.af-shell .app-titlebar { grid-column:1/-1; grid-row:1; display:flex; align-items:center; gap:8px; min-width:0; min-height:0; padding:0 12px; z-index:2; }
 .af-navigation-slot { min-height:0; padding:8px; }
 .af-navigation-slot[hidden] { display:none; }
 .af-navigation { display:flex; flex-direction:column; height:100%; gap:8px; }
