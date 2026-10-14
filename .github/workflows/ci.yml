@@ -51,6 +51,7 @@ jobs:
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
       - run: npm test
+      - run: npm run verify:cli
       - name: Build the pinned Host package
         env:
           HOST_SOURCE: ${{ runner.temp }}/host-source

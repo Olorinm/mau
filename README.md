@@ -18,6 +18,18 @@ and runnable. Mau uses only its public package exports; all account authenticati
 and ownership checks still belong to Router. Product routes use `/_mau/v1` and
 communication routes use `/_agent-router/v1`.
 
+## Install the CLI
+
+With Node.js 24+, install the client from the public release:
+
+```sh
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.2/olorinm-mau-cli-0.1.0-alpha.2.tgz
+mau --version
+```
+
+The client has no server or private component dependencies. See [CLI usage](docs/cli.md).
+The build steps below are for running or developing the server.
+
 ## Build
 
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.

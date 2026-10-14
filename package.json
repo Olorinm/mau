@@ -35,7 +35,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "start": "node dist/main.js",
-    "verify:packages": "npm run build && node scripts/verify-packages.mjs"
+    "verify:packages": "npm run build && node scripts/verify-packages.mjs",
+    "pack:cli": "npm run build && node scripts/pack-cli.mjs",
+    "verify:cli": "npm run build && node scripts/verify-cli.mjs"
   },
   "dependencies": {
     "express": "^5.2.1",
