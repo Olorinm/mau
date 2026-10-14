@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau-web",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.5",
   "private": true,
   "description": "Mau web console: login, agents, environments and channel connections.",
   "type": "module",

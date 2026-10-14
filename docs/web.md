@@ -6,7 +6,7 @@ The Mau web console covers sign-in, agent creation, environment state and lifecy
 channel connection and checks. It calls only the existing Mau (`/_mau/v1`) and
 Router (`/_agent-router/v1`) routes, plus the public Matrix homeserver for password
 sign-in and sign-out. Chat, model settings, credentials and files are not part of
-this release.
+this console.
 
 UI components come from `@olorinm/agent-ui/app` ([Agent UI](https://github.com/Olorinm/agent-ui),
 extracted from OpenGrove). Mau owns the connection layer (`web/src/api`), copy and
@@ -31,9 +31,13 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 ```
 
 With `MAU_WEB_ROOT`, `mau-server` serves the console from the same origin as its
-API, so no CORS configuration is needed. Paths beginning with `/_` are never
-answered with the page. The [Dockerfile](../Dockerfile) builds the console and sets
+API, so no CORS configuration is needed. Paths beginning with `/_` and the
+`/health` routes are never answered with the page. The [Dockerfile](../Dockerfile) builds the console and sets
 `MAU_WEB_ROOT=/app/web`.
+
+The server release archive also includes `web/dist`. After installing the archive,
+point `MAU_WEB_ROOT` to that directory inside the installed Mau package. `npm pack`
+builds both server and console before packaging.
 
 The page's Content Security Policy allows connections only to the same origin and
 the public homeserver (`publicHomeserver` in `mau.json`). That homeserver must
@@ -50,7 +54,9 @@ allow browser CORS on its client API, which Synapse does by default.
 
 ## Channels
 
-Router setup jobs are polled every two seconds. Router's `qr` field is a terminal
+Router setup jobs are polled every two seconds, including after temporary network,
+server or rate-limit errors. Errors show a retry button; missing or expired jobs
+stop polling. Router's `qr` field is a terminal
 drawing; the console renders its own QR code from the job's `https` link and
 offers the same link to open. Jobs live ten minutes in Router memory; an expired or
 unknown job asks the user to start again. Feishu personal-tool authorization uses

@@ -23,7 +23,9 @@ npm run build:web
 MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 ```
 
-设置 `MAU_WEB_ROOT` 后，`mau-server` 以和接口相同的域名提供控制台，不需要配置跨域。以 `/_` 开头的路径不会返回页面。[Dockerfile](../Dockerfile) 会构建控制台并设置 `MAU_WEB_ROOT=/app/web`。
+设置 `MAU_WEB_ROOT` 后，`mau-server` 以和接口相同的域名提供控制台，不需要配置跨域。以 `/_` 开头的路径和 `/health` 路由不会返回页面。[Dockerfile](../Dockerfile) 会构建控制台并设置 `MAU_WEB_ROOT=/app/web`。
+
+服务端发布包包含 `web/dist`；安装发布包后，将 `MAU_WEB_ROOT` 指向已安装 Mau 包中的该目录。`npm pack` 会先构建服务端和控制台。渠道任务遇到临时网络错误、服务端错误或限流后会继续轮询，并提供重试按钮；任务不存在或已过期时停止轮询。
 
 页面的内容安全策略只允许连接同域和公开 Matrix 服务器（`mau.json` 中的 `publicHomeserver`）。该服务器需要允许浏览器跨域访问客户端接口，Synapse 默认允许。
 
