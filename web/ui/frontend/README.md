@@ -1,119 +1,99 @@
 # Agent Frontend
 
-`@olorinm/agent-frontend` is the complete OpenGrove browser application extracted
-into a separately installable package. It lives alongside the smaller
-`@olorinm/agent-ui` component library; importing that library does not load this app.
+`@olorinm/agent-frontend` provides product-neutral React layouts and interaction
+components adapted from OpenGrove's presentation code. It is not a copy of the
+OpenGrove application and does not require its backend.
 
-## Mount in a product
+## Ownership
 
-Install the frontend archive, React 19 and React DOM 19. Build the consumer with
-an ESM browser bundler such as Vite. Node 24 is used for package development.
+| Package | Owns |
+| --- | --- |
+| Agent Frontend | Layout, visual rendering, navigation presentation, editing interactions |
+| Embedding product | Routes, navigation entries, authentication, data fetching, persistence, authorization and business workflows |
+| Backend components | Their own public APIs and service behavior |
 
-```ts
-import { mountFrontend } from '@olorinm/agent-frontend';
+The frontend does not import or call Mau, Agent Router, Agent Host, Agent
+Environment, Matrix, or OpenGrove services. It has no HTTP client, API base,
+authentication callback, protocol schemas, event polling, browser storage, global
+router, or application bootstrap. No service adapter is required to render it.
+
+## Compose a product
+
+```tsx
+import { AppShell, Navigation, Conversation } from '@olorinm/agent-frontend';
 import '@olorinm/agent-frontend/style.css';
 
-const frontend = await mountFrontend(document.getElementById('root')!, {
-  apiBase: new URL('/frontend-api/', location.href).href,
-  productName: 'Mau',
-  storageNamespace: 'mau',
-  // Optional product adapter: return real responses in the frontend wire format.
-  // fetch: mauFrontendFetch,
-  // headers: async () => ({ Authorization: `Bearer ${await sessionToken()}` }),
-});
-
-// When the product tears down this application:
-frontend.dispose();
+<AppShell brand="My product" navigation={
+  <Navigation items={navigationItems} selectedId={page} onSelect={setPage} />
+}>
+  <Conversation
+    messages={messages.map(message => ({
+      id: message.id,
+      role: message.fromMe ? 'user' : 'assistant',
+      content: <p>{message.text}</p>,
+    }))}
+    composer={{ value: draft, onChange: setDraft, onSend: sendFromMyProduct }}
+    notice={error && <p role="alert">{error}</p>}
+  />
+</AppShell>
 ```
 
-Use a full-page mount and an HTML viewport meta tag. The original application
-owns the browser router, document language/theme and local UI state. Mount one
-instance per document. A detached root or simultaneous mount is rejected.
-Disposal unmounts React, disposes the router and releases query/theme listeners.
-Changing API base, product name or storage namespace requires a new document;
-existing stores and typed clients deliberately keep one identity. A remount with
-the same identity is supported. Authentication callbacks can return renewed tokens.
-A failed initial bootstrap rejects `mountFrontend`; the embedding product can
-render an error and retry. Runtime render errors use the original error boundary.
+The product supplies message state and performs delivery. `onSend` does not clear
+the draft, invent an assistant reply, or select a backend. Supply pending/error
+state and update the input after the product confirms its operation. A callback
+may use any service or local state; the component does not know which.
 
-`headers` is applied only to the configured API origin and path. Static media and
-external links do not receive these authentication headers. Use same-origin
-cookie authentication or signed resource URLs for images, frames and downloads:
-DOM resource requests do not pass through the Fetch adapter. `fetch` receives the
-original Request/body/signal and must preserve cancellation and streaming. The
-package never overrides `window.fetch`.
+Install React 19, React DOM 19 and the Agent UI alpha.2 archive in the consumer.
+Agent UI is a peer dependency so shared providers have a single context instance. Components require no mounting
+singleton and may be composed into an existing React tree or rendered separately.
+Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;
+the product owns the document, routing, theme selection and deployment policy.
+`FrontendProvider` supplies instance-local presentation labels; it never mutates
+the document language. Importing CSS is an explicit opt-in to the shared design
+tokens and component styling. Editor JavaScript loads lazily when used.
 
-`productControls` can mount product-owned controls in the titlebar, for example an
-execution-environment selector. `unavailableFeatures` maps named views or settings
-sections to an explanation. Their navigation entries remain visible; entering
-one renders the explanation instead of implying an unconnected service works.
-Without this configuration, all original views render as before.
+## Components
 
-`passwordLogin` optionally accepts `{ account, password }` and authenticates with
-the embedding product. The existing login page then renders account/password
-inputs with the original layout and styles. Resolve only after the real account
-session exists; the frontend revalidates it through `/auth/session`. Reject with
-a user-facing error on failure. Passwords stay in component state and are cleared
-on success. Without this option, the original email/code login remains.
+- `AppShell`, `Navigation`: titlebar, brand/toolbar slots and caller-defined entries.
+- `ListDetailLayout`, `ItemList`, `PageHeader`, `DetailPanel`: contacts, conversations,
+  resource lists or other caller-defined entities; compact back navigation.
+- `Conversation`: message presentation and composer, composed from Agent UI. Tool
+  activity, approval choices and other message content can be supplied as React
+  nodes without coupling to a kernel protocol.
+- `AuthLayout`, `AuthField`, `AuthSubmit`: original form layout and styling. All fields,
+  validation, submission and authentication are supplied by the product.
+- `Catalog`: cards for caller-supplied apps, extensions or other items; no store,
+  purchase, installation or extension-management implementation.
+- `SettingsLayout`: caller-defined sections and controls; no built-in billing,
+  desktop updater, account, provider or kernel settings.
+- `FileEditor`: code/Markdown editor adapted from the original CodeMirror/Milkdown
+  implementation. `value`, changes and selection are caller-owned. Reading,
+  saving and conflict policy stay outside the component.
+- `FilePreview`, `FileConflictEditor`: content/media preview and conflict editing.
+  Resource URLs are supplied by the product, never synthesized as vault or API
+  paths. Media elements may load supplied URLs; downloads and authenticated
+  resources remain the caller's responsibility.
+- `SaplingPlaceholder`, `ConstellationPlaceholder`: optional attributed artwork.
+  No product name or artwork is selected automatically.
 
-`productName` changes the app wordmark and translated product references. The
-original sapling artwork, protocol identifiers, desktop bridge contract and
-external source attribution remain. `storageNamespace` isolates local UI settings
-and account cache from another product on the same origin.
+Low-level messages, tools, approval/question controls and UI primitives remain in
+`@olorinm/agent-ui`. Its optional Host adapter is not imported by this package.
 
-## Pages and platform support
+## Removed from the earlier draft
 
-The package retains the original layout, navigation, responsive styles, themes,
-translations and gates, including:
+The previous unreleased draft's `mountFrontend`, `apiBase`, Fetch adapter,
+`passwordLogin`, `unavailableFeatures`, copied Bridge/protocol clients and source
+application are removed. Product navigation is now ordinary caller data.
 
-- Rooms, employees, profiles, conversations and direct kernel chat.
-- Native run/session rendering, tools, approval and question interactions.
-- File browsing, Markdown/code editing, previews and conflict comparison.
-- Mounted Apps, App Store, app builder, MCP Apps and permissions.
-- Skills, MCP, kernel plugins, hooks and other extension management.
-- Account/onboarding and all settings sections: mode, kernels, appearance,
-  desktop, updates, network, operations, providers, Apps and voice.
-- Desktop startup/settings UI and its existing bridge hooks. A browser package
-  does not install Electron or implement the native desktop bridge.
+OpenGrove's email-code authentication, direct kernel chat page, wallet/withdrawal,
+PM/delegation, historical message normalization, cloud account, desktop and store
+workflows are not included. A product can build its own workflows using the same
+visual components without implementing OpenGrove compatibility endpoints.
 
-No additional product-specific entry hiding is introduced. Existing upstream
-mode, authentication and platform policies still apply. Direct kernel chat keeps
-its original setting rather than being removed as dead code.
+This package does not alter the upstream OpenGrove checkout. Adoption there is a
+separate consumer migration, not a requirement for another product to use it.
 
-Excluded by scope: the Chrome/Edge extension, unused knowledge-property editing
-and last-library state, the unused standalone operations view/sidebar, and the
-unreferenced Disclosure forwarding module. Markdown editing/preview and the
-operations panel inside Settings remain.
-
-## Service boundary
-
-An independent UI does not imply identical backend APIs. The default transport
-expects the original frontend contracts under `apiBase`; it works with an
-OpenGrove Bridge. A product such as Mau supplies a Fetch adapter or implements a
-product-owned HTTP facade. Router continues owning accounts/messages/routing,
-Host owns native execution and approvals, and Environment owns execution
-resources. None of those services are copied into this package.
-
-The generated `@olorinm/agent-frontend/contracts.openapi.json` describes the typed
-Host operations. The extracted `contracts/` source is the versioned reference for
-that catalog. Legacy frontend query shapes are declared in `src/bridge-*-types.ts`
-and their call sites in `src/bridge-client.ts` and `src/runtime/use-bridge-queries.ts`;
-they are not all covered by the typed catalog yet. A consumer adapter must cover
-these too. Missing operations must fail explicitly, never return fabricated
-success, empty account data or invented native capability claims.
-
-`bootstrap` can supply `{ environment: { preset }, mcpApps: { sandboxOrigin? } }`
-for a product without an OpenGrove Bridge discovery endpoint. This is presentation
-configuration, not an assertion about native execution capabilities. Otherwise
-bootstrap is loaded through the original discovery contract. Embedded MCP Apps
-still require the original sandbox and media routes and their security rules.
-
-The HTML shell, build-version reload policy, global error logging, CSP, resource
-proxying and deployment remain the embedding application's responsibilities.
-The original desktop update UI and hooks are retained separately from the
-OpenGrove website's `version.json` reload watcher.
-
-## Develop and verify
+## Verify and preview
 
 ```sh
 npm ci
@@ -122,30 +102,16 @@ npm test
 npx playwright install chromium
 npm run test:browser
 npm run test:package
+npm run dev
 ```
 
-`test:browser` uses an explicitly empty local fixture, checks retained navigation,
-settings, branding, dark/mobile rendering, the original auth gate and disposal.
-It does not claim live model/cloud acceptance. `test:package` installs the actual
-archive in a fresh temporary project, checks exported types, builds with that
-project's dependencies and runs the same browser acceptance against its output.
-No source aliases or sibling repository access are used by that consumer.
+The demo uses explicitly local example data and callbacks, with no backend.
+Tests enforce the dependency boundary, server-render two independent brands,
+exercise callbacks/error states and file editing, inspect compact/dark layouts,
+and reject service requests. The archive test installs the real tarball in an
+independent temporary consumer with no source aliases or repository dependencies.
+These are component tests, not acceptance of live cloud/model services.
 
-To inspect the standalone consumer against a real local Bridge:
-
-```sh
-FRONTEND_BACKEND_URL=http://127.0.0.1:37371 npm run dev
-```
-
-`examples/mau` demonstrates the public mounting API and brand setting. It is an
-integration preview, not a completed mapping of Mau's product APIs. The example
-proxies to the configured local service and contains no fake production backend.
-
-## Provenance
-
-See `source-manifest.json` for the upstream commit and original source hashes,
-and `NOTICE` for attribution. Source-presence tests keep every upstream page
-except the approved exclusions; stylesheet hashes and navigation catalogs are
-checked against the recorded source. The browser-safe shared utilities and
-protocol/client bindings are internal copies from that same revision, so building
-this package never reaches into the OpenGrove checkout.
+See `source-manifest.json`, `NOTICE`, and `THIRD_PARTY_NOTICES.md` for attribution.
+The manifest records adapted presentation sources; it is not a promise to mirror
+OpenGrove's application or synchronize product features.

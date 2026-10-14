@@ -1,10 +1,13 @@
 Agent Frontend
 
-The frontend implementation is extracted from OpenGrove, Copyright 2026 OpenGrove contributors, Apache-2.0.
+Selected presentation code and styles are adapted from OpenGrove,
+Copyright 2026 OpenGrove contributors, Apache-2.0.
 Source: https://github.com/open-grove/opengrove/tree/8b365ed
-All existing product pages, styles and translations retain that attribution.
-Shared browser-safe types and utilities are included under shared/; protocol contracts and client binding are under contracts/. No server or Electron runtime is included.
+See source-manifest.json for the adapted visual/editor source files.
 
-The separately distributed @olorinm/agent-ui dependency preserves its own source and third-party notices.
+No OpenGrove application, service implementation, protocol client or compatibility
+layer is included. Optional sapling and constellation artwork is retained as
+replaceable placeholder art with its original attribution.
 
-This product includes software developed by OpenGrove contributors and third-party components identified in THIRD_PARTY_NOTICES.md and licenses/.
+The separately distributed @olorinm/agent-ui dependency preserves its own source
+and third-party notices. See THIRD_PARTY_NOTICES.md and licenses/.

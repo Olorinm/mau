@@ -4,8 +4,9 @@ Reusable React chat and application components for any product. Rendering is ind
 
 This is an alpha package, distributed as a build archive. It is not published to the npm registry yet.
 
-For the complete OpenGrove application (pages, navigation, settings, Apps and
-desktop hooks), see the separate [Agent Frontend package](frontend/README.md).
+For product-neutral page layouts, navigation, conversations, form surfaces and
+file editing, see the separate [Agent Frontend package](frontend/README.md).
+It takes caller-owned data and callbacks and has no backend or product protocol dependency.
 It accepts a product-owned service adapter and does not add application runtime
 dependencies to this component package.
 

@@ -1,28 +1,14 @@
-import { configureFrontend, type FrontendHandle, type FrontendOptions } from './host';
-
-export type { FrontendBootstrap, FrontendFeature, FrontendHandle, FrontendOptions } from './host';
-
-let mounted = false;
-
-/** Mount the complete application. One frontend instance owns the document. */
-export async function mountFrontend(element: HTMLElement, options: FrontendOptions): Promise<FrontendHandle> {
-  if (mounted) throw new Error('frontend_already_mounted');
-  if (!element.isConnected) throw new Error('frontend_mount_element_detached');
-  configureFrontend(options);
-  mounted = true;
-  try {
-    // Storage, theme and API clients initialize after the host supplies their identity.
-    const { mountApplication } = await import('./application');
-    const application = await mountApplication(element);
-    let disposed = false;
-    return { dispose() {
-      if (disposed) return;
-      disposed = true;
-      application.dispose();
-      mounted = false;
-    } };
-  } catch (error) {
-    mounted = false;
-    throw error;
-  }
-}
+import './style.css';
+export { FrontendProvider, frontendLabels, useFrontendLabels, type FrontendLabelKey, type FrontendTranslate } from './provider';
+export { AppShell, Navigation, type NavigationItem } from './shell';
+export { ItemList, ListDetailLayout, PageHeader, DetailPanel, type ListItem } from './layout';
+export { AuthLayout, AuthField, AuthSubmit } from './auth';
+export { Conversation, type MessageView } from './conversation';
+export { Catalog, type CatalogItem } from './catalog';
+export { SettingsLayout, type SettingsSection } from './settings';
+export { FileEditor, type FileEditorProps, type FileEditorHandle } from './files/editor';
+export { FilePreview, type FilePreviewProps, type FilePreviewKind } from './files/preview';
+export { FileConflictEditor } from './files/conflict-editor';
+export { type MarkdownEditorSelection } from './files/code-editor';
+export { SaplingPlaceholder } from './artwork/sapling';
+export { ConstellationPlaceholder } from './artwork/constellation';
