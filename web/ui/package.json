@@ -6,8 +6,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Olorinm/agent-host.git",
-    "directory": "packages/react"
+    "url": "https://github.com/Olorinm/agent-ui.git"
   },
   "files": [
     "dist",
@@ -40,7 +39,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-styles.mjs",
     "prepack": "npm run build",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:browser": "npm run build && node scripts/test-browser.mjs",
+    "test:package": "node scripts/test-package.mjs"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -62,9 +63,17 @@
     "thinking-orbs": "0.3.2"
   },
   "devDependencies": {
+    "@olorinm/agent-host": "https://github.com/Olorinm/agent-host/releases/download/v0.1.0-alpha.9/olorinm-agent-host-0.1.0-alpha.9.tgz",
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0"
+    "typescript": "5.9.3"
+  },
+  "homepage": "https://github.com/Olorinm/agent-ui#readme",
+  "engines": {
+    "node": ">=24"
   }
 }

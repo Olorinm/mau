@@ -5,10 +5,9 @@ Reusable React chat and application components for any product. Rendering is ind
 This is an alpha package, distributed as a build archive. It is not published to the npm registry yet.
 
 ```sh
-# From the repository root:
+# From this repository:
 npm ci
-npm --workspace @olorinm/agent-ui run build
-npm pack --workspace @olorinm/agent-ui
+npm pack
 
 # From a separate React 19 product:
 npm install /path/to/olorinm-agent-ui-0.1.0-alpha.2.tgz
@@ -58,6 +57,6 @@ The composer accepts `attachments`, `before`, `inputPrefix`, `footerLeft` and `f
 
 The optional Host adapter shows native approvals without renaming IDs or adding choices. Questions preserve multiple values and secret fields. Forms and unknown native requests have an explicit JSON editor with a `renderNative` replacement slot; it is not a complete JSON Schema form generator. URL elicitation requires explicit user completion. Provide `labels` for adapter copy and `ChatProvider.translate` for common controls.
 
-See the repository's [React UI guide](https://github.com/Olorinm/agent-host/blob/main/docs/react-ui.md) and [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor).
+See the [guide](docs/guide.md) and Agent Host's [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor). Verify with `npm test`, `npm run test:browser` and `npm run test:package`.
 
 The presentation implementation was extracted from OpenGrove under Apache-2.0. Source and third-party attribution are in `NOTICE`. OpenGrove is a consumer of this package; its business models and services are not dependencies.
