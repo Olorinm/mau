@@ -30,5 +30,12 @@
     "repository": "Olorinm/agent-host",
     "revision": "bd44a0477c359afbfd5459809f89d8516f2a25e9",
     "version": "0.1.0-alpha.9"
+  },
+  "ui": {
+    "repository": "Olorinm/agent-host",
+    "revision": "88185f17616d9f1e26ba1e76952b3670f3f736da",
+    "workspace": "@olorinm/agent-ui",
+    "version": "0.1.0-alpha.2",
+    "integrity": "sha512-spPloPmtMlRwpeLxR81Sm12/aBKZata4QB4ZC52dU8SfqtdiiHXAsDVci3+zR69su+yvkWQzxhj0yQdOe+BtFA=="
   }
 }

@@ -48,7 +48,9 @@ node dist/cli.js --help
 ```
 
 Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
-when supplying the pinned archives locally.
+when supplying the pinned archives locally. Bootstrap rebuilds the web console's
+`@olorinm/agent-ui` from its pinned public source; `--ui-archive /path/agent-ui.tar`
+supplies that archive instead.
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:
@@ -56,6 +58,9 @@ An independent consumer installs all required archives together:
 execution image, not the Mau server. The CLI is `mau`; the server is `mau-server`.
 
 ## Use
+
+The [web console](docs/web.md) (`MAU_WEB_ROOT`) covers sign-in, agents, environments,
+channels and checks in a browser. The CLI offers the same operations.
 
 The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
 account; Mau does not register a second identity. Password/token files are local

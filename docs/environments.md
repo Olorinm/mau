@@ -27,12 +27,14 @@ MATRIX_AS_TOKEN_FILE=/private/as-token
 MATRIX_HS_TOKEN_FILE=/private/hs-token
 MAU_CONFIG_FILE=/private/mau.json
 MAU_STATE=/data/mau
+MAU_WEB_ROOT=/app/web   # optional: serve the web console from the same origin
 HOST=0.0.0.0
 PORT=8790
 ```
 
 Start `mau-server`. Route `/_mau/v1`, `/_agent-router/v1` and Matrix Application
-Service `/_matrix/app/v1` to it. Only explicitly trusted proxy addresses belong in
+Service `/_matrix/app/v1` to it. With `MAU_WEB_ROOT`, also route the remaining
+paths to it for the [web console](web.md). Only explicitly trusted proxy addresses belong in
 `AGENT_TRUST_PROXY`. Router external identity options are also available through
 `loadServiceConfig`. [Dockerfile](../Dockerfile) provides a generic image; run
 bootstrap first, mount private config read-only and writable state separately.

@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 // Install separately built components; application code imports only their public package exports.
-import { mkdir, copyFile, readFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, copyFile, readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
-const { values } = parseArgs({ options: { "router-archive": { type: "string" }, "environment-archive": { type: "string" } } });
+import { gunzipSync } from "node:zlib";
+const { values } = parseArgs({ options: {
+  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" },
+} });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
 await mkdir(packages, { recursive: true });
 const pins = JSON.parse(await readFile(new URL("components.json", root), "utf8"));
 const lock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
+const webLock = JSON.parse(await readFile(new URL("web/package-lock.json", root), "utf8"));
 async function verifyArchive(name, path) {
-  const packageName = name === "router" ? "@agent-router/server" : "@olorinm/agent-environment";
-  const expected = lock.packages[`node_modules/${packageName}`]?.integrity;
+  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", ui: "@olorinm/agent-ui" }[name];
+  const expected = (name === "ui" ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
   const actual = "sha512-" + createHash("sha512").update(await readFile(path)).digest("base64");
   // npm ci may satisfy a file: dependency from its integrity cache without
   // opening the supplied archive. Check the actual bytes before invoking npm.
@@ -42,6 +46,26 @@ for (const name of ["router", "environment"]) {
   } finally { await rm(temporary, { recursive: true, force: true }); }
   await verifyArchive(name, destination);
 }
+// The web console's shared UI is reproduced from its public source revision as an uncompressed npm tar.
+const ui = new URL("agent-ui.tar", packages);
+if (values["ui-archive"]) await copyFile(resolve(values["ui-archive"]), ui);
+else {
+  const { repository, revision, workspace, version } = pins.ui;
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision))
+    throw new Error("immutable_component_revision_required");
+  const temporary = await mkdtemp(join(tmpdir(), "mau-ui-"));
+  try {
+    const source = join(temporary, "source");
+    execFileSync("git", ["clone", "--filter=blob:none", "--no-checkout", `https://github.com/${repository}.git`, source], { stdio: "inherit" });
+    execFileSync("git", ["-C", source, "checkout", "--quiet", revision], { stdio: "inherit" });
+    execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: source, stdio: "inherit" });
+    execFileSync("npm", ["pack", "--workspace", workspace, "--pack-destination", temporary, "--silent"], { cwd: source, stdio: "inherit" });
+    const name = workspace.replace(/^@/, "").replace("/", "-") + `-${version}.tgz`;
+    await writeFile(ui, gunzipSync(await readFile(join(temporary, name))));
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+}
+await verifyArchive("ui", ui);
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
+execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });
 // Router's official Feishu authorization/tool bridge needs its platform binary.
 execFileSync("npm", ["rebuild", "@larksuite/cli", "--ignore-scripts=false"], { cwd: root, stdio: "inherit" });

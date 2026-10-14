@@ -50,7 +50,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
+      - run: npm --prefix web run typecheck
+      - run: npm run build:web
+      - run: npx playwright install --with-deps chromium
       - run: npm test
+        env:
+          # The browser acceptance must not skip silently when the console build is missing.
+          MAU_WEB_E2E: "1"
       - run: npm run verify:cli
       - name: Build the pinned Host package
         env:
