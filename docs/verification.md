@@ -42,3 +42,25 @@ deploy key (`ENVIRONMENT_READ_KEY`), rebuilds the uncompressed release archive a
 checks its exact lockfile integrity before installation. It does not upload or
 cache the private package. Fork CI requires an operator-authorized run with access.
 The public Mau archive contains no Environment implementation or deployment state.
+
+## Shared workspaces — 2026-10-14
+
+Mau 0.1.0-alpha.4 with Environment 0.2.0-alpha.2 was deployed and checked against
+real Volcengine VKE/VCI and TOS. The authenticated product API created an owned
+workspace and two Agents using the same workspace. API-uploaded binary bytes
+with Unicode/percent-literal filenames were visible in both containers. A write
+from one container was read by the other and returned through the product's
+file list and signed download APIs.
+
+Product pause/resume reused the original environment ID, reverified the mount,
+and preserved both private container state and shared bytes. Destroying both
+environments left the workspace downloadable. The temporary environments were
+removed. Existing environment profiles and bindings remained ready. This
+acceptance exercised actual Host bootstrap/readiness and storage; it did not run
+an additional LLM turn. Raw reports, credentials and production IDs remain in
+private operational state.
+
+Local validation passed the 21 Mau tests, independent CLI installation and the
+four-package Mau/Router/Environment/Host consumer. Environment separately passed
+119 original OMA tests and 35 provider/workspace checks. See
+[shared workspaces](workspaces.md) for configuration and API semantics.
