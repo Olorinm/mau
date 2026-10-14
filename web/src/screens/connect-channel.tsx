@@ -175,8 +175,13 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
     queryKey: ["job", props.agentId, props.initial.id],
     queryFn: () => router.job(props.agentId, props.initial.id),
     initialData: props.initial,
-    // Setup jobs live only in Router memory for ten minutes.
-    refetchInterval: (query) => query.state.data && !terminal(query.state.data) && !query.state.error ? 2000 : false,
+    // Keep polling through temporary network/server failures, but stop for expired
+    // jobs and permanent client errors. Router keeps setup jobs for ten minutes.
+    refetchInterval: (query) => {
+      const { data, error } = query.state;
+      const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429;
+      return data && !terminal(data) && Date.parse(data.expiresAt) > Date.now() && !rejected ? 2000 : false;
+    },
     retry: false,
   });
   const pair = useMutation({ mutationFn: () => router.pair(props.agentId, props.initial.id, code.trim()) });
@@ -197,6 +202,12 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
   return (
     <div className="mau-form" aria-live="polite">
       <ProductStatus tone={current.state === "ready" ? "success" : "running"} label={t(`job.${current.state}`)} />
+      {job.error ? (
+        <div className="mau-error" role="alert">
+          {errorMessage(t, job.error instanceof ApiError ? job.error.code : "request_failed")}
+          <Button disabled={job.isFetching} onClick={() => void job.refetch()}>{t("common.retry")}</Button>
+        </div>
+      ) : null}
       {current.state === "pairing" ? (
         <form className="mau-inline-form" onSubmit={(e) => { e.preventDefault(); if (code.trim()) pair.mutate(); }}>
           <label className="mau-field">

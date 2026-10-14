@@ -31,7 +31,7 @@ export function webConsole(root: string, homeserver: string): express.RequestHan
     },
   });
   return (req, res, next) => {
-    if (req.path.startsWith("/_")) return next();
+    if (req.path.startsWith("/_") || /^\/health(?:\/|$)/i.test(req.path)) return next();
     assets(req, res, () => {
       if (req.method !== "GET" && req.method !== "HEAD") return next();
       headers(res);

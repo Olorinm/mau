@@ -50,6 +50,14 @@ it.skipIf(!built)("signs in, provisions an agent, controls its environment, conn
   const f = await mauFixture(cleanup, { webRoot });
   const home = await fetch(f.base + "/");
   expect(home.headers.get("content-security-policy")).toContain("connect-src 'self' https://example.test");
+  for (const path of ["/health/live", "/HEALTH/live/"]) {
+    const health = await fetch(f.base + path);
+    expect(health.status).toBe(200);
+    expect(await health.json()).toEqual({ status: "ok", component: "agent-service" });
+  }
+  const unknownHealth = await fetch(f.base + "/health/missing");
+  expect(unknownHealth.status).toBe(404);
+  expect(await unknownHealth.json()).toEqual({ error: "not_found" });
   expect((await fetch(f.base + "/_mau/v1/missing", { headers: { authorization: "Bearer alice" } })).status).toBe(404);
   const { page, matrix, errors } = await browser(f.base);
 
@@ -119,4 +127,50 @@ it.skipIf(!built)("an expired session returns to sign-in with an explanation", a
   await page.reload();
   await see(page.getByRole("region", { name: "通知" })).toContainText("登录已失效");
   await see(page.getByRole("heading", { name: "登录 Mau" })).toBeVisible();
+}, 30_000);
+
+it.skipIf(!built).each(["server", "network", "rate-limit"])("channel setup recovers from a temporary %s failure", async (failure) => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  const job = { id: "retry-job", kind: "weixin", state: "waiting", expiresAt: new Date(Date.now() + 600_000).toISOString(), url: "https://example.test/pair" };
+  await page.route("**/connection-jobs", route => route.fulfill({ json: { data: [job] } }));
+  let recovered = false, reads = 0;
+  await page.route("**/connection-jobs/retry-job", route => {
+    reads++;
+    if (recovered) return route.fulfill({ json: { ...job, state: "ready" } });
+    if (failure === "network") return route.abort("failed");
+    return route.fulfill({ status: failure === "rate-limit" ? 429 : 503, json: { error: "request_failed" } });
+  });
+  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+  await page.locator(".agent-ui-settings-row", { hasText: "微信" }).getByRole("button").click();
+  const dialog = page.getByRole("dialog");
+  await see(dialog.getByRole("alert")).toBeVisible();
+  await see(dialog.getByRole("button", { name: "重试" })).toBeEnabled();
+  const attempts = reads;
+  recovered = true;
+  await see(dialog).toHaveCount(0, { timeout: 10_000 });
+  expect(reads).toBeGreaterThan(attempts);
+  await see(page.getByRole("region", { name: "通知" })).toContainText("微信");
+  expect(errors).toEqual([]);
+}, 30_000);
+
+it.skipIf(!built)("an unknown channel setup job stops polling and asks to restart", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  const job = { id: "expired-job", kind: "weixin", state: "waiting", expiresAt: new Date(Date.now() + 600_000).toISOString() };
+  await page.route("**/connection-jobs", route => route.fulfill({ json: { data: [job] } }));
+  let reads = 0;
+  await page.route("**/connection-jobs/expired-job", route => {
+    reads++;
+    return route.fulfill({ status: 404, json: { error: "setup_job_not_found" } });
+  });
+  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+  await page.locator(".agent-ui-settings-row", { hasText: "微信" }).getByRole("button").click();
+  await see(page.getByRole("dialog").getByRole("alert")).toContainText("过期");
+  // More than one polling interval: a missing job must not keep requesting forever.
+  await new Promise(resolve => setTimeout(resolve, 2500));
+  expect(reads).toBe(1);
+  expect(errors).toEqual([]);
 }, 30_000);
