@@ -1,4 +1,4 @@
-import { applyTheme, watchSystemTheme } from "./theme";
+import { applyTheme, watchSystemTheme, useThemePreference } from "./theme";
 import {
   StrictMode,
   useEffect,
@@ -20,6 +20,7 @@ import {
   type ChatTranslate,
 } from "@olorinm/agent-ui";
 import { ConfirmProvider, ToastProvider } from "@olorinm/agent-ui/app";
+import { FrontendProvider } from "@olorinm/agent-frontend";
 import "@olorinm/agent-frontend/style.css";
 import "./styles.css";
 import { ApiError } from "./api/http";
@@ -36,6 +37,7 @@ import {
 
 function Root() {
   useEffect(watchSystemTheme, []);
+  const [theme] = useThemePreference();
   const [language, setLanguageState] = useState<Language>(initialLanguage);
   const t = useMemo(() => translator(language), [language]);
   const i18n = useMemo(
@@ -84,15 +86,17 @@ function Root() {
     <I18n.Provider value={i18n}>
       <ChatProvider translate={translate}>
         <QueryClientProvider client={client}>
-          <ConfirmProvider>
-            <ToastProvider>
-              <App
-                onExpired={(handler) => {
-                  expired.current = handler;
-                }}
-              />
-            </ToastProvider>
-          </ConfirmProvider>
+          <FrontendProvider language={language} theme={theme}>
+            <ConfirmProvider>
+              <ToastProvider>
+                <App
+                  onExpired={(handler) => {
+                    expired.current = handler;
+                  }}
+                />
+              </ToastProvider>
+            </ConfirmProvider>
+          </FrontendProvider>
         </QueryClientProvider>
       </ChatProvider>
     </I18n.Provider>

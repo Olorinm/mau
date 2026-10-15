@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 
 type ThemePreference = "system" | "light" | "dark";
 const storageKey = "mau.theme";
 let current: ThemePreference = "system";
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
 
 try {
   const saved = localStorage.getItem(storageKey);
@@ -27,13 +34,17 @@ export function watchSystemTheme() {
 }
 
 export function useThemePreference() {
-  const [preference, setPreference] = useState(current);
+  const preference = useSyncExternalStore(
+    subscribe,
+    () => current,
+    () => "system" as ThemePreference,
+  );
   return [
     preference,
     (value: string) => {
       if (value !== "system" && value !== "light" && value !== "dark") return;
       current = value;
-      setPreference(value);
+      for (const listener of listeners) listener();
       try {
         localStorage.setItem(storageKey, value);
       } catch {

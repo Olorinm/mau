@@ -65,3 +65,20 @@ Local validation passed the 21 Mau tests, independent CLI installation and the
 four-package Mau/Router/Environment/Host consumer. Environment separately passed
 119 original OMA tests and 35 provider/workspace checks. See
 [shared workspaces](workspaces.md) for configuration and API semantics.
+
+## Frontend isolation and source comparison (2026-10-15)
+
+The web consumer now pins Agent UI and Agent Frontend `0.1.0-alpha.3` release
+archives. The lockfile, `components.json` and actual archive SHA-512 values match.
+Product-owned theme state updates the component provider and its portals together.
+Creating an app opens the extracted original dialog over the active page; closing
+it returns focus to the opener. Unsupported services remain explicitly unavailable.
+Provider, operations and voice settings use the original presentation components.
+
+The local build and all 38 tests passed, including the new unavailable-create and
+focus assertions. Direct original-source screenshots of light/dark appearance and
+theme menus matched at desktop and mobile sizes (6 captures, zero differing pixels).
+Full-page captures are review-only because product data and branding differ. The
+reusable comparison runner and broader component coverage live in agent-ui's
+`frontend/` directory. These checks use isolated fixtures, not a live Agent or a
+production deployment.

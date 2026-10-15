@@ -1,7 +1,7 @@
 import { useThemePreference } from "../theme";
 import { useState } from "react";
 import {
-  AppCreateWizard,
+  AppCreateDialog,
   Catalog,
   ExtensionsPage,
   InlineNotice,
@@ -13,6 +13,9 @@ import {
   SettingsDesktopPanel,
   SettingsUpdatePanel,
   SettingsNetworkPanel,
+  SettingsVoicePanel,
+  SettingsProvidersPanel,
+  SettingsOperationsPanel,
   usePresentationLabels,
 } from "@olorinm/agent-frontend";
 import { Button, ProductIcon } from "@olorinm/agent-ui/app";
@@ -136,6 +139,60 @@ export function SettingsScreen() {
   const { t } = usePresentationLabels();
   const noop = () => {};
   const panels: Record<string, React.ReactNode> = {
+    providers: (
+      <SettingsProvidersPanel providers={[]} disabled onSelect={noop} />
+    ),
+    ops: (
+      <SettingsOperationsPanel
+        runs={[]}
+        onSelect={noop}
+        metrics={[
+          {
+            id: "runs",
+            label: zh ? "运行" : "Runs",
+            value: "—",
+            meta: zh ? "尚未接入" : "Not connected",
+          },
+          {
+            id: "failures",
+            label: zh ? "失败" : "Failures",
+            value: "—",
+            meta: zh ? "尚未接入" : "Not connected",
+          },
+          {
+            id: "approvals",
+            label: zh ? "审批" : "Approvals",
+            value: "—",
+            meta: zh ? "尚未接入" : "Not connected",
+          },
+          {
+            id: "events",
+            label: zh ? "事件" : "Events",
+            value: "—",
+            meta: zh ? "尚未接入" : "Not connected",
+          },
+        ]}
+      />
+    ),
+    voice: (
+      <SettingsVoicePanel
+        t={t}
+        voiceSettings={{
+          stt: {
+            provider: "browser",
+            language: "auto",
+            browser: { language: "auto" },
+            openai: { model: "", baseUrl: "", apiKeyEnv: "" },
+            groq: { model: "", baseUrl: "", apiKeyEnv: "" },
+            localWhisper: { model: "", language: "auto" },
+          },
+        }}
+        loading={false}
+        saving={false}
+        onSetVoiceDraft={noop}
+        onSaveVoice={noop}
+      />
+    ),
     modes: (
       <SettingsModePanel
         t={t}
@@ -256,9 +313,11 @@ export function SettingsScreen() {
 }
 
 export function CreateAppScreen({
+  open,
   onCancel,
   onStore,
 }: {
+  open: boolean;
   onCancel(): void;
   onStore(): void;
 }) {
@@ -268,20 +327,22 @@ export function CreateAppScreen({
   const [description, setDescription] = useState("");
   const [source, setSource] = useState("");
   return (
-    <section className="view-panel tab-view">
-      <Unconnected name={zh ? "应用创建" : "App creation"} />
-      <AppCreateWizard
-        title={name}
-        description={description}
-        source={source}
-        onTitleChange={setName}
-        onDescriptionChange={setDescription}
-        onSourceChange={setSource}
-        canRequestAgent={false}
-        onRequestAgent={() => {}}
-        onCancel={onCancel}
-        onOpenStore={onStore}
-      />
-    </section>
+    <AppCreateDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+      notice={<Unconnected name={zh ? "应用创建" : "App creation"} />}
+      title={name}
+      description={description}
+      source={source}
+      onTitleChange={setName}
+      onDescriptionChange={setDescription}
+      onSourceChange={setSource}
+      canRequestAgent={false}
+      onRequestAgent={() => {}}
+      onCancel={onCancel}
+      onOpenStore={onStore}
+    />
   );
 }

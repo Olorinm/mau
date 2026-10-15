@@ -99,6 +99,23 @@ it.skipIf(!built)(
     await page.getByLabel("密码").fill("correct");
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await see(page.getByText("@alice:example.test")).toBeVisible();
+    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    const createApp = page.getByRole("dialog", {
+      name: "新建应用",
+      exact: true,
+    });
+    await see(createApp).toContainText("尚未接入");
+    await createApp
+      .getByRole("textbox", { name: "App 名称", exact: true })
+      .fill("不可提交的草稿");
+    await see(
+      createApp.getByRole("button", { name: "创建并打开", exact: true }),
+    ).toBeDisabled();
+    await createApp.getByRole("button", { name: "取消", exact: true }).click();
+    await see(createApp).toBeHidden();
+    await see(
+      page.getByRole("button", { name: "新建应用", exact: true }),
+    ).toBeFocused();
     await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
     // The fixture pre-creates "helper" without an environment.
     await see(agentRow(page, "helper")).toBeVisible();

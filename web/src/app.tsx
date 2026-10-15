@@ -1,3 +1,4 @@
+import { useThemePreference } from "./theme";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, EmployeeAvatar, useToast } from "@olorinm/agent-ui/app";
@@ -31,12 +32,14 @@ import { ProductIcon } from "@olorinm/agent-ui/app";
 
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const { t, language, setLanguage } = useI18n();
+  const [theme] = useThemePreference();
   const { toast } = useToast();
   const queries = useQueryClient();
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [view, setView] = useState(() =>
     new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
+  const [createOpen, setCreateOpen] = useState(false);
   const [conversationTarget, setConversationTarget] = useState<string>();
   const current = useRef(session);
   current.current = session;
@@ -150,6 +153,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   ];
   return (
     <FrontendProvider
+      theme={theme}
       language={language}
       translate={(key) =>
         zh ? (labels[key] ?? frontendLabels[key]) : frontendLabels[key]
@@ -164,7 +168,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             selectedId={
               view === "messages" || view === "agents" ? "employees" : view
             }
-            onSelect={(id) => setView(id === "employees" ? "messages" : id)}
+            onSelect={(id) =>
+              id === "create-app"
+                ? setCreateOpen(true)
+                : setView(id === "employees" ? "messages" : id)
+            }
             account={{
               name: session.owner,
               avatar: (
@@ -208,11 +216,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           />
         ) : view === "files" ? (
           <FilesScreen session={session} />
-        ) : view === "create-app" ? (
-          <CreateAppScreen
-            onCancel={() => setView("messages")}
-            onStore={() => setView("apps")}
-          />
         ) : view === "extensions" ? (
           <ExtensionsScreen />
         ) : view === "settings" ? (
@@ -220,6 +223,14 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         ) : (
           <AppsScreen />
         )}
+        <CreateAppScreen
+          open={createOpen}
+          onCancel={() => setCreateOpen(false)}
+          onStore={() => {
+            setCreateOpen(false);
+            setView("apps");
+          }}
+        />
       </AppShell>
     </FrontendProvider>
   );
