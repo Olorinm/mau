@@ -63,6 +63,8 @@ execution image, not the Mau server. The CLI is `mau`; the server is `mau-server
 
 The [web console](docs/web.md) (`MAU_WEB_ROOT`) covers sign-in, agents, environments,
 channels and checks in a browser. The CLI offers the same operations.
+The console's Files entry is not connected yet; shared workspace operations remain
+available through the existing Mau API and CLI.
 
 The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
 account; Mau does not register a second identity. Password/token files are local

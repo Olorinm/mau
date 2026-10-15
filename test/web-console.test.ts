@@ -619,29 +619,75 @@ it.skipIf(!built)(
       page.getByRole("button", { name: "新建应用", exact: true }),
     ).toBeFocused();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator(".app-titlebar-control").click();
-    await page.getByRole("button", { name: "新建应用", exact: true }).click();
-    await see(dialog).toBeVisible();
-    const bounds = await dialog.boundingBox();
-    expect(bounds).not.toBeNull();
-    expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
-    for (let index = 0; index < 12; index++) {
-      await page.keyboard.press("Tab");
+    for (const language of ["zh-CN", "en"]) {
+      if (language === "en") {
+        await page
+          .getByRole("button", { name: "简体中文", exact: true })
+          .click();
+        await page
+          .getByRole("option", { name: "English", exact: true })
+          .click();
+      }
+      await page.locator(".app-titlebar-control").click();
+      await page
+        .getByRole("button", {
+          name: language === "en" ? "Create app" : "新建应用",
+          exact: true,
+        })
+        .click();
+      const mobileDialog = page.locator(".app-create-dialog");
+      await see(mobileDialog).toBeVisible();
+      for (const width of [390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        const bounds = await mobileDialog.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 1);
+        const overflow = await mobileDialog.evaluate((element) =>
+          [
+            element,
+            ...element.querySelectorAll(
+              ".app-create-wizard, .app-create-section, .app-create-group, .settings-form-actions, .settings-form-actions button",
+            ),
+          ]
+            .filter((node) => node.scrollWidth > node.clientWidth + 1)
+            .map((node) => ({
+              className: node.className,
+              width: node.clientWidth,
+              scroll: node.scrollWidth,
+            })),
+        );
+        expect(overflow).toEqual([]);
+        for (let index = 0; index < 12; index++) {
+          await page.keyboard.press("Tab");
+          expect(
+            await mobileDialog.evaluate((element) =>
+              element.contains(document.activeElement),
+            ),
+          ).toBe(true);
+        }
+        const actions = mobileDialog.locator(".settings-form-actions button");
+        for (const action of await actions.all()) {
+          await action.scrollIntoViewIfNeeded();
+          const box = await action.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+          expect(box!.y).toBeGreaterThanOrEqual(0);
+          expect(box!.y + box!.height).toBeLessThanOrEqual(845);
+        }
+        await page.screenshot({
+          path: `/tmp/mau-review-mobile-app-dialog-${language}-${width}.png`,
+        });
+      }
+      await page.keyboard.press("Escape");
+      await see(mobileDialog).toBeHidden();
       expect(
-        await dialog.evaluate((element) =>
-          element.contains(document.activeElement),
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
         ),
       ).toBe(true);
     }
-    await page.screenshot({ path: "/tmp/mau-review-mobile-app-dialog.png" });
-    await page.keyboard.press("Escape");
-    await see(dialog).toBeHidden();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
     await page.reload();
     await see(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(errors).toEqual([]);
