@@ -9,9 +9,8 @@ OpenGrove backend dependency. Mau owns authentication, routes, navigation,
 requests, account messaging and environment/channel workflows in `web/src`.
 
 The UI covers account sign-in, Agent creation and management, environment
-lifecycle, channel connections, messages with owned Agents, and shared workspace
-file listing/downloads. Account messages use the public Matrix client API and
-Router's existing delivery path. There is no direct kernel chat, wallet or
+lifecycle, channel connections and messages with owned Agents. Account messages
+use the public Matrix client API and Router's existing delivery path. There is no direct kernel chat, wallet or
 withdrawal feature. Apps, extensions and settings keep visible product-owned
 entries with explicit “not connected yet” content where no integration exists.
 
@@ -101,7 +100,8 @@ personal authorization are reported separately in checks.
 ## Message behavior
 
 Mau displays joined account rooms involving its owned Agents. Starting a new
-conversation selects an owned Agent explicitly; a group containing another
+conversation waits for the initial room sync and selects an owned Agent explicitly;
+a group containing another
 participant is not silently reused for a direct conversation. Existing groups are
 marked as groups with participant counts and sender identities. The product adapter
 uses Matrix sync cursors and displays recent text/notice messages. A limited
@@ -113,7 +113,7 @@ avoid duplicate delivery; dismissing retry is an explicit user action. A server
 acknowledgment confirms sending, while Agent replies appear only after sync.
 The browser tests simulate Matrix and do not establish live model acceptance.
 
-The shared workspace screen requests owner-scoped Mau file listings and obtains
-short-lived download URLs only after a user chooses a file. The reusable frontend
-also contains editing/preview components; this screen does not claim an editing
-service or synthesize filesystem paths.
+The Files navigation entry is explicitly unavailable. Shared workspace operations
+remain available through the existing Mau API and CLI. This integration does not
+assemble a replacement file application from the frontend package’s workbench
+components.

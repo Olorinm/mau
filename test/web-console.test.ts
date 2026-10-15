@@ -574,3 +574,121 @@ it.skipIf(!built)(
   },
   30_000,
 );
+
+it.skipIf(!built)(
+  "keeps appearance menus and original dialogs in the selected theme scope",
+  async () => {
+    const f = await mauFixture(cleanup, { webRoot });
+    const { page, errors } = await browser(f.base);
+    await page.evaluate(() =>
+      localStorage.setItem(
+        "mau.session",
+        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
+      ),
+    );
+    await page.reload();
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", { name: "跟随系统", exact: true }).click();
+    await page.getByRole("option", { name: "深色", exact: true }).click();
+    await see(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await page.evaluate(() => localStorage.getItem("mau.theme"))).toBe(
+      "dark",
+    );
+    await page.getByRole("button", { name: "深色", exact: true }).click();
+    const menu = page.getByRole("listbox");
+    await see(menu).toBeVisible();
+    expect(
+      await menu.evaluate((element) =>
+        element.closest(".af-scope")?.getAttribute("data-resolved-theme"),
+      ),
+    ).toBe("dark");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "新建应用", exact: true });
+    await see(dialog).toBeVisible();
+    expect(
+      await dialog.evaluate((element) =>
+        element.closest(".af-scope")?.getAttribute("data-resolved-theme"),
+      ),
+    ).toBe("dark");
+    await see(
+      dialog.getByRole("button", { name: "创建并打开", exact: true }),
+    ).toBeDisabled();
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await see(
+      page.getByRole("button", { name: "新建应用", exact: true }),
+    ).toBeFocused();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator(".app-titlebar-control").click();
+    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    await see(dialog).toBeVisible();
+    const bounds = await dialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
+    for (let index = 0; index < 12; index++) {
+      await page.keyboard.press("Tab");
+      expect(
+        await dialog.evaluate((element) =>
+          element.contains(document.activeElement),
+        ),
+      ).toBe(true);
+    }
+    await page.screenshot({ path: "/tmp/mau-review-mobile-app-dialog.png" });
+    await page.keyboard.press("Escape");
+    await see(dialog).toBeHidden();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.reload();
+    await see(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(errors).toEqual([]);
+  },
+  30_000,
+);
+
+it.skipIf(!built)(
+  "keeps the unavailable Files entry accessible without inventing a workspace page",
+  async () => {
+    const f = await mauFixture(cleanup, { webRoot });
+    const { page, errors } = await browser(f.base);
+    const workspaceRequests: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/_mau/v1/workspaces"))
+        workspaceRequests.push(request.url());
+    });
+    await page.evaluate(() =>
+      localStorage.setItem(
+        "mau.session",
+        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
+      ),
+    );
+    await page.reload();
+    const files = page.getByRole("button", { name: "文件", exact: true });
+    await files.focus();
+    await page.keyboard.press("Enter");
+    await see(
+      page.getByText("Mau 尚未接入共享文件浏览服务。", { exact: true }),
+    ).toBeVisible();
+    await see(
+      page.getByRole("button", { name: "重试", exact: true }),
+    ).toHaveCount(0);
+    await see(
+      page.getByRole("link", { name: "下载", exact: true }),
+    ).toHaveCount(0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await see(
+      page.getByText("Mau 尚未接入共享文件浏览服务。", { exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(workspaceRequests).toEqual([]);
+    expect(errors).toEqual([]);
+  },
+  30_000,
+);

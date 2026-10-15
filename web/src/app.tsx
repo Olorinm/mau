@@ -12,12 +12,12 @@ import {
 import { errorMessage, useI18n } from "./i18n";
 import { LoginScreen } from "./screens/login";
 import { AgentsScreen } from "./screens/agents";
-import { FilesScreen } from "./screens/files";
 import { MessagesScreen } from "./screens/messages";
 import {
   AppsScreen,
   CreateAppScreen,
   ExtensionsScreen,
+  FilesScreen,
   SettingsScreen,
 } from "./screens/product-pages";
 import {
@@ -215,7 +215,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             onContacts={() => setView("agents")}
           />
         ) : view === "files" ? (
-          <FilesScreen session={session} />
+          <FilesScreen />
         ) : view === "extensions" ? (
           <ExtensionsScreen />
         ) : view === "settings" ? (

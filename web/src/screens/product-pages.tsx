@@ -33,6 +33,14 @@ function Unconnected({ name }: { name: string }) {
     </InlineNotice>
   );
 }
+export function FilesScreen() {
+  const { language } = useI18n();
+  return (
+    <Unconnected
+      name={language === "zh-CN" ? "共享文件浏览" : "Shared file browsing"}
+    />
+  );
+}
 export function AppsScreen() {
   const { language } = useI18n();
   const zh = language === "zh-CN";
