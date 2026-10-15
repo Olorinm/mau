@@ -1,0 +1,12 @@
+@import '@olorinm/agent-ui/app.css';
+@import '@olorinm/agent-ui/styles.css';
+@import './styles/presentation-reset.css';
+@import './styles/tokens.css';
+@import './styles/reset.css';
+@import './styles/primitives.css';
+
+/* Original document typography, owned by this subtree rather than body. */
+.af-scope { font-family:var(--font-sans); font-size:var(--fs-base); font-weight:var(--fw-normal); letter-spacing:var(--letter-spacing); line-height:var(--lh-normal); color:var(--c-text); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+button, input, textarea, select { font:inherit; letter-spacing:inherit; }
+code, kbd, pre, samp { font-family:var(--font-mono); }
+strong, b { font-weight:var(--fw-semibold); }

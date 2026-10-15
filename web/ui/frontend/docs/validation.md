@@ -1,32 +1,37 @@
-# Source extraction validation
+# Extraction validation — 2026-10-15
 
-Source: OpenGrove `8b365ed2babc6caccc588cab1fa2d08488fb67a7`.
-Consumer: Mau's isolated local preview, using the packed frontend archive. The
-preview uses fixture accounts/messages; it does not call a live model.
+Reference: untouched OpenGrove `8b365ed2babc6caccc588cab1fa2d08488fb67a7`,
+served by its native frontend and an isolated local Bridge. Candidate: component
+stories using the built public package, without a service adapter.
 
-At 1280 × 633, the source and consumer have identical measured rectangles:
+The same Playwright actions ran against both pages, with Chinese labels, reduced
+motion, 1280 × 800 desktop and 390 × 844 mobile viewports.
 
-| Surface | x | y | width | height |
-| --- | ---: | ---: | ---: | ---: |
-| Conversation header | 431 | 45 | 838 | 61 |
-| Composer outer surface | 431 | 502 | 838 | 114 |
-| Composer input surface | 455 | 512 | 808 | 88 |
-| Text input | 464 | 521 | 790 | 42 |
-| Conversation list row | 147 | 218.390625 | 260 | 44 |
-| Navigation account button | 10 | 583 | 106 | 36 |
-| Settings content | 430 | 44 | 840 | 573 |
-| Settings heading | 454 | 76 | 792 | 54.296875 |
-| Appearance preferences | 454 | 158.296875 | 792 | 216 |
+| Scenario | Gated captures | Result |
+| --- | --- | --- |
+| Appearance, desktop/mobile | Light content, theme menu, dark content | 6 captures, zero changed pixels |
+| Conversation, desktop | Filled composer | 1 capture, zero changed pixels |
+| Create app, desktop/mobile | Original modal and icon-picker subpage | 4 captures; mobile zero, desktop 33/29 changed pixels (under 0.008%) |
 
-At 390 × 844, the settings content is `(18,124,354,720)`, its heading is
-`(34,148,322,54.296875)` and its preference group is
-`(34,230.296875,322,264.890625)` in both implementations. This verifies these
-surfaces, not pixel identity of every page. Brand, records and connected actions
-are intentionally consumer supplied.
+All 11 gates passed the unchanged 0.2% limit with no masks. All 22 shared interaction
+assertions passed on both targets, covering theme selection, Escape closure,
+IME draft preservation, search, opening the modal, title input, icon picker,
+returning to the form and cancelling. Three full-page captures are REVIEW ONLY:
+product branding, navigation data and records differ and are not pixel gates.
 
-Automated acceptance covers callback delivery and caller errors, IME Enter
-suppression, unavailable builder keyboard submission, profile tabs, menus,
-navigation resize, compact list/detail return, file editing/conflict resolution,
-unmounting and absence of service requests. The archive is installed into an
-independent consumer, typechecked, built and exercised in a browser. Mau's 38
-fixture tests cover its own API and product workflows separately.
+The comparison found and fixed actual regressions: the create form was composed
+as a whole page instead of the original modal; portaled content inherited the
+wrong typography and reset; controlled dialogs did not restore opener focus.
+
+Separate browser acceptance checks component callbacks/errors, unavailable
+keyboard submission, file editing/conflicts, profile tabs, responsive navigation,
+unmounting and no service requests. Isolation checks load CSS into an existing
+page and verify outside controls/document tokens stay unchanged, simultaneous
+light/dark instances retain their own portal styling, and Escape restores focus.
+Feature-style checks ensure shell imports exclude the rich editor theme.
+
+The generic comparison CLI is itself tested with injected pixel and click
+regressions; both must fail. Its current original-source scenarios do not prove
+pixel identity of every page, every browser or every product state. Extend
+`comparisons/opengrove.mjs` whenever a new visual surface changes. See
+[comparison workflow](comparison.md) for reproduction and report semantics.

@@ -45,7 +45,8 @@
     },
     "styles/file-preview.css": {
       "source": "web/src/components/shared/file-preview-panel.css",
-      "sourceSha256": "70c287f50c38ace617cdc42243e77690346ee8a41a84371ea2337e4ffda89f01"
+      "sourceSha256": "70c287f50c38ace617cdc42243e77690346ee8a41a84371ea2337e4ffda89f01",
+      "changes": "Retains original layout; editable ProseMirror content uses pre-wrap to preserve typed whitespace."
     },
     "styles/markdown-preview.css": {
       "source": "web/src/components/knowledge/markdown-preview.css",
@@ -473,6 +474,26 @@
       "source": "web/src/components/shared/directory-panel.module.css",
       "sourceSha256": "e0ca8063fbc473ed0d5f2c5e956bbd7625390da004b4fbf6aaa54cb4db8ec224",
       "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "presentation/settings-providers-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-provider-section.tsx",
+      "sourceSha256": "04a19e879998b00cd856e9198c1b4cddcd5ea23ae37c651b5a7571abcb92f1b3",
+      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
+    },
+    "presentation/settings-operations-panel.tsx": {
+      "source": "web/src/components/system/ops-center-view.tsx",
+      "sourceSha256": "64431f0fbd93511177e50bbad943d37a929a4a6cf3a3a548cf8261dff170e1aa",
+      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
+    },
+    "styles/operations.css": {
+      "source": "web/src/components/system/ops-center-view.css",
+      "sourceSha256": "a22fe458d29e82c74decc49fb79083a76feb8176dc64bfd2f083ac75a7abe82f",
+      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
+    },
+    "presentation/app-create-dialog.tsx": {
+      "source": "web/src/app.tsx",
+      "sourceSha256": "3d6aec341b69ef223d9914b8a477e17338bb26f19596489eedfc2e0354a56568",
+      "changes": "Preserves original dialog/title/mobile presentation around AppCreateWizard; open state, actions and optional product notice are caller-owned."
     }
   },
   "assemblies": {

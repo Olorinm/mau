@@ -125,6 +125,13 @@ export async function checkBrowser(url) {
     await page.getByRole("heading", { name: "Edited by caller" }).waitFor();
     await page.getByRole("button", { name: "rich", exact: true }).click();
     await page.locator(".milkdown .ProseMirror").waitFor();
+    assert.equal(
+      await page
+        .locator(".milkdown .ProseMirror")
+        .evaluate((element) => getComputedStyle(element).whiteSpace),
+      "pre-wrap",
+      "editable whitespace must be preserved",
+    );
     await page
       .locator(".milkdown .ProseMirror")
       .fill("Rich text remains caller owned");

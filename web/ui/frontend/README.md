@@ -44,7 +44,7 @@ the draft, invent an assistant reply, or select a backend. Supply pending/error
 state and update the input after the product confirms its operation. A callback
 may use any service or local state; the component does not know which.
 
-Install React 19, React DOM 19 and the Agent UI alpha.2 archive in the consumer.
+Install React 19, React DOM 19 and the Agent UI alpha.3 archive in the consumer.
 Agent UI is a peer dependency so shared providers have a single context instance. Components require no mounting
 singleton and may be composed into an existing React tree or rendered separately.
 Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;
@@ -71,13 +71,13 @@ tokens and component styling. Editor JavaScript loads lazily when used.
   purchase, installation or extension-management implementation.
 - `SettingsLayout`: original settings navigation and page chrome. Original
   appearance, mode, kernel, apps, network, voice, desktop overview and updater
-  panels take values and callbacks. They do not probe devices, install kernels,
+  panels, provider forms and operations summaries take values and callbacks. They do not probe devices, install kernels,
   update an application or save preferences themselves.
 - `ProfileSurface`, `ProfileDialog`: original employee profile and tabbed dialog
   markup, with caller-supplied summaries, actions and detail content.
 - `ExtensionsPage`: original workspace navigation, filters and extension rows;
   the caller chooses tabs and provides records and deployment controls.
-- `AppCreateWizard`, `AppIconPicker`, `AppIdentityForm`: original forms and local
+- `AppCreateDialog`, `AppCreateWizard`, `AppIconPicker`, `AppIdentityForm`: original forms and local
   icon selection/upload interaction. Creating or importing an app is a callback.
 - `VersionHistory`, `VersionSwitchBlocker`: original version presentation and
   confirmation dialog, with no version-selection or publishing service.
@@ -152,3 +152,44 @@ account messages and files. The additional settings/store/extension entries
 remain visible with an explicit unavailable notice; this package does not make
 those product services exist. Operations/provider-specific content is supplied
 through settings slots rather than shipping their original service controllers.
+
+## Style and component boundaries
+
+Keep the source-derived markup and CSS. CSS Modules cover component internals;
+original shared selectors and variables are scoped at build time under
+`.af-scope`. Do not replace the design system with Tailwind as part of extraction.
+`FrontendProvider theme="light" | "dark" | "system"` owns that subtree and its
+portal host. Two instances can use different themes; the library does not change
+`body`, `html`, global theme tokens, localStorage or unrelated controls.
+`AppShell` and `AuthLayout` provide a default scope when used alone. Wrap smaller
+components in `FrontendProvider` (or `FrontendScope`) when using them independently.
+
+Whole layouts provide original defaults, with slots for product content. Local
+interaction state (an open menu, icon search, editor selection) stays in the UI.
+Data state and effects (saving, fetching, permissions, login, installing an app)
+stay in the product. Do not create a component merely to shorten a file; extract
+it when it has a clear interaction or repeated presentation responsibility.
+
+Feature imports avoid unrelated editor JavaScript and editor theme CSS:
+
+```tsx
+import { FrontendProvider, AppShell } from '@olorinm/agent-frontend/shell';
+import '@olorinm/agent-frontend/shell.css';
+import { Conversation } from '@olorinm/agent-frontend/conversation';
+import '@olorinm/agent-frontend/conversation.css';
+```
+
+Available entries: `shell`, `conversation`, `settings`, `files`, `catalog`,
+`extensions`, `auth`, `profile`. Each has a corresponding `.css` export. The root
+entry and `style.css` retain the complete API for consumers that use all views.
+Shared base styles can repeat when several feature stylesheets are imported;
+this favors ordinary CSS imports and predictable standalone usage.
+
+Use `AppCreateDialog` for the original desktop overlay/mobile page behavior.
+`AppCreateWizard` is the inner form for callers that intentionally need it alone.
+Opening a dialog should preserve the background page and restore focus on close.
+
+`npm run dev` provides an independent consumer demo; `/stories.html` contains
+stateful presentation stories. Its records/actions are examples, not services.
+See [comparison workflow](docs/comparison.md) for the generic screenshot and
+interaction runner and [validation](docs/validation.md) for measured coverage.

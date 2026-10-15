@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
@@ -16,7 +16,8 @@
     "README.md",
     "source-manifest.json",
     "THIRD_PARTY_NOTICES.md",
-    "licenses"
+    "licenses",
+    "docs"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -25,7 +26,47 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": "./dist/style.css",
+    "./shell": {
+      "types": "./dist/entries/shell.d.ts",
+      "import": "./dist/shell.js"
+    },
+    "./shell.css": "./dist/shell.css",
+    "./conversation": {
+      "types": "./dist/entries/conversation.d.ts",
+      "import": "./dist/conversation.js"
+    },
+    "./conversation.css": "./dist/conversation.css",
+    "./settings": {
+      "types": "./dist/entries/settings.d.ts",
+      "import": "./dist/settings.js"
+    },
+    "./settings.css": "./dist/settings.css",
+    "./files": {
+      "types": "./dist/entries/files.d.ts",
+      "import": "./dist/files.js"
+    },
+    "./files.css": "./dist/files.css",
+    "./catalog": {
+      "types": "./dist/entries/catalog.d.ts",
+      "import": "./dist/catalog.js"
+    },
+    "./catalog.css": "./dist/catalog.css",
+    "./extensions": {
+      "types": "./dist/entries/extensions.d.ts",
+      "import": "./dist/extensions.js"
+    },
+    "./extensions.css": "./dist/extensions.css",
+    "./auth": {
+      "types": "./dist/entries/auth.d.ts",
+      "import": "./dist/auth.js"
+    },
+    "./auth.css": "./dist/auth.css",
+    "./profile": {
+      "types": "./dist/entries/profile.d.ts",
+      "import": "./dist/profile.js"
+    },
+    "./profile.css": "./dist/profile.css"
   },
   "sideEffects": [
     "**/*.css"
@@ -34,7 +75,7 @@
     "node": ">=24"
   },
   "peerDependencies": {
-    "@olorinm/agent-ui": "0.1.0-alpha.2",
+    "@olorinm/agent-ui": "0.1.0-alpha.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -61,13 +102,17 @@
     "motion": "^12.42.2"
   },
   "devDependencies": {
-    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.2/olorinm-agent-ui-0.1.0-alpha.2.tgz",
+    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.3/olorinm-agent-ui-0.1.0-alpha.3.tgz?download=1",
     "@playwright/test": "1.63.0",
     "@types/node": "^24.13.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "esbuild": "^0.28.2",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.5.30",
+    "postcss-selector-parser": "^7.1.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
@@ -80,6 +125,8 @@
     "test:browser": "node scripts/test-browser.mjs",
     "test:package": "node scripts/test-package.mjs",
     "dev": "vite --config demo/vite.config.ts",
-    "prepack": "npm run build 1>&2"
+    "prepack": "npm run build 1>&2",
+    "test:comparison": "node scripts/test-comparison.mjs",
+    "compare": "node tools/ui-compare.mjs"
   }
 }

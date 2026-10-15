@@ -1,6 +1,7 @@
 // Extracted from web/src/components/app-shell/app-gates.tsx at 8b365ed. See source-manifest.json for boundary changes.
 import type { ComponentProps, ReactNode } from "react";
 import { ArrowRight, Globe2 } from "lucide-react";
+import { DefaultScope } from "./scope";
 /** Original authentication page. The product supplies its form and authentication actions. */
 export function AuthLayout({
   brand,
@@ -32,6 +33,7 @@ export function AuthLayout({
   desktopPlatform?: string;
 } & Omit<ComponentProps<"form">, "title">) {
   return (
+    <DefaultScope>
     <main
       className="agent-app cloud-auth-shell"
       data-step={step}
@@ -75,6 +77,7 @@ export function AuthLayout({
         </form>
       </div>
     </main>
+    </DefaultScope>
   );
 }
 export function AuthHeading({

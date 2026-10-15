@@ -13,6 +13,7 @@ import { AppNavigationPanel } from "./presentation/app-navigation-panel";
 import { AppTitlebar } from "./presentation/app-titlebar";
 import { useAppRailLayout } from "./presentation/use-app-rail-layout";
 import { useCompactLayout } from "./presentation/use-compact-layout";
+import { DefaultScope } from "./scope";
 const RailContext = createContext(true);
 const CloseNavigation = createContext(() => {});
 export interface NavigationItem {
@@ -92,6 +93,7 @@ export function AppShell({
   const [compactOpen, setCompactOpen] = useState(false);
   useEffect(() => setCompactOpen(false), [compact]);
   return (
+    <DefaultScope>
     <div
       className={"app-shell react-app agent-app af-shell " + className}
       data-compact={compact ? "true" : "false"}
@@ -138,5 +140,6 @@ export function AppShell({
       ) : null}
       <main className="workspace af-workspace">{children}</main>
     </div>
+    </DefaultScope>
   );
 }

@@ -7,15 +7,19 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {consumerEntry,consumerHtml} from '../test/consumer-entry.mjs';
 import {checkBrowser} from '../test/browser-acceptance.mjs';
+const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
 const exec=promisify(execFile), npm=process.platform==='win32'?'npm.cmd':'npm';
 const task=await mkdtemp(join(tmpdir(),'agent-frontend-package-')),consumer=join(task,'consumer');let server;
 async function run(args,cwd){try{return await exec(npm,args,{cwd,maxBuffer:8*1024*1024,shell:process.platform==='win32'})}catch(e){console.error(e.stdout,e.stderr);throw e}}
 try {
  const packed=await run(['pack','--ignore-scripts','--json','--pack-destination',task],process.cwd());
  const [archive]=JSON.parse(packed.stdout);const files=new Set(archive.files.map(f=>f.path));
+ for (const entry of ['shell','conversation','settings','files','catalog','extensions','auth','profile']) {
+  for (const path of [`dist/${entry}.js`,`dist/${entry}.css`,`dist/entries/${entry}.d.ts`]) assert.ok(files.has(path),path);
+ }
  for(const name of ['dist/index.js','dist/index.d.ts','dist/style.css','README.md','NOTICE','LICENSE'])assert.ok(files.has(name),name);
  assert.ok(![...files].some(name=>/contracts|host\.d\.ts|bridge|^src\//.test(name)));
- await mkdir(consumer);await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@olorinm/agent-frontend':pathToFileURL(join(task,archive.filename)).href,'@olorinm/agent-ui':'https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.2/olorinm-agent-ui-0.1.0-alpha.2.tgz',react:'19.3.0','react-dom':'19.3.0',vite:'^8.3.3',typescript:'npm:@typescript/typescript6@6.0.2','@types/react':'19.3.0'}}));
+ await mkdir(consumer);await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@olorinm/agent-frontend':pathToFileURL(join(task,archive.filename)).href,'@olorinm/agent-ui':process.env.AGENT_UI_ARCHIVE ?? manifest.devDependencies['@olorinm/agent-ui'],react:'19.3.0','react-dom':'19.3.0',vite:'^8.3.3',typescript:'npm:@typescript/typescript6@6.0.2','@types/react':'19.3.0'}}));
  await writeFile(join(consumer,'index.html'),consumerHtml);await writeFile(join(consumer,'main.jsx'),consumerEntry);
  await writeFile(join(consumer,'usage.ts'),`import {type ComponentProps} from 'react';import {AppShell,Conversation,FileEditor,Navigation} from '@olorinm/agent-frontend';
 const shell:ComponentProps<typeof AppShell>={brand:'A separate product',children:null};

@@ -1,3 +1,4 @@
+import "./editor.css";
 import {
   forwardRef,
   useCallback,

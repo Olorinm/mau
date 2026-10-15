@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { FrontendScope, type FrontendTheme } from "./scope";
 import {
   PresentationLocale,
   type PresentationLanguage,
@@ -51,11 +52,13 @@ export function FrontendProvider({
   children,
   language = "en",
   presentationLabels,
+  theme = "system",
 }: {
   translate?: FrontendTranslate;
   children: ReactNode;
   language?: PresentationLanguage;
   presentationLabels?: Readonly<Record<string, string>>;
+  theme?: FrontendTheme;
 }) {
   const locale = useMemo(
     () => ({ language, labels: presentationLabels }),
@@ -63,7 +66,9 @@ export function FrontendProvider({
   );
   return (
     <PresentationLocale.Provider value={locale}>
-      <Labels.Provider value={translate}>{children}</Labels.Provider>
+      <Labels.Provider value={translate}>
+        <FrontendScope theme={theme}>{children}</FrontendScope>
+      </Labels.Provider>
     </PresentationLocale.Provider>
   );
 }

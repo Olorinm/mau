@@ -1,4 +1,5 @@
 import "./style.css";
+export { FrontendScope, type FrontendTheme } from "./scope";
 export {
   FrontendProvider,
   frontendLabels,
@@ -136,3 +137,8 @@ export {
 export { SettingsUpdatePanel } from "./presentation/settings-update-panel";
 
 export { RoomHeaderActions } from "./presentation/room-header-actions";
+
+export * from "./presentation/settings-providers-panel";
+export * from "./presentation/settings-operations-panel";
+
+export * from "./presentation/app-create-dialog";

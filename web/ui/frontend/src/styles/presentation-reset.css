@@ -1,4 +1,4 @@
-/* The extracted pages use the browser box model. The primitive package applies a
-   universal border-box reset; restore upstream defaults only within page roots.
-   Explicit sizing on components still wins over this zero-specificity rule. */
-:where(.agent-app, .agent-app *, .agent-app *::before, .agent-app *::after) { box-sizing:revert; }
+/* Original pages deliberately omit Preflight. Restore browser defaults inside
+   the frontend scope, including its portals; component-specific rules still win. */
+:where(.af-scope, .af-scope *, .af-scope *::before, .af-scope *::after) { box-sizing:revert; }
+h1, h2, h3, h4, p { margin:revert; }

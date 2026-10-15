@@ -14,7 +14,7 @@ import type {
   ReactNode,
 } from "react";
 import { forwardRef } from "react";
-import { Tooltip } from "@olorinm/agent-ui/app";
+import { Tooltip, usePortalContainer } from "@olorinm/agent-ui/app";
 import styles from "./menu.module.css";
 import overlayStyles from "./overlay-surface.module.css";
 import type {
@@ -40,6 +40,7 @@ export function MotionMenu(props: {
   tooltipSide?: "top" | "bottom" | "left" | "right";
 }) {
   const reduceMotion = useReducedMotion();
+  const container = usePortalContainer();
   const side = props.side ?? "bottom";
   const closedOffset =
     side === "top"
@@ -65,7 +66,7 @@ export function MotionMenu(props: {
       )}
       <AnimatePresence>
         {props.open ? (
-          <MenuPrimitive.Portal keepMounted>
+          <MenuPrimitive.Portal keepMounted container={container}>
             <MenuPrimitive.Positioner
               className={styles.positioner}
               side={side}
@@ -125,6 +126,7 @@ export function MotionContextMenu(props: {
   collisionPadding?: number;
 }) {
   const reduceMotion = useReducedMotion();
+  const container = usePortalContainer();
   return (
     <ContextMenuPrimitive.Root
       open={props.open}
@@ -133,7 +135,7 @@ export function MotionContextMenu(props: {
       <ContextMenuPrimitive.Trigger render={props.trigger} />
       <AnimatePresence initial={false}>
         {props.open ? (
-          <ContextMenuPrimitive.Portal keepMounted>
+          <ContextMenuPrimitive.Portal keepMounted container={container}>
             <ContextMenuPrimitive.Positioner
               className={styles.positioner}
               positionMethod="fixed"
