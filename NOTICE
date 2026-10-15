@@ -1,7 +1,17 @@
 Mau
 Copyright 2026 Mau contributors
 
+Mau's project-owned code is licensed under the MIT License; see LICENSE.
+
 The environment coordinator, SQLite journal and lifecycle verification fixtures
 were extracted and adapted from Olorinm/agent-router at commit
-cff1bf2 (Apache License 2.0). Agent Router, Agent Host and Agent Environment
-remain separate projects, consumed through their public packages and protocols.
+cff1bf2, originally distributed under Apache-2.0. That project-owned code is
+provided in Mau under MIT.
+
+Agent Router, Agent Host and Agent Environment remain separate projects,
+consumed through their public packages and protocols. Dependencies and separately
+distributed components retain their respective licenses and notices.
+
+Agent Environment includes OMA-derived code whose licensing and redistribution
+status is described in its own LICENSE and NOTICE. Mau's MIT license does not
+apply to that code.
