@@ -2,7 +2,7 @@
 
 [简体中文](web.zh-CN.md)
 
-Mau composes product-neutral layouts from `@olorinm/agent-frontend` with the
+Mau composes layouts extracted from the original OpenGrove presentation source in `@olorinm/agent-frontend` with the
 lower-level `@olorinm/agent-ui` components. The frontend package receives data,
 React content and callbacks; it has no Mau, Router, Host, Environment, Matrix or
 OpenGrove backend dependency. Mau owns authentication, routes, navigation,
@@ -15,6 +15,9 @@ Router's existing delivery path. There is no direct kernel chat, wallet or
 withdrawal feature. Apps, extensions and settings keep visible product-owned
 entries with explicit “not connected yet” content where no integration exists.
 
+The original navigation, conversation input/search, profile, appearance settings,
+app forms and extension workspace are reused. Extension navigation retains Skills,
+MCP, kernel plugins, Hooks, Tools and CLI. Unavailable operations are disabled.
 The original form layout and optional sapling artwork are reused; Router account
 credentials and session verification remain in Mau. Neither the frontend package
 nor Mau implements OpenGrove Bridge compatibility endpoints.
