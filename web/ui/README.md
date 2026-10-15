@@ -66,3 +66,9 @@ The optional Host adapter shows native approvals without renaming IDs or adding 
 See the [guide](docs/guide.md) and Agent Host's [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor). Verify with `npm test`, `npm run test:browser` and `npm run test:package`.
 
 The presentation implementation was extracted from OpenGrove under Apache-2.0. Source and third-party attribution are in `NOTICE`. OpenGrove is a consumer of this package; its business models and services are not dependencies.
+
+`PortalProvider` from `@olorinm/agent-ui/app` optionally places dialogs, tooltips
+and toasts inside a caller-owned DOM container. Without it, existing document
+portal behavior is preserved. `@olorinm/agent-frontend` uses this provider to keep
+portaled content inside each frontend instance's theme boundary. Controlled
+dialogs also restore the opener's focus unless the caller overrides close autofocus.

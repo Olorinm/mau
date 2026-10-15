@@ -15,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 import { ProductIcon } from "./product-icon.js";
 import { useCompactLayout } from "./compact-layout.js";
+import { usePortalContainer } from "./portal.js";
 
 export const Dialog = DialogPrimitive.Root;
 type DialogContentContextValue = {
@@ -33,6 +34,8 @@ export function DialogContent({
   children,
   className,
   onEscapeKeyDown,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   mobilePresentation = "dialog",
   placement = "center",
   ...props
@@ -41,8 +44,10 @@ export function DialogContent({
   placement?: "center" | "left";
 }) {
   const compact = useCompactLayout();
+  const container = usePortalContainer();
   const compactPage = compact && mobilePresentation === "page";
   const contentRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const [subpageHost, setSubpageHost] = useState<HTMLDivElement | null>(null);
   const [activeSubpage, setActiveSubpage] = useState<{ id: symbol; onBack(): void } | null>(null);
   const registerSubpage = useCallback((onBack: () => void) => {
@@ -85,7 +90,7 @@ export function DialogContent({
   }, [activeSubpage, subpageHost]);
 
   return (
-    <DialogPrimitive.Portal>
+    <DialogPrimitive.Portal container={container}>
       <DialogPrimitive.Overlay className="modal-overlay" />
       <div
         className={clsx("modal-shell", placement === "left" && "agent-ui-dialog-drawer-shell")}
@@ -93,6 +98,17 @@ export function DialogContent({
       >
         <DialogPrimitive.Content
           ref={contentRef}
+          onOpenAutoFocus={(event) => {
+            returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            onOpenAutoFocus?.(event);
+          }}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented && returnFocusRef.current?.isConnected) {
+              event.preventDefault();
+              returnFocusRef.current.focus();
+            }
+          }}
           className={clsx("modal-card", placement === "left" && "agent-ui-dialog-drawer-content", className)}
           data-compact={compact || undefined}
           data-compact-page={compactPage || undefined}

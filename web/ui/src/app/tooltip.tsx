@@ -1,5 +1,6 @@
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import type { ReactElement, ReactNode } from "react";
+import { usePortalContainer } from "./portal.js";
 
 type TooltipSide = "top" | "bottom" | "left" | "right";
 type TooltipAlign = "start" | "center" | "end";
@@ -20,10 +21,11 @@ export function Tooltip(props: {
   sideOffset?: number;
   disabled?: boolean;
 }) {
+  const container = usePortalContainer();
   return (
     <TooltipPrimitive.Root disabled={props.disabled}>
       <TooltipPrimitive.Trigger render={props.children} />
-      <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Portal container={container}>
         <TooltipPrimitive.Positioner
           className="agent-ui-tooltip-positioner"
           side={props.side ?? "top"}
