@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 const { values } = parseArgs({ options: {
-  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" },
+  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
 } });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
@@ -16,16 +16,16 @@ const pins = JSON.parse(await readFile(new URL("components.json", root), "utf8")
 const lock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
 const webLock = JSON.parse(await readFile(new URL("web/package-lock.json", root), "utf8"));
 async function verifyArchive(name, path) {
-  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", ui: "@olorinm/agent-ui" }[name];
-  const expected = (name === "ui" ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
+  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", ui: "@olorinm/agent-ui", frontend: "@olorinm/agent-frontend" }[name];
+  const expected = (["ui", "frontend"].includes(name) ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
   const actual = "sha512-" + createHash("sha512").update(await readFile(path)).digest("base64");
   // npm ci may satisfy a file: dependency from its integrity cache without
   // opening the supplied archive. Check the actual bytes before invoking npm.
   if (actual !== expected || pins[name].integrity && pins[name].integrity !== expected)
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
-const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", ui: "agent-ui.tgz" };
-for (const name of ["router", "environment", "ui"]) {
+const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", ui: "agent-ui.tgz", frontend: "agent-frontend.tgz" };
+for (const name of ["router", "environment", "ui", "frontend"]) {
   const destination = new URL(archives[name], packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);

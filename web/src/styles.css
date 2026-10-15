@@ -6,7 +6,7 @@ body,
 }
 
 body {
-  background: var(--c-bg);
+  margin: 0;
 }
 
 .mau-shell {
@@ -347,3 +347,7 @@ body {
     display: none;
   }
 }
+
+/* Product content uses the shared page surfaces. */
+.mau-agent .mau-actions { margin-block:var(--sp-2); }
+.cloud-auth-switch { border:0; padding:0; color:var(--c-text-2); background:transparent; cursor:pointer; font-size:var(--fs-sm); }

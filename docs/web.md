@@ -2,16 +2,28 @@
 
 [简体中文](web.zh-CN.md)
 
-The Mau web console covers sign-in, agent creation, environment state and lifecycle,
-channel connection and checks. It calls only the existing Mau (`/_mau/v1`) and
-Router (`/_agent-router/v1`) routes, plus the public Matrix homeserver for password
-sign-in and sign-out. Chat, model settings, credentials and files are not part of
-this console.
+Mau composes layouts extracted from the original OpenGrove presentation source in `@olorinm/agent-frontend` with the
+lower-level `@olorinm/agent-ui` components. The frontend package receives data,
+React content and callbacks; it has no Mau, Router, Host, Environment, Matrix or
+OpenGrove backend dependency. Mau owns authentication, routes, navigation,
+requests, account messaging and environment/channel workflows in `web/src`.
 
-UI components come from `@olorinm/agent-ui/app` ([Agent UI](https://github.com/Olorinm/agent-ui),
-extracted from OpenGrove). Mau owns the connection layer (`web/src/api`), copy and
-layout. `components.json` pins the Agent UI release; bootstrap downloads it and
-verifies the bytes against `web/package-lock.json`.
+The UI covers account sign-in, Agent creation and management, environment
+lifecycle, channel connections and messages with owned Agents. Account messages
+use the public Matrix client API and Router's existing delivery path. There is no direct kernel chat, wallet or
+withdrawal feature. Apps, extensions and settings keep visible product-owned
+entries with explicit “not connected yet” content where no integration exists.
+
+The original navigation, conversation input/search, profile, appearance settings,
+app forms and extension workspace are reused. Extension navigation retains Skills,
+MCP, kernel plugins, Hooks, Tools and CLI. Unavailable operations are disabled.
+The original form layout and optional sapling artwork are reused; Router account
+credentials and session verification remain in Mau. Neither the frontend package
+nor Mau implements OpenGrove Bridge compatibility endpoints.
+
+`components.json` pins both UI archives. Bootstrap downloads the exact release
+bytes and verifies them against `web/package-lock.json`. Agent UI is a peer of
+Agent Frontend so translations and shared providers use one context instance.
 
 ## Develop
 
@@ -84,3 +96,24 @@ personal-tool choices. The official consent page restores access to that app;
 no App Secret is copied. Saved credentials are reused when only binding failed.
 Failed setup jobs remain available after a Router restart. Bot messaging and
 personal authorization are reported separately in checks.
+
+## Message behavior
+
+Mau displays joined account rooms involving its owned Agents. Starting a new
+conversation waits for the initial room sync and selects an owned Agent explicitly;
+a group containing another
+participant is not silently reused for a direct conversation. Existing groups are
+marked as groups with participant counts and sender identities. The product adapter
+uses Matrix sync cursors and displays recent text/notice messages. A limited
+history is marked as such. Other message kinds and older-history pagination are
+not implemented in this first account-messaging integration.
+
+A failed send preserves the draft and transaction ID. Retry reuses that ID to
+avoid duplicate delivery; dismissing retry is an explicit user action. A server
+acknowledgment confirms sending, while Agent replies appear only after sync.
+The browser tests simulate Matrix and do not establish live model acceptance.
+
+The Files navigation entry is explicitly unavailable. Shared workspace operations
+remain available through the existing Mau API and CLI. This integration does not
+assemble a replacement file application from the frontend package’s workbench
+components.

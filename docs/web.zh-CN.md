@@ -2,9 +2,15 @@
 
 [English](web.md)
 
-Mau Web 控制台提供登录、新建员工、查看与控制运行环境、连接渠道和自检。它只调用现有的 Mau（`/_mau/v1`）与 Router（`/_agent-router/v1`）接口，密码登录和退出时直接访问公开的 Matrix 服务器。本版本不含聊天、模型配置、凭证和文件。
+Mau 复用从 OpenGrove 原源码提取的页面结构、样式和交互，提供账号登录、员工管理、环境生命周期、渠道连接、账号消息。
+账号消息经过 Matrix 与 Router；不包含直接内核聊天、钱包和提现。
 
-界面组件来自 `@olorinm/agent-ui/app`（[Agent UI](https://github.com/Olorinm/agent-ui)，从 OpenGrove 抽出）。连接层（`web/src/api`）、文案和布局属于 Mau。`components.json` 固定 Agent UI 的发布版本，bootstrap 下载后按 `web/package-lock.json` 校验字节。
+公共组件来自 `@olorinm/agent-frontend` 与 `@olorinm/agent-ui`，仅接收数据和回调。
+认证、接口请求、导航和业务流程由 Mau 的 `web/src` 负责；公共包不依赖这些服务。
+`components.json` 固定两个 UI 发布包，bootstrap 下载后按锁文件校验字节。
+应用创建、商店、扩展和设置入口保留；Mau 没有接入的服务明确显示“尚未接入”，操作不可提交。
+外观设置、消息输入与搜索、资料页、移动端导航使用提取包中的原组件。
+图形化扩展保留 Skills、MCP、内核插件、Hooks、Tools 和 CLI 六类入口。
 
 ## 开发
 
@@ -53,3 +59,17 @@ npm run test:web
 App ID、区域和个人工具选项，通过飞书官方页面重新授权；无需复制 App Secret。
 如果凭据已经保存，仅绑定失败，则直接复用凭据。失败任务在 Router 重启后仍可查看。
 自检分别显示机器人消息通道与个人工具授权状态。
+
+
+## 公共前端与产品边界
+
+Mau 使用 `@olorinm/agent-frontend` 的布局、列表详情、登录表单外观和聊天组件。
+公共包只接收数据与回调，不依赖 Mau、Router、Host、Environment、Matrix 或 OpenGrove 接口。
+账号认证、导航、消息请求和环境/渠道流程都在 Mau 的 `web/src` 中组装。
+
+本轮不包含直接内核聊天、钱包和提现。应用、扩展及设置入口由 Mau 提供，缺少服务的入口明确显示“尚未接入”。
+账号消息通过 Matrix 与 Router 现有链路通信；发送失败保留草稿，重试复用事务 ID，避免重复投递。
+只展示含当前账号自有 Agent 的已加入房间；发起会话先等待首次房间同步，不因同步尚未完成重复创建房间，也不把含其他参与者的群组自动当作私聊。
+当前支持最近的文字/通知消息，历史分页和其他消息类型尚未接入。
+“文件”导航保留原有呈现，并明确说明尚未接入。共享工作区仍通过现有 Mau API 和 CLI 使用；本次集成不把工作台目录与预览零件重新拼成文件应用。
+浏览器验收使用明确的 Matrix 和云环境测试替身，不代表真实内核或线上服务验收。

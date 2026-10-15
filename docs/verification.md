@@ -65,3 +65,46 @@ Local validation passed the 21 Mau tests, independent CLI installation and the
 four-package Mau/Router/Environment/Host consumer. Environment separately passed
 119 original OMA tests and 35 provider/workspace checks. See
 [shared workspaces](workspaces.md) for configuration and API semantics.
+
+## Initial frontend isolation and source comparison (2026-10-15)
+
+The initial frontend integration used Agent UI and Agent Frontend `0.1.0-alpha.3`
+release archives. The lockfile, `components.json` and actual archive SHA-512 values match.
+Product-owned theme state updates the component provider and its portals together.
+Creating an app opens the extracted original dialog over the active page; closing
+it returns focus to the opener. Unsupported services remain explicitly unavailable.
+Provider, operations and voice settings use the original presentation components.
+
+The local build and all 38 tests passed, including the new unavailable-create and
+focus assertions. Direct original-source screenshots of light/dark appearance and
+theme menus matched at desktop and mobile sizes (6 captures, zero differing pixels).
+Full-page captures are review-only because product data and branding differ. The
+reusable comparison runner and broader component coverage live in agent-ui's
+`frontend/` directory. These checks use isolated fixtures, not a live Agent or a
+production deployment.
+
+
+## Frontend merge review (2026-10-15)
+
+The final consumer pins Agent UI and Agent Frontend `0.1.0-alpha.4` release
+archives from merge revision `94f7e64bf39f96a35e6644fd33937cf2150595d7`.
+Their downloaded SHA-512 values and MIT metadata match the lockfile and component
+pins; other dependencies and Mau’s `0.1.0-alpha.6` version are unchanged.
+
+The review retains the existing Mau API, account authorization, Environment
+lifecycle and Feishu recovery paths. The new assembled Files screen is omitted;
+its navigation entry explicitly reports that file browsing is not connected.
+Shared workspaces remain available through the existing API and CLI.
+
+Opening a direct conversation now waits for the first Matrix room inventory.
+Concurrent initial reads share one request; a failed sync does not create a room,
+and retry can complete normally. Regression tests cover a delayed existing room
+and a failed first inventory. Sending still retains Matrix transaction IDs.
+
+Local acceptance passed all 42 tests, including browser checks for theme-scoped
+menus and original app dialogs, cancel focus restoration, mobile Tab/Escape
+behavior, the keyboard-accessible unavailable Files entry and Feishu recovery.
+Chinese and English dialogs at 390px and 320px have no horizontal overflow
+inside the dialog, form groups or action row; each action button is fully visible.
+These checks use the separately downloaded immutable UI archives and fixture
+services; they do not claim live Matrix, native-model or deployment acceptance.
