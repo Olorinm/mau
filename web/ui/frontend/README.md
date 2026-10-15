@@ -5,6 +5,12 @@ components extracted from OpenGrove's existing presentation source. The original
 markup, styles and UI interactions are retained; product controllers are replaced
 with display values, slots and callbacks. It does not require OpenGrove services.
 
+This package's own code, including the implementation extracted from OpenGrove
+revision `8b365ed`, is licensed under the [MIT License](LICENSE). The original
+revision was distributed under Apache-2.0 at extraction. Source attribution and
+third-party terms remain in [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+and `licenses/`; dependencies keep their original licenses.
+
 ## Ownership
 
 | Package | Owns |
@@ -44,7 +50,8 @@ the draft, invent an assistant reply, or select a backend. Supply pending/error
 state and update the input after the product confirms its operation. A callback
 may use any service or local state; the component does not know which.
 
-Install React 19, React DOM 19 and the Agent UI alpha.3 archive in the consumer.
+Install React 19, React DOM 19 and the Agent UI alpha.4 archive in the consumer.
+Agent UI alpha.3 remains the supported minimum for the shared portal API.
 Agent UI is a peer dependency so shared providers have a single context instance. Components require no mounting
 singleton and may be composed into an existing React tree or rendered separately.
 Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;

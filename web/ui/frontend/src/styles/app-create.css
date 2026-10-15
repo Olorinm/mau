@@ -380,6 +380,13 @@
 }
 
 @media (max-width: 640px) {
+  .app-create-dialog,
+  .app-create-wizard,
+  .app-create-section {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .app-create-row {
     grid-template-columns: minmax(0, 1fr);
   }

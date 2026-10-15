@@ -1,8 +1,8 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
   "repository": {
     "type": "git",
@@ -75,7 +75,7 @@
     "node": ">=24"
   },
   "peerDependencies": {
-    "@olorinm/agent-ui": "0.1.0-alpha.3",
+    "@olorinm/agent-ui": "^0.1.0-alpha.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

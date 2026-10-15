@@ -362,6 +362,12 @@ label.settings-list-row {
   margin-top: 8px;
 }
 
+@media (max-width: 640px) {
+  .app-create-wizard .settings-form-actions {
+    flex-wrap: wrap;
+  }
+}
+
 .app-create-wizard .settings-form-actions button {
   width: auto;
   min-width: 112px;

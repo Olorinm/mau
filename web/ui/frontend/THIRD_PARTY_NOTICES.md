@@ -2,50 +2,6 @@
 
 Notices retained for the extracted frontend. Runtime dependencies retain their own license files.
 
-## Model Context Protocol ext-apps
-
-OpenGrove uses `@modelcontextprotocol/ext-apps` version 1.7.5 and adapts
-portions of its `basic-server-vanillajs` example in
-`scripts/test-mcp-app-sandbox.mjs`. OpenGrove changes the example's handlers
-and tool calls to exercise the OpenGrove HTTP bridge.
-
-The upstream project is transitioning from the MIT License to the Apache
-License 2.0. Its license notice states that new code and relicensed
-contributions are Apache-2.0, while contributions whose authors have not
-consented to relicensing remain MIT-licensed. The npm package metadata for
-version 1.7.5 declares the package as MIT-licensed. Applicable upstream code
-retains its original MIT or Apache-2.0 terms.
-
-Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.
-
-MIT License
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Apache-2.0 contributions are covered by OpenGrove's top-level `LICENSE` file.
-
-Sources:
-
-- https://github.com/modelcontextprotocol/ext-apps/tree/v1.7.5
-- https://github.com/modelcontextprotocol/ext-apps/blob/v1.7.5/examples/basic-server-vanillajs/src/mcp-app.ts
-- https://www.npmjs.com/package/@modelcontextprotocol/ext-apps/v/1.7.5
-
 ## shadcn/ui
 
 The Avatar component structure in `web/src/components/ui/avatar.tsx` is adapted

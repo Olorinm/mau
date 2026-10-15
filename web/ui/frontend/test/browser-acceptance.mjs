@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 export async function checkBrowser(url) {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -56,6 +56,38 @@ export async function checkBrowser(url) {
     await page
       .getByRole("button", { name: "Choose template", exact: true })
       .click();
+    const catalogCard = page.locator(".app-store-app-card");
+    await catalogCard.focus();
+    await catalogCard.press("Enter");
+    const catalogDialog = page.getByRole("dialog", {
+      name: "Template",
+      exact: true,
+    });
+    await catalogDialog.waitFor();
+    const catalogClose = catalogDialog.getByRole("button", {
+      name: "Close",
+      exact: true,
+    });
+    await expect(catalogClose).toBeFocused();
+    assert.equal(
+      await catalogDialog.evaluate((element) =>
+        element.closest(".af-scope")?.getAttribute("data-resolved-theme"),
+      ),
+      "light",
+      "catalog portal keeps the caller's theme scope",
+    );
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      catalogDialog.getByRole("button", {
+        name: "Choose template",
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(catalogClose).toBeFocused();
+    await page.keyboard.press("Escape");
+    await catalogDialog.waitFor({ state: "hidden" });
+    await expect(catalogCard).toBeFocused();
     await page.getByRole("button", { name: "settings", exact: true }).click();
     await page.getByText("Caller-owned preferences").waitFor();
     await page.getByRole("button", { name: "Light", exact: true }).click();

@@ -16,7 +16,7 @@ npm ci
 npm pack
 
 # From a separate React 19 product:
-npm install /path/to/olorinm-agent-ui-0.1.0-alpha.2.tgz
+npm install /path/to/olorinm-agent-ui-0.1.0-alpha.4.tgz
 ```
 
 ```tsx

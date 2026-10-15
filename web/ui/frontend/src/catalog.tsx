@@ -1,7 +1,8 @@
 // Extracted from web/src/components/network/app-store-view.tsx at 8b365ed. See source-manifest.json for boundary changes.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Search, X } from "lucide-react";
-import { ProductIcon } from "@olorinm/agent-ui/app";
+import { ProductIcon, usePortalContainer } from "@olorinm/agent-ui/app";
 import { useI18n } from "./presentation/i18n";
 export interface CatalogItem {
   id: string;
@@ -44,22 +45,6 @@ export function Catalog({
   const { t } = useI18n();
   const [selected, setSelected] = useState<string>();
   const item = items.find((item) => item.id === selected);
-  const previousFocus = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!item) return;
-    previousFocus.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelected(undefined);
-    };
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("keydown", close);
-      previousFocus.current?.focus();
-    };
-  }, [item]);
   return (
     <section
       className="view-panel tab-view app-store-view"
@@ -202,44 +187,51 @@ function CatalogDialog({
   onClose(): void;
 }) {
   const { t } = useI18n();
+  const container = usePortalContainer();
   return (
-    <div
-      className="app-store-dialog-backdrop"
-      role="presentation"
-      onMouseDown={onClose}
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <section
-        className="app-store-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={item.title}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <button
-          className="app-store-dialog-close"
-          type="button"
-          onClick={onClose}
-          aria-label={t("mountedApp.close")}
-          title={t("mountedApp.close")}
+      <Dialog.Portal container={container}>
+        <div
+          className="app-store-dialog-backdrop"
+          role="presentation"
+          onMouseDown={onClose}
         >
-          <X size={28} aria-hidden="true" />
-        </button>
-        <div className="app-store-dialog-heading">
-          <span className="app-store-dialog-hero-icon">{item.icon}</span>
-          <h2>{item.title}</h2>
-          <p>
-            <span>{item.publisher}</span>
-            {item.version ? <span>v{item.version}</span> : null}
-          </p>
-          {item.metadata}
+          <Dialog.Popup
+            render={<section />}
+            className="app-store-dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <Dialog.Close
+              className="app-store-dialog-close"
+              aria-label={t("mountedApp.close")}
+              title={t("mountedApp.close")}
+            >
+              <X size={28} aria-hidden="true" />
+            </Dialog.Close>
+            <div className="app-store-dialog-heading">
+              <span className="app-store-dialog-hero-icon">{item.icon}</span>
+              <Dialog.Title render={<h2 />}>{item.title}</Dialog.Title>
+              <p>
+                <span>{item.publisher}</span>
+                {item.version ? <span>v{item.version}</span> : null}
+              </p>
+              {item.metadata}
+            </div>
+            <p className="app-store-dialog-summary">{item.description}</p>
+            {item.detail}
+            <div className="app-store-dialog-actions">{item.actions}</div>
+          </Dialog.Popup>
         </div>
-        <p className="app-store-dialog-summary">{item.description}</p>
-        {item.detail}
-        <div className="app-store-dialog-actions">{item.actions}</div>
-      </section>
-    </div>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
+
 function CatalogLoadingState() {
   const { t } = useI18n();
   return (

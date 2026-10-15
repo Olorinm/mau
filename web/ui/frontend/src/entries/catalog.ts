@@ -1,6 +1,7 @@
 import "../base.css";
 import "../styles/app-store.css";
 import "../styles/app-store-error.css";
+import "../styles/settings.css";
 import "../styles/app-create.css";
 import "../styles/mounted-app.css";
 import "../styles/mounted-app-workbench.css";
