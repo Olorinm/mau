@@ -1,10 +1,25 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
-import { markdown, markdownKeymap, pasteURLAsLink } from "@codemirror/lang-markdown";
+import {
+  markdown,
+  markdownKeymap,
+  pasteURLAsLink,
+} from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import {
   bracketMatching,
@@ -14,7 +29,13 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { Annotation, EditorSelection, EditorState, type Extension, type Range } from "@codemirror/state";
+import {
+  Annotation,
+  EditorSelection,
+  EditorState,
+  type Extension,
+  type Range,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -125,39 +146,54 @@ const markdownLivePreviewDecorations = ViewPlugin.fromClass(
 function buildMarkdownLivePreviewDecorations(view: EditorView): DecorationSet {
   const decorations: Array<Range<Decoration>> = [];
   const activeLine = view.state.doc.lineAt(view.state.selection.main.head);
-  decorations.push(Decoration.line({ class: "cm-md-active-line" }).range(activeLine.from));
+  decorations.push(
+    Decoration.line({ class: "cm-md-active-line" }).range(activeLine.from),
+  );
   const frontmatterEnd = markdownFrontmatterEnd(view.state.doc.toString());
   if (frontmatterEnd > 0) {
     let line = view.state.doc.lineAt(0);
     while (line.from < frontmatterEnd) {
-      decorations.push(Decoration.line({ class: "cm-md-frontmatter-line" }).range(line.from));
-      if (line.to >= frontmatterEnd || line.number >= view.state.doc.lines) break;
+      decorations.push(
+        Decoration.line({ class: "cm-md-frontmatter-line" }).range(line.from),
+      );
+      if (line.to >= frontmatterEnd || line.number >= view.state.doc.lines)
+        break;
       line = view.state.doc.line(line.number + 1);
     }
   }
   syntaxTree(view.state).iterate({
     enter(node) {
       const name = node.name;
-      const inFrontmatter = frontmatterEnd > 0 && node.from < frontmatterEnd && node.to <= frontmatterEnd;
+      const inFrontmatter =
+        frontmatterEnd > 0 &&
+        node.from < frontmatterEnd &&
+        node.to <= frontmatterEnd;
       if (inFrontmatter) return false;
-      const onActiveLine = node.from <= activeLine.to && node.to >= activeLine.from;
+      const onActiveLine =
+        node.from <= activeLine.to && node.to >= activeLine.from;
       const headingClass = headingClasses.get(name);
       if (headingClass) {
-        decorations.push(Decoration.mark({ class: headingClass }).range(node.from, node.to));
+        decorations.push(
+          Decoration.mark({ class: headingClass }).range(node.from, node.to),
+        );
       }
       if (syntaxMarkNodes.has(name)) {
         const hiddenTo = inactiveSyntaxEnd(view, name, node.to);
         if (name === "ListMark" && !onActiveLine) {
           decorations.push(
             Decoration.replace({
-              widget: new MarkdownListMarkerWidget(view.state.sliceDoc(node.from, node.to)),
+              widget: new MarkdownListMarkerWidget(
+                view.state.sliceDoc(node.from, node.to),
+              ),
             }).range(node.from, hiddenTo),
           );
           return;
         }
         decorations.push(
           onActiveLine
-            ? Decoration.mark({ class: "cm-md-syntax cm-md-syntax-active" }).range(node.from, node.to)
+            ? Decoration.mark({
+                class: "cm-md-syntax cm-md-syntax-active",
+              }).range(node.from, node.to)
             : Decoration.replace({}).range(node.from, hiddenTo),
         );
       }
@@ -190,8 +226,17 @@ class MarkdownListMarkerWidget extends WidgetType {
   }
 }
 
-function inactiveSyntaxEnd(view: EditorView, nodeName: string, to: number): number {
-  if (nodeName !== "HeaderMark" && nodeName !== "ListMark" && nodeName !== "QuoteMark") return to;
+function inactiveSyntaxEnd(
+  view: EditorView,
+  nodeName: string,
+  to: number,
+): number {
+  if (
+    nodeName !== "HeaderMark" &&
+    nodeName !== "ListMark" &&
+    nodeName !== "QuoteMark"
+  )
+    return to;
   const line = view.state.doc.lineAt(to);
   let next = to;
   while (next < line.to) {
@@ -210,204 +255,238 @@ function markdownFrontmatterEnd(text: string): number {
   return end + "\n---".length;
 }
 
-export const MarkdownCodeEditor = forwardRef<MarkdownCodeEditorHandle, MarkdownCodeEditorProps>(
-  function MarkdownCodeEditor(props, ref) {
-    const hostRef = useRef<HTMLDivElement | null>(null);
-    const viewRef = useRef<EditorView | null>(null);
-    const onChangeRef = useRef(props.onChange);
-    const onSnapshotRef = useRef(props.onSnapshot);
-    onSnapshotRef.current = props.onSnapshot;
-    const onOpenLinkRef = useRef(props.onOpenLink);
-    const onTextSelectionChangeRef = useRef(props.onTextSelectionChange);
-    const valueRef = useRef(props.value);
+export const MarkdownCodeEditor = forwardRef<
+  MarkdownCodeEditorHandle,
+  MarkdownCodeEditorProps
+>(function MarkdownCodeEditor(props, ref) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(props.onChange);
+  const onSnapshotRef = useRef(props.onSnapshot);
+  onSnapshotRef.current = props.onSnapshot;
+  const onOpenLinkRef = useRef(props.onOpenLink);
+  const onTextSelectionChangeRef = useRef(props.onTextSelectionChange);
+  const valueRef = useRef(props.value);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        getValue: () => viewRef.current?.state.doc.toString() ?? valueRef.current,
+  useImperativeHandle(
+    ref,
+    () => ({
+      getValue: () => viewRef.current?.state.doc.toString() ?? valueRef.current,
+    }),
+    [],
+  );
+
+  const extensions = useMemo(() => {
+    const languageExtensions = codeMirrorLanguageExtensions(props.format);
+    const editorKeymap =
+      props.format === "markdown"
+        ? keymap.of([
+            ...markdownKeymap,
+            indentWithTab,
+            ...defaultKeymap,
+            ...historyKeymap,
+          ])
+        : keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]);
+    const base: Extension[] = [
+      highlightSpecialChars(),
+      history(),
+      drawSelection(),
+      highlightActiveLine(),
+      dropCursor(),
+      indentOnInput(),
+      bracketMatching(),
+      EditorView.lineWrapping,
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ...languageExtensions,
+      editorKeymap,
+      placeholder(props.placeholder ?? ""),
+      EditorView.updateListener.of((update) => {
+        if (
+          update.docChanged &&
+          !update.transactions.some((transaction) =>
+            transaction.annotation(externalValueUpdate),
+          )
+        ) {
+          const document = update.state.doc;
+          let value: string | undefined;
+          const read = () => {
+            value ??= document.toString();
+            if (viewRef.current?.state.doc === document)
+              valueRef.current = value;
+            return value;
+          };
+          if (onSnapshotRef.current) onSnapshotRef.current(read);
+          else onChangeRef.current(read());
+        }
+        if (
+          update.docChanged ||
+          update.selectionSet ||
+          update.focusChanged ||
+          update.viewportChanged
+        ) {
+          emitTextSelection(update.view, onTextSelectionChangeRef.current);
+        }
       }),
-      [],
-    );
-
-    const extensions = useMemo(() => {
-      const languageExtensions = codeMirrorLanguageExtensions(props.format);
-      const editorKeymap =
-        props.format === "markdown"
-          ? keymap.of([...markdownKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap])
-          : keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]);
-      const base: Extension[] = [
-        highlightSpecialChars(),
-        history(),
-        drawSelection(),
-        highlightActiveLine(),
-        dropCursor(),
-        indentOnInput(),
-        bracketMatching(),
-        EditorView.lineWrapping,
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        ...languageExtensions,
-        editorKeymap,
-        placeholder(props.placeholder ?? ""),
-        EditorView.updateListener.of((update) => {
-          if (
-            update.docChanged &&
-            !update.transactions.some((transaction) => transaction.annotation(externalValueUpdate))
-          ) {
-            const document = update.state.doc;
-            let value: string | undefined;
-            const read = () => {
-              value ??= document.toString();
-              if (viewRef.current?.state.doc === document) valueRef.current = value;
-              return value;
-            };
-            if (onSnapshotRef.current) onSnapshotRef.current(read);
-            else onChangeRef.current(read());
+      EditorView.domEventHandlers({
+        click(event, view) {
+          const position = view.posAtCoords({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          if (position === null) return false;
+          const line = view.state.doc.lineAt(position);
+          const href = markdownLinkAtOffset(line.text, position - line.from);
+          if (!href) return false;
+          if (onOpenLinkRef.current?.(href)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
           }
-          if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
-            emitTextSelection(update.view, onTextSelectionChangeRef.current);
-          }
-        }),
-        EditorView.domEventHandlers({
-          click(event, view) {
-            const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
-            if (position === null) return false;
-            const line = view.state.doc.lineAt(position);
-            const href = markdownLinkAtOffset(line.text, position - line.from);
-            if (!href) return false;
-            if (onOpenLinkRef.current?.(href)) {
-              event.preventDefault();
-              event.stopPropagation();
-              return true;
-            }
-            return false;
-          },
-        }),
-        EditorView.theme({
-          "&": {
-            background: "transparent",
-            color: "var(--knowledge-markdown-fg)",
-            fontSize: "inherit",
-          },
-          ".cm-scroller": {
-            fontFamily: "inherit",
-            lineHeight: "1.75",
-          },
-          ".cm-content": {
-            padding: "0",
-            caretColor: "var(--knowledge-markdown-fg)",
-            minHeight: "calc(100vh - 230px)",
-          },
-          ".cm-line": {
-            color: "inherit",
-            padding: "0",
-          },
-          ".cm-activeLine": {
-            backgroundColor: "transparent",
-          },
-          ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-            backgroundColor: "var(--knowledge-selection-bg)",
-          },
-          ".cm-cursor": {
-            borderLeftColor: "var(--knowledge-markdown-fg)",
-          },
-          ".cm-placeholder": {
-            color: "var(--knowledge-placeholder-fg)",
-          },
-          ".cm-gutters": {
-            display: "none",
-          },
-          "&.cm-focused": {
-            outline: "none",
-          },
-        }),
-      ];
-      if (props.format === "markdown") {
-        base.splice(10, 0, syntaxHighlighting(markdownHighlightStyle), markdownLivePreviewDecorations, pasteURLAsLink);
-      }
-      return base;
-    }, [props.format, props.placeholder]);
-
-    useEffect(() => {
-      onChangeRef.current = props.onChange;
-    }, [props.onChange]);
-
-    useEffect(() => {
-      onOpenLinkRef.current = props.onOpenLink;
-    }, [props.onOpenLink]);
-
-    useEffect(() => {
-      onTextSelectionChangeRef.current = props.onTextSelectionChange;
-    }, [props.onTextSelectionChange]);
-
-    useEffect(() => {
-      if (!hostRef.current) return;
-      const view = new EditorView({
-        parent: hostRef.current,
-        state: EditorState.create({
-          doc: props.value,
-          extensions,
-        }),
-      });
-      viewRef.current = view;
-      valueRef.current = props.value;
-      if (props.autoFocus) {
-        view.focus();
-      }
-      return () => {
-        onTextSelectionChangeRef.current?.(null);
-        view.destroy();
-        viewRef.current = null;
-      };
-    }, [extensions]);
-
-    useEffect(() => {
-      if (props.autoFocus) {
-        viewRef.current?.focus();
-      }
-    }, [props.autoFocus]);
-
-    useEffect(() => {
-      const view = viewRef.current;
-      if (!view) return;
-      const currentValue = view.state.doc.toString();
-      if (props.value === currentValue) return;
-      const change = minimalTextChange(currentValue, props.value);
-      const nextSelection = EditorSelection.create(
-        view.state.selection.ranges.map((range) =>
-          EditorSelection.range(
-            mapPositionThroughTextChange(range.anchor, change),
-            mapPositionThroughTextChange(range.head, change),
-          ),
-        ),
-        view.state.selection.mainIndex,
+          return false;
+        },
+      }),
+      EditorView.theme({
+        "&": {
+          background: "transparent",
+          color: "var(--knowledge-markdown-fg)",
+          fontSize: "inherit",
+        },
+        ".cm-scroller": {
+          fontFamily: "inherit",
+          lineHeight: "1.75",
+        },
+        ".cm-content": {
+          padding: "0",
+          caretColor: "var(--knowledge-markdown-fg)",
+          minHeight: "calc(100vh - 230px)",
+        },
+        ".cm-line": {
+          color: "inherit",
+          padding: "0",
+        },
+        ".cm-activeLine": {
+          backgroundColor: "transparent",
+        },
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor: "var(--knowledge-selection-bg)",
+        },
+        ".cm-cursor": {
+          borderLeftColor: "var(--knowledge-markdown-fg)",
+        },
+        ".cm-placeholder": {
+          color: "var(--knowledge-placeholder-fg)",
+        },
+        ".cm-gutters": {
+          display: "none",
+        },
+        "&.cm-focused": {
+          outline: "none",
+        },
+      }),
+    ];
+    if (props.format === "markdown") {
+      base.splice(
+        10,
+        0,
+        syntaxHighlighting(markdownHighlightStyle),
+        markdownLivePreviewDecorations,
+        pasteURLAsLink,
       );
-      const wasFocused = view.hasFocus;
-      valueRef.current = props.value;
-      view.dispatch({
-        changes: change,
-        selection: nextSelection,
-        annotations: externalValueUpdate.of(true),
-      });
-      if (wasFocused) {
-        view.focus();
-      }
-    }, [props.value]);
+    }
+    return base;
+  }, [props.format, props.placeholder]);
 
-    return <div className="knowledge-markdown-codemirror" ref={hostRef} />;
-  },
-);
+  useEffect(() => {
+    onChangeRef.current = props.onChange;
+  }, [props.onChange]);
 
-function minimalTextChange(currentValue: string, nextValue: string): { from: number; to: number; insert: string } {
+  useEffect(() => {
+    onOpenLinkRef.current = props.onOpenLink;
+  }, [props.onOpenLink]);
+
+  useEffect(() => {
+    onTextSelectionChangeRef.current = props.onTextSelectionChange;
+  }, [props.onTextSelectionChange]);
+
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const view = new EditorView({
+      parent: hostRef.current,
+      state: EditorState.create({
+        doc: props.value,
+        extensions,
+      }),
+    });
+    viewRef.current = view;
+    valueRef.current = props.value;
+    if (props.autoFocus) {
+      view.focus();
+    }
+    return () => {
+      onTextSelectionChangeRef.current?.(null);
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [extensions]);
+
+  useEffect(() => {
+    if (props.autoFocus) {
+      viewRef.current?.focus();
+    }
+  }, [props.autoFocus]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const currentValue = view.state.doc.toString();
+    if (props.value === currentValue) return;
+    const change = minimalTextChange(currentValue, props.value);
+    const nextSelection = EditorSelection.create(
+      view.state.selection.ranges.map((range) =>
+        EditorSelection.range(
+          mapPositionThroughTextChange(range.anchor, change),
+          mapPositionThroughTextChange(range.head, change),
+        ),
+      ),
+      view.state.selection.mainIndex,
+    );
+    const wasFocused = view.hasFocus;
+    valueRef.current = props.value;
+    view.dispatch({
+      changes: change,
+      selection: nextSelection,
+      annotations: externalValueUpdate.of(true),
+    });
+    if (wasFocused) {
+      view.focus();
+    }
+  }, [props.value]);
+
+  return <div className="knowledge-markdown-codemirror" ref={hostRef} />;
+});
+
+function minimalTextChange(
+  currentValue: string,
+  nextValue: string,
+): { from: number; to: number; insert: string } {
   let start = 0;
   const currentLength = currentValue.length;
   const nextLength = nextValue.length;
-  while (start < currentLength && start < nextLength && currentValue[start] === nextValue[start]) {
+  while (
+    start < currentLength &&
+    start < nextLength &&
+    currentValue[start] === nextValue[start]
+  ) {
     start += 1;
   }
 
   let currentEnd = currentLength;
   let nextEnd = nextLength;
-  while (currentEnd > start && nextEnd > start && currentValue[currentEnd - 1] === nextValue[nextEnd - 1]) {
+  while (
+    currentEnd > start &&
+    nextEnd > start &&
+    currentValue[currentEnd - 1] === nextValue[nextEnd - 1]
+  ) {
     currentEnd -= 1;
     nextEnd -= 1;
   }
@@ -419,7 +498,10 @@ function minimalTextChange(currentValue: string, nextValue: string): { from: num
   };
 }
 
-function mapPositionThroughTextChange(position: number, change: { from: number; to: number; insert: string }): number {
+function mapPositionThroughTextChange(
+  position: number,
+  change: { from: number; to: number; insert: string },
+): number {
   const removedLength = change.to - change.from;
   const insertedLength = change.insert.length;
   if (position <= change.from) return position;
@@ -427,7 +509,9 @@ function mapPositionThroughTextChange(position: number, change: { from: number; 
   return change.from + Math.min(insertedLength, position - change.from);
 }
 
-function codeMirrorLanguageExtensions(format: MarkdownCodeEditorFormat): Extension[] {
+function codeMirrorLanguageExtensions(
+  format: MarkdownCodeEditorFormat,
+): Extension[] {
   switch (format) {
     case "markdown":
       return [markdown()];
@@ -477,7 +561,10 @@ function emitTextSelection(
     onTextSelectionChange(null);
     return;
   }
-  const anchor = view.coordsAtPos(range.head) ?? view.coordsAtPos(to) ?? view.coordsAtPos(from);
+  const anchor =
+    view.coordsAtPos(range.head) ??
+    view.coordsAtPos(to) ??
+    view.coordsAtPos(from);
   if (!anchor) {
     onTextSelectionChange(null);
     return;

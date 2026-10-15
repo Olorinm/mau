@@ -1,4 +1,11 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import { editorViewCtx, serializerCtx } from "@milkdown/kit/core";
 import type { Ctx } from "@milkdown/kit/ctx";
@@ -26,101 +33,115 @@ type MarkdownRichEditorProps = {
   onTextSelectionChange?(selection: MarkdownEditorSelection | null): void;
 };
 
-export const MarkdownRichEditor = forwardRef<MarkdownRichEditorHandle, MarkdownRichEditorProps>(
-  function MarkdownRichEditor(props, ref) {
-    const hostRef = useRef<HTMLDivElement | null>(null);
-    const crepeRef = useRef<Crepe | null>(null);
-    const readyCrepeRef = useRef<Crepe | null>(null);
-    const codeEditorRef = useRef<MarkdownCodeEditorHandle | null>(null);
-    const currentValueRef = useRef(props.value);
-    const pendingExternalValueRef = useRef<string | null>(null);
-    const changeHandlerRef = useRef(props.onChange);
-    const snapshotHandlerRef = useRef(props.onSnapshot);
-    snapshotHandlerRef.current = props.onSnapshot;
-    const latestContentRef = useRef<(() => string) | undefined>(undefined);
-    const attachHandlerRef = useRef(props.onAttachSelection);
-    const selectionHandlerRef = useRef(props.onTextSelectionChange);
-    const applyingExternalValueRef = useRef(false);
-    const syncedDocumentRef = useRef<ProseMirrorNode | null>(null);
-    const [fallbackReason, setFallbackReason] = useState<unknown>(null);
+export const MarkdownRichEditor = forwardRef<
+  MarkdownRichEditorHandle,
+  MarkdownRichEditorProps
+>(function MarkdownRichEditor(props, ref) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const crepeRef = useRef<Crepe | null>(null);
+  const readyCrepeRef = useRef<Crepe | null>(null);
+  const codeEditorRef = useRef<MarkdownCodeEditorHandle | null>(null);
+  const currentValueRef = useRef(props.value);
+  const pendingExternalValueRef = useRef<string | null>(null);
+  const changeHandlerRef = useRef(props.onChange);
+  const snapshotHandlerRef = useRef(props.onSnapshot);
+  snapshotHandlerRef.current = props.onSnapshot;
+  const latestContentRef = useRef<(() => string) | undefined>(undefined);
+  const attachHandlerRef = useRef(props.onAttachSelection);
+  const selectionHandlerRef = useRef(props.onTextSelectionChange);
+  const applyingExternalValueRef = useRef(false);
+  const syncedDocumentRef = useRef<ProseMirrorNode | null>(null);
+  const [fallbackReason, setFallbackReason] = useState<unknown>(null);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        getValue: () => {
-          if (fallbackReason) {
-            return codeEditorRef.current?.getValue() ?? props.value;
-          }
-          if (latestContentRef.current) return latestContentRef.current();
-          const crepe = readyCrepeRef.current;
-          if (!crepe) {
+  useImperativeHandle(
+    ref,
+    () => ({
+      getValue: () => {
+        if (fallbackReason) {
+          return codeEditorRef.current?.getValue() ?? props.value;
+        }
+        if (latestContentRef.current) return latestContentRef.current();
+        const crepe = readyCrepeRef.current;
+        if (!crepe) {
+          return currentValueRef.current;
+        }
+        try {
+          const document = crepe.editor.action(
+            (ctx) => ctx.get(editorViewCtx).state.doc,
+          );
+          if (syncedDocumentRef.current?.eq(document))
             return currentValueRef.current;
-          }
-          try {
-            const document = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc);
-            if (syncedDocumentRef.current?.eq(document)) return currentValueRef.current;
-            const markdown = crepe.getMarkdown();
-            currentValueRef.current = markdown;
-            return markdown;
-          } catch (error) {
-            console.warn("[markdown-rich-editor] failed to read current markdown", normalizeEditorError(error));
-            return currentValueRef.current;
-          }
-        },
-      }),
-      [fallbackReason, props.value],
+          const markdown = crepe.getMarkdown();
+          currentValueRef.current = markdown;
+          return markdown;
+        } catch (error) {
+          console.warn(
+            "[markdown-rich-editor] failed to read current markdown",
+            normalizeEditorError(error),
+          );
+          return currentValueRef.current;
+        }
+      },
+    }),
+    [fallbackReason, props.value],
+  );
+
+  useEffect(() => {
+    changeHandlerRef.current = props.onChange;
+  }, [props.onChange]);
+
+  useEffect(() => {
+    attachHandlerRef.current = props.onAttachSelection;
+  }, [props.onAttachSelection]);
+
+  useEffect(() => {
+    selectionHandlerRef.current = props.onTextSelectionChange;
+  }, [props.onTextSelectionChange]);
+
+  const fallBackToCodeEditor = useCallback((error: unknown) => {
+    console.error(
+      "[markdown-rich-editor] falling back to code editor",
+      normalizeEditorError(error),
     );
+    selectionHandlerRef.current?.(null);
+    crepeRef.current = null;
+    setFallbackReason(error);
+  }, []);
 
-    useEffect(() => {
-      changeHandlerRef.current = props.onChange;
-    }, [props.onChange]);
-
-    useEffect(() => {
-      attachHandlerRef.current = props.onAttachSelection;
-    }, [props.onAttachSelection]);
-
-    useEffect(() => {
-      selectionHandlerRef.current = props.onTextSelectionChange;
-    }, [props.onTextSelectionChange]);
-
-    const fallBackToCodeEditor = useCallback((error: unknown) => {
-      console.error("[markdown-rich-editor] falling back to code editor", normalizeEditorError(error));
-      selectionHandlerRef.current?.(null);
-      crepeRef.current = null;
-      setFallbackReason(error);
-    }, []);
-
-    useEffect(() => {
-      if (fallbackReason) return;
-      const root = hostRef.current;
-      if (!root) return;
-      let cancelled = false;
-      const hasBlockGutter = () => Number.parseFloat(getComputedStyle(root).paddingInlineStart) > 0;
-      const crepe = new Crepe({
-        root,
-        defaultValue: props.value,
-        features: {
-          [CrepeFeature.AI]: false,
-          [CrepeFeature.ImageBlock]: false,
-          [CrepeFeature.Latex]: false,
-          [CrepeFeature.ListItem]: false,
-          [CrepeFeature.TopBar]: false,
+  useEffect(() => {
+    if (fallbackReason) return;
+    const root = hostRef.current;
+    if (!root) return;
+    let cancelled = false;
+    const hasBlockGutter = () =>
+      Number.parseFloat(getComputedStyle(root).paddingInlineStart) > 0;
+    const crepe = new Crepe({
+      root,
+      defaultValue: props.value,
+      features: {
+        [CrepeFeature.AI]: false,
+        [CrepeFeature.ImageBlock]: false,
+        [CrepeFeature.Latex]: false,
+        [CrepeFeature.ListItem]: false,
+        [CrepeFeature.TopBar]: false,
+      },
+      featureConfigs: {
+        [CrepeFeature.BlockEdit]: {
+          blockHandle: {
+            getOffset: () => (hasBlockGutter() ? 32 : 8),
+            getPlacement: () => (hasBlockGutter() ? "left-start" : "top-end"),
+          },
         },
-        featureConfigs: {
-          [CrepeFeature.BlockEdit]: {
-            blockHandle: {
-              getOffset: () => (hasBlockGutter() ? 32 : 8),
-              getPlacement: () => (hasBlockGutter() ? "left-start" : "top-end"),
-            },
-          },
-          [CrepeFeature.Placeholder]: {
-            mode: "block",
-            text: props.placeholder || "",
-          },
-          [CrepeFeature.Toolbar]: {
-            buildToolbar: props.onAttachSelection
-              ? (builder) => {
-                  builder.addGroup("selection", "Selection").addItem("attach-selection", {
+        [CrepeFeature.Placeholder]: {
+          mode: "block",
+          text: props.placeholder || "",
+        },
+        [CrepeFeature.Toolbar]: {
+          buildToolbar: props.onAttachSelection
+            ? (builder) => {
+                builder
+                  .addGroup("selection", "Selection")
+                  .addItem("attach-selection", {
                     icon: ATTACH_SELECTION_ICON,
                     active: () => false,
                     onRun: (ctx) => {
@@ -128,159 +149,175 @@ export const MarkdownRichEditor = forwardRef<MarkdownRichEditorHandle, MarkdownR
                       if (selection) attachHandlerRef.current?.(selection);
                     },
                   });
-                }
-              : undefined,
-          },
+              }
+            : undefined,
         },
-      });
-      currentValueRef.current = props.value;
-      try {
-        // Notify the Host synchronously: a delayed dirty signal lets an external
-        // refresh replace keystrokes entered before that signal arrives.
-        crepe.editor.use(
-          $prose(
-            () =>
-              new Plugin({
-                view: () => ({
-                  update: (view, previous) => {
-                    if (
-                      cancelled ||
-                      readyCrepeRef.current !== crepe ||
-                      applyingExternalValueRef.current ||
-                      previous.doc.eq(view.state.doc)
-                    )
-                      return;
-                    const document = view.state.doc;
-                    const serialize = crepe.editor.action((ctx) => ctx.get(serializerCtx));
-                    let markdown: string | undefined;
-                    const read = () => {
-                      markdown ??= serialize(document);
-                      if (latestContentRef.current === read) {
-                        syncedDocumentRef.current = document;
-                        currentValueRef.current = markdown;
-                      }
-                      return markdown;
-                    };
-                    latestContentRef.current = read;
-                    if (snapshotHandlerRef.current) snapshotHandlerRef.current(read);
-                    else changeHandlerRef.current(read());
-                  },
-                }),
+      },
+    });
+    currentValueRef.current = props.value;
+    try {
+      // Notify the Host synchronously: a delayed dirty signal lets an external
+      // refresh replace keystrokes entered before that signal arrives.
+      crepe.editor.use(
+        $prose(
+          () =>
+            new Plugin({
+              view: () => ({
+                update: (view, previous) => {
+                  if (
+                    cancelled ||
+                    readyCrepeRef.current !== crepe ||
+                    applyingExternalValueRef.current ||
+                    previous.doc.eq(view.state.doc)
+                  )
+                    return;
+                  const document = view.state.doc;
+                  const serialize = crepe.editor.action((ctx) =>
+                    ctx.get(serializerCtx),
+                  );
+                  let markdown: string | undefined;
+                  const read = () => {
+                    markdown ??= serialize(document);
+                    if (latestContentRef.current === read) {
+                      syncedDocumentRef.current = document;
+                      currentValueRef.current = markdown;
+                    }
+                    return markdown;
+                  };
+                  latestContentRef.current = read;
+                  if (snapshotHandlerRef.current)
+                    snapshotHandlerRef.current(read);
+                  else changeHandlerRef.current(read());
+                },
               }),
-          ),
-        );
-        crepe.on((listener) => {
-          listener.selectionUpdated((ctx, selection) => {
-            const onTextSelectionChange = selectionHandlerRef.current;
-            if (!onTextSelectionChange) return;
-            if (selection.empty) {
-              onTextSelectionChange(null);
-              return;
-            }
-            try {
-              onTextSelectionChange(readEditorSelection(ctx));
-            } catch (error) {
-              console.warn("[markdown-rich-editor] ignored selection read failure", normalizeEditorError(error));
-              onTextSelectionChange(null);
-            }
-          });
-        });
-      } catch (error) {
-        fallBackToCodeEditor(error);
-        return;
-      }
-      crepeRef.current = crepe;
-      void crepe
-        .create()
-        .then(() => {
-          if (cancelled) {
-            void crepe.destroy().catch(() => undefined);
+            }),
+        ),
+      );
+      crepe.on((listener) => {
+        listener.selectionUpdated((ctx, selection) => {
+          const onTextSelectionChange = selectionHandlerRef.current;
+          if (!onTextSelectionChange) return;
+          if (selection.empty) {
+            onTextSelectionChange(null);
             return;
           }
           try {
-            crepe.editor.action((ctx) => {
-              const view = readEditorView(ctx);
-              if (!view) throw new Error("Milkdown editor view was not ready after create");
-              view.dom.classList.add("markdown-preview");
-            });
-            if (props.autoFocus) {
-              crepe.editor.action((ctx) => {
-                readEditorView(ctx)?.focus();
-              });
-            }
-            readyCrepeRef.current = crepe;
-            syncedDocumentRef.current = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc);
-            const pendingExternalValue = pendingExternalValueRef.current;
-            if (pendingExternalValue !== null && pendingExternalValue !== currentValueRef.current) {
-              applyExternalValue(crepe, pendingExternalValue);
-            }
-            pendingExternalValueRef.current = null;
+            onTextSelectionChange(readEditorSelection(ctx));
           } catch (error) {
-            fallBackToCodeEditor(error);
+            console.warn(
+              "[markdown-rich-editor] ignored selection read failure",
+              normalizeEditorError(error),
+            );
+            onTextSelectionChange(null);
           }
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) fallBackToCodeEditor(error);
         });
-      return () => {
-        cancelled = true;
-        selectionHandlerRef.current?.(null);
-        crepeRef.current = null;
-        readyCrepeRef.current = null;
-        syncedDocumentRef.current = null;
-        void crepe.destroy().catch(() => undefined);
-      };
-    }, [fallBackToCodeEditor, fallbackReason]);
-
-    useEffect(() => {
-      const crepe = readyCrepeRef.current;
-      if (fallbackReason || props.value === currentValueRef.current) return;
-      if (!crepe) {
-        pendingExternalValueRef.current = props.value;
-        return;
-      }
-      try {
-        applyExternalValue(crepe, props.value);
-      } catch (error) {
-        fallBackToCodeEditor(error);
-      }
-    }, [fallBackToCodeEditor, fallbackReason, props.value]);
-
-    function applyExternalValue(crepe: Crepe, value: string) {
-      crepe.editor.action((ctx) => {
-        const view = readEditorView(ctx);
-        if (!view) throw new Error("Milkdown editor view is not ready for external value update");
-        applyingExternalValueRef.current = true;
-        try {
-          replaceAll(value)(ctx);
-          syncedDocumentRef.current = ctx.get(editorViewCtx).state.doc;
-        } finally {
-          applyingExternalValueRef.current = false;
-        }
       });
-      latestContentRef.current = undefined;
-      currentValueRef.current = value;
-      pendingExternalValueRef.current = null;
+    } catch (error) {
+      fallBackToCodeEditor(error);
+      return;
     }
+    crepeRef.current = crepe;
+    void crepe
+      .create()
+      .then(() => {
+        if (cancelled) {
+          void crepe.destroy().catch(() => undefined);
+          return;
+        }
+        try {
+          crepe.editor.action((ctx) => {
+            const view = readEditorView(ctx);
+            if (!view)
+              throw new Error(
+                "Milkdown editor view was not ready after create",
+              );
+            view.dom.classList.add("markdown-preview");
+          });
+          if (props.autoFocus) {
+            crepe.editor.action((ctx) => {
+              readEditorView(ctx)?.focus();
+            });
+          }
+          readyCrepeRef.current = crepe;
+          syncedDocumentRef.current = crepe.editor.action(
+            (ctx) => ctx.get(editorViewCtx).state.doc,
+          );
+          const pendingExternalValue = pendingExternalValueRef.current;
+          if (
+            pendingExternalValue !== null &&
+            pendingExternalValue !== currentValueRef.current
+          ) {
+            applyExternalValue(crepe, pendingExternalValue);
+          }
+          pendingExternalValueRef.current = null;
+        } catch (error) {
+          fallBackToCodeEditor(error);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) fallBackToCodeEditor(error);
+      });
+    return () => {
+      cancelled = true;
+      selectionHandlerRef.current?.(null);
+      crepeRef.current = null;
+      readyCrepeRef.current = null;
+      syncedDocumentRef.current = null;
+      void crepe.destroy().catch(() => undefined);
+    };
+  }, [fallBackToCodeEditor, fallbackReason]);
 
-    if (fallbackReason) {
-      return (
-        <MarkdownCodeEditor
-          ref={codeEditorRef}
-          value={props.value}
-          format="markdown"
-          autoFocus={props.autoFocus}
-          placeholder={props.placeholder ?? ""}
-          onChange={props.onChange}
-          onSnapshot={props.onSnapshot}
-          onTextSelectionChange={props.onTextSelectionChange}
-        />
-      );
+  useEffect(() => {
+    const crepe = readyCrepeRef.current;
+    if (fallbackReason || props.value === currentValueRef.current) return;
+    if (!crepe) {
+      pendingExternalValueRef.current = props.value;
+      return;
     }
+    try {
+      applyExternalValue(crepe, props.value);
+    } catch (error) {
+      fallBackToCodeEditor(error);
+    }
+  }, [fallBackToCodeEditor, fallbackReason, props.value]);
 
-    return <div className="markdown-rich-editor" ref={hostRef} />;
-  },
-);
+  function applyExternalValue(crepe: Crepe, value: string) {
+    crepe.editor.action((ctx) => {
+      const view = readEditorView(ctx);
+      if (!view)
+        throw new Error(
+          "Milkdown editor view is not ready for external value update",
+        );
+      applyingExternalValueRef.current = true;
+      try {
+        replaceAll(value)(ctx);
+        syncedDocumentRef.current = ctx.get(editorViewCtx).state.doc;
+      } finally {
+        applyingExternalValueRef.current = false;
+      }
+    });
+    latestContentRef.current = undefined;
+    currentValueRef.current = value;
+    pendingExternalValueRef.current = null;
+  }
+
+  if (fallbackReason) {
+    return (
+      <MarkdownCodeEditor
+        ref={codeEditorRef}
+        value={props.value}
+        format="markdown"
+        autoFocus={props.autoFocus}
+        placeholder={props.placeholder ?? ""}
+        onChange={props.onChange}
+        onSnapshot={props.onSnapshot}
+        onTextSelectionChange={props.onTextSelectionChange}
+      />
+    );
+  }
+
+  return <div className="markdown-rich-editor" ref={hostRef} />;
+});
 
 function readEditorSelection(ctx: Ctx): MarkdownEditorSelection | null {
   const view = readEditorView(ctx);
@@ -321,7 +358,12 @@ type EditorViewLike = {
     tr: unknown;
   };
   dom: HTMLElement;
-  coordsAtPos(position: number): { left: number; right: number; top: number; bottom: number };
+  coordsAtPos(position: number): {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
   dispatch(transaction: unknown): void;
   focus(): void;
 };

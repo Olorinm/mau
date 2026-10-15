@@ -1,42 +1,142 @@
-import { useId, useState, type ReactNode } from 'react';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useFrontendLabels } from './provider';
-
-/** Supplied by the product; the package has no built-in routes. */
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+  type ComponentProps,
+} from "react";
+import { AppRail } from "./presentation/app-rail";
+import { AppNavigationPanel } from "./presentation/app-navigation-panel";
+import { AppTitlebar } from "./presentation/app-titlebar";
+import { useAppRailLayout } from "./presentation/use-app-rail-layout";
+import { useCompactLayout } from "./presentation/use-compact-layout";
+const RailContext = createContext(true);
+const CloseNavigation = createContext(() => {});
 export interface NavigationItem {
-  id: string; label: string; icon?: ReactNode; badge?: ReactNode; disabled?: boolean;
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  badge?: ReactNode;
+  disabled?: boolean;
 }
-export function Navigation({ items, selectedId, onSelect, footer, label }: {
-  items: readonly NavigationItem[]; selectedId?: string; onSelect(id: string): void;
-  footer?: ReactNode; label?: string;
-}) {
-  const { t } = useFrontendLabels();
-  return <nav className="af-navigation" aria-label={label ?? t('navigation')}>
-    <div className="af-navigation-items">{items.map(item => <button key={item.id} type="button"
-      className="af-nav-item" aria-current={item.id === selectedId ? 'page' : undefined}
-      disabled={item.disabled} onClick={() => onSelect(item.id)}>
-      {item.icon ? <span className="af-nav-icon" aria-hidden="true">{item.icon}</span> : null}
-      <span>{item.label}</span>{item.badge ? <span className="af-nav-badge">{item.badge}</span> : null}
-    </button>)}</div><div className="af-navigation-footer">{footer}</div>
-  </nav>;
+export interface NavigationGroup {
+  id: string;
+  label?: string;
+  compactLabel?: string;
+  items: readonly NavigationItem[];
 }
-export function AppShell({ brand, logo, navigation, toolbar, children, className = '' }: {
-  brand: ReactNode; logo?: ReactNode; navigation?: ReactNode; toolbar?: ReactNode;
-  children: ReactNode; className?: string;
+export interface MenuAction {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  disabled?: boolean;
+  onSelect(): void;
+}
+
+export function Navigation({
+  items = [],
+  groups,
+  ...props
+}: Omit<ComponentProps<typeof AppRail>, "expanded" | "groups"> & {
+  items?: readonly NavigationItem[];
+  groups?: readonly NavigationGroup[];
 }) {
-  const { t } = useFrontendLabels();
-  const navigationId = useId();
-  const [navigationOpen, setNavigationOpen] = useState(true);
-  return <div className={`agent-app af-shell ${className}`} data-navigation-open={navigationOpen && !!navigation}>
-    <header className="app-titlebar"><div className="app-titlebar-left">
-      {navigation ? <button type="button" className="app-titlebar-control" aria-label={t('toggleNavigation')}
-        aria-expanded={navigationOpen} aria-controls={navigationId} onClick={() => setNavigationOpen(open => !open)}>
-        {navigationOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-      </button> : null}
-      <span className="app-titlebar-brand"><span className="app-titlebar-brand-mark">{logo}</span>
-        <span className="app-titlebar-brand-word">{brand}</span></span>
-    </div><div className="app-titlebar-drag-space" /><div className="af-toolbar">{toolbar}</div></header>
-    {navigation ? <aside id={navigationId} className="af-navigation-slot" hidden={!navigationOpen}>{navigation}</aside> : null}
-    <main className="af-workspace">{children}</main>
-  </div>;
+  const expanded = useContext(RailContext);
+  const close = useContext(CloseNavigation);
+  return (
+    <AppRail
+      {...props}
+      onSelect={(id) => {
+        props.onSelect(id);
+        close();
+      }}
+      expanded={expanded}
+      groups={groups ?? [{ id: "navigation", items }]}
+    />
+  );
+}
+/** Composition of original titlebar, rail controller and navigation panel. */
+export function AppShell({
+  brand,
+  logo,
+  navigation,
+  toolbar,
+  children,
+  className = "",
+  initialNavigationWidth = 126,
+  navigationWidth,
+  onNavigationWidthChange,
+}: {
+  brand: ReactNode;
+  logo?: ReactNode;
+  navigation?: ReactNode;
+  toolbar?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  initialNavigationWidth?: number;
+  navigationWidth?: number;
+  onNavigationWidthChange?(width: number): void;
+}) {
+  const railLayout = useAppRailLayout(
+    initialNavigationWidth,
+    navigationWidth,
+    onNavigationWidthChange,
+  );
+  const compact = useCompactLayout();
+  const id = useId();
+  const toggleId = id + "-toggle";
+  const navigationId = id + "-navigation";
+  const [compactOpen, setCompactOpen] = useState(false);
+  useEffect(() => setCompactOpen(false), [compact]);
+  return (
+    <div
+      className={"app-shell react-app agent-app af-shell " + className}
+      data-compact={compact ? "true" : "false"}
+      style={
+        {
+          "--af-rail-width":
+            navigation && !compact ? railLayout.width + "px" : "0px",
+          "--opengrove-rail-width": railLayout.width + "px",
+        } as CSSProperties
+      }
+    >
+      <AppTitlebar
+        brand={brand}
+        logo={logo}
+        toolbar={toolbar}
+        toggleId={toggleId}
+        navigationId={navigationId}
+        railVisible={compact ? compactOpen : railLayout.mode !== "hidden"}
+        onToggleRail={
+          navigation
+            ? () =>
+                compact ? setCompactOpen((open) => !open) : railLayout.toggle()
+            : undefined
+        }
+      />
+      {navigation ? (
+        <AppNavigationPanel
+          toggleId={toggleId}
+          navigationId={navigationId}
+          layout={railLayout}
+          overlayOpen={false}
+          compact={compact}
+          compactOpen={compactOpen}
+          onCompactOpenChange={setCompactOpen}
+        >
+          {(expanded) => (
+            <CloseNavigation.Provider value={() => setCompactOpen(false)}>
+              <RailContext.Provider value={expanded}>
+                {navigation}
+              </RailContext.Provider>
+            </CloseNavigation.Provider>
+          )}
+        </AppNavigationPanel>
+      ) : null}
+      <main className="workspace af-workspace">{children}</main>
+    </div>
+  );
 }

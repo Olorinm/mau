@@ -28,7 +28,11 @@ export function FileConflictEditor(props: {
       parent: container.current,
       a: {
         doc: props.original,
-        extensions: [...extensions, EditorState.readOnly.of(true), EditorView.editable.of(false)],
+        extensions: [
+          ...extensions,
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+        ],
       },
       b: {
         doc: props.value,
@@ -66,8 +70,13 @@ export function FileConflictEditor(props: {
     const editor = view.current?.b;
     if (!editor || editor.state.doc.toString() === props.value) return;
     applyingExternal.current = true;
-    try { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: props.value } }); }
-    finally { applyingExternal.current = false; }
+    try {
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: props.value },
+      });
+    } finally {
+      applyingExternal.current = false;
+    }
   }, [props.value]);
   return (
     <div className="file-conflict-editor">
@@ -83,7 +92,14 @@ export function FileConflictEditor(props: {
           type="button"
           onClick={() => {
             const editor = view.current?.b;
-            if (editor) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: props.original } });
+            if (editor)
+              editor.dispatch({
+                changes: {
+                  from: 0,
+                  to: editor.state.doc.length,
+                  insert: props.original,
+                },
+              });
           }}
         >
           {t("filePreview.copyDiskVersion")}
@@ -91,7 +107,11 @@ export function FileConflictEditor(props: {
         <button type="button" onClick={props.onCancel}>
           {t("filePreview.keepDraft")}
         </button>
-        <button type="button" disabled={props.stale || props.saving} onClick={() => void props.onSave()}>
+        <button
+          type="button"
+          disabled={props.stale || props.saving}
+          onClick={() => void props.onSave()}
+        >
           {t("filePreview.saveResolution")}
         </button>
       </div>

@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/open-grove/opengrove",
   "revision": "8b365ed2babc6caccc588cab1fa2d08488fb67a7",
-  "purpose": "Attribution for adapted presentation code, not an application mirror or synchronization contract.",
+  "purpose": "Provenance for extracted presentation, styles and UI interactions. Product controllers and protocols are deliberately excluded.",
   "adaptedFiles": {
     "files/code-editor.tsx": {
       "source": "web/src/components/knowledge/markdown-code-editor.tsx",
@@ -58,6 +58,427 @@
     "style.css": {
       "source": "web/src/components/shared/markdown-rich-editor-styles.ts",
       "sourceSha256": "e841ed597c719a155ff52a1b294b3588692e8a46e03c50dcd49fe4d14bb2b0b4"
+    },
+    "styles/rooms-empty-state.css": {
+      "source": "web/src/components/rooms/rooms-empty-state.css",
+      "sourceSha256": "e6f45c96aefa3787cb62a81f39eaf8f3f7bae8529555fc8fdccb2ac24a206281"
+    },
+    "styles/rooms-menus.css": {
+      "source": "web/src/components/rooms/rooms-menus.css",
+      "sourceSha256": "e20a63f9876493dd62835d3b7b5b324916c2d5f950f42e152da21e11176f40f8"
+    },
+    "styles/room-message-stream.css": {
+      "source": "web/src/components/rooms/room-message-stream.css",
+      "sourceSha256": "5ef5dde7a64b51bd6c24f9526ec650e89803ee56c96e08c93573b1a8e1451bfe"
+    },
+    "styles/room-members.css": {
+      "source": "web/src/components/rooms/room-members.css",
+      "sourceSha256": "419e29be483104657f339a0a2f75c7c0fc752ec67f15d643a7bbd1042078d249"
+    },
+    "styles/room-dialogs.css": {
+      "source": "web/src/components/rooms/room-dialogs.css",
+      "sourceSha256": "1bcf5b944cdc9c3a61c2a485e96f2c00f675f98172cce92daf4d87463f8dc56d"
+    },
+    "styles/contacts-view.css": {
+      "source": "web/src/components/rooms/contacts-view.css",
+      "sourceSha256": "b9da1e0133db5de86bcb0e8fc184ad3136fd84783761579061a43a60cc3b04d9"
+    },
+    "styles/app-store.css": {
+      "source": "web/src/components/network/app-store-view.css",
+      "sourceSha256": "c0fc1c58f185e1acfba9e621908eee771b77b684a15f2cc53baf8755b33f9d93"
+    },
+    "styles/app-store-error.css": {
+      "source": "web/src/components/network/app-store-error.css",
+      "sourceSha256": "1ae2efd46ccab5ce189153eca13a5cda54a3e63470c94949b7db04ba62cdb4b1"
+    },
+    "styles/composer.css": {
+      "source": "web/src/components/chat/opengrove-composer.css",
+      "sourceSha256": "ebbc21dc3534aa5f0a07ad638b99674003586e549bd63a9c7e7971e8e0ab1460"
+    },
+    "styles/attachments.css": {
+      "source": "web/src/components/shared/attachments.css",
+      "sourceSha256": "c40104600b5158a4ac36cee791d22d1b52d55b67f794bb67195151951439da24"
+    },
+    "styles/primitives.css": {
+      "source": "web/src/styles/primitives.css",
+      "sourceSha256": "ffdaef01682fec1739ff25ec66552845429f106a14fa22beb27178066ddfdd87"
+    },
+    "styles/reset.css": {
+      "source": "web/src/styles/reset.css",
+      "sourceSha256": "bb44ec32e9c4e6eb9464082fd9706df52d0610e383c0a7daeffdd832e3796b7f"
+    },
+    "styles/settings.css": {
+      "source": "web/src/components/sidebar/settings.css",
+      "sourceSha256": "081a199b7dc4db50c2e8a767d2c8ae5a60fc800ccbab06f01e7d253504a7029c"
+    },
+    "styles/rail.module.css": {
+      "source": "web/src/components/sidebar/app-navigation.module.css",
+      "sourceSha256": "ea97be413cdd17f8586e11dd8f96ea5431a7e31f1667b36a57d613a32def2d31"
+    },
+    "styles/navigation-panel.module.css": {
+      "source": "web/src/components/app-shell/app-navigation-panel.module.css",
+      "sourceSha256": "e88603f480345c7efb71968a2c77d79696e8138b0dd032e41cccd27f0c45e441"
+    },
+    "styles/settings.module.css": {
+      "source": "web/src/components/sidebar/settings-dialog.module.css",
+      "sourceSha256": "0eccf88af0ebd39fc2d5ed65c3fb9aed62e8008af58b956a2a57c5ec59f634d9"
+    },
+    "styles/extensions.module.css": {
+      "source": "web/src/components/extensions/extensions-view.module.css",
+      "sourceSha256": "0ef5256aa5db62deb8044e26286deea30de421ef24fc44ddb6073e56b94556af"
+    },
+    "styles/resize.module.css": {
+      "source": "web/src/components/ui/resize-handle.module.css",
+      "sourceSha256": "0721bee7553123560ac095d2eebca047f0cc97069d1cdc16bcc98e7817641d6c"
+    },
+    "styles/app-create.css": {
+      "source": "web/src/components/apps/app-create-wizard.css",
+      "sourceSha256": "109848468cc7caa8b5abc37d2ce688db5cb57a80d3f69568c7f7fe8376d15432"
+    },
+    "styles/app-settings.module.css": {
+      "source": "web/src/components/apps/app-settings-dialog.module.css",
+      "sourceSha256": "b29ff9c70e31245eb3dc8b3e3e92d1ed1e5052dd6e8be6457d5e2192305d7089"
+    },
+    "styles/app-identity.module.css": {
+      "source": "web/src/components/apps/app-identity-editor.module.css",
+      "sourceSha256": "08699e820cd6e7ece5bc5c8816061e4f30afaf24b68c8082d5c62d2f844b9113"
+    },
+    "styles/mounted-app.css": {
+      "source": "web/src/components/apps/mounted-app-workbench.css",
+      "sourceSha256": "14aa3d789b0e52ab7968369e14b44c9ca89de96a00363d13fac990e796a74030"
+    },
+    "styles/contacts-styles/detail-controls.css": {
+      "source": "web/src/components/rooms/contacts-styles/detail-controls.css",
+      "sourceSha256": "5f8ce6ef0c5cf65a55a351400bad7210820256b5b2e35411a120674f7fe99636"
+    },
+    "styles/contacts-styles/console-and-forms.css": {
+      "source": "web/src/components/rooms/contacts-styles/console-and-forms.css",
+      "sourceSha256": "a1e0a4daa320c4849aac3f2e4ee41237699f0acc88d520e8c1dbde16533caf6a"
+    },
+    "styles/contacts-styles/layout-and-directory.css": {
+      "source": "web/src/components/rooms/contacts-styles/layout-and-directory.css",
+      "sourceSha256": "b84f4e733a9447659b177ffd821a4bdbfb858cf898b7a1f73962a8750c9fa725"
+    },
+    "styles/contacts-styles/skills-and-detail.css": {
+      "source": "web/src/components/rooms/contacts-styles/skills-and-detail.css",
+      "sourceSha256": "85e2a3beb410b69188d698bd5126ecb24aff4cfa341b4e805a746778da45ca65"
+    },
+    "ui/menu.tsx": {
+      "source": "web/src/components/ui/motion/menu.tsx",
+      "sourceSha256": "b101bb37bd5320d9d8bac142caf853bfd93ac9346f06b42b3e8daa757a5af6af"
+    },
+    "ui/menu.module.css": {
+      "source": "web/src/components/ui/motion/menu.module.css",
+      "sourceSha256": "99977488ea5b16489d5f23c2e6512bf8839c8bcbac174c850b6f04677e9ff9bc"
+    },
+    "ui/overlay-surface.ts": {
+      "source": "web/src/components/ui/motion/overlay-surface.ts",
+      "sourceSha256": "f4c37bc31e6352af79544f489d3d5c2c73e3d0f9a8a6f8e62de657175118b46b"
+    },
+    "ui/overlay-surface.module.css": {
+      "source": "web/src/components/ui/motion/overlay-surface.module.css",
+      "sourceSha256": "a2aedc028c39c1b593ad20665573fbcb86fd16378fde9408e48c39cb5adbbece"
+    },
+    "ui/popover.tsx": {
+      "source": "web/src/components/ui/motion/popover.tsx",
+      "sourceSha256": "9c90d0a9c42cb32f5b01575e1b6e5020654f068c63f6b13177ee0a74573fde05"
+    },
+    "presentation/rail-layout-model.ts": {
+      "source": "web/src/runtime/app-rail-layout-model.ts",
+      "sourceSha256": "b69ee81c4e4dec7e1214296e382ebd350465de4996b8b0222f6c0a979b9d0c54",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/pointer-drag.ts": {
+      "source": "web/src/runtime/app-layout-resize.ts",
+      "sourceSha256": "ba11f2c68e29764081d3658a510ab268115b62cd7686ec7b7ec201ab350186a3",
+      "changes": "Extract the original pointer lifetime helper; omit app storage and composer policy."
+    },
+    "presentation/use-app-rail-layout.ts": {
+      "source": "web/src/runtime/use-app-rail-layout.ts",
+      "sourceSha256": "1186ad9ee5601c330293c42e353ab8c5f4f455c802af8a88e6a714ce00574383",
+      "changes": "Keep original snapping, hover and keyboard/drag behavior. Replace product storage/migration with initial value, controlled width and change callback."
+    },
+    "presentation/resize-handle.tsx": {
+      "source": "web/src/components/ui/resize-handle.tsx",
+      "sourceSha256": "14915649d85226aa424c3dac604cdb5d1f8517817189f2fa9d64c5c6335d514c",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/compact-navigation-dialog.tsx": {
+      "source": "web/src/components/app-shell/compact-navigation-dialog.tsx",
+      "sourceSha256": "06e694253bbf44af0656224b10ded7b7ddf2064a405e9e90311f1ba78cd0c9c5",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/app-navigation-panel.tsx": {
+      "source": "web/src/components/app-shell/app-navigation-panel.tsx",
+      "sourceSha256": "afa16fda210b1f2d00eb5564ec118d45efe2a0fb0ed6042dafbe55a3285b8b94",
+      "changes": "Original panel, overlay timers, drag handles and compact dialog. Instance IDs replace application-global IDs."
+    },
+    "presentation/use-compact-layout.ts": {
+      "source": "web/src/runtime/use-compact-layout.ts",
+      "sourceSha256": "62e4176ee4416ee2220159ff596588e71b13e0ce355484af4901454c32b4df21",
+      "changes": "Original media-query subscription only; omit document-wide viewport mutations."
+    },
+    "presentation/app-titlebar.tsx": {
+      "source": "web/src/components/app-shell/app-titlebar.tsx",
+      "sourceSha256": "da79e10fa259b6b6e7dd405d16464139edcd55a8090e629ab6dc6d95582bc2dd",
+      "changes": "Original titlebar JSX. Brand/artwork and extra actions supplied by caller; remove product updater/account/developer controllers."
+    },
+    "auth.tsx": {
+      "source": "web/src/components/app-shell/app-gates.tsx",
+      "sourceSha256": "4b99f30de0541545f210734c61de27fbef59a710dd4ebeb02b8e5ab876eaeb2f",
+      "changes": "Retain CloudAuthScreen page/form markup and original field, language and submit controls. Replace email-code/country/invite workflow with caller-provided fields, state and actions; configurable brand."
+    },
+    "settings.tsx": {
+      "source": "web/src/components/sidebar/settings-dialog.tsx",
+      "sourceSha256": "81d2a68e7dd8a73fbe0ec8b895606b28b5a74e203a2d3af105fcf9aabedf60c1",
+      "changes": "Retain original settings screen, navigation, back action, headings and section container. Product provides sections and panels; omit Bridge settings load/save and product mode policy."
+    },
+    "presentation/room-composer.tsx": {
+      "source": "web/src/components/rooms/room-composer.tsx",
+      "sourceSha256": "2f83c87338b4ef536f332921c8119cb8332f519a553e6d8e9b5be3410c789cc0",
+      "changes": "Original composer, mentions menu, reply preview, attachments and keyboard delegation. Replace Bridge attachment/member types and URL helpers with render-ready values. Add explicit disabled/capability props."
+    },
+    "presentation/room-chat-surface.tsx": {
+      "source": "web/src/components/rooms/room-chat-surface.tsx",
+      "sourceSha256": "3ec8213a8c1ef33776c7e3169cfb88dfb27b70f1f8cadb48f802b4be29b9ad1c",
+      "changes": "Original room chat surface markup and composer. Protocol event processing and resource fetching moved out; caller supplies message content and optional preview overlay."
+    },
+    "presentation/room-message-stream.tsx": {
+      "source": "web/src/components/rooms/room-message-stream.tsx",
+      "sourceSha256": "8e2a0a5c622387b6a9dc049f64094e1de2fffa26c04e92284a4494f97ee2436d",
+      "changes": "Original stream, message article, animated author, bubble/reply markup, contextual toolbar and its position measurement. Replace legacy/native protocol interpretation, remote authorization and diagnostics HTTP with render-ready messages and optional callbacks."
+    },
+    "presentation/unread-count.tsx": {
+      "source": "web/src/components/ui/unread-count.tsx",
+      "sourceSha256": "81d0afdfbb4ce8774c96757e35132c9b19f1e565a7ec01be235f95cbfa82f263",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/unread-count.module.css": {
+      "source": "web/src/components/ui/unread-count.module.css",
+      "sourceSha256": "bfcf4540fb144c35078b21721328fd6e0df8d9a3cb65aef5e4ecce7846fea8b0",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/app-rail.tsx": {
+      "source": "web/src/components/sidebar/app-navigation.tsx",
+      "sourceSha256": "573856c32e6ea9e9e59dbc33b698679c0b379be5b8681a45bd2eb3e936531691",
+      "changes": "Original rail, group/button markup, unread badges and account surface. Product supplies navigation groups and account actions. Wallet, withdrawal, cloud profile and fixture-account controllers excluded."
+    },
+    "profile.tsx": {
+      "source": "web/src/components/rooms/employee-settings-surface.tsx",
+      "sourceSha256": "c404f503c53271d9c44ef80d39a065a9ea59e21aa6365d69114a5c25c70613d0",
+      "changes": "Original EmployeeSettingsSurface JSX, profile identity editing including Escape cancellation, tooltips, action layout, overview and subpage navigation. Replace RoomMember/Bridge/autosave business with caller-owned identity, metrics, fields, pages and save callbacks."
+    },
+    "layouts/compact-list-detail.tsx": {
+      "source": "web/src/components/shared/compact-list-detail.tsx",
+      "sourceSha256": "15ed2b2ced7aef616ded3c9a1ff47e9122682a8209b80327c9bb3ed6834fc842",
+      "changes": "Original compact layout, focus restoration and back button. Remove global URL detail controller; product supplies selection and back callback."
+    },
+    "layouts/compact-list-detail.module.css": {
+      "source": "web/src/components/shared/compact-list-detail.module.css",
+      "sourceSha256": "1992ef83d4f540506135091a3ed6ef0dabfa9c1d3a0f3d35dbb20312f5d2a3ad",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "layout.tsx": {
+      "source": "web/src/components/rooms/room-sidebar.tsx",
+      "sourceSha256": "3d816eef66baaed08979e14e8df09a998ee74daf9cc21814122a7b6702cf7366",
+      "changes": "Original conversation row/header, contact search/row and shared compact focus policy. Product supplies list data and actions. Related sources: contacts-view.tsx, rooms-view-layout.tsx, shared/compact-list-detail.tsx.",
+      "additionalSources": [
+        "web/src/components/rooms/contacts-view.tsx",
+        "web/src/components/rooms/rooms-view-layout.tsx"
+      ]
+    },
+    "presentation/app-icon-catalog.ts": {
+      "source": "src/app-icons/catalog.ts",
+      "sourceSha256": "f33606a24ebdf7df6a41d828eb7c71ec6a1db47eaa7d38e53b802697d6881d44",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/artwork-identity.ts": {
+      "source": "src/app-icons/grove-identity.ts",
+      "sourceSha256": "59d31ee7e403f79617321698b5acafcd404cf505971ba35184a22fe8c944836c",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/app-icon-upload.ts": {
+      "source": "web/src/components/apps/app-icon-upload.ts",
+      "sourceSha256": "180f3e1ae871458fc6883d2ea072c0df6177431bba06065a08fb008274416ecb",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/grove-app-icon.tsx": {
+      "source": "web/src/components/ui/grove-app-icon.tsx",
+      "sourceSha256": "df43b84b090d1a33068941c25bd05e068884e6feca9fc9346a412706c78d312f",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/grove-app-icon.module.css": {
+      "source": "web/src/components/ui/grove-app-icon.module.css",
+      "sourceSha256": "41bc8415f5cd55872a62d70a14ff119de4780b5080bc8cd610e1febb103fab7c",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/identity-image-trigger.tsx": {
+      "source": "web/src/components/ui/identity-image-trigger.tsx",
+      "sourceSha256": "60f771f87e7339075403e699008c2700dc750613f81af3d69eaea3d23fb2e25e",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/identity-image-trigger.module.css": {
+      "source": "web/src/components/ui/identity-image-trigger.module.css",
+      "sourceSha256": "27417a10c01f4a02b6f48b8d0b7b4f934da181b6402f30be1b2184a4b53973cd",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/app-icon-picker.tsx": {
+      "source": "web/src/components/apps/app-icon-picker.tsx",
+      "sourceSha256": "f51a88eaaab1519d7af469e0f2e00fb9299bf25ba5046bd34331caaedfe5add5",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/app-create-wizard.tsx": {
+      "source": "web/src/components/apps/app-create-wizard.tsx",
+      "sourceSha256": "36ed532cbbc63e490dcf0cd13ab0870f85a3429fe7c3824616d3472e864bfea5",
+      "changes": "Original application creation form, icon picker, local draft and validation. All create/open/folder operations already use callbacks; no service client included."
+    },
+    "presentation/app-identity-editor.tsx": {
+      "source": "web/src/components/apps/app-identity-editor.tsx",
+      "sourceSha256": "9b019663d93a01d7dbb33f8e68104b01155323c73c2716fdab080cb5604e97b9",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "forms.tsx": {
+      "source": "web/src/components/rooms/employee-dialog.tsx",
+      "sourceSha256": "f3376222a4fd4c6cb4b8e46a8c2a796cf9fe163734885ddf5824624441bc94cb",
+      "changes": "Extract original employee dialog chrome and app create/identity/settings form JSX. Related source files: apps/app-create-wizard.tsx, app-identity-editor.tsx, app-settings-dialog.tsx. Product supplies form fields/actions; original complete app icon picker/create editor are also exported."
+    },
+    "catalog.tsx": {
+      "source": "web/src/components/network/app-store-view.tsx",
+      "sourceSha256": "0666f7474c818db2e57d7da1de21b0cf9de33fb034f7e8c3d93dc5a38f0ca2fc",
+      "changes": "Original catalogue title/search, card structure, loading skeleton and detail modal. Replace registry/package API and install/update policy with caller-owned records, action nodes and detail content."
+    },
+    "extensions.tsx": {
+      "source": "web/src/components/extensions/extensions-view.tsx",
+      "sourceSha256": "b712479b3da0381e313a7cd43895f668c1d1a11ba5dee04f62aac3f685bb9932",
+      "changes": "Original extension workspace navigation, toolbar/filter controls, result count, skill table, management rows and loading state. Replace SDK actions and deployment protocol interpretation with caller-owned display rows, target nodes and callbacks."
+    },
+    "ui/animated-background.tsx": {
+      "source": "web/src/components/ui/motion/animated-background.tsx",
+      "sourceSha256": "c701f8e1d50bc58dca4c431793f0841b42f5a1d34d7cc1ec6d9d4bb3fbbca280",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "ui/animated-background.module.css": {
+      "source": "web/src/components/ui/motion/animated-background.module.css",
+      "sourceSha256": "3fbc253362501f9e6beaa552ed5195c3b1c4c2b46284b583b09172e864c3dca8",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "files/panel.tsx": {
+      "source": "web/src/components/shared/file-preview-panel.tsx",
+      "sourceSha256": "d1a871d970f5e14296bb70a31454c1de2c3ffcfa2a22195b5e1bb9bbcbb2a79a",
+      "changes": "Original file surface, toolbar, animated mode tabs, loading skeleton and save status. Remove file/Bridge loading, download and persistence; content, errors and operations supplied by caller."
+    },
+    "presentation/settings-appearance-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-appearance-panel.tsx",
+      "sourceSha256": "6a8bc63030456443ddca15ed6baf5b8d02347c3c9f6ca43d91820cee93777b9f",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/settings-mode-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-mode-panel.tsx",
+      "sourceSha256": "a9c8d531c0d744b34b24a6d534ba81af21fd50c95683a014684ce126f58314b5",
+      "changes": "Original mode control. Remove the explicitly excluded direct-kernel-chat setting."
+    },
+    "presentation/settings-apps-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-apps-panel.tsx",
+      "sourceSha256": "fabeb55a0064461dd85952d97195bc0c2c4a501e99af0c0809422332367b5b6c",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/settings-kernel-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-kernel-panel.tsx",
+      "sourceSha256": "3471f3d51e6bdf6c6b8af57284d3a66d9060afd0d7dd9cd759f29a34245fb477",
+      "changes": "Original kernel list, expansion and path controls. Product supplies display status, icon and available install action; omit executable commands and capability reports."
+    },
+    "presentation/settings-kernel-panel.module.css": {
+      "source": "web/src/components/sidebar/settings-kernel-panel.module.css",
+      "sourceSha256": "86be9d31a4f5e8901a4542debbafdbefee67f9d3929062d5e0651016a9efbfbf",
+      "changes": "Original presentation implementation; local imports only."
+    },
+    "presentation/settings-connectivity-panels.tsx": {
+      "source": "web/src/components/sidebar/settings-connectivity-panels.tsx",
+      "sourceSha256": "b0277bd825a413feb9c5b4763fabc40935ab36de6e3fe4a15483e00f31e290fd",
+      "changes": "Original network forms. Rename product Router binding to a caller-owned service address; preserve proxy fields and callbacks without service requests."
+    },
+    "presentation/settings-voice-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-voice-panel.tsx",
+      "sourceSha256": "2595ad10e972acf2c08d8f06473751aaba0679bca3a811a7cf37b0618526cbee",
+      "changes": "Original voice configuration fields and validation interactions. Provider options and values supplied by caller; omit backend defaults and Bridge settings schema."
+    },
+    "presentation/settings-view-model.ts": {
+      "source": "web/src/bridge-settings-types.ts",
+      "sourceSha256": "3733a3a2900f13bd786a27c3699cb3c08dee4cbb4652f5fbd6a0e3b3b3c3a0f2",
+      "changes": "Only fields read by the extracted settings controls. No complete backend settings schema, defaults, compatibility or command payloads."
+    },
+    "presentation/use-room-composer-keyboard.ts": {
+      "source": "web/src/components/rooms/rooms-view.tsx",
+      "sourceSha256": "1a1b3bd4c8b454035c352cd3998655f770fac04d5528dcae17c5c28f87e02436",
+      "changes": "Original IME composition guard and Enter/Tab/arrow mention behavior. Only sendDraft is supplied by caller; no message delivery logic."
+    },
+    "presentation/settings-update-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-update-panel.tsx",
+      "sourceSha256": "9efb7455f95bda8c479b1e5c58988ab60eaf4194fc46abfa7116b2e04d0492ff",
+      "changes": "Original update-page JSX; updater IPC, release protocol parsing, polling, package version probes and install confirmation controllers replaced with presentation values and callbacks."
+    },
+    "presentation/settings-desktop-panel.tsx": {
+      "source": "web/src/components/sidebar/settings-desktop-panel.tsx",
+      "sourceSha256": "9c726a3ed76ff07d4a308ff868e6d1931c8d9f01acb6eead23fef3ec0eb18ffa",
+      "changes": "Original browser desktop/runtime overview and action/info rows. Runtime diagnostics, destructive storage cleanup, desktop IPC and polling are product controllers; receive values, actions and storage section from caller."
+    },
+    "presentation/room-header-actions.tsx": {
+      "source": "web/src/components/rooms/room-header-actions.tsx",
+      "sourceSha256": "fdce247e7a177960bde5d326a860057dab405355d086a04c983a5cd1f4eca8fb",
+      "changes": "Original search, rename and overflow menu JSX and interaction state. Message protocol normalization/member lookup/date formatting removed; caller supplies searchable display records and a scoped locate-message callback."
+    },
+    "versions.tsx": {
+      "source": "web/src/components/network/app-version-management-page.tsx",
+      "sourceSha256": "ef786360b28560e66c77bc5d723e00e5b8dd9648fdf2c28b700ca765202bb2bb",
+      "changes": "Original page header, version row, overview row and switch-confirmation dialog presentation. Status decisions, hashing, version protocols, date formatting, queries and mutation handling stay with the product; section collections and display rows are supplied."
+    },
+    "presentation/labels.ts": {
+      "sources": [
+        "web/src/locales/en.ts",
+        "web/src/locales/zh-CN.ts"
+      ],
+      "changes": "Only keys referenced by extracted UI; service names and product-specific explanations replaced with neutral copy."
+    },
+    "ui/inline-select.module.css": {
+      "source": "web/src/components/shared/inline-select.module.css",
+      "sourceSha256": "6cd3d18a69ebd7117d5e266e9f5f841a266eb468ed71ebee7fd6fc6115c93091",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "styles/section-sidebar.css": {
+      "source": "web/src/components/sidebar/section-sidebar.css",
+      "sourceSha256": "d1b6e8f0b1af33559651f26d1421d61bff6bcf4af36db4cfe4cedea98693125e",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "styles/mobile-nav.css": {
+      "source": "web/src/app-mobile-nav.css",
+      "sourceSha256": "9c4902e8c1307862bac79bb31aa28c0c366d8e980bd2a77923a01f1ea28281fe",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "styles/mounted-app-workbench.css": {
+      "source": "web/src/components/apps/mounted-app-workbench.css",
+      "sourceSha256": "14aa3d789b0e52ab7968369e14b44c9ca89de96a00363d13fac990e796a74030",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "layouts/adaptive-split-layout.module.css": {
+      "source": "web/src/components/shared/adaptive-split-layout.module.css",
+      "sourceSha256": "60154e5382ec5122a73916b37ba1139b5def193d148a346bdf0065ea55ca57be",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "files/directory-tree.module.css": {
+      "source": "web/src/components/shared/directory-tree.module.css",
+      "sourceSha256": "85a22053382f67c2d1914a63152b7f4610b06f6e831a56200be4b3c2e0642a68",
+      "changes": "Unchanged source stylesheet or presentation helper."
+    },
+    "files/directory-panel.module.css": {
+      "source": "web/src/components/shared/directory-panel.module.css",
+      "sourceSha256": "e0ca8063fbc473ed0d5f2c5e956bbd7625390da004b4fbf6aaa54cb4db8ec224",
+      "changes": "Unchanged source stylesheet or presentation helper."
     }
+  },
+  "assemblies": {
+    "shell.tsx": "Composes original AppTitlebar, AppNavigationPanel, AppRail and rail/compact layout state. No additional navigation DOM wrapper.",
+    "conversation.tsx": "Composes original RoomChatSurface, RoomComposer and RoomMessageStream; caller owns messages/drafts/delivery.",
+    "layout.tsx": "Parameterized row/header/list-detail markup from room-sidebar.tsx, contacts-view.tsx and rooms-view-layout.tsx; compact hook retains original focus behavior.",
+    "provider.tsx": "Instance-scoped English/Chinese presentation labels; persistence and document language belong to the consumer."
   }
 }

@@ -1,0 +1,4 @@
+/* The extracted pages use the browser box model. The primitive package applies a
+   universal border-box reset; restore upstream defaults only within page roots.
+   Explicit sizing on components still wins over this zero-specificity rule. */
+:where(.agent-app, .agent-app *, .agent-app *::before, .agent-app *::after) { box-sizing:revert; }

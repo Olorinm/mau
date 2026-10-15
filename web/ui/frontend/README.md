@@ -1,8 +1,9 @@
 # Agent Frontend
 
 `@olorinm/agent-frontend` provides product-neutral React layouts and interaction
-components adapted from OpenGrove's presentation code. It is not a copy of the
-OpenGrove application and does not require its backend.
+components extracted from OpenGrove's existing presentation source. The original
+markup, styles and UI interactions are retained; product controllers are replaced
+with display values, slots and callbacks. It does not require OpenGrove services.
 
 ## Ownership
 
@@ -48,7 +49,8 @@ Agent UI is a peer dependency so shared providers have a single context instance
 singleton and may be composed into an existing React tree or rendered separately.
 Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;
 the product owns the document, routing, theme selection and deployment policy.
-`FrontendProvider` supplies instance-local presentation labels; it never mutates
+`FrontendProvider` accepts `language="en" | "zh-CN"`, optional presentation label
+overrides, and instance-local text for the assembly components; it never mutates
 the document language. Importing CSS is an explicit opt-in to the shared design
 tokens and component styling. Editor JavaScript loads lazily when used.
 
@@ -57,15 +59,28 @@ tokens and component styling. Editor JavaScript loads lazily when used.
 - `AppShell`, `Navigation`: titlebar, brand/toolbar slots and caller-defined entries.
 - `ListDetailLayout`, `ItemList`, `PageHeader`, `DetailPanel`: contacts, conversations,
   resource lists or other caller-defined entities; compact back navigation.
-- `Conversation`: message presentation and composer, composed from Agent UI. Tool
+- `Conversation`: original room stream, message bubbles, hover actions, reply and
+  mention UI, attachments and IME-aware composer. `RoomHeaderActions` retains the
+  original search/rename menus. `RoomComposer`, `RoomChatSurface` and
+  `RoomMessageStream` are also available separately. Tool
   activity, approval choices and other message content can be supplied as React
   nodes without coupling to a kernel protocol.
 - `AuthLayout`, `AuthField`, `AuthSubmit`: original form layout and styling. All fields,
   validation, submission and authentication are supplied by the product.
 - `Catalog`: cards for caller-supplied apps, extensions or other items; no store,
   purchase, installation or extension-management implementation.
-- `SettingsLayout`: caller-defined sections and controls; no built-in billing,
-  desktop updater, account, provider or kernel settings.
+- `SettingsLayout`: original settings navigation and page chrome. Original
+  appearance, mode, kernel, apps, network, voice, desktop overview and updater
+  panels take values and callbacks. They do not probe devices, install kernels,
+  update an application or save preferences themselves.
+- `ProfileSurface`, `ProfileDialog`: original employee profile and tabbed dialog
+  markup, with caller-supplied summaries, actions and detail content.
+- `ExtensionsPage`: original workspace navigation, filters and extension rows;
+  the caller chooses tabs and provides records and deployment controls.
+- `AppCreateWizard`, `AppIconPicker`, `AppIdentityForm`: original forms and local
+  icon selection/upload interaction. Creating or importing an app is a callback.
+- `VersionHistory`, `VersionSwitchBlocker`: original version presentation and
+  confirmation dialog, with no version-selection or publishing service.
 - `FileEditor`: code/Markdown editor adapted from the original CodeMirror/Milkdown
   implementation. `value`, changes and selection are caller-owned. Reading,
   saving and conflict policy stay outside the component.
@@ -79,11 +94,10 @@ tokens and component styling. Editor JavaScript loads lazily when used.
 Low-level messages, tools, approval/question controls and UI primitives remain in
 `@olorinm/agent-ui`. Its optional Host adapter is not imported by this package.
 
-## Removed from the earlier draft
+## Product boundary
 
-The previous unreleased draft's `mountFrontend`, `apiBase`, Fetch adapter,
-`passwordLogin`, `unavailableFeatures`, copied Bridge/protocol clients and source
-application are removed. Product navigation is now ordinary caller data.
+There is no `mountFrontend`, `apiBase`, Fetch adapter, `passwordLogin`, service
+capability registry or copied Bridge client. Navigation is ordinary caller data.
 
 OpenGrove's email-code authentication, direct kernel chat page, wallet/withdrawal,
 PM/delegation, historical message normalization, cloud account, desktop and store
@@ -115,3 +129,26 @@ These are component tests, not acceptance of live cloud/model services.
 See `source-manifest.json`, `NOTICE`, and `THIRD_PARTY_NOTICES.md` for attribution.
 The manifest records adapted presentation sources; it is not a promise to mirror
 OpenGrove's application or synchronize product features.
+
+## Source changes
+
+`source-manifest.json` identifies the original file and its revision/hash, plus
+the boundary changes made during extraction. These hashes are provenance, not
+a runtime compatibility mechanism. The main changes are:
+
+- Keep UI state such as menu visibility, drag widths, IME guards and focus handling.
+- Replace service records with the fields needed to display a row or card.
+- Move authentication, requests, subscriptions, storage, protocol normalization
+  and business decisions to the embedding application.
+- Supply brand, artwork, navigation, unavailable states and actions explicitly.
+
+`AppShell`, `Conversation` and the list/detail wrappers assemble those original
+renderers. They are integration glue, not a second implementation of the pages.
+CSS names inherited from the source are retained where renaming would break
+selectors; they are not product branding or service dependencies.
+
+Mau currently connects authentication, Agent/environment controls, channels,
+account messages and files. The additional settings/store/extension entries
+remain visible with an explicit unavailable notice; this package does not make
+those product services exist. Operations/provider-specific content is supplied
+through settings slots rather than shipping their original service controllers.

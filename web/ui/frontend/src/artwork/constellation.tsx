@@ -1,4 +1,3 @@
-
 import { EmployeeAvatar } from "@olorinm/agent-ui/app";
 import { SaplingPlaceholder } from "./sapling";
 
@@ -11,20 +10,45 @@ const AUTH_EMPLOYEE_NODES = [
 ] as const;
 
 export function ConstellationPlaceholder({ brand }: { brand?: string }) {
-
-
   return (
     <div className="cloud-auth-constellation" aria-hidden="true">
       <svg viewBox="0 0 760 440" preserveAspectRatio="xMidYMid meet">
-        <path className="cloud-auth-orbit-line" d="M348 207C276 192 191 139 91 96" />
-        <path className="cloud-auth-orbit-line is-faint" d="M354 198C331 155 296 105 258 70" />
-        <path className="cloud-auth-orbit-line is-faint" d="M342 220C250 219 156 238 76 254" />
-        <path className="cloud-auth-orbit-line" d="M343 218C305 214 278 211 251 209" />
-        <path className="cloud-auth-orbit-line is-faint" d="M350 235C292 278 220 321 158 350" />
-        <path className="cloud-auth-orbit-line is-cloud" d="M390 203C426 179 447 160 474 147" />
-        <path className="cloud-auth-orbit-line is-cloud is-faint" d="M392 226C429 248 456 276 486 296" />
-        <path className="cloud-auth-orbit-line is-cloud is-faint" d="M474 147L519 92L574 132" />
-        <path className="cloud-auth-orbit-line is-cloud is-faint" d="M486 296L558 265L636 218" />
+        <path
+          className="cloud-auth-orbit-line"
+          d="M348 207C276 192 191 139 91 96"
+        />
+        <path
+          className="cloud-auth-orbit-line is-faint"
+          d="M354 198C331 155 296 105 258 70"
+        />
+        <path
+          className="cloud-auth-orbit-line is-faint"
+          d="M342 220C250 219 156 238 76 254"
+        />
+        <path
+          className="cloud-auth-orbit-line"
+          d="M343 218C305 214 278 211 251 209"
+        />
+        <path
+          className="cloud-auth-orbit-line is-faint"
+          d="M350 235C292 278 220 321 158 350"
+        />
+        <path
+          className="cloud-auth-orbit-line is-cloud"
+          d="M390 203C426 179 447 160 474 147"
+        />
+        <path
+          className="cloud-auth-orbit-line is-cloud is-faint"
+          d="M392 226C429 248 456 276 486 296"
+        />
+        <path
+          className="cloud-auth-orbit-line is-cloud is-faint"
+          d="M474 147L519 92L574 132"
+        />
+        <path
+          className="cloud-auth-orbit-line is-cloud is-faint"
+          d="M486 296L558 265L636 218"
+        />
 
         <g className="cloud-auth-local-stars">
           <circle cx="39" cy="147" r="2.5" />
@@ -41,20 +65,50 @@ export function ConstellationPlaceholder({ brand }: { brand?: string }) {
 
         <g className="cloud-auth-cloud-signals">
           <g className="cloud-auth-cloud-signal is-secondary">
-            <circle className="cloud-auth-signal-halo" cx="474" cy="147" r="6.5" />
-            <circle className="cloud-auth-signal-core" cx="474" cy="147" r="2.3" />
+            <circle
+              className="cloud-auth-signal-halo"
+              cx="474"
+              cy="147"
+              r="6.5"
+            />
+            <circle
+              className="cloud-auth-signal-core"
+              cx="474"
+              cy="147"
+              r="2.3"
+            />
           </g>
           <g className="cloud-auth-cloud-signal is-primary">
             <circle className="cloud-auth-signal-halo" cx="519" cy="92" r="8" />
             <circle className="cloud-auth-signal-core" cx="519" cy="92" r="3" />
           </g>
           <g className="cloud-auth-cloud-signal is-secondary">
-            <circle className="cloud-auth-signal-halo" cx="486" cy="296" r="6" />
-            <circle className="cloud-auth-signal-core" cx="486" cy="296" r="2.2" />
+            <circle
+              className="cloud-auth-signal-halo"
+              cx="486"
+              cy="296"
+              r="6"
+            />
+            <circle
+              className="cloud-auth-signal-core"
+              cx="486"
+              cy="296"
+              r="2.2"
+            />
           </g>
           <g className="cloud-auth-cloud-signal is-primary">
-            <circle className="cloud-auth-signal-halo" cx="636" cy="218" r="7.5" />
-            <circle className="cloud-auth-signal-core" cx="636" cy="218" r="2.8" />
+            <circle
+              className="cloud-auth-signal-halo"
+              cx="636"
+              cy="218"
+              r="7.5"
+            />
+            <circle
+              className="cloud-auth-signal-core"
+              cx="636"
+              cy="218"
+              r="2.8"
+            />
           </g>
         </g>
 
@@ -91,8 +145,15 @@ export function ConstellationPlaceholder({ brand }: { brand?: string }) {
       </svg>
 
       {AUTH_EMPLOYEE_NODES.map((node) => (
-        <span key={node.id} className={`cloud-auth-employee-node is-${node.id}`}>
-          <EmployeeAvatar seed={node.seed} fallbackName={node.id} style={{ width: "100%", height: "100%" }} />
+        <span
+          key={node.id}
+          className={`cloud-auth-employee-node is-${node.id}`}
+        >
+          <EmployeeAvatar
+            seed={node.seed}
+            fallbackName={node.id}
+            style={{ width: "100%", height: "100%" }}
+          />
         </span>
       ))}
 

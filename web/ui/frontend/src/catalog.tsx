@@ -1,13 +1,278 @@
-import type { ReactNode } from 'react';
+// Extracted from web/src/components/network/app-store-view.tsx at 8b365ed. See source-manifest.json for boundary changes.
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Search, X } from "lucide-react";
+import { ProductIcon } from "@olorinm/agent-ui/app";
+import { useI18n } from "./presentation/i18n";
 export interface CatalogItem {
-  id: string; title: ReactNode; description?: ReactNode; icon?: ReactNode; metadata?: ReactNode; actions?: ReactNode;
+  id: string;
+  title: string;
+  description?: ReactNode;
+  icon?: ReactNode;
+  publisher?: ReactNode;
+  version?: string;
+  metadata?: ReactNode;
+  actions?: ReactNode;
+  detail?: ReactNode;
+  onOpen?(): void;
 }
-/** Apps, extensions, templates and tools can share this layout; operations stay with the caller. */
-export function Catalog({ items, header, empty }: { items: readonly CatalogItem[]; header?: ReactNode; empty?: ReactNode }) {
-  return <section className="af-catalog">{header}<div className="af-catalog-grid">
-    {items.length ? items.map(item => <article className="af-catalog-card" key={item.id}>
-      <div className="af-catalog-heading">{item.icon}<h3>{item.title}</h3></div>
-      {item.description ? <p>{item.description}</p> : null}{item.metadata}<div className="af-catalog-actions">{item.actions}</div>
-    </article>) : empty}
-  </div></section>;
+
+export function Catalog({
+  items,
+  title,
+  actions,
+  query,
+  onQueryChange,
+  searchPlaceholder,
+  filters,
+  notice,
+  empty,
+  loading,
+  connected = false,
+}: {
+  items: readonly CatalogItem[];
+  title?: ReactNode;
+  actions?: ReactNode;
+  query?: string;
+  onQueryChange?(value: string): void;
+  searchPlaceholder?: string;
+  filters?: ReactNode;
+  notice?: ReactNode;
+  empty?: ReactNode;
+  loading?: boolean;
+  connected?: boolean;
+}) {
+  const { t } = useI18n();
+  const [selected, setSelected] = useState<string>();
+  const item = items.find((item) => item.id === selected);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!item) return;
+    previousFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(undefined);
+    };
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("keydown", close);
+      previousFocus.current?.focus();
+    };
+  }, [item]);
+  return (
+    <section
+      className="view-panel tab-view app-store-view"
+      data-presentation="grove"
+    >
+      <div className="app-store-page">
+        <header className="app-store-title">
+          <div>
+            <h1>
+              {true ? (
+                <span className="app-store-title-icon" aria-hidden="true">
+                  <ProductIcon name="store" size={24} />
+                </span>
+              ) : null}
+              {title ?? t("app.appStore")}
+              <span
+                className={
+                  connected
+                    ? "app-store-title-status ready"
+                    : "app-store-title-status"
+                }
+                role="img"
+                aria-label={
+                  connected
+                    ? t("workspace.kernelConnected")
+                    : t("appStore.notConnected")
+                }
+                title={
+                  connected
+                    ? t("workspace.kernelConnected")
+                    : t("appStore.notConnectedTitle")
+                }
+              />
+            </h1>
+          </div>
+          <div className="app-store-title-actions">
+            {onQueryChange ? (
+              <label className="app-store-search">
+                <Search size={18} aria-hidden="true" />
+                <input
+                  value={query ?? ""}
+                  onChange={(event) => onQueryChange?.(event.target.value)}
+                  placeholder={
+                    searchPlaceholder ?? t("appStore.searchPlaceholder")
+                  }
+                  aria-label={
+                    searchPlaceholder ?? t("appStore.searchPlaceholder")
+                  }
+                />
+              </label>
+            ) : null}
+            {actions}
+          </div>
+        </header>
+        {filters}
+        {notice}
+        <section className="app-store-section">
+          <div className="app-store-catalog-grid">
+            {items.map((item) => (
+              <CatalogCard
+                key={item.id}
+                item={item}
+                onOpen={() => {
+                  setSelected(item.id);
+                  item.onOpen?.();
+                }}
+              />
+            ))}
+          </div>
+          {loading ? (
+            <CatalogLoadingState />
+          ) : !items.length ? (
+            <div className="app-store-empty">
+              {empty ?? t("appStore.empty")}
+            </div>
+          ) : null}
+        </section>
+      </div>
+      {item ? (
+        <CatalogDialog item={item} onClose={() => setSelected(undefined)} />
+      ) : null}
+    </section>
+  );
+}
+function CatalogCard(props: { item: CatalogItem; onOpen(): void }) {
+  const { t } = useI18n();
+  return (
+    <article
+      className="og-card app-store-app-card"
+      role="button"
+      tabIndex={0}
+      onClick={props.onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          props.onOpen();
+        }
+      }}
+    >
+      {true ? (
+        <div className="app-store-app-card-main app-store-app-card-main--grove">
+          <span className="app-store-grove-icon">{props.item.icon}</span>
+          <span className="app-store-app-card-copy">
+            <strong>{props.item.title}</strong>
+            <small>{props.item.description}</small>
+          </span>
+        </div>
+      ) : (
+        <div className="app-store-app-card-main">
+          <strong>{props.item.title}</strong>
+          <small>{props.item.description}</small>
+        </div>
+      )}
+      <div className="app-store-package-footer">
+        <div className="app-store-package-context">
+          {props.item.metadata}
+          <div
+            className="app-store-package-owner"
+            aria-label={t("appStore.ownerAriaLabel")}
+          >
+            <span>{props.item.publisher}</span>
+            {props.item.version ? <span>v{props.item.version}</span> : null}
+          </div>
+        </div>
+        <div
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {props.item.actions}
+        </div>
+      </div>
+    </article>
+  );
+}
+function CatalogDialog({
+  item,
+  onClose,
+}: {
+  item: CatalogItem;
+  onClose(): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      className="app-store-dialog-backdrop"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <section
+        className="app-store-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={item.title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="app-store-dialog-close"
+          type="button"
+          onClick={onClose}
+          aria-label={t("mountedApp.close")}
+          title={t("mountedApp.close")}
+        >
+          <X size={28} aria-hidden="true" />
+        </button>
+        <div className="app-store-dialog-heading">
+          <span className="app-store-dialog-hero-icon">{item.icon}</span>
+          <h2>{item.title}</h2>
+          <p>
+            <span>{item.publisher}</span>
+            {item.version ? <span>v{item.version}</span> : null}
+          </p>
+          {item.metadata}
+        </div>
+        <p className="app-store-dialog-summary">{item.description}</p>
+        {item.detail}
+        <div className="app-store-dialog-actions">{item.actions}</div>
+      </section>
+    </div>
+  );
+}
+function CatalogLoadingState() {
+  const { t } = useI18n();
+  return (
+    <div
+      className="app-store-catalog-grid app-store-catalog-loading"
+      role="status"
+      aria-label={t("mountedApp.loading")}
+    >
+      {[0, 1, 2, 3, 4, 5].map((index) => (
+        <article
+          className="og-card app-store-app-card"
+          aria-hidden="true"
+          key={index}
+        >
+          <div className="app-store-app-card-main">
+            <span
+              className="og-skeleton og-skeleton-line"
+              style={{ width: index % 2 ? "48%" : "62%" }}
+            />
+            <span
+              className="og-skeleton og-skeleton-line"
+              style={{ width: index % 3 ? "82%" : "70%", marginTop: 10 }}
+            />
+          </div>
+          <div className="app-store-package-footer">
+            <span
+              className="og-skeleton og-skeleton-line"
+              style={{ width: "55%" }}
+            />
+            <span className="og-skeleton app-store-catalog-loading-action" />
+          </div>
+        </article>
+      ))}
+    </div>
+  );
 }

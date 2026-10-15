@@ -10,7 +10,14 @@ export function SaplingPlaceholder() {
           height="31"
           fill="var(--og-sapling-highlight)"
         />
-        <rect data-sapling-part="leaf" x="16" y="16" width="31" height="31" fill="var(--og-sapling-green)" />
+        <rect
+          data-sapling-part="leaf"
+          x="16"
+          y="16"
+          width="31"
+          height="31"
+          fill="var(--og-sapling-green)"
+        />
         <rect
           data-sapling-part="leaf-highlight"
           x="79"
@@ -19,11 +26,46 @@ export function SaplingPlaceholder() {
           height="31"
           fill="var(--og-sapling-highlight)"
         />
-        <rect data-sapling-part="leaf" x="63" y="31" width="31" height="31" fill="var(--og-sapling-green)" />
-        <rect data-sapling-part="trunk" x="47" y="47" width="17" height="58" fill="var(--og-sapling-trunk)" />
-        <rect data-sapling-part="trunk" x="60" y="47" width="4" height="58" fill="var(--og-sapling-trunk-highlight)" />
-        <rect data-sapling-part="base" x="32" y="105" width="47" height="15" fill="var(--og-sapling-trunk)" />
-        <rect data-sapling-part="base" x="32" y="105" width="47" height="3" fill="var(--og-sapling-trunk-highlight)" />
+        <rect
+          data-sapling-part="leaf"
+          x="63"
+          y="31"
+          width="31"
+          height="31"
+          fill="var(--og-sapling-green)"
+        />
+        <rect
+          data-sapling-part="trunk"
+          x="47"
+          y="47"
+          width="17"
+          height="58"
+          fill="var(--og-sapling-trunk)"
+        />
+        <rect
+          data-sapling-part="trunk"
+          x="60"
+          y="47"
+          width="4"
+          height="58"
+          fill="var(--og-sapling-trunk-highlight)"
+        />
+        <rect
+          data-sapling-part="base"
+          x="32"
+          y="105"
+          width="47"
+          height="15"
+          fill="var(--og-sapling-trunk)"
+        />
+        <rect
+          data-sapling-part="base"
+          x="32"
+          y="105"
+          width="47"
+          height="3"
+          fill="var(--og-sapling-trunk-highlight)"
+        />
       </g>
     </svg>
   );
