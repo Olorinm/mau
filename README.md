@@ -90,6 +90,8 @@ See [environment setup](docs/environments.md) · [中文部署说明](docs/envir
 and [verification](docs/verification.md). Examples contain placeholders only.
 Production configuration, credentials, environment IDs and live state are private.
 
-License: [Apache-2.0](LICENSE). Source attribution: [NOTICE](NOTICE).
+License: [MIT](LICENSE) for Mau's project-owned code. Source attribution and
+third-party licensing boundaries, including OMA-derived Environment code:
+[NOTICE](NOTICE).
 
 Shared persistent files: [workspaces](docs/workspaces.md).
