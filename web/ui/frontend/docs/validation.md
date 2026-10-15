@@ -13,10 +13,10 @@ motion, 1280 × 800 desktop and 390 × 844 mobile viewports.
 | Conversation, desktop | Filled composer | 1 capture, zero changed pixels |
 | Create app, desktop/mobile | Original modal and icon-picker subpage | 4 captures; mobile zero, desktop 33/29 changed pixels (under 0.008%) |
 
-All 11 gates passed the unchanged 0.2% limit with no masks. All 22 shared interaction
+All 11 gates passed the unchanged 0.2% limit with no masks. All 24 shared interaction
 assertions passed on both targets, covering theme selection, Escape closure,
 IME draft preservation, search, opening the modal, title input, icon picker,
-returning to the form and cancelling. Three full-page captures are REVIEW ONLY:
+returning to the form, cancelling and reopening with an empty draft. Three full-page captures are REVIEW ONLY:
 product branding, navigation data and records differ and are not pixel gates.
 
 The comparison found and fixed actual regressions: the create form was composed

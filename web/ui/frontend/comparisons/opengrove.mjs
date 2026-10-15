@@ -136,6 +136,17 @@ async function createApp({ page, check, capture }) {
     await dialog.waitFor({ state: "hidden" });
     assert.equal(await page.getByRole("dialog").count(), 0);
   });
+  await navigate(page, "新建应用");
+  await check("reopening starts with an empty draft", async () => {
+    await dialog.waitFor();
+    assert.equal(
+      await dialog
+        .getByRole("textbox", { name: "App 名称", exact: true })
+        .inputValue(),
+      "",
+    );
+  });
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
 }
 
 export default {

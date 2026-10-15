@@ -220,7 +220,13 @@ function StoryContent({
   iconStyle,
   setIconStyle,
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpenState] = useState(false);
+  const setCreateOpen = (open) => {
+    setCreateOpenState(open);
+    setName("");
+    setDescription("");
+    setSource("");
+  };
   const { t } = usePresentationLabels();
   const [draft, setDraft] = useState("");
   const [selected, setSelected] = useState(true);
