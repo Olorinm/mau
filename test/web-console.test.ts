@@ -116,6 +116,11 @@ it.skipIf(!built)(
     await see(
       page.getByRole("button", { name: "新建应用", exact: true }),
     ).toBeFocused();
+    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    await see(
+      createApp.getByRole("textbox", { name: "App 名称", exact: true }),
+    ).toHaveValue("");
+    await createApp.getByRole("button", { name: "取消", exact: true }).click();
     await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
     // The fixture pre-creates "helper" without an environment.
     await see(agentRow(page, "helper")).toBeVisible();

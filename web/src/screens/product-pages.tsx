@@ -326,11 +326,17 @@ export function CreateAppScreen({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [source, setSource] = useState("");
+  const close = () => {
+    setName("");
+    setDescription("");
+    setSource("");
+    onCancel();
+  };
   return (
     <AppCreateDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) onCancel();
+        if (!next) close();
       }}
       notice={<Unconnected name={zh ? "应用创建" : "App creation"} />}
       title={name}
@@ -341,8 +347,11 @@ export function CreateAppScreen({
       onSourceChange={setSource}
       canRequestAgent={false}
       onRequestAgent={() => {}}
-      onCancel={onCancel}
-      onOpenStore={onStore}
+      onCancel={close}
+      onOpenStore={() => {
+        close();
+        onStore();
+      }}
     />
   );
 }
