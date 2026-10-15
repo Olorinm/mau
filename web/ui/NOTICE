@@ -3,15 +3,22 @@ Agent UI
 This package includes modified chat presentation components extracted from
 OpenGrove (https://github.com/open-grove/opengrove), revision d8c7a7c, and
 application primitives and design tokens (src/app) extracted at revision 8b365ed.
-Copyright 2026 OpenGrove contributors. Licensed under Apache-2.0.
+Copyright (c) 2026 OpenGrove contributors.
+These OpenGrove revisions were distributed under Apache-2.0 at extraction.
+The project's own code, including the extracted OpenGrove implementation,
+is now licensed under the MIT License in LICENSE.
 Product stores, network access and native message interpretation were removed
 from the components and replaced with caller-owned data and callbacks.
+
+Third-party components and dependencies retain their own copyright notices,
+licenses and terms; they are not relicensed by this project's MIT License.
 
 The avatar adapts the shadcn/ui Base UI Avatar component (Copyright (c) 2023
 shadcn, https://github.com/shadcn-ui/ui). The motion disclosure adapts Motion
 Primitives. Both are MIT licensed under the terms below.
 MIT License
 
+Copyright (c) 2023 shadcn
 Copyright (c) 2024 ibelick
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -31,4 +38,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-app/page.tsx
