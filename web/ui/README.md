@@ -4,13 +4,19 @@ Reusable React chat and application components for any product. Rendering is ind
 
 This is an alpha package, distributed as a build archive. It is not published to the npm registry yet.
 
+For product-neutral page layouts, navigation, conversations, form surfaces and
+file editing, see the separate [Agent Frontend package](frontend/README.md).
+It takes caller-owned data and callbacks and has no backend or product protocol dependency.
+The separate page package does not add application runtime dependencies to this
+low-level component package.
+
 ```sh
 # From this repository:
 npm ci
 npm pack
 
 # From a separate React 19 product:
-npm install /path/to/olorinm-agent-ui-0.1.0-alpha.2.tgz
+npm install /path/to/olorinm-agent-ui-0.1.0-alpha.4.tgz
 ```
 
 ```tsx
@@ -60,3 +66,9 @@ The optional Host adapter shows native approvals without renaming IDs or adding 
 See the [guide](docs/guide.md) and Agent Host's [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor). Verify with `npm test`, `npm run test:browser` and `npm run test:package`.
 
 This package's own code, including its extracted OpenGrove implementation, is licensed under the [MIT License](LICENSE). The chat presentation components came from OpenGrove revision `d8c7a7c`; application primitives and design tokens came from revision `8b365ed`. Those revisions were distributed under Apache-2.0 at extraction. Source attribution and the original third-party license terms are retained in [NOTICE](NOTICE); third-party components and dependencies keep their own licenses and are not relicensed by this package. OpenGrove is a consumer of this package; its business models and services are not dependencies.
+
+`PortalProvider` from `@olorinm/agent-ui/app` optionally places dialogs, tooltips
+and toasts inside a caller-owned DOM container. Without it, existing document
+portal behavior is preserved. `@olorinm/agent-frontend` uses this provider to keep
+portaled content inside each frontend instance's theme boundary. Controlled
+dialogs also restore the opener's focus unless the caller overrides close autofocus.

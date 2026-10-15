@@ -25,3 +25,4 @@ export { ProductIcon, PRODUCT_ICON_NAMES, type ProductIconName, type ProductIcon
 export { AgentStateIndicator, type AgentStatePresentation } from "./agent-state-indicator.js";
 export { Tooltip, TooltipProvider } from "./tooltip.js";
 export { useCompactLayout, COMPACT_LAYOUT_QUERY } from "./compact-layout.js";
+export { PortalProvider, usePortalContainer } from "./portal.js";

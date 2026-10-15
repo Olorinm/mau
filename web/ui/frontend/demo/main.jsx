@@ -1,0 +1,34 @@
+import React, {useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {AppShell, Navigation, ListDetailLayout, ItemList, PageHeader, SidebarHeader, SearchField, CollaborationTabs, Conversation, AuthLayout, AuthField, AuthSubmit, FileEditor, FileConflictEditor, FilePreview, SettingsLayout, Catalog, SaplingPlaceholder, ConstellationPlaceholder, FrontendProvider, ProfileSurface, ProfileDialog, ExtensionsPage, AppCreateForm, AppCreateWizard, AppSettingsDialog, AppIdentityEditor, VersionHistory, InlineSelect, PreferenceGroup, PreferenceRow} from '@olorinm/agent-frontend';
+import '@olorinm/agent-frontend/style.css';
+window.actions = [];
+function Example() {
+ const [page,setPage] = useState('messages');
+ const [theme,setTheme] = useState('light');
+ const [selected,setSelected] = useState();
+ const [draft,setDraft] = useState('');
+ const [text,setText] = useState('# Sample document');
+ const [error,setError] = useState('');
+ const [profileDialog,setProfileDialog]=useState(false);
+ const [preference,setPreference]=useState('light');
+ const [credential,setCredential] = useState('');
+ if (page === 'login') return <AuthLayout brand="Notebook" title="Welcome" description="Caller-owned sign in" logo={<SaplingPlaceholder/>} illustration={<ConstellationPlaceholder brand="Notebook"/>} toolbar={<button onClick={()=>setPage('messages')}>Close form</button>} onSubmit={e=>{e.preventDefault(); window.actions.push(['submit',credential]);setError('Caller rejected this sign in');}}>
+  <AuthField label="Account"><input autoComplete="username" value={credential} onChange={e=>setCredential(e.target.value)}/></AuthField><AuthSubmit>Continue</AuthSubmit>{error&&<p role="alert">{error}</p>}
+ </AuthLayout>;
+ return <FrontendProvider theme={theme}><AppShell brand="Workbench" logo={<SaplingPlaceholder/>} navigation={<Navigation selectedId={page} onSelect={setPage} account={{name:"Example",avatar:<span>E</span>,label:"Account menu",actions:[{id:"account",label:"Account action",onSelect:()=>window.actions.push(["account"])}]}} items={['messages','files','rich','conflict','settings','catalog','profile','extensions','create','builder','versions','login'].map(id=>({id,label:id}))}/> } toolbar={<button onClick={()=>setTheme(theme === 'dark' ? 'light' : 'dark')}>Theme</button>}>
+ {page==='messages'&&<ListDetailLayout detailOpen={!!selected} onBack={()=>setSelected(undefined)} empty={<p>Select an item</p>} list={<><SidebarHeader title="Messages"/><CollaborationTabs label="Views" selectedId="messages" items={[{id:"messages",label:"Conversations"},{id:"contacts",label:"Contacts"}]} onSelect={()=>{}}/><ItemList label="Conversations" items={[{id:'one',title:'Research',description:'A presentation example'}]} selectedId={selected} onSelect={id=>{window.actions.push(['select',id]);setSelected(id)}}/></>}
+ detail={<Conversation header={<PageHeader title="Research"/>} messages={[{id:'1',role:'assistant',title:'Example',content:<p>Caller supplied message</p>}]} composer={{value:draft,onChange:setDraft,onSend:()=>{window.actions.push(['send',draft]);setError('Caller rejected delivery')},placeholder:'Write a message'}} notice={error&&<p role="alert">{error}</p>}/>}/ >}
+ {page==='profile'&&<><ListDetailLayout variant="contacts" detailOpen onBack={()=>{}} list={<SidebarHeader title="Contacts"/>} detail={<ProfileSurface name="Researcher" avatar={<span>R</span>} actions={[{id:'edit',label:'Edit person',icon:'edit',onSelect:()=>setProfileDialog(true)}]} pages={[{id:'capabilities',label:'Capabilities',icon:'extensions',content:<p>Caller-owned capabilities</p>}]}/>}/><ProfileDialog open={profileDialog} onOpenChange={setProfileDialog} title="Edit person" tabs={[{id:'identity',label:'Identity',content:<label>Name<input value={credential} onChange={e=>setCredential(e.target.value)}/></label>},{id:'runtime',label:'Runtime',content:<p>Caller-owned runtime</p>}]} actions={<button type="button" onClick={()=>{window.actions.push(['profile',credential]);setProfileDialog(false)}}>Save person</button>}/></>}
+ {page==='extensions'&&<ExtensionsPage title="Extensions" tabs={[{id:'tools',label:'Tools',description:'Caller capabilities'}]} selectedId="tools" onSelect={()=>{}} query="" onQueryChange={()=>{}} rows={[{id:'one',title:'Example tool',onOpen:()=>window.actions.push(['extension'])}]}/>}
+ {page==='create'&&<AppCreateForm title={credential} description={text} source="" onTitleChange={setCredential} onDescriptionChange={setText} onSourceChange={()=>{}} labels={{name:'App name',description:'Description',directory:'Directory',chooseFolder:'Choose folder'}} actions={<button onClick={()=>window.actions.push(['app',credential])}>Create app</button>}/>}
+ {page==='builder'&&<AppCreateWizard title={credential} description={text} source={text} onTitleChange={setCredential} onDescriptionChange={setText} onSourceChange={setText} onCancel={()=>setPage('messages')} canRequestAgent={false} onRequestAgent={()=>window.actions.push(['build'])}/>}
+ {page==='versions'&&<VersionHistory title="Versions" backLabel="Back to apps" onBack={()=>setPage('catalog')} overview={[{label:'Selected version',value:'1.0'}]} sections={[{id:'released',title:'Releases',rows:[{id:'v1',title:'v1.0',selected:true,description:'Caller release notes',actions:<button onClick={()=>window.actions.push(['version','1.0'])}>Choose version</button>}]}]}/>}
+ {page==='files'&&<div style={{height:'100%',display:'grid',gridTemplateColumns:'1fr 1fr'}}><FileEditor value={text} format="markdown" onChange={value=>{setText(value);window.actions.push(['edit',value])}}/><FilePreview kind="markdown" name="Sample" content={text}/></div>}
+ {page==='rich'&&<FileEditor value={text} format="markdown" richText onChange={setText}/>}
+ {page==='conflict'&&<FileConflictEditor original="Saved version" value={text} onChange={setText} stale={false} saving={false} onCancel={()=>setPage('messages')} onSave={()=>window.actions.push(['save',text])}/>}
+ {page==='settings'&&<SettingsLayout title="Preferences" sections={[{id:'appearance',label:'Appearance',content:<><p>Caller-owned preferences</p><PreferenceGroup><PreferenceRow label="Color" control={<InlineSelect value={preference} options={[{id:'light',label:'Light'},{id:'dark',label:'Dark'}]} onChange={setPreference}/>}/></PreferenceGroup></>}]} selectedId="appearance" onSelect={id=>window.actions.push(['setting',id])}/>}
+ {page==='catalog'&&<Catalog items={[{id:'template',title:'Template',description:'Presentation without an installation service',actions:<button onClick={()=>window.actions.push(['choose','template'])}>Choose template</button>}]}/>}
+ </AppShell></FrontendProvider>;
+}
+const root=createRoot(document.getElementById('root'));root.render(<Example/>);window.dispose=()=>root.unmount();

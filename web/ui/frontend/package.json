@@ -1,0 +1,132 @@
+{
+  "name": "@olorinm/agent-frontend",
+  "version": "0.1.0-alpha.4",
+  "type": "module",
+  "license": "MIT",
+  "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Olorinm/agent-ui.git",
+    "directory": "frontend"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "source-manifest.json",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses",
+    "docs"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css",
+    "./shell": {
+      "types": "./dist/entries/shell.d.ts",
+      "import": "./dist/shell.js"
+    },
+    "./shell.css": "./dist/shell.css",
+    "./conversation": {
+      "types": "./dist/entries/conversation.d.ts",
+      "import": "./dist/conversation.js"
+    },
+    "./conversation.css": "./dist/conversation.css",
+    "./settings": {
+      "types": "./dist/entries/settings.d.ts",
+      "import": "./dist/settings.js"
+    },
+    "./settings.css": "./dist/settings.css",
+    "./files": {
+      "types": "./dist/entries/files.d.ts",
+      "import": "./dist/files.js"
+    },
+    "./files.css": "./dist/files.css",
+    "./catalog": {
+      "types": "./dist/entries/catalog.d.ts",
+      "import": "./dist/catalog.js"
+    },
+    "./catalog.css": "./dist/catalog.css",
+    "./extensions": {
+      "types": "./dist/entries/extensions.d.ts",
+      "import": "./dist/extensions.js"
+    },
+    "./extensions.css": "./dist/extensions.css",
+    "./auth": {
+      "types": "./dist/entries/auth.d.ts",
+      "import": "./dist/auth.js"
+    },
+    "./auth.css": "./dist/auth.css",
+    "./profile": {
+      "types": "./dist/entries/profile.d.ts",
+      "import": "./dist/profile.js"
+    },
+    "./profile.css": "./dist/profile.css"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "peerDependencies": {
+    "@olorinm/agent-ui": "^0.1.0-alpha.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/merge": "^6.12.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
+    "@lezer/highlight": "^1.2.5",
+    "@milkdown/crepe": "^7.22.2",
+    "@milkdown/kit": "^7.22.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-popover": "1.2.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.8.0",
+    "motion": "^12.42.2"
+  },
+  "devDependencies": {
+    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.3/olorinm-agent-ui-0.1.0-alpha.3.tgz?download=1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "esbuild": "^0.28.2",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.5.30",
+    "postcss-selector-parser": "^7.1.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "^8.3.3"
+  },
+  "scripts": {
+    "typecheck": "tsc6 --noEmit -p tsconfig.json",
+    "build": "npm run typecheck && vite build && tsc6 -p tsconfig.types.json && node scripts/types.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node scripts/test-browser.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "dev": "vite --config demo/vite.config.ts",
+    "prepack": "npm run build 1>&2",
+    "test:comparison": "node scripts/test-comparison.mjs",
+    "compare": "node tools/ui-compare.mjs"
+  }
+}

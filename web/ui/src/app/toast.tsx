@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from "react-dom";
 import { CheckCircle2, Info, TriangleAlert, X } from "lucide-react";
 import { useChatLabels } from "../provider.js";
+import { usePortalContainer } from "./portal.js";
 
 export type ToastKind = "success" | "error" | "info";
 
@@ -40,6 +41,7 @@ const DEFAULT_DURATION: Record<ToastKind, number> = {
 const MAX_VISIBLE_TOASTS = 4;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const container = usePortalContainer();
   const { t } = useChatLabels();
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const nextIdRef = useRef(1);
@@ -120,7 +122,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </div>
           ))}
         </div>,
-        document.body,
+        container ?? document.body,
       )}
     </ToastContext.Provider>
   );

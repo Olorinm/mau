@@ -1,0 +1,19 @@
+Agent Frontend
+
+Selected presentation code and styles are adapted from OpenGrove,
+Copyright (c) 2026 OpenGrove contributors.
+The source revision was distributed under Apache-2.0 at extraction.
+The project's own code, including the extracted OpenGrove implementation,
+is now licensed under the MIT License in LICENSE.
+Source: https://github.com/open-grove/opengrove/tree/8b365ed
+See source-manifest.json for the adapted visual/editor source files.
+
+No OpenGrove application, service implementation, protocol client or compatibility
+layer is included. Optional sapling and constellation artwork is retained as
+replaceable placeholder art with its original attribution.
+
+The separately distributed @olorinm/agent-ui dependency preserves its own source
+and third-party notices. See THIRD_PARTY_NOTICES.md and licenses/.
+
+Third-party components and dependencies retain their own licenses and terms;
+they are not relicensed by this project's MIT License.
