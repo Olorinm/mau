@@ -142,7 +142,9 @@ try {
   const result = await cli("setup", "helper", "--environment", "cloud");
   assert.equal(result.environment.state, "ready");
   assert.equal((await cli("check")).checks[0].status, "verified");
-  assert.equal((await cli("channel-connect", "matrix")).connections[0].kind, "matrix");
+  assert.deepEqual((await cli("status")).connections, [
+    { id: "matrix", kind: "matrix" },
+  ]);
   assert.equal(count(), 1);
   const agent = result.agent;
   async function turn(text, contextId) {
