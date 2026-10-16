@@ -260,6 +260,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
           </div>
         ) : null}
         {!isUser ? (
+          message.body ?? (
           <div className="room-chat-agent-stack">
             {message.activity}
             <RoomTextBubble isUser={false}>{message.content}</RoomTextBubble>
@@ -269,6 +270,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
               </div>
             ) : null}
           </div>
+          )
         ) : (
           <RoomTextBubble isUser={isUser} replyPreview={message.reply}>
             {message.content}

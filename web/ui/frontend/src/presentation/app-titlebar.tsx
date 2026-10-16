@@ -6,6 +6,8 @@ export function AppTitlebar(props: {
   brand: ReactNode;
   logo?: ReactNode;
   toolbar?: ReactNode;
+  updates?: ReactNode;
+  accountStatus?: ReactNode;
   toggleId: string;
   navigationId: string;
   railVisible: boolean;
@@ -61,7 +63,9 @@ export function AppTitlebar(props: {
             <span className="app-titlebar-dev-badge">DEV</span>
           ) : null}
         </span>
+        {props.updates}
       </div>
+      {props.accountStatus}
       <div className="app-titlebar-drag-space" aria-hidden="true" />
       {props.toolbar}
     </header>

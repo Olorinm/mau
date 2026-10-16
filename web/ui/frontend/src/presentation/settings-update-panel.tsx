@@ -1,4 +1,5 @@
 // Extracted from web/src/components/sidebar/settings-update-panel.tsx at 8b365ed. See source-manifest.json for boundary changes.
+import { ReleaseNotesMarkdown } from "./release-notes-markdown";
 import type { ReactNode } from "react";
 import { ProductIcon } from "@olorinm/agent-ui/app";
 import { useI18n, rawDiagnosticText } from "./i18n";
@@ -7,6 +8,7 @@ export function SettingsUpdatePanel(props: {
   latestLabel?: string;
   updateAvailable?: boolean;
   releaseNotes?: ReactNode;
+  releaseNotesMarkdown?: string;
   loading?: boolean;
   error?: string;
   checking?: boolean;
@@ -52,7 +54,7 @@ export function SettingsUpdatePanel(props: {
               {actionLabel}
             </button>
           </div>
-          {props.releaseNotes}
+          {props.releaseNotesMarkdown !== undefined ? <ReleaseNotesMarkdown markdown={props.releaseNotesMarkdown} /> : props.releaseNotes}
           <small className="settings-update-source-note">
             {t("settings.updateNotesFromService")}
           </small>
@@ -95,7 +97,7 @@ export function SettingsUpdatePanel(props: {
         </div>
       </section>
 
-      {props.onAutomaticDownloadChange && true ? (
+      {props.onAutomaticDownloadChange ? (
         <section className="settings-list-section">
           <div className="settings-list-section-heading">
             <h2>{t("settings.updateAutomatic")}</h2>

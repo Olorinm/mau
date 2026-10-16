@@ -126,3 +126,10 @@ Sources:
 - https://github.com/dicebear/dicebear
 - https://www.dicebear.com/styles/notionists/
 - https://creativecommons.org/publicdomain/zero/1.0/
+
+## Restored presentation dependencies
+
+The original media player uses `@vidstack/react` (MIT). Slash-command presentation
+uses `cmdk` (MIT); release-note rendering uses `react-markdown` and `remark-gfm`
+(MIT). These remain separately declared runtime dependencies with their own
+license files; they are not copied or relicensed as package-owned implementations.

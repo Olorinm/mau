@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback } from "react";
 import { presentationLabels } from "./labels";
+import { restoredLabels } from "./restored-labels";
 
 export type PresentationLanguage = "en" | "zh-CN";
 export type TranslationFn = (
@@ -18,6 +19,7 @@ export function useI18n() {
     (key, values) => {
       const template =
         labels?.[key] ??
+        restoredLabels[language]?.[key] ??
         presentationLabels[language]?.[key] ??
         presentationLabels.en?.[key] ??
         key;

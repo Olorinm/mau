@@ -21,7 +21,9 @@ export interface MessageView {
   subtitle?: ReactNode;
   status?: ReactNode;
   state?: string;
-  content: ReactNode;
+  content?: ReactNode;
+  /** Complete assistant body with its own bubbles (for example RunMessage). */
+  body?: ReactNode;
   activity?: ReactNode;
   attachments?: ReactNode;
   actions?: ReactNode;

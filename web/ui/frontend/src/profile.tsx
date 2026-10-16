@@ -38,6 +38,7 @@ export function ProfileSurface({
   avatarPicker,
   nameBadge,
   restoreAction,
+  remoteAddress,
   readOnly = true,
   saving = false,
 }: {
@@ -63,6 +64,7 @@ export function ProfileSurface({
   avatarPicker?: ReactNode;
   nameBadge?: ReactNode;
   restoreAction?: ReactNode;
+  remoteAddress?: string;
   readOnly?: boolean;
   saving?: boolean;
 }) {
@@ -244,7 +246,7 @@ export function ProfileSurface({
                     </button>
                   </section>
                 ) : null}
-                <>
+                {remoteAddress !== undefined ? <section className="contacts-activity-card" aria-label={t("remoteAgent.address")}><strong>{t("remoteAgent.address")}</strong><p>{remoteAddress}</p></section> : <>
                   {overview ? (
                     <section className="contacts-employee-runtime-card">
                       <div className="contacts-shared-employee-editor contacts-employee-overview-runtime-editor">
@@ -262,7 +264,7 @@ export function ProfileSurface({
                       />
                     ))}
                   </div>
-                </>
+                </>}
               </section>
             ) : null}
           </div>

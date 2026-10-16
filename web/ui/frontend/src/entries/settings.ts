@@ -15,3 +15,10 @@ export * from "../presentation/settings-update-panel";
 
 export * from "../presentation/settings-providers-panel";
 export * from "../presentation/settings-operations-panel";
+
+export * from "../presentation/settings-storage-panel";
+export * from "../presentation/settings-provider-picker-dialog";
+
+export * from "../presentation/settings-native-desktop-panel";
+
+export * from "../presentation/release-notes-markdown";

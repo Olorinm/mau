@@ -1,3 +1,4 @@
+import "../process/style.css";
 import "../base.css";
 import "../styles/rooms.css";
 import "../styles/rooms-layout.css";
@@ -19,3 +20,8 @@ export * from "../layout";
 export * from "../presentation/room-header-actions";
 export * from "../presentation/room-composer";
 export * from "../presentation/room-message-stream";
+export * from "../process";
+
+export * from "../people";
+
+export * from "../presentation/slash-command-menu";

@@ -3,3 +3,5 @@ dist/
 .local/
 *.tgz
 .DS_Store
+
+.run-comparison/

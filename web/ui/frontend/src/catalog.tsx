@@ -29,6 +29,7 @@ export function Catalog({
   empty,
   loading,
   connected = false,
+  presentation = "grove",
 }: {
   items: readonly CatalogItem[];
   title?: ReactNode;
@@ -41,6 +42,7 @@ export function Catalog({
   empty?: ReactNode;
   loading?: boolean;
   connected?: boolean;
+  presentation?: "grove" | "classic";
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<string>();
@@ -48,13 +50,13 @@ export function Catalog({
   return (
     <section
       className="view-panel tab-view app-store-view"
-      data-presentation="grove"
+      data-presentation={presentation}
     >
       <div className="app-store-page">
         <header className="app-store-title">
           <div>
             <h1>
-              {true ? (
+              {presentation === "grove" ? (
                 <span className="app-store-title-icon" aria-hidden="true">
                   <ProductIcon name="store" size={24} />
                 </span>
@@ -107,6 +109,7 @@ export function Catalog({
               <CatalogCard
                 key={item.id}
                 item={item}
+                presentation={presentation}
                 onOpen={() => {
                   setSelected(item.id);
                   item.onOpen?.();
@@ -129,7 +132,7 @@ export function Catalog({
     </section>
   );
 }
-function CatalogCard(props: { item: CatalogItem; onOpen(): void }) {
+function CatalogCard(props: { item: CatalogItem; presentation: "grove" | "classic"; onOpen(): void }) {
   const { t } = useI18n();
   return (
     <article
@@ -144,7 +147,7 @@ function CatalogCard(props: { item: CatalogItem; onOpen(): void }) {
         }
       }}
     >
-      {true ? (
+      {props.presentation === "grove" ? (
         <div className="app-store-app-card-main app-store-app-card-main--grove">
           <span className="app-store-grove-icon">{props.item.icon}</span>
           <span className="app-store-app-card-copy">

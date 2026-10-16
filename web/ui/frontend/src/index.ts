@@ -142,3 +142,42 @@ export * from "./presentation/settings-providers-panel";
 export * from "./presentation/settings-operations-panel";
 
 export * from "./presentation/app-create-dialog";
+export * from "./process";
+
+export { StandardFilePreview, createFileCapabilities, FlowPreview, parseFlowPreviewMarkdown, MarkdownPreview, MarkdownProperties, useMarkdownPresentation } from "./files/preview";
+export { StandardFileEditor, type StandardFileEditorProps, type StandardFileEditorHandle } from "./files/standard-file-editor";
+export type { FilePreviewOperations, MarkdownPreviewProps, MarkdownProperty, MarkdownPropertyDefinition } from "./files/markdown-preview";
+export type { FlowData, FlowStep, FlowActivity, FlowLiveTodo } from "./files/flow-types";
+
+export * from "./people";
+export * from "./apps/dashboard-primitives";
+export * from "./apps/developer-layout";
+export * from "./presentation/settings-storage-panel";
+export * from "./presentation/settings-provider-picker-dialog";
+
+export * from "./files/selection";
+export * from "./files/draft-notices";
+export * from "./process/resource-preview-panel";
+
+export * from "./extension-workspaces";
+
+export * from "./publishing";
+export * from "./catalog-details";
+
+export * from "./apps/dashboard";
+export * from "./apps/mcp-app-frame";
+
+export * from "./presentation/settings-native-desktop-panel";
+
+export * from "./apps/flow-list";
+export * from "./presentation/release-notes-markdown";
+export * from "./presentation/slash-command-menu";
+
+export * from "./apps/workbench";
+
+export * from "./apps/chat-panel";
+
+export * from "./auth-flows";
+export * from "./presentation/titlebar-controls";
+
+export * from "./startup-view";

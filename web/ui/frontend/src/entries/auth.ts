@@ -6,3 +6,7 @@ export * from "../scope";
 export * from "../auth";
 export * from "../artwork/sapling";
 export * from "../artwork/constellation";
+
+export * from "../auth-flows";
+
+export * from "../startup-view";
