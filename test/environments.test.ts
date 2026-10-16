@@ -45,6 +45,16 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
   );
   const setup = (await f.api(`/agents/${f.agent.id}`)).data;
   expect(setup.host.runtimeId).toBe("personal");
+  expect(setup.connections).toEqual([{ id: "matrix", kind: "matrix" }]);
+  const runtime = await f.service.runtime(f.agent.id);
+  const room = "!web-chat:example.test";
+  runtime.connector.store.set("rooms", room, { members: [alice, f.agent.matrixId], encrypted: false });
+  runtime.connector.ingest(room, {
+    event_id: "$web-hi", sender: alice, type: "m.room.message",
+    content: { msgtype: "m.text", body: "hi" }, origin_server_ts: Date.now() + 1,
+  });
+  expect(runtime.connector.store.entries<any>("communication_inbox").map(row => row.value))
+    .toContainEqual(expect.objectContaining({ connectionId: "matrix", source: expect.objectContaining({ text: "hi" }) }));
   expect(setup.environment.operationId).toBe(ready.operationId);
   expect(JSON.stringify(setup)).not.toContain(String(files.get(dir + "token")));
   expect(JSON.stringify(setup)).not.toContain("private-traffic-token");

@@ -99,6 +99,10 @@ personal authorization are reported separately in checks.
 
 ## Message behavior
 
+Environment bootstrap enables the owner's Matrix connection for built-in chat.
+Host health alone does not verify message routing; live acceptance must send a
+message through the web console and observe its Agent reply.
+
 Mau displays joined account rooms involving its owned Agents. Starting a new
 conversation waits for the initial room sync and selects an owned Agent explicitly;
 a group containing another

@@ -79,7 +79,6 @@ must preserve application Authorization and required sandbox routing headers.
 
 ```sh
 mau setup helper --environment cloud-codex
-mau channel-connect matrix
 mau check
 mau status
 mau pause
@@ -87,6 +86,11 @@ mau resume
 mau reconcile
 mau destroy
 ```
+
+Environment bootstrap also enables the owner's built-in Matrix chat. Existing
+Matrix permissions and other channel connections are preserved. Older deployments
+without this connection require a one-time `mau channel-connect matrix` while the
+Agent has no active or uncertain run; ordinary setup no longer requires that step.
 
 `environment-create PROFILE` binds a selected unbound Agent. `agents` and `use NAME`
 select existing identities. `--no-wait` returns progress; closing the terminal does

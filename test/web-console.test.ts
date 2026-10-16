@@ -164,14 +164,9 @@ it.skipIf(!built)(
       .first()
       .click();
     const connect = page.getByRole("dialog", { name: "连接渠道" });
-    await connect.getByRole("button", { name: "Matrix" }).click();
-    await page
-      .getByRole("dialog", { name: "Matrix" })
-      .getByRole("button", { name: "开始连接" })
-      .click();
-    await see(page.getByRole("region", { name: "通知" })).toContainText(
-      "Matrix 已连接",
-    );
+    // Provisioning already enabled built-in chat; users do not need a separate connection step.
+    await see(connect.getByRole("button", { name: /Matrix/ })).toBeDisabled();
+    await page.keyboard.press("Escape");
     await see(page.getByRole("dialog")).toHaveCount(0);
 
     await page.getByRole("button", { name: "运行自检" }).click();
