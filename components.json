@@ -44,13 +44,13 @@
   },
   "frontend": {
     "repository": "Olorinm/agent-ui",
-    "revision": "7f02cff3ae970777b6f962a81ed8af3714662f22",
-    "version": "0.1.0-alpha.5",
-    "integrity": "sha512-nY6+OF6OMJ/Pjtbqxg72W80F/EOtUxNeaqWTOZC284/mSOa9oiaPVAefEGMNv/wfl2JWqufJ6kcFfr0DJALVcQ==",
+    "revision": "96355189cf98e7cdab44c909f1903e851c6b19e8",
+    "version": "0.1.0-alpha.6",
+    "integrity": "sha512-aQCP5gG7pQbcuUNrS0libpbczzc29W/fzscwHetZ5tmhpngO4rMbnQ6eTQdbMcnJN78ElNkrkfHEhmLj6dBfEg==",
     "archive": {
       "repository": "Olorinm/agent-ui",
-      "tag": "frontend-v0.1.0-alpha.5",
-      "asset": "olorinm-agent-frontend-0.1.0-alpha.5.tgz"
+      "tag": "frontend-v0.1.0-alpha.6",
+      "asset": "olorinm-agent-frontend-0.1.0-alpha.6.tgz"
     }
   }
 }

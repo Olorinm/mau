@@ -124,3 +124,11 @@ and watcher tests cover page/end races and reload guards. Independent CLI instal
 and recovery checks pass. Agent Frontend separately audits 115 original component
 files and verifies the restored presentation; its audit ledger distinguishes
 source mapping, visual comparisons, callback checks and product availability.
+
+
+Live acceptance exposed a remount when a final Matrix reply enabled copying.
+Mau alpha.8 pins Frontend alpha.6, whose stable context-menu boundary retains the
+message body. The integration regression now starts a second run without an early
+text reply, opens its process, completes it and waits for final Matrix delivery;
+it asserts both the same DOM node and an expanded disclosure. The test fails with
+the previous package and passes with alpha.6. All 47 tests pass with the new archive.

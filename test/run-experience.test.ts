@@ -7,7 +7,7 @@ const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.unstubAllGlobals(); });
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 
-it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed text, restores approvals on refresh, submits native decisions once, answers questions and stops a run", async () => {
+it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed text, restores approvals on refresh, submits native decisions once, answers questions, stops and retains expanded detail through final reply delivery", async () => {
   type Event = { sequence: number; event: Record<string, unknown> };
   type Call = { id: string; runId: string; kind: string; name: string; input: unknown; status: string; deadlineAt: string; result?: unknown };
   let run: { id: string; sessionId: string; runtimeId: string; status: string; answer: string } | undefined;
@@ -20,7 +20,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
       starts++; events.length = 0; calls.length = 0;
       const input = JSON.parse(String(init?.body)); run = { id: "run-" + starts, sessionId: input.sessionId, runtimeId: input.runtimeId, status: "running", answer: "" };
       emit({ type: "native.tool", callId: "cmd-1", phase: "started", native: { type: "commandExecution", command: "pwd" } });
-      emit({ type: "assistant.delta", text: "第一段" });
+      if (starts === 1) emit({ type: "assistant.delta", text: "第一段" });
       return Response.json(run);
     }
     if (path.endsWith("/events")) {
@@ -108,5 +108,19 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   await page.reload();
   await see(page.locator(".mau-run")).toHaveAttribute("aria-label", "已取消");
   await see(page.getByText("Cancellation requested; waiting for the worker to stop and acknowledge.", { exact: true })).toBeHidden();
-  expect(starts).toBe(1); expect(errors).toEqual([]);
+  expect(starts).toBe(1);
+  await composer.fill("自然完成验收"); await page.getByRole("button", {name:"发送消息",exact:true}).click();
+  await see(page.locator(".mau-run")).toHaveCount(2);
+  const second = page.locator(".mau-run").last();
+  await see(second).toHaveAttribute("aria-label","正在执行");
+  const expanded = second.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle");
+  await expanded.click(); await see(expanded).toHaveAttribute("aria-expanded","true");
+  await second.evaluate(element => { (window as unknown as {auditRun:Element}).auditRun = element; });
+  emit({type:"native.tool",callId:"cmd-1",phase:"finished",native:{type:"commandExecution",command:"pwd",aggregatedOutput:"/workspace/completed",exitCode:0}});
+  run!.status = "completed"; run!.answer = "自然完成回复";
+  await see(second).toHaveAttribute("aria-label","已完成");
+  await see(second.locator("xpath=ancestor::article")).toHaveAttribute("tabindex","0",{timeout:12000});
+  await see(expanded).toHaveAttribute("aria-expanded","true");
+  expect(await second.evaluate(element => element === (window as unknown as {auditRun:Element}).auditRun)).toBe(true);
+  expect(starts).toBe(2); expect(errors).toEqual([]);
 }, 60000);
