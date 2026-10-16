@@ -22,6 +22,8 @@ import {
 } from "@olorinm/agent-ui/app";
 import { ChatMarkdown } from "@olorinm/agent-ui";
 import { mauApi } from "../api/client";
+import { runApi } from "../api/runs";
+import { TaskSurface } from "./run-surface";
 import { MauConversations } from "../api/conversations";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
@@ -67,6 +69,11 @@ export function MessagesScreen({
   const current = (rooms.data ?? client.snapshot()).find(
     (room) => room.id === selected,
   );
+  const tasks = useQuery({
+    queryKey: ["run-tasks", session.token, current?.agentId, current?.id],
+    queryFn: ({ signal }) => runApi(session.token, current!.agentId).tasks(current!.id, signal),
+    enabled: !!current && !!agents.data?.find(({agent}) => agent.id === current.agentId)?.host, refetchInterval: 1000,
+  });
   const start = useMutation({
     mutationFn: (id: string) => client.start(id),
     onSuccess: (id) => {
@@ -100,7 +107,7 @@ export function MessagesScreen({
       queries.setQueryData(key, client.snapshot());
     },
   });
-  const error = agents.error ?? rooms.error ?? start.error ?? send.error;
+  const error = agents.error ?? rooms.error ?? start.error ?? send.error ?? tasks.error;
   const failure = error ? (
     <p role="alert" className="mau-error">
       {errorMessage(
@@ -297,28 +304,26 @@ export function MessagesScreen({
                     ) : null}
                   </>
                 }
-                messages={current.messages.map((message) => ({
-                  id: message.id,
-                  copyText: message.text,
-                  role: message.sender === session.owner ? "user" : "assistant",
-                  title:
-                    message.sender === session.owner
-                      ? session.owner
-                      : current.title,
-                  avatar: (
-                    <EmployeeAvatar
-                      seed={message.sender}
-                      fallbackName={current.title}
-                      size={28}
-                    />
-                  ),
-                  content: (
-                    <>
-                      {current.group ? <small>{message.sender}</small> : null}
-                      <ChatMarkdown markdown={message.text} />
-                    </>
-                  ),
-                }))}
+                messages={current.messages.flatMap((message) => {
+                  const attached = tasks.data?.data.filter((task) => task.source.messageId === message.id) ?? [];
+                  const observedReply = message.sender !== session.owner && tasks.data?.data.some((task) =>
+                    current.messages.some((origin) => origin.id === task.source.messageId)
+                    && (task.replyMessageIds.includes(message.id) || task.interactionMessageIds.includes(message.id)));
+                  if (observedReply) return [];
+                  return [{
+                    id: message.id, copyText: message.text,
+                    role: message.sender === session.owner ? "user" as const : "assistant" as const,
+                    title: message.sender === session.owner ? session.owner : current.title,
+                    avatar: <EmployeeAvatar seed={message.sender} fallbackName={current.title} size={28} />,
+                    content: <>{current.group ? <small>{message.sender}</small> : null}<ChatMarkdown markdown={message.text} /></>,
+                  }, ...attached.map((task) => ({
+                    id: "task:" + task.id, role: "assistant" as const, title: current.title,
+                    avatar: <EmployeeAvatar seed={current.agentId} fallbackName={current.title} size={28} />,
+                    copyText: current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n"),
+                    content: <TaskSurface task={task} token={session.token} agentId={current.agentId}
+                      fallback={current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n")} />,
+                  }))];
+                })}
                 composer={{
                   value: drafts[current.id] ?? "",
                   onChange: (value) =>

@@ -121,3 +121,18 @@ The Files navigation entry is explicitly unavailable. Shared workspace operation
 remain available through the existing Mau API and CLI. This integration does not
 assemble a replacement file application from the frontend package’s workbench
 components.
+
+
+## Execution and interactions
+
+Mau uses Router's public task/run/event/call-result APIs to associate Matrix
+messages with execution. `AgentProcess` and `AgentInteraction` come from Agent UI;
+Host's public interaction helpers preserve native choices and response formats.
+The browser receives neither Host credentials nor direct environment access.
+
+The conversation shows streamed text, tool arguments/results, run state and
+pending approvals/questions. Users can answer or cancel through Router. Event
+cursors resume after disconnection; refresh reconstructs retained history and
+explicitly reports truncation. Closed/expired interactions are disabled. Exact
+reply IDs deduplicate the run output without hiding independent channel messages.
+Protocol fixtures verify this flow separately from live model acceptance.
