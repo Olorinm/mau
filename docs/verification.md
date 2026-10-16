@@ -108,3 +108,19 @@ Chinese and English dialogs at 390px and 320px have no horizontal overflow
 inside the dialog, form groups or action row; each action button is fully visible.
 These checks use the separately downloaded immutable UI archives and fixture
 services; they do not claim live Matrix, native-model or deployment acceptance.
+
+## Original frontend restoration (2026-10-16)
+
+Mau alpha.7 pins Agent UI alpha.6 and Agent Frontend alpha.5 as immutable archives.
+The original `RunMessage` renders in the message body instead of nesting process,
+status and answer in a reply bubble. Host's public adapters preserve native
+choices, question replies and tool input/output. History publishes each page and
+drains terminal events; the product build watcher preserves active work.
+
+All 47 Mau tests pass with built production assets and web acceptance enabled.
+The browser fixture checks streaming text, open tool details, refresh-restored
+approval, exact allow/deny/question replies, stop and post-stop history. Reader
+and watcher tests cover page/end races and reload guards. Independent CLI install
+and recovery checks pass. Agent Frontend separately audits 115 original component
+files and verifies the restored presentation; its audit ledger distinguishes
+source mapping, visual comparisons, callback checks and product availability.

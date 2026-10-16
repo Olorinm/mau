@@ -79,7 +79,7 @@ Mau 使用 `@olorinm/agent-frontend` 的布局、列表详情、登录表单外�
 ## 执行过程与交互
 
 网页通过 Router 的公开任务、运行、事件和调用结果接口关联 Matrix 消息，使用
-Agent UI 的 `AgentProcess`、`AgentInteraction`，以及 Host 的公开交互转换器。
+Agent Frontend 的原版 `RunMessage`、Agent UI 的公开事件投影／原生交互组件，以及 Host 的公开交互转换器。
 浏览器不持有 Host token，不直连执行环境。组件不依赖 Mau 的会话和页面类型。
 
 执行期间可以展开工具参数和结果、回答问题、允许或拒绝审批、停止当前任务。
@@ -89,3 +89,16 @@ Agent UI 的 `AgentProcess`、`AgentInteraction`，以及 Host 的公开交互�
 
 集成测试使用可控 Host/Matrix 协议替身覆盖分段文字、工具结果、刷新恢复、
 允许/拒绝审批、提问回答和取消。它与真实模型的线上验收分别记录。
+
+
+### 原版前端接入修正
+
+执行记录使用 `MessageView.body`，由 `RunMessage` 保留原版执行过程与回答气泡的结构。
+Mau 将 Router 返回的 Host 事件交给 Agent UI 的 `projectHostMessage`；审批和问题用
+`projectHostInteraction` 提供显示数据，选择值与回答格式仍由 Host 的
+`describeInteraction`／`answerInteraction` 决定。Mau 不自定义内核审批选项。
+
+历史按页立即显示，结束状态后补读事件以避免末页竞态。展开状态在增量更新和完成后保持。
+构建版本检查在页面闲置时更新旧资源；执行中、待回应、未发消息、表单或弹窗打开时不自动刷新。
+文件、商店和扩展等尚未接入的产品服务继续明确显示不可用；这些界面已作为独立组件完整拆出，
+组件存在不等于 Mau 已实现对应后端服务。完整对照见 Agent UI 仓库的前端审计清单。

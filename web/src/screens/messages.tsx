@@ -1,3 +1,4 @@
+import {blockBuildReload} from "../build-version";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -89,6 +90,7 @@ export function MessagesScreen({
     text: string;
     transaction: string;
   }>();
+  useEffect(() => blockBuildReload(Boolean(outgoing) || Object.values(drafts).some(value => Boolean(value.trim()))), [outgoing, drafts]);
   const send = useMutation({
     mutationFn: (message: {
       room: string;
@@ -320,7 +322,8 @@ export function MessagesScreen({
                     id: "task:" + task.id, role: "assistant" as const, title: current.title,
                     avatar: <EmployeeAvatar seed={current.agentId} fallbackName={current.title} size={28} />,
                     copyText: current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n"),
-                    content: <TaskSurface task={task} token={session.token} agentId={current.agentId}
+                    body: <TaskSurface task={task} token={session.token} agentId={current.agentId}
+                      onInsertPrompt={(value) => setDrafts((values) => ({...values, [current.id]: value}))}
                       fallback={current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n")} />,
                   }))];
                 })}

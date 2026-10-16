@@ -22,24 +22,29 @@ export function runApi(token: string, agentId: string) {
 export class RunReader {
   private view: RunView | undefined;
   private truncated = false;
+  private terminalDetail: RunDetail | undefined;
   constructor(private api: ReturnType<typeof runApi>, private claimId: string) {}
   async refresh(signal?: AbortSignal) {
-    const detail = await this.api.run(this.claimId, signal);
-    let view = this.view ?? createRunView(detail.run.id), more = false;
-    for (let n = 0; n < 10; n++) {
-      const page = await this.api.events(this.claimId, view.sequence, signal);
-      if (page.historyTruncated) { this.truncated = true; view = createRunView(detail.run.id); }
-      for (const item of page.events) {
-        if (typeof item.event.type !== "string" || item.event.runId !== detail.run.id || !Number.isSafeInteger(item.sequence))
-          throw new ApiError("invalid_response", 200);
-        view = appendRunEvent(view, { sequence: item.sequence, event: item.event as unknown as HostEvent });
-      }
-      if (page.cursor < view.sequence || (page.hasMore && page.cursor === view.sequence && !page.events.length)) throw new ApiError("invalid_response", 200);
-      view = { ...view, sequence: page.cursor };
-      this.view = view;
-      more = page.hasMore;
-      if (!more) break;
+    const terminalBeforeRead = this.terminalDetail;
+    const [detail, page] = await Promise.all([
+      terminalBeforeRead ?? this.api.run(this.claimId, signal),
+      this.api.events(this.claimId, this.view?.sequence ?? 0, signal),
+    ]);
+    signal?.throwIfAborted();
+    let view = this.view ?? createRunView(detail.run.id);
+    if (page.historyTruncated) { this.truncated = true; view = createRunView(detail.run.id); }
+    for (const item of page.events) {
+      if (typeof item.event.type !== "string" || item.event.runId !== detail.run.id || !Number.isSafeInteger(item.sequence) || item.sequence <= 0)
+        throw new ApiError("invalid_response", 200);
+      view = appendRunEvent(view, { sequence: item.sequence, event: item.event as unknown as HostEvent });
     }
+    if (!Number.isSafeInteger(page.cursor) || page.cursor < view.sequence || (page.hasMore && page.cursor === view.sequence && !page.events.length)) throw new ApiError("invalid_response", 200);
+    view = { ...view, sequence: page.cursor };
+    this.view = view;
+    if (detail.run.status !== "running") this.terminalDetail = detail;
+    // Publish every page immediately. If completion raced the parallel event read,
+    // drain once more after observing the terminal status so final events cannot be lost.
+    const more = page.hasMore || (!!this.terminalDetail && !terminalBeforeRead);
     return { detail, view, truncated: this.truncated, more };
   }
 }
