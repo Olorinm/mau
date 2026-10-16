@@ -479,6 +479,10 @@ export class EnvironmentManager {
     ]);
     await this.ready(record, profile);
     await this.configuration.edit(owner, record.agentId, (config) => {
+      // Mau's built-in chat needs the same durable channel path as external messaging.
+      if (!config.connections.some((connection) => connection.kind === "matrix")) {
+        config.connections.push({ id: "matrix", kind: "matrix", ownerAddresses: [owner], peerAddresses: [], groupIds: [] });
+      }
       config.host = {
 
         runtimeId: profile.runtimeId,
