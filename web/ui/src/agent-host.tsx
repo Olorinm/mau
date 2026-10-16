@@ -290,3 +290,5 @@ export function useAgentInteractions() {
 }
 
 export { AgentProcess, projectAgentProcess, type ProcessTool, type ProcessView } from "./agent-process.js";
+
+export { projectHostMessage, projectHostInteraction } from "./agent-host-message.js";

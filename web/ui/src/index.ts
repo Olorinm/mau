@@ -42,3 +42,5 @@ export {
   type ResourceDescriptor,
   type ResourceMenuContext,
 } from "./resource.js";
+
+export type * from "./message-parts.js";

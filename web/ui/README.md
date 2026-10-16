@@ -16,7 +16,7 @@ npm ci
 npm pack
 
 # From a separate React 19 product:
-npm install /path/to/olorinm-agent-ui-0.1.0-alpha.4.tgz
+npm install /path/to/olorinm-agent-ui-0.1.0-alpha.6.tgz
 ```
 
 ```tsx
@@ -75,15 +75,17 @@ dialogs also restore the opener's focus unless the caller overrides close autofo
 
 ### Host execution process
 
-`@olorinm/agent-ui/agent-host` exports `AgentProcess` and the pure
-`projectAgentProcess(events, active)` projection. Supply ordered Host events to
-render grouped tool activity, expandable original arguments/results and public
-Agent commentary. Call IDs keep simultaneous invocations separate; unfinished
-activity becomes interrupted when the caller marks a run inactive. Labels and
-run lifecycle remain caller-owned. Use `AgentInteraction` alongside it for
-approvals and questions, with `describeInteraction`/`answerInteraction` from
-`@olorinm/agent-host/interactions` preserving native decision semantics.
+`@olorinm/agent-ui/agent-host` exports the pure `projectHostMessage(events, options)`
+and `projectHostInteraction(id, request, state)` adapters. They produce the shared
+`MessagePart` display records consumed by Agent Frontend's original `RunMessage`.
+Call IDs preserve simultaneous tools, commentary remains separate from final text,
+and native command/file/search data and complete input/output remain available.
+The frontend never imports Host protocols. The embedding product owns polling,
+run status, cancellation and `describeInteraction`/`answerInteraction` from Host.
+Choice IDs and reply formats remain native; secret and multiple-value fields are
+preserved. Use `AgentInteraction` for Host's form, URL and unknown-native requests.
 
-The component makes no network requests and depends on no Mau, Router or
-OpenGrove business protocol. Existing `ActivityRow` and `Disclosure` primitives
-provide the same process presentation building blocks to custom consumers.
+`AgentProcess` and `projectAgentProcess` remain compatibility exports. They are a
+compact presentation, not the extracted OpenGrove run experience. For that
+experience use `RunMessage` from `@olorinm/agent-frontend/conversation` as a
+conversation message's `body`, which preserves its own process area and bubbles.

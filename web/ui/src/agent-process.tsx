@@ -15,7 +15,7 @@ const object = (value: unknown): Record<string, unknown> => value && typeof valu
 const text = (value: unknown) => typeof value === "string" ? value : "";
 
 /** Host event projection for a caller-owned process surface. Original events remain with the caller.
- * Reuses OpenGrove's process grouping and activity disclosures without its room protocol.
+ * @deprecated Legacy simplified presentation. Use projectHostMessage with agent-frontend RunMessage.
  */
 export function projectAgentProcess(events: readonly HostEvent[], active = false): ProcessView {
   const tools = new Map<string, ProcessTool>(), notes = new Map<string, string>();
@@ -59,6 +59,7 @@ const defaultLabels = {
   process: "Execution process", running: "Running", completed: "Completed", failed: "Failed", interrupted: "Interrupted",
   input: "Input", output: "Output", empty: "Waiting for execution events",
 };
+/** @deprecated Use agent-frontend RunMessage with projectHostMessage for original run presentation. */
 export function AgentProcess({ events, active = false, labels: overrides, children }: {
   events: readonly HostEvent[];
   active?: boolean;

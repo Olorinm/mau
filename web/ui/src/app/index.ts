@@ -1,7 +1,7 @@
 export { Button, type ButtonProps } from "./button.js";
 export { Avatar, AvatarBadge, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from "./avatar.js";
-export { NameAvatar, NameAvatarFallback } from "./name-avatar.js";
-export { EmployeeAvatar, employeeAvatarDataUri, useEmployeeAvatarDataUri } from "./employee-avatar.js";
+export { NameAvatar, NameAvatarFallback, AvvvatarsFallbackContent } from "./name-avatar.js";
+export { EmployeeAvatar, employeeAvatarSeedForMember, employeeAvatarDataUri, useEmployeeAvatarDataUri } from "./employee-avatar.js";
 export { Dialog, DialogContent, DialogTitle, DialogSubpage, useInsideDialogContent } from "./dialog.js";
 export { ConfirmProvider, useConfirm, type ConfirmOptions, type ConfirmResult, type ConfirmFn } from "./confirm-dialog.js";
 export {
