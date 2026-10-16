@@ -93,5 +93,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   await page.getByRole("button", { name: "停止", exact: true }).click();
   await see(page.locator(".mau-run")).toContainText("已取消", { timeout: 8000 });
   await page.reload(); await see(page.locator(".mau-run")).toContainText("已取消");
+  await see(page.locator(".mau-run [role=status]")).toHaveText("已取消");
+  await see(page.getByText("Cancellation requested; waiting for the worker to stop and acknowledge.", { exact: true })).toBeHidden();
   expect(starts).toBe(1); expect(errors).toEqual([]);
 }, 60000);

@@ -54,7 +54,7 @@ function RunSurface({ task, claimId, token, agentId, fallback }: { task: Communi
       {data.truncated ? <p className="mau-muted">{zh ? "部分较早的执行事件已不在保留范围内。" : "Some earlier execution events are no longer retained."}</p> : null}
       {calls.map((call) => <Interaction key={call.id} call={call} claimId={claimId} api={api} active={active} onAnswered={() => query.refetch()} />)}
     </> : null}
-    <ChatMarkdown markdown={answer || fallback} />
+    <ChatMarkdown markdown={data ? answer ?? "" : fallback} />
   </section>;
 }
 
