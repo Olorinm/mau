@@ -351,3 +351,8 @@ body {
 /* Product content uses the shared page surfaces. */
 .mau-agent .mau-actions { margin-block:var(--sp-2); }
 .cloud-auth-switch { border:0; padding:0; color:var(--c-text-2); background:transparent; cursor:pointer; font-size:var(--fs-sm); }
+
+.mau-run { display: grid; gap: var(--sp-3); min-width: 0; }
+.mau-run-status { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); color: var(--c-text-2); font-size: var(--fs-sm); }
+.mau-run pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mau-interaction { display: grid; gap: var(--sp-2); }

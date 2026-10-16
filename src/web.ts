@@ -27,7 +27,7 @@ export function webConsole(root: string, homeserver: string): express.RequestHan
     index: false,
     setHeaders: (res, path) => {
       headers(res);
-      res.set("Cache-Control", path.includes(`${join(directory, "assets")}`) ? "public, max-age=31536000, immutable" : "no-cache");
+      res.set("Cache-Control", path.endsWith("/version.json") ? "no-store" : path.includes(`${join(directory, "assets")}`) ? "public, max-age=31536000, immutable" : "no-cache");
     },
   });
   return (req, res, next) => {
