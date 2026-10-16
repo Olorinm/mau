@@ -78,10 +78,12 @@ test("events retain native objects, ignore replayed sequences and reject cross-r
   });
   assert.equal(appendRunEvent(state, { sequence: 2, event: native }), state);
   assert.equal(state.text, "Hello");
+  state = appendRunEvent(state, { sequence: 3, event: { type: "model.response", runId: "run-a", text: "Hello final" } });
+  assert.equal(state.text, "Hello final");
   assert.throws(
     () =>
       appendRunEvent(state, {
-        sequence: 3,
+        sequence: 4,
         event: { type: "turn.started", runId: "run-b" },
       }),
     /mismatch/,
@@ -97,4 +99,21 @@ test("Markdown preserves rich link labels and data images but not script links o
   assert.match(html, /<strong>Docs<\/strong><\/a>/);
   assert.match(html, /src="data:image\/png;base64,/);
   assert.doesNotMatch(html, /href="javascript:|<script>/);
+});
+
+test("process view preserves tool arguments/results and isolates repeated tool names by call ID", async () => {
+  const { projectAgentProcess } = await import("../dist/agent-host.js");
+  const events = [
+    { type: "native.tool", runId: "run", callId: "cmd-1", phase: "started", native: { type: "commandExecution", command: "pwd" } },
+    { type: "native.tool", runId: "run", callId: "cmd-2", phase: "started", native: { type: "commandExecution", command: "pwd" } },
+    { type: "native.notification", runId: "run", notification: { method: "item/commandExecution/outputDelta", params: { itemId: "cmd-1", delta: "/workspace" } } },
+    { type: "tool.started", runId: "run", callId: "product-1", tool: "lookup", input: { query: "file" } },
+    { type: "tool.finished", runId: "run", callId: "product-1", tool: "lookup", result: { success: false, contentItems: [{ type: "inputText", text: "failed" }] } },
+  ];
+  const view = projectAgentProcess(events, true);
+  assert.equal(view.tools.length, 3);
+  assert.equal(view.tools[0].output, "/workspace");
+  assert.deepEqual(view.tools[2].input, { query: "file" });
+  assert.equal(view.tools[2].status, "failed");
+  assert.equal(projectAgentProcess(events, false).tools[1].status, "interrupted");
 });

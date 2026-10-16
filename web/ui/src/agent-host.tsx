@@ -226,7 +226,7 @@ export function appendRunEvent<E extends HostEvent>(
     text:
       item.event.type === "assistant.delta"
         ? state.text + (item.event.text ?? "")
-        : state.text,
+        : item.event.type === "model.response" ? item.event.text ?? state.text : state.text,
     reasoning:
       item.event.type === "reasoning.delta"
         ? state.reasoning + (item.event.text ?? "")
@@ -288,3 +288,5 @@ export function useAgentInteractions() {
   );
   return { pending, onInteraction };
 }
+
+export { AgentProcess, projectAgentProcess, type ProcessTool, type ProcessView } from "./agent-process.js";

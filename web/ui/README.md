@@ -72,3 +72,18 @@ and toasts inside a caller-owned DOM container. Without it, existing document
 portal behavior is preserved. `@olorinm/agent-frontend` uses this provider to keep
 portaled content inside each frontend instance's theme boundary. Controlled
 dialogs also restore the opener's focus unless the caller overrides close autofocus.
+
+### Host execution process
+
+`@olorinm/agent-ui/agent-host` exports `AgentProcess` and the pure
+`projectAgentProcess(events, active)` projection. Supply ordered Host events to
+render grouped tool activity, expandable original arguments/results and public
+Agent commentary. Call IDs keep simultaneous invocations separate; unfinished
+activity becomes interrupted when the caller marks a run inactive. Labels and
+run lifecycle remain caller-owned. Use `AgentInteraction` alongside it for
+approvals and questions, with `describeInteraction`/`answerInteraction` from
+`@olorinm/agent-host/interactions` preserving native decision semantics.
+
+The component makes no network requests and depends on no Mau, Router or
+OpenGrove business protocol. Existing `ActivityRow` and `Disclosure` primitives
+provide the same process presentation building blocks to custom consumers.
