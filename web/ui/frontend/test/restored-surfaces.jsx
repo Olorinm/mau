@@ -1,6 +1,7 @@
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import * as UI from '../dist/index.js';
+import {runFixtures} from './fixtures/run-parts.mjs';
 import {TooltipProvider} from '@olorinm/agent-ui/app';
 import '../dist/style.css';
 window.actions=[];const record=(...v)=>window.actions.push(v);
@@ -16,6 +17,7 @@ function Example(){
  const {t}=UI.usePresentationLabels();const [value,setValue]=useState(draft),[open,setOpen]=useState(true),[mode,setMode]=useState(null),[query,setQuery]=useState(''),[title,setTitle]=useState('Research'),[panel,setPanel]=useState('overview'),[layout,setLayout]=useState({filesWidth:280,chatWidth:420}),[selected,setSelected]=useState(''),[auth,setAuth]=useState({email:'alex@example.test',code:'',inviteCode:'',countryCode:''});
  const submit=(...v)=>record('submit',...v);const actions={onBack:()=>record('back'),onRefresh:async()=>record('refresh'),onCleanup:async()=>record('cleanup'),onClearHistory:async()=>record('clear-history')};
  switch(which){
+ case 'run-lifecycle':return <><button onClick={()=>setSelected(selected?'':'finished')}>Toggle final reply</button><UI.Conversation messages={[{id:'stable-message',role:'assistant',title:'Agent',copyText:selected?'Final reply':'',body:<UI.RunMessage id="stable-run" {...runFixtures.mixed} status={selected?'done':'running'} onResolveApproval={()=>{}} onResolveQuestion={()=>{}} onInsertPrompt={()=>{}}/>}]} composer={{value:'',onChange:()=>{},onSend:()=>{}}}/></>;
  case 'employee':return <UI.EmployeeEditor open={open} onOpenChange={setOpen} draft={value} onDraftChange={v=>{setValue(v);record('draft',v)}} onKernelChange={id=>record('kernel',id)} onSubmit={submit} canSubmit kernels={[{id:'native',label:'Native'}]} models={[{id:'model',label:'Model',description:'Original model choice'}]} accessOptions={[{id:'read',label:'Read only',description:'Read files'},{id:'full',label:'Full access',description:'May change files',tone:'danger'}]} pending={busy} error={error?'Save failed':undefined}/>;
  case 'avatar':return <UI.EmployeeAvatarPicker open={open} member={member} disabled={busy} onOpenChange={setOpen} onConfirm={async patch=>{record('avatar',patch);if(error)throw new Error('Save failed')}}/>;
  case 'inline':return <UI.RoomInlineSelect value={selected||'read'} options={[{id:'read',label:'Read only',description:'Read files'},{id:'full',label:'Full access',description:'May change files',tone:'danger'},{id:'blocked',label:'Blocked',description:'Unavailable',disabled:true}]} onChange={v=>{setSelected(v);record('select',v)}} disabled={busy}/>;

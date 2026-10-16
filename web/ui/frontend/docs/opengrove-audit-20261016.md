@@ -54,3 +54,17 @@ Evidence is intentionally separated:
 Mau now consumes the original run presentation and Host's public native interaction APIs. Already-working login, contacts, agent/environment/channel management remain product compositions. Mau's Files, Store, Extensions and related absent services remain explicitly unavailable; restoring their reusable frontend views does not invent those product backends or silently enable destructive actions. These are product service integrations, not missing extracted UI. The reusable components can be used independently by Mau or another product.
 
 Reproduction: root `npm test`, `npm run test:browser`, `npm run test:package`; frontend `npm run build`, `npm test`, `npm run test:browser`, `npm run test:package`, `npm run test:restored`; original comparisons via the two `compare-*-presentation.mjs` scripts with the read-only baseline path. Mau: `npm test` with built web assets and `MAU_WEB_E2E=1` for browser acceptance.
+
+
+### Live acceptance follow-up — alpha.6
+
+The live run exposed an additional lifecycle defect: when the first final reply
+made copying available, `RoomMessageItem` switched from a bare article to a
+context-menu wrapper. React remounted the body and cleared the open disclosures.
+The conditional wrapper was inherited from the original message implementation;
+the independent component must retain body identity as caller-supplied actions
+change. The wrapper now stays mounted and only menu availability changes. This
+preserves the original DOM layout and disabled/native context-menu behavior.
+A regression exercises both no-actions → copyable and copyable → no-actions,
+asserting the actual body DOM identity and open disclosure state, in addition to
+Mau's actual completion/delivery regression.

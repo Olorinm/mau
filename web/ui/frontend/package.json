@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "type": "module",
   "license": "MIT",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
