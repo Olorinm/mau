@@ -14,3 +14,18 @@ export * from "../versions";
 export * from "../presentation/app-create-wizard";
 
 export * from "../presentation/app-create-dialog";
+
+export * from "../apps/dashboard-primitives";
+export * from "../apps/developer-layout";
+
+export * from "../publishing";
+export * from "../catalog-details";
+
+export * from "../apps/dashboard";
+export * from "../apps/mcp-app-frame";
+
+export * from "../apps/flow-list";
+
+export * from "../apps/workbench";
+
+export * from "../apps/chat-panel";

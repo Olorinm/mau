@@ -6,3 +6,5 @@ export * from "../provider";
 export * from "../scope";
 export * from "../shell";
 export * from "../layout";
+
+export * from "../presentation/titlebar-controls";

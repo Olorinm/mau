@@ -1,3 +1,4 @@
+import "../files/media.css";
 import "../files/editor.css";
 import "../base.css";
 import "../styles/file-preview.css";
@@ -13,3 +14,8 @@ export * from "../files/directory-tree";
 export * from "../files/directory-panel";
 export * from "../files/panel";
 export * from "../layouts/workspace-workbench-layout";
+
+export * from "../files/standard-file-editor";
+
+export * from "../files/selection";
+export * from "../files/draft-notices";

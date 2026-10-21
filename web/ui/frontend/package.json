@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.7",
   "type": "module",
   "license": "MIT",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
@@ -75,7 +75,7 @@
     "node": ">=24"
   },
   "peerDependencies": {
-    "@olorinm/agent-ui": "^0.1.0-alpha.3",
+    "@olorinm/agent-ui": "^0.1.0-alpha.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -97,12 +97,16 @@
     "@milkdown/kit": "^7.22.1",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-popover": "1.2.0",
+    "@vidstack/react": "1.15.7",
     "clsx": "^2.1.1",
+    "cmdk": "1.1.1",
     "lucide-react": "^1.8.0",
-    "motion": "^12.42.2"
+    "motion": "^12.42.2",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
-    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.3/olorinm-agent-ui-0.1.0-alpha.3.tgz?download=1",
+    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.6/olorinm-agent-ui-0.1.0-alpha.6.tgz?download=1",
     "@playwright/test": "1.63.0",
     "@types/node": "^24.13.3",
     "@types/react": "19.3.0",
@@ -127,6 +131,7 @@
     "dev": "vite --config demo/vite.config.ts",
     "prepack": "npm run build 1>&2",
     "test:comparison": "node scripts/test-comparison.mjs",
-    "compare": "node tools/ui-compare.mjs"
+    "compare": "node tools/ui-compare.mjs",
+    "test:restored": "node scripts/test-restored-surfaces.mjs"
   }
 }

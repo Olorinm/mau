@@ -84,6 +84,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
   const canDownload = !!message.onDownload;
   const downloadPending = !!message.downloadPending;
   const hasMessageActions = canReply || canDelete || canCopy || canDownload;
+  const hasContextMenu = hasMessageActions || !!message.menuActions?.length;
   const shouldMeasureMessageActions =
     hasMessageActions &&
     (actionSurfaceActive || contextMenuOpen || overflowMenuOpen);
@@ -162,8 +163,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
       </div>
     );
   const handleMessageContextMenu = (event: MouseEvent<HTMLElement>) => {
-    if (!hasMessageActions) return;
-    if (shouldIgnoreMessageContextMenu(event.target)) {
+    if (!hasContextMenu || shouldIgnoreMessageContextMenu(event.target)) {
       (
         event as MouseEvent<HTMLElement> & { preventBaseUIHandler?(): void }
       ).preventBaseUIHandler?.();
@@ -260,6 +260,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
           </div>
         ) : null}
         {!isUser ? (
+          message.body ?? (
           <div className="room-chat-agent-stack">
             {message.activity}
             <RoomTextBubble isUser={false}>{message.content}</RoomTextBubble>
@@ -269,6 +270,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
               </div>
             ) : null}
           </div>
+          )
         ) : (
           <RoomTextBubble isUser={isUser} replyPreview={message.reply}>
             {message.content}
@@ -305,11 +307,12 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
       </div>
     </article>
   );
-  if (!hasMessageActions && !message.menuActions?.length) return messageArticle;
+  // Keep this boundary mounted when streaming content gains copy/menu actions.
+  // Swapping article → ContextMenu would remount its body and discard disclosures.
   return (
     <MotionContextMenu
-      open={contextMenuOpen}
-      onOpenChange={setContextMenuOpen}
+      open={hasContextMenu && contextMenuOpen}
+      onOpenChange={(open) => setContextMenuOpen(hasContextMenu && open)}
       trigger={messageArticle}
     >
       {canReply ? (

@@ -1,0 +1,139 @@
+// Presentation extracted from OpenGrove 8b365ed; caller owns data and service operations.
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+import { useI18n } from "../presentation/i18n";
+import { AdaptiveSplitLayout, type WorkspacePane } from "../layouts/adaptive-split-layout";
+import { ResizeHandle } from "../presentation/resize-handle";
+import "../styles/mounted-app-workbench.css";
+
+const DEFAULT_DEVELOPER_PANEL_WIDTH = 420;
+const MIN_DEVELOPER_PANEL_WIDTH = 280;
+const MAX_DEVELOPER_PANEL_WIDTH = 860;
+const MIN_APP_CANVAS_WIDTH = 320;
+const RESIZE_HANDLE_WIDTH = 10;
+
+export function MountedAppDeveloperLayout(props: {
+  /** Identity only resets local layout; persistence belongs to the caller. */
+  appId: string;
+  panelWidth?: number;
+  defaultPanelWidth?: number;
+  onPanelWidthChange?(width: number): void;
+  open: boolean;
+  canvas: ReactNode;
+  chat: ReactNode;
+  pane: WorkspacePane;
+  onCompactChange?(compact: boolean): void;
+}) {
+  const { t } = useI18n();
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const resizeRef = useRef<{
+    pointerId: number;
+    handle: HTMLDivElement;
+    startX: number;
+    startWidth: number;
+    containerWidth: number;
+  } | null>(null);
+  const [localPanelWidth, setPanelWidth] = useState(props.defaultPanelWidth ?? DEFAULT_DEVELOPER_PANEL_WIDTH);
+  const panelWidth = props.panelWidth ?? localPanelWidth;
+
+  useEffect(() => {
+    setPanelWidth(props.defaultPanelWidth ?? DEFAULT_DEVELOPER_PANEL_WIDTH);
+  }, [props.appId, props.defaultPanelWidth]);
+
+  function persistPanelWidth(width: number, containerWidth: number) {
+    const nextWidth = Math.round(constrainDeveloperPanelWidth(width, containerWidth));
+    setPanelWidth(nextWidth);
+    props.onPanelWidthChange?.(nextWidth);
+  }
+
+  function beginPanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !props.open) return;
+    event.preventDefault();
+    const containerWidth = layoutRef.current?.getBoundingClientRect().width ?? 0;
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      handle: event.currentTarget,
+      startX: event.clientX,
+      startWidth: constrainDeveloperPanelWidth(panelWidth, containerWidth),
+      containerWidth,
+    };
+    event.currentTarget.dataset.resizing = "true";
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function updatePanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    persistPanelWidth(resize.startWidth - (event.clientX - resize.startX), resize.containerWidth);
+  }
+
+  function finishPanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    delete resize.handle.dataset.resizing;
+    resizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function adjustPanelWidthWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const step = event.shiftKey ? 40 : 16;
+    const containerWidth = layoutRef.current?.getBoundingClientRect().width ?? 0;
+    persistPanelWidth(panelWidth - direction * step, containerWidth);
+  }
+
+  return (
+    <AdaptiveSplitLayout
+      ref={layoutRef}
+      className="mounted-app-developer-layout"
+      data-open={props.open ? "true" : "false"}
+      style={{ "--mounted-app-developer-panel-width": `${panelWidth}px` } as CSSProperties}
+      pane={props.pane}
+      onCompactChange={props.onCompactChange}
+      primaryLabel={t("mountedApp.workspace")}
+      secondaryLabel={t("mountedApp.developerChatLabel")}
+      secondaryOpen={props.open}
+      primary={<main className="mounted-app-developer-canvas">{props.canvas}</main>}
+      resizeHandle={
+        <ResizeHandle
+          className="mounted-app-resize-handle mounted-app-developer-resize-handle"
+          aria-label={t("mountedApp.resizeChat")}
+          aria-orientation="vertical"
+          aria-valuemin={MIN_DEVELOPER_PANEL_WIDTH}
+          aria-valuemax={MAX_DEVELOPER_PANEL_WIDTH}
+          aria-valuenow={panelWidth}
+          tabIndex={props.open ? 0 : -1}
+          onKeyDown={adjustPanelWidthWithKeyboard}
+          onPointerCancel={finishPanelResize}
+          onPointerDown={beginPanelResize}
+          onPointerMove={updatePanelResize}
+          onPointerUp={finishPanelResize}
+        />
+      }
+      secondary={
+        <aside className="mounted-app-developer-chat" aria-label={t("mountedApp.developerChatLabel")}>
+          {props.chat}
+        </aside>
+      }
+    />
+  );
+}
+
+function constrainDeveloperPanelWidth(width: number, containerWidth: number): number {
+  if (!containerWidth) return clamp(width, MIN_DEVELOPER_PANEL_WIDTH, MAX_DEVELOPER_PANEL_WIDTH);
+  const available = containerWidth - MIN_APP_CANVAS_WIDTH - RESIZE_HANDLE_WIDTH;
+  const maximum = Math.max(MIN_DEVELOPER_PANEL_WIDTH, Math.min(MAX_DEVELOPER_PANEL_WIDTH, available));
+  return clamp(width, MIN_DEVELOPER_PANEL_WIDTH, maximum);
+}

@@ -1,5 +1,6 @@
 // Extracted from web/src/components/shared/file-preview-panel.tsx at 8b365ed. See source-manifest.json for boundary changes.
-import type { ReactNode } from "react";
+import {useEffect, useRef, useState, type ReactNode} from "react";
+import {SelectionAttachButton, readNativeTextSelection, type TextSelectionState} from "./selection";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -35,6 +36,10 @@ export function FilePanel({
   downloading,
   downloadError,
   selectionAction,
+  onAttachSelection,
+  selectionKey,
+  rawUrl,
+  showModeTabs,
 }: {
   title: string;
   mode?: PreviewMode;
@@ -50,11 +55,21 @@ export function FilePanel({
   downloading?: boolean;
   downloadError?: string;
   selectionAction?: ReactNode;
+  onAttachSelection?(selection: TextSelectionState): void;
+  selectionKey?: string;
+  rawUrl?: string;
+  showModeTabs?: boolean;
 }) {
+  const root = useRef<HTMLDivElement>(null);
+  const [selection, setSelection] = useState<TextSelectionState | null>(null);
+  const hasToolbar = Boolean(onModeChange || rawUrl || onDownload || onOpenLocal || actions || saveState || saveStatus);
+  useEffect(() => setSelection(null), [selectionKey, mode]);
+  const readSelection = () => { if (onAttachSelection) setSelection(readNativeTextSelection(root.current)); };
   return (
-    <div className="file-preview-workbench" aria-label={title}>
-      <div className="file-preview-surface" data-has-toolbar={"true"}>
-        <PreviewToolbar
+    <div className="file-preview-workbench" aria-label={title} ref={root} onMouseUp={readSelection}
+      onKeyUp={event => { if(event.key === "Escape") setSelection(null); else readSelection(); }}>
+      <div className="file-preview-surface" data-has-toolbar={hasToolbar ? "true" : "false"}>
+        {hasToolbar ? <PreviewToolbar
           canEdit={!!onModeChange}
           mode={mode}
           onModeChange={onModeChange}
@@ -65,13 +80,15 @@ export function FilePanel({
           downloadError={downloadError}
           onOpenLocal={onOpenLocal}
           actions={actions}
-        />
+          rawUrl={rawUrl}
+          showModeTabs={showModeTabs}
+        /> : null}
         {notice}
         <div className="file-preview-content">
           {loading ? <FilePreviewLoadingState /> : children}
         </div>
       </div>
-      {selectionAction}
+      {selectionAction ?? (selection && onAttachSelection ? <SelectionAttachButton selection={selection} onAttach={() => {onAttachSelection(selection); setSelection(null);}} /> : null)}
     </div>
   );
 }

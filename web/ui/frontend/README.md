@@ -21,7 +21,7 @@ and `licenses/`; dependencies keep their original licenses.
 
 The frontend does not import or call Mau, Agent Router, Agent Host, Agent
 Environment, Matrix, or OpenGrove services. It has no HTTP client, API base,
-authentication callback, protocol schemas, event polling, browser storage, global
+authentication protocol, protocol schemas, event polling, browser storage, global
 router, or application bootstrap. No service adapter is required to render it.
 
 ## Compose a product
@@ -50,8 +50,8 @@ the draft, invent an assistant reply, or select a backend. Supply pending/error
 state and update the input after the product confirms its operation. A callback
 may use any service or local state; the component does not know which.
 
-Install React 19, React DOM 19 and the Agent UI alpha.4 archive in the consumer.
-Agent UI alpha.3 remains the supported minimum for the shared portal API.
+Install React 19, React DOM 19 and the Agent UI alpha.6 archive in the consumer.
+Agent UI alpha.6 supplies the shared display records and native Host projection.
 Agent UI is a peer dependency so shared providers have a single context instance. Components require no mounting
 singleton and may be composed into an existing React tree or rendered separately.
 Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;
@@ -200,3 +200,42 @@ Opening a dialog should preserve the background page and restore focus on close.
 stateful presentation stories. Its records/actions are examples, not services.
 See [comparison workflow](docs/comparison.md) for the generic screenshot and
 interaction runner and [validation](docs/validation.md) for measured coverage.
+
+## Complete presentation surfaces (alpha.5)
+
+See the [audit ledger](docs/opengrove-audit-20261016.md) and
+[file inventory](docs/opengrove-source-inventory.json) for the baseline, findings,
+exclusions and verification limits. Provenance alone does not establish completeness.
+
+- `RunMessage`: original process grouping, tool summaries/details, edits, commentary,
+  reasoning, resources, approvals/questions and separate answer bubbles. Give it
+  stable IDs, display `MessagePart[]`, status and intent callbacks. Place it in
+  `MessageView.body`; `content` is for a single message bubble. `resourceOperations`
+  supplies artifact/image URLs and image save/download/preview operations.
+- `EmployeeEditor`, `EmployeeAvatarPicker`, `EmployeeActivity`,
+  `EmployeeCapabilities`, `Contacts`, `RoomSettingsPanel`, `RemoteAgentDialog`,
+  `NetworkAuthorizationDialog`: original employee/group/contact subviews with
+  caller-owned catalogs, permissions, requests and results. `RoomInlineSelect`
+  retains option descriptions, danger styling and disabled choices.
+- `FilePreview`, `StandardFilePreview`, `FlowPreview`, `MarkdownPreview`,
+  `FilePanel`, `FileDraftNotices`: original metadata, media player, flow activity,
+  selection attachment and conflict/save notices. `FileEditor` uses the original
+  rich Markdown editor by default; set `richText={false}` for source editing.
+- `DashboardPreview`, `AppWorkbench`, `MountedAppDeveloperLayout`, `AppChatPanel`,
+  `AppFlowList`, `AppCreateGroupDialog`, `AppDeleteGroupDialog`, `McpAppFrame`:
+  mounted-app presentation, history, resizing, group selection and app framing.
+  The caller supplies app/flow data, file views and MCP transport.
+- `AppStorePublishReleaseEditor`, catalog detail and extension workspace exports:
+  requirement details, draft/check/recovery state, deployment targets and explicit
+  publish/remove intents. These components do not publish, deploy or fetch.
+- Storage/native desktop/provider picker/operations settings, release-note Markdown,
+  auth email/code/invite/country/team forms, startup/recovery views and titlebar
+  controls are separately exported. Credentials, auth flows, update policy,
+  persistence and native operations stay with the embedding product.
+
+Additional verification: `npm run test:restored` exercises restored views and
+callbacks. `node scripts/compare-run-presentation.mjs` and
+`node scripts/compare-restored-presentation.mjs` compare equivalent inputs against
+the locally available original baseline; consult their source-root options.
+`AGENT_UI_ARCHIVE=/absolute/path/to/agent-ui.tgz npm run test:package` validates an
+unpublished candidate in a clean independent consumer.

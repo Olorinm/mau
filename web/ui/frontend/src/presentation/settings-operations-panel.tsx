@@ -5,6 +5,10 @@ import type { ReactNode } from "react";
 import { EmptyState } from "@olorinm/agent-ui/app";
 import { useI18n } from "./i18n";
 import "../styles/operations.css";
+export interface OperationRecordView {id: string; title: string; detail: string; icon?: ReactNode; date?: string; raw?: string}
+export function OperationRecord({record}: {record: OperationRecordView}) {
+ return <details className="ops-record-item"><summary>{record.icon}<span><strong>{record.title}</strong><small>{record.detail}</small></span><time>{record.date}</time></summary><pre className="ops-json-block">{record.raw}</pre></details>;
+}
 export interface OperationRunView {
   id: string;
   title: string;
@@ -21,11 +25,14 @@ export interface OperationRunView {
   toolCount: number;
   result: string;
   input: string;
+  displayId?: string;
+  contextRecords?: readonly {id: string; title: string; meta: string}[];
   sections: readonly {
     id: string;
     title: string;
     emptyLabel: string;
-    records: readonly { id: string; title: string; detail: string }[];
+    countLabel?: string;
+    records: readonly OperationRecordView[];
   }[];
 }
 export function SettingsOperationsPanel(props: {
@@ -147,7 +154,7 @@ function OpsSettingsRunItem(props: {
           </span>
           <span>
             <strong>Run</strong>
-            {props.run.id}
+            {props.run.displayId ?? props.run.id}
           </span>
         </div>
 
@@ -171,6 +178,7 @@ function OpsSettingsRunItem(props: {
           <div className="ops-readable-block ops-settings-readable">
             {props.run.input || t("ops.noContext")}
           </div>
+          {props.run.contextRecords?.length ? <div className="ops-settings-context-records">{props.run.contextRecords.map(record => <div className="paper-row small" key={record.id}><span><strong>{record.title}</strong><small>{record.meta}</small></span></div>)}</div> : null}
         </details>
 
         <div className="ops-settings-foldout-grid">
@@ -181,7 +189,7 @@ function OpsSettingsRunItem(props: {
                   <strong>{section.title}</strong>
                 </span>
                 <small className="ops-settings-foldout-meta">
-                  {section.records.length}
+                  {section.countLabel ?? section.records.length}
                 </small>
                 <ChevronRight
                   className="ops-settings-foldout-chevron"
@@ -190,7 +198,7 @@ function OpsSettingsRunItem(props: {
               </summary>
               <div className="ops-record-list">
                 {section.records.length ? (
-                  section.records.map((record) => (
+                  section.records.map((record) => record.raw !== undefined ? <OperationRecord key={record.id} record={record} /> : (
                     <div className="paper-row small" key={record.id}>
                       <span>
                         <strong>{record.title}</strong>

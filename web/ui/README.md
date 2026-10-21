@@ -16,7 +16,7 @@ npm ci
 npm pack
 
 # From a separate React 19 product:
-npm install /path/to/olorinm-agent-ui-0.1.0-alpha.4.tgz
+npm install /path/to/olorinm-agent-ui-0.1.0-alpha.6.tgz
 ```
 
 ```tsx
@@ -72,3 +72,20 @@ and toasts inside a caller-owned DOM container. Without it, existing document
 portal behavior is preserved. `@olorinm/agent-frontend` uses this provider to keep
 portaled content inside each frontend instance's theme boundary. Controlled
 dialogs also restore the opener's focus unless the caller overrides close autofocus.
+
+### Host execution process
+
+`@olorinm/agent-ui/agent-host` exports the pure `projectHostMessage(events, options)`
+and `projectHostInteraction(id, request, state)` adapters. They produce the shared
+`MessagePart` display records consumed by Agent Frontend's original `RunMessage`.
+Call IDs preserve simultaneous tools, commentary remains separate from final text,
+and native command/file/search data and complete input/output remain available.
+The frontend never imports Host protocols. The embedding product owns polling,
+run status, cancellation and `describeInteraction`/`answerInteraction` from Host.
+Choice IDs and reply formats remain native; secret and multiple-value fields are
+preserved. Use `AgentInteraction` for Host's form, URL and unknown-native requests.
+
+`AgentProcess` and `projectAgentProcess` remain compatibility exports. They are a
+compact presentation, not the extracted OpenGrove run experience. For that
+experience use `RunMessage` from `@olorinm/agent-frontend/conversation` as a
+conversation message's `body`, which preserves its own process area and bubbles.
