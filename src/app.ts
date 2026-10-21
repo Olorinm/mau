@@ -10,8 +10,12 @@ import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
 import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
+import { BusinessTools, businessToolsSchema } from "./business-tools.js";
+import { DurableStore } from "./store.js";
+
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
+  businessTools: businessToolsSchema,
   connectionsFile: z.string().min(1).optional(),
   publicHomeserver: z.url().optional(),
 }).strict();
@@ -30,13 +34,15 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       publicHomeserver.password || publicHomeserver.search || publicHomeserver.hash || publicHomeserver.pathname !== "/")
     throw new Error("invalid_public_homeserver_url");
   let environments: EnvironmentManager;
+  const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
+  const business = new BusinessTools(options.businessTools, base, businessStore);
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
     ...(dependencies.router ? { dependencies: dependencies.router } : {}),
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
     hosts: {
       assertReady: (id, binding) => environments.assertReady(id, binding),
       wake: (id, binding) => environments.wake(id, binding),
-      host: (id, binding) => environments.host(id, binding),
+      host: (id, binding) => business.host(id, router.service.agent(id).owner, binding, environments.http(id, binding)),
       http: (id, binding) => environments.http(id, binding),
     },
   });
@@ -114,6 +120,14 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const { profileId, workspaceId } = z.object({ profileId: z.string().min(1).max(48), workspaceId: z.uuid().optional() }).strict().parse(req.body);
     res.status(202).json(await environments.begin(res.locals.owner, String(req.params.id), profileId, workspaceId));
   });
+  product.post("/agents/:id/environment/replace", async (req, res) => {
+    const input = z.object({ profileId: z.string().min(1).max(48), expectedOperationId: z.uuid() }).strict().parse(req.body);
+    res.status(202).json(await environments.replace(res.locals.owner, String(req.params.id), input.profileId, input.expectedOperationId));
+  });
+  product.post("/agents/:id/environment/rollback", async (req, res) => {
+    const input = z.object({ expectedOperationId: z.uuid() }).strict().parse(req.body);
+    res.status(202).json(await environments.rollbackReplacement(res.locals.owner, String(req.params.id), input.expectedOperationId));
+  });
   product.post("/agents/:id/environment/:action", async (req, res) => {
     z.object({}).strict().parse(req.body);
     const action = z.enum(["pause", "resume", "destroy", "reconcile"]).parse(req.params.action);
@@ -134,5 +148,5 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   return { app, router, environments, start: () => router.start(),
     attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
-    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); } };
+    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); businessStore.close(); } };
 }

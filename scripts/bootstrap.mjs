@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 const { values } = parseArgs({ options: {
-  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
+  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "connectors-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
 } });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
@@ -16,7 +16,7 @@ const pins = JSON.parse(await readFile(new URL("components.json", root), "utf8")
 const lock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
 const webLock = JSON.parse(await readFile(new URL("web/package-lock.json", root), "utf8"));
 async function verifyArchive(name, path) {
-  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", ui: "@olorinm/agent-ui", frontend: "@olorinm/agent-frontend" }[name];
+  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", connectors: "@olorinm/agent-connectors", ui: "@olorinm/agent-ui", frontend: "@olorinm/agent-frontend" }[name];
   const expected = (["ui", "frontend"].includes(name) ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
   const actual = "sha512-" + createHash("sha512").update(await readFile(path)).digest("base64");
   // npm ci may satisfy a file: dependency from its integrity cache without
@@ -24,14 +24,16 @@ async function verifyArchive(name, path) {
   if (actual !== expected || pins[name].integrity && pins[name].integrity !== expected)
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
-const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", ui: "agent-ui.tgz", frontend: "agent-frontend.tgz" };
-for (const name of ["router", "environment", "ui", "frontend"]) {
+const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", connectors: "agent-connectors.tgz", ui: "agent-ui.tgz", frontend: "agent-frontend.tgz" };
+for (const name of ["router", "environment", "connectors", "ui", "frontend"]) {
   const destination = new URL(archives[name], packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);
     await verifyArchive(name, destination);
     continue;
   }
+  if (pins[name].distribution === "local-build")
+    throw new Error(`${name} contains unpublished changes; pass --${name}-archive with the lockfile-pinned local archive.`);
   const { repository, revision, archive: distribution } = pins[name];
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision))
     throw new Error("immutable_component_revision_required");

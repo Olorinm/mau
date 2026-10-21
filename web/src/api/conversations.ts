@@ -7,6 +7,7 @@ export interface ConversationMessage {
   sender: string;
   text: string;
   timestamp: number;
+  replyTo?: string;
 }
 export interface ConversationView {
   id: string;
@@ -164,7 +165,7 @@ export class MauConversations {
         if (content.msgtype !== "m.text" && content.msgtype !== "m.notice")
           continue;
         const relation = content["m.relates_to"] as
-          { rel_type?: string; event_id?: string } | undefined;
+          { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } } | undefined;
         if (relation?.rel_type === "m.replace") {
           const original =
             relation.event_id && room.messages.get(relation.event_id);
@@ -185,6 +186,7 @@ export class MauConversations {
           id: event.event_id,
           sender: event.sender,
           text: content.body,
+          ...(typeof relation?.["m.in_reply_to"]?.event_id === "string" ? { replyTo: relation["m.in_reply_to"].event_id } : {}),
           timestamp: event.origin_server_ts ?? 0,
         });
       }

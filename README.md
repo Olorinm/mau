@@ -23,7 +23,7 @@ communication routes use `/_agent-router/v1`.
 With Node.js 24+, install the client from the public release:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.6/olorinm-mau-cli-0.1.0-alpha.6.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.9/olorinm-mau-cli-0.1.0-alpha.9.tgz
 mau --version
 ```
 
@@ -33,8 +33,8 @@ The build steps below are for running or developing the server.
 ## Build
 
 Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
-`components.json` pins component source revisions and immutable release archives.
-Router and Host releases are public. Agent Environment 0.2.0-alpha.2 is a
+`components.json` pins immutable component commits and verified release archives.
+Router, Connectors, Host and UI releases are public. Agent Environment 0.2.0-alpha.3 is a
 private OMA-derived release. Bootstrap downloads its pinned archive from the private repository.
 The signed-in GitHub account must have access to any private component source. Bootstrap verifies the actual archive bytes against the lockfile.
 Environment uses an uncompressed npm tar archive so CI can reproduce the same
@@ -47,7 +47,7 @@ npm test
 node dist/cli.js --help
 ```
 
-Use `--router-archive /path/router.tgz --environment-archive /path/environment.tar`
+Use `--router-archive /path/router.tgz --connectors-archive /path/connectors.tgz --environment-archive /path/environment.tar`
 when supplying the pinned archives locally. The web console's
 [Agent UI](https://github.com/Olorinm/agent-ui) release is public too;
 `--ui-archive /path/agent-ui.tgz` supplies it locally. The separate product-neutral
@@ -56,7 +56,7 @@ backend adapter. Both UI archives are pinned and checked against the web lockfil
 See [verification](docs/verification.md) for the shared-source acceptance.
 
 An independent consumer installs all required archives together:
-`npm install ./router.tgz ./environment.tgz ./mau.tgz`. Host is installed in the
+`npm install ./router.tgz ./environment.tgz ./connectors.tgz ./mau.tgz`. Host is installed in the
 execution image, not the Mau server. The CLI is `mau`; the server is `mau-server`.
 
 ## Use
@@ -97,3 +97,6 @@ third-party licensing boundaries, including OMA-derived Environment code:
 [NOTICE](NOTICE).
 
 Shared persistent files: [workspaces](docs/workspaces.md).
+
+Replacing an environment and composing server-side read tools:
+[environment migration](docs/environment-migration.md).

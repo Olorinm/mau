@@ -95,6 +95,8 @@ interface Binding {
   updatedAt: string;
   workspaceId?: string;
   workspace?: WorkspaceBinding;
+  tokenPerOperation?: boolean;
+  previous?: Binding;
 }
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
@@ -258,6 +260,7 @@ export class EnvironmentManager {
           updatedAt: record.updatedAt,
           ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
           ...(record.error ? { error: record.error } : {}),
+          ...(record.previous ? { previousEnvironment: { profileId: record.previous.profileId, state: record.previous.phase } } : {}),
         }
       : null;
   }
@@ -289,6 +292,7 @@ export class EnvironmentManager {
       provider: profile.provider,
       phase: "creating",
       updatedAt: new Date().toISOString(),
+      tokenPerOperation: true,
       ...(workspaceId ? { workspaceId } : {}),
     };
     const provider = await this.provider(record);
@@ -320,6 +324,70 @@ export class EnvironmentManager {
       await this.bootstrap(owner, record, provider, profile);
     });
     return this.view(record);
+  }
+  /** Replace a stopped execution environment, retaining the Agent's identity and channels. */
+  async replace(owner: string, agentId: string, profileId: string, expectedOperationId: string) {
+    this.assertOpen();
+    this.service.owned(agentId, owner);
+    const old = this.binding(agentId);
+    if (!old || old.operationId !== expectedOperationId) throw new WorkError("environment_binding_changed", 409);
+    if (this.jobs.has(agentId) || this.sshActive.has(agentId)) throw new WorkError("environment_operation_running", 409);
+    if (old.previous) throw new WorkError("environment_previous_replacement_retained", 409);
+    if (old.phase !== "paused" && old.phase !== "deleted") throw new WorkError("environment_pause_before_replace", 409);
+    const profile = this.profiles(owner).find(p => p.id === profileId);
+    if (!profile) throw new WorkError("environment_profile_not_assigned", 403);
+    if (old.workspaceId || profile.workspace) throw new WorkError("environment_workspace_replacement_unsupported", 409);
+    this.bundle(profile);
+    if (old.ref && (await (await this.provider(old)).info(old.ref.id)).state !== (old.phase === "deleted" ? "missing" : "paused"))
+      throw new WorkError("environment_stop_unconfirmed", 409);
+    this.assertOpen();
+    if (this.jobs.has(agentId) || this.sshActive.has(agentId) || this.binding(agentId)?.operationId !== expectedOperationId || this.binding(agentId)?.phase !== old.phase)
+      throw new WorkError("environment_binding_changed", 409);
+    const record: Binding = {
+      agentId, operationId: randomUUID(), profileId, profileHash: profileHash(profile), provider: profile.provider,
+      phase: "creating", updatedAt: new Date().toISOString(), tokenPerOperation: true, previous: old,
+    };
+    this.save(record);
+    this.verifiedWorkspaces.delete(agentId);
+    this.launch(record, async () => {
+      const provider = await this.provider(record);
+      record.ref = await provider.create({ template: profile.template, timeoutSeconds: profile.lifetimeSeconds,
+        onTimeout: profile.onTimeout, metadata: { "mau-operation": record.operationId } });
+      this.save(record);
+      await this.bootstrap(owner, record, provider, profile);
+    });
+    return this.view(record);
+  }
+  /** Return to the retained, stopped environment. Both sets of files remain intact. */
+  async rollbackReplacement(owner: string, agentId: string, expectedOperationId: string) {
+    this.assertOpen();
+    this.service.owned(agentId, owner);
+    const current = this.binding(agentId);
+    if (!current?.previous || current.operationId !== expectedOperationId) throw new WorkError("environment_binding_changed", 409);
+    if (this.jobs.has(agentId) || this.sshActive.has(agentId)) throw new WorkError("environment_operation_running", 409);
+    if (!["paused", "deleted", "needs_action"].includes(current.phase)) throw new WorkError("environment_pause_before_replace", 409);
+    if (!current.ref) throw new WorkError("environment_creation_requires_operator_reconciliation", 409);
+    this.launch(current, async () => {
+      const state = (await (await this.provider(current)).info(current.ref!.id)).state;
+      if (state !== "paused" && state !== "missing") throw new WorkError("environment_stop_unconfirmed", 409);
+      const old = structuredClone(current.previous!);
+      const profile = this.profile(old);
+      const previousState = old.ref ? (await (await this.provider(old)).info(old.ref.id)).state : "missing";
+      if (previousState === "missing") throw new WorkError("previous_environment_missing", 409);
+      if (previousState !== "paused") throw new WorkError("previous_environment_stop_unconfirmed", 409);
+      this.save(old);
+      try {
+        await this.configuration.replaceHost(owner, agentId, {
+          binding: old.operationId, runtimeId: profile.runtimeId, instanceName: "channel-host",
+          instructions: profile.instructions ?? "",
+        });
+        this.store.set("retired_environments", current.operationId, { ...current, previous: undefined });
+      } catch (error) {
+        this.save(current);
+        throw error;
+      }
+    });
+    return this.view(current);
   }
   private bundle(profile: Profile) {
     const content = readFileSync(profile.hostConfigFile, "utf8");
@@ -395,6 +463,7 @@ export class EnvironmentManager {
       throw new WorkError("environment_bootstrap_command_failed", 502);
   }
   private token(record: Binding) {
+    if (record.tokenPerOperation) return join(this.directory, "agents", record.agentId, "environments", record.operationId, "environment-token");
     return join(
       join(this.directory, "agents", record.agentId),
       "environment-token",
@@ -478,14 +547,15 @@ export class EnvironmentManager {
       posix.join(dir, "ready.json"),
     ]);
     await this.ready(record, profile);
-    await this.configuration.edit(owner, record.agentId, (config) => {
-      config.host = {
-
-        runtimeId: profile.runtimeId,
-        instanceName: "channel-host",
-        instructions: profile.instructions ?? "",
-        binding: record.operationId,
-      };
+    const host = { runtimeId: profile.runtimeId, instanceName: "channel-host",
+      instructions: profile.instructions ?? "", binding: record.operationId };
+    const configured = this.configuration.configuration(this.service.owned(record.agentId, owner));
+    if (record.previous && configured?.host?.binding !== record.operationId)
+      await this.configuration.replaceHost(owner, record.agentId, host);
+    else await this.configuration.edit(owner, record.agentId, config => {
+      if (!config.connections.some(connection => connection.kind === "matrix"))
+        config.connections.push({ id: "matrix", kind: "matrix", ownerAddresses: [owner], peerAddresses: [], groupIds: [] });
+      config.host = host;
     });
     record.phase = "ready";
     delete record.error;
@@ -708,7 +778,7 @@ export class EnvironmentManager {
     const config = this.configuration.configuration(
       this.service.agent(agentId),
     );
-    if (!config?.host?.binding)
+    if (config?.host?.binding !== record.operationId)
       await this.bootstrap(owner, record, provider, profile);
     else {
       await this.verifyWorkspace(record, provider);

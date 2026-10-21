@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau-web",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.9",
   "private": true,
   "description": "Mau web console: login, agents, environments and channel connections.",
   "type": "module",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@olorinm/agent-frontend": "file:../.packages/agent-frontend.tgz",
+    "@olorinm/agent-host": "https://github.com/Olorinm/agent-host/releases/download/v0.1.0-alpha.9/olorinm-agent-host-0.1.0-alpha.9.tgz",
     "@olorinm/agent-ui": "file:../.packages/agent-ui.tgz",
     "@rc-component/qrcode": "1.1.3",
     "@tanstack/react-query": "5.104.1",

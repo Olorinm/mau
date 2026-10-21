@@ -11,3 +11,7 @@
 !web/**
 web/node_modules
 web/dist
+
+!LICENSE
+!NOTICE
+!components.json

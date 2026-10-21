@@ -13,7 +13,7 @@ import type { WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 export const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
-export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string } = {}, workspaceBackend?: WorkspaceBackend) {
+export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response> } = {}, workspaceBackend?: WorkspaceBackend) {
   const directory = mkdtempSync(join(tmpdir(), "router-cloud-"));
   cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
   const cloud = new Map<
@@ -100,6 +100,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
         return Response.json({ id: "personal", available: true });
       if (url.pathname.endsWith("/runtimes"))
         return Response.json({ runtimes: [{ id: "personal" }] });
+      if (serving.host) return serving.host(url, init);
       return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
     },
   );

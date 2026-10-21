@@ -1,3 +1,5 @@
+import {startBuildVersionWatcher} from "./build-version";
+declare const __MAU_BUILD_ID__: string;
 import { applyTheme, watchSystemTheme, useThemePreference } from "./theme";
 import {
   StrictMode,
@@ -82,6 +84,7 @@ function Root() {
       },
     });
   });
+  useEffect(() => startBuildVersionWatcher(import.meta.env.DEV ? "dev" : __MAU_BUILD_ID__, () => !client.isMutating() && !document.querySelector('[role="dialog"],form') && !document.activeElement?.matches("input,textarea,[contenteditable=true]")), [client]);
   return (
     <I18n.Provider value={i18n}>
       <ChatProvider translate={translate}>

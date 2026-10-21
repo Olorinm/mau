@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DurableStore } from "../src/store.js";
 import { EnvironmentManager } from "../src/environments.js";
 import { sshKeyId } from "../src/ssh.js";
@@ -45,6 +45,16 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
   );
   const setup = (await f.api(`/agents/${f.agent.id}`)).data;
   expect(setup.host.runtimeId).toBe("personal");
+  expect(setup.connections).toEqual([{ id: "matrix", kind: "matrix" }]);
+  const runtime = await f.service.runtime(f.agent.id);
+  const room = "!web-chat:example.test";
+  runtime.connector.store.set("rooms", room, { members: [alice, f.agent.matrixId], encrypted: false });
+  runtime.connector.ingest(room, {
+    event_id: "$web-hi", sender: alice, type: "m.room.message",
+    content: { msgtype: "m.text", body: "hi" }, origin_server_ts: Date.now() + 1,
+  });
+  expect(runtime.connector.store.entries<any>("communication_inbox").map(row => row.value))
+    .toContainEqual(expect.objectContaining({ connectionId: "matrix", source: expect.objectContaining({ text: "hi" }) }));
   expect(setup.environment.operationId).toBe(ready.operationId);
   expect(JSON.stringify(setup)).not.toContain(String(files.get(dir + "token")));
   expect(JSON.stringify(setup)).not.toContain("private-traffic-token");
@@ -55,6 +65,7 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
         "mau",
         "agents",
         f.agent.id,
+        "environments", ready.operationId,
         "environment-token",
       ),
     ).mode & 0o777,
@@ -419,4 +430,63 @@ it('unknown creates keep the original Workspace binding and reconcile without al
   expect(ready.state).toBe('ready');expect(ready.workspaceId).toBe(failed.workspaceId);
   expect(f.creates).toBe(1);expect(backend.prepare).toHaveBeenCalledTimes(1);
   expect(backend.verify).toHaveBeenCalledTimes(1);
+});
+
+it("replaces a stopped environment without changing Agent identity and rolls back to its retained files", async () => {
+  const f = await fixture();
+  await f.api(f.path, { profileId: "cloud" }); const original = await f.settled();
+  const oldId = [...f.cloud.keys()][0]!, oldToken = f.cloud.get(oldId)!.files.get("/home/user/.agent-host-service/token");
+  f.cloud.get(oldId)!.files.set("/home/user/workspace/keep.txt", "retained");
+  const body = { profileId: "cloud", expectedOperationId: original.operationId };
+  expect((await f.api(f.path + "/replace", body)).status).toBe(409);
+  await f.api(f.path + "/pause", {}); await f.settled();
+  expect((await f.api(f.path + "/replace", body, "bob")).status).toBe(404);
+  expect((await f.api(f.path + "/replace", { ...body, expectedOperationId: randomUUID() })).status).toBe(409);
+  expect((await f.api(f.path + "/replace", { ...body, profileId: "unassigned" })).status).toBe(403);
+  expect((await f.api(f.path + "/replace", body)).status).toBe(202);
+  const replaced = await f.settled();
+  expect(replaced.state).toBe("ready"); expect(replaced.operationId).not.toBe(original.operationId);
+  expect(f.service.owned(f.agent.id, alice).matrixId).toBe(f.agent.matrixId);
+  expect(f.cloud.get(oldId)!.state).toBe("paused");
+  const newId = [...f.cloud.keys()][1]!;
+  expect(f.cloud.get(newId)!.files.get("/home/user/.agent-host-service/token")).not.toBe(oldToken);
+  await f.api(f.path + "/pause", {}); await f.settled();
+  expect((await f.api(f.path + "/replace", { ...body, expectedOperationId: replaced.operationId })).status).toBe(409);
+  expect((await f.api(f.path + "/rollback", { expectedOperationId: replaced.operationId }, "bob")).status).toBe(404);
+  await f.api(f.path + "/rollback", { expectedOperationId: replaced.operationId });
+  expect((await f.settled()).operationId).toBe(original.operationId);
+  expect(f.cloud.get(oldId)!.files.get("/home/user/workspace/keep.txt")).toBe("retained");
+  expect(f.cloud.get(oldId)!.files.get("/home/user/.agent-host-service/token")).toBe(oldToken);
+  expect(f.cloud.get(newId)!.state).toBe("paused");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+});
+
+it("replacement requires confirmed cloud pause and cannot be replayed after a lost create response", async () => {
+  const f = await fixture();
+  await f.api(f.path, { profileId: "cloud" }); const old = await f.settled();
+  await f.api(f.path + "/pause", {}); await f.settled();
+  const id = [...f.cloud.keys()][0]!, body = { profileId: "cloud", expectedOperationId: old.operationId };
+  f.cloud.get(id)!.state = "running";
+  expect((await f.api(f.path + "/replace", body)).data.error).toBe("environment_stop_unconfirmed");
+  f.cloud.get(id)!.state = "paused";
+  f.loseCreate(); await f.api(f.path + "/replace", body);
+  expect((await f.settled()).state).toBe("needs_action");
+  expect((await f.api(f.path + "/replace", body)).status).toBe(409);
+  expect(f.creates).toBe(2);
+  await f.api(f.path + "/reconcile", {}); expect((await f.settled()).state).toBe("ready");
+  expect(f.creates).toBe(2);
+});
+
+it("rollback cannot replace a working binding with an expired or unexpectedly running old environment", async () => {
+  const f=await fixture();await f.api(f.path,{profileId:"cloud"});const original=await f.settled();
+  const oldId=[...f.cloud.keys()][0]!;await f.api(f.path+"/pause",{});await f.settled();
+  await f.api(f.path+"/replace",{profileId:"cloud",expectedOperationId:original.operationId});const replacement=await f.settled();
+  await f.api(f.path+"/pause",{});await f.settled();
+  f.cloud.get(oldId)!.state="running";
+  await f.api(f.path+"/rollback",{expectedOperationId:replacement.operationId});
+  expect((await f.settled()).error).toBe("previous_environment_stop_unconfirmed");
+  f.cloud.delete(oldId);
+  await f.api(f.path+"/rollback",{expectedOperationId:replacement.operationId});const rejected=await f.settled();
+  expect(rejected.error).toBe("previous_environment_missing");expect(rejected.operationId).toBe(replacement.operationId);
+  await f.api(f.path+"/resume",{});expect((await f.settled()).state).toBe("ready");
 });

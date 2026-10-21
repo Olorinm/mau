@@ -99,6 +99,10 @@ personal authorization are reported separately in checks.
 
 ## Message behavior
 
+Environment bootstrap enables the owner's Matrix connection for built-in chat.
+Host health alone does not verify message routing; live acceptance must send a
+message through the web console and observe its Agent reply.
+
 Mau displays joined account rooms involving its owned Agents. Starting a new
 conversation waits for the initial room sync and selects an owned Agent explicitly;
 a group containing another
@@ -117,3 +121,29 @@ The Files navigation entry is explicitly unavailable. Shared workspace operation
 remain available through the existing Mau API and CLI. This integration does not
 assemble a replacement file application from the frontend package’s workbench
 components.
+
+
+## Execution and interactions
+
+Mau uses Router's public task/run/event/call-result APIs to associate Matrix
+messages with execution. `RunMessage` comes from Agent Frontend; Host display projections and fallback `AgentInteraction` come from Agent UI;
+Host's public interaction helpers preserve native choices and response formats.
+The browser receives neither Host credentials nor direct environment access.
+
+The conversation shows streamed text, tool arguments/results, run state and
+pending approvals/questions. Users can answer or cancel through Router. Event
+cursors resume after disconnection; refresh reconstructs retained history and
+explicitly reports truncation. Closed/expired interactions are disabled. Exact
+reply IDs deduplicate the run output without hiding independent channel messages.
+Protocol fixtures verify this flow separately from live model acceptance.
+
+
+The original run renderer is supplied through `MessageView.body` so its process
+area and answer bubbles retain their original structure. Host display projection
+preserves call IDs and full native input/output. Native choices and question
+answers are still interpreted/serialized by Host's public helpers. History pages
+render immediately and the reader drains final events after seeing terminal state.
+The product build-version watcher avoids refreshing active execution, pending
+interactions, drafts, outgoing messages, forms or dialogs. Unconnected Files,
+Store and Extensions services remain explicitly unavailable; their extracted
+presentation components do not imply those Mau backends exist.

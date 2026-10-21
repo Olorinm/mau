@@ -16,6 +16,7 @@ const help = `Mau — your agent product
   mau workspaces | workspace-create NAME
   mau agents | use NAME | status | check
   mau environment-create PROFILE [--workspace ID]
+  mau environment-replace PROFILE | environment-rollback
   mau pause | resume | destroy | reconcile
   mau ssh NAME [-- COMMAND...]
   mau channel-connect matrix|feishu|weixin|telegram|grove-mail
@@ -79,6 +80,7 @@ async function main() {
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
     use: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
     destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
+  arity["environment-replace"] = [1, 1]; arity["environment-rollback"] = [0, 0];
   arity.workspaces = [0, 0]; arity["workspace-create"] = [1, 1];
   const count = arity[command];
   if (!count || args.length < count[0] || args.length > count[1]) fail("invalid_command_arguments");
@@ -160,6 +162,13 @@ async function main() {
   const path = `/agents/${encodeURIComponent(session.agentId!)}`;
   if (command === "status") { output(await product(path)); return; }
   if (command === "check") { output(await routing(path + "/check", {})); return; }
+  if (["environment-replace", "environment-rollback"].includes(command)) {
+    const current = await product(path + "/environment");
+    const status = await product(path + "/environment/" + (command === "environment-replace" ? "replace" : "rollback"), {
+      expectedOperationId: current.operationId, ...(command === "environment-replace" ? { profileId: args[0] } : {}),
+    });
+    output(await pollEnvironment(session.agentId!, status)); return;
+  }
   if (["environment-create", "pause", "resume", "destroy", "reconcile"].includes(command)) {
     const target = command === "environment-create" ? "" : "/" + command;
     const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0], ...(values.workspace ? { workspaceId: values.workspace } : {}) } : {});
