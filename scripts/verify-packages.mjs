@@ -11,6 +11,7 @@ const { values } = parseArgs({
     "router-archive": { type: "string", default: ".packages/agent-router.tgz" },
     "host-archive": { type: "string" },
     "host-fixture": { type: "string" },
+    "connectors-archive": { type: "string", default: ".packages/agent-connectors.tgz" },
   },
 });
 for (const key of ["environment-archive", "host-archive", "host-fixture"])
@@ -22,7 +23,7 @@ try {
     JSON.stringify({ type: "module", private: true }),
   );
   const packed = JSON.parse(
-    execFileSync("npm", ["pack", "--json", "--pack-destination", temporary], {
+    execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", temporary], {
       encoding: "utf8",
     }),
   )[0];
@@ -35,6 +36,7 @@ try {
       "--no-fund",
       resolve(values["router-archive"]),
       resolve(values["host-archive"]),
+      resolve(values["connectors-archive"]),
       resolve(values["environment-archive"]),
       join(temporary, packed.filename),
     ],

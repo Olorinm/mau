@@ -21,7 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web
-COPY package.json LICENSE NOTICE ./
+COPY package.json LICENSE NOTICE components.json ./
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 ENV HOST=0.0.0.0 PORT=8790 MAU_STATE=/data/mau MAU_WEB_ROOT=/app/web
 USER node
 EXPOSE 8790
