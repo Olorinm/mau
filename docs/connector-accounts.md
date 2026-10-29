@@ -72,3 +72,9 @@ Repository tests use a local HTTP fixture with the component's real signature ve
 Before enabling an account in production: deploy the secured service, configure the provider app and exact callback, complete owner consent, verify the OAuth grant, then exercise one narrow product API read through the assigned Agent. `connected_apps` uses a two-minute signed read-only caller token, checked by the service even for pre-approved writes. Mau admits it only on Router-authorized channel runs, persists that run admission and rechecks the configured Agent/owner at Host composition. The Agent never receives a signing key or provider token. Disconnection removes provider access; removing assignments takes effect after configuration reload/restart.
 
 Adding this native tool to an existing Host session can require a controlled execution-session rotation. Preserve conversation history, run records and native files; do not repeatedly retry a tool-definition conflict or clear Router state. Background rules, granular user-editable assignment UI and write approvals remain separate work.
+
+## Connector catalog
+
+The web console groups applications by everyday work, files/knowledge and messaging. Search and Available/Connected filters operate on applications, not Agent records. An application detail shows the real connection state, its connect/check/disconnect actions and the Agents using it. Messaging details reuse Router's channel setup flow with the selected channel; deleted environments are omitted from the choices without modifying their records.
+
+Gmail's first release displays read access, unavailable write actions and disabled background sync as status rows. These are not editable permission switches. Unconfigured applications are marked Coming soon and have no authorization button. Account connection status is distinct from successful business API execution. The catalog does not synthesize connected accounts, email addresses or background permissions.

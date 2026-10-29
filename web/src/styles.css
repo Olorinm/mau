@@ -357,12 +357,91 @@ body {
 .mau-run pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mau-interaction { display: grid; gap: var(--sp-2); }
 
-.mau-connections { overflow: auto; padding: var(--sp-6); min-height: 0; }
-.mau-connection-toolbar, .mau-connection-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
-.mau-connection-toolbar { justify-content: space-between; margin: var(--sp-5) 0; }
-.mau-connection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--sp-4); }
-.mau-connection-card { min-width: 0; border: 1px solid var(--c-line-06); border-radius: var(--radius-lg, 12px); padding: var(--sp-5); }
-.mau-connection-card h2 { margin: 0; font-size: var(--fs-lg); }
-.mau-connection-card p { line-height: 1.6; }
-.mau-connection-card ul { padding-left: var(--sp-5); overflow-wrap: anywhere; }
-@media (max-width: 600px) { .mau-connections { padding: var(--sp-3); } }
+
+/* Connector catalog shares Mau's surfaces, typography and controls. */
+.mau-connections { overflow: auto; min-height: 0; padding: 36px 32px 64px; }
+.mau-connectors-content { width: min(100%, 960px); margin: 0 auto; }
+.mau-connectors-content.is-detail { max-width: 760px; }
+.mau-connectors-heading { margin-bottom: 28px; }
+.mau-connectors-heading h1 { margin: 0 0 8px; font-size: 26px; font-weight: var(--fw-semibold); letter-spacing: -.6px; }
+.mau-connectors-heading p, .mau-connector-hero p { margin: 0; color: var(--c-text-2); line-height: 1.6; font-size: var(--fs-sm); }
+.mau-catalog-search { padding: 3px 12px; background: var(--c-line-04, rgba(0,0,0,.035)); border: 1px solid var(--c-line-06); border-radius: 12px; }
+.mau-catalog-search > * { width: 100%; }
+.mau-catalog-search input { width: 100%; min-width: 0; padding-block: 11px; background: transparent; }
+.mau-catalog-tabs { display: flex; padding: 4px; gap: 4px; border-radius: 12px; background: var(--c-line-04, rgba(0,0,0,.035)); margin: 16px 0 30px; }
+.mau-catalog-tabs button { flex: 1; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--c-text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.mau-catalog-tabs button[aria-pressed=true] { background: var(--c-surface); color: var(--c-text); box-shadow: 0 1px 5px var(--c-line-06); font-weight: var(--fw-semibold); }
+.mau-catalog-tabs button span { font-size: 11px; color: var(--c-text-2); background: var(--c-line-04, rgba(0,0,0,.035)); border-radius: 10px; padding: 1px 6px; }
+.mau-catalog-section { margin-top: 30px; }
+.mau-catalog-section > h2, .mau-connector-section > h2 { font-size: var(--fs-sm); color: var(--c-text-2); font-weight: var(--fw-medium, 500); margin: 0 0 12px 4px; }
+.mau-featured-apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mau-featured-app { text-align: left; border: 1px solid var(--c-line-06); border-radius: 16px; background: var(--c-surface); padding: 24px; color: var(--c-text); font: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
+.mau-featured-app:hover, .mau-catalog-row:hover { background: var(--c-surface-hover); }
+.mau-featured-app > strong { display: block; margin-top: 18px; font-size: 16px; font-weight: var(--fw-semibold); }
+.mau-featured-app p { color: var(--c-text-2); font-size: var(--fs-sm); line-height: 1.6; margin: 7px 0 18px; min-height: 44px; }
+.mau-featured-app > span:last-child { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: var(--fw-medium, 500); }
+.mau-featured-app > span:last-child svg { width: 14px; height: 14px; }
+.mau-app-mark { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 11px; color: var(--c-text); background: var(--c-surface); border: 1px solid var(--c-line-06); }
+.mau-app-mark > svg { width: 26px; height: 26px; }
+.mau-featured-app .mau-app-mark { width: 48px; height: 48px; box-shadow: 0 2px 7px var(--c-line-06); }
+.mau-app-mark-calendar { color: #4285f4; }
+.mau-calendar-mark { font-weight: 700; font-size: 21px; border-top: 4px solid currentColor; line-height: 1.1; }
+.mau-app-mark-docs { color: #4285f4; }.mau-app-mark-sheets { color: #188c53; }.mau-app-mark-slides { color: #e7a716; }
+.mau-app-mark-weixin { color: #24a565; background: #eef9f3; }.mau-app-mark-telegram { color: #248ac5; background: #eef7fc; }
+.mau-app-mark-business { color: #63856a; background: #f0f6ee; }.mau-app-mark-feishu { background: #f4f7ff; }
+.mau-letter-mark { font: 700 27px Georgia, serif; }
+.mau-connector-panel { border: 1px solid var(--c-line-06); border-radius: 15px; background: var(--c-surface); overflow: hidden; }
+.mau-catalog-list { padding: 0 18px; }
+.mau-catalog-row { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 17px 3px; border: 0; border-bottom: 1px solid var(--c-line-06); background: transparent; font: inherit; color: var(--c-text); cursor: pointer; }
+.mau-catalog-row:last-child { border-bottom: 0; }
+.mau-catalog-row > svg { width: 15px; height: 15px; color: var(--c-text-3, var(--c-text-2)); }
+.mau-catalog-row-copy { min-width: 0; flex: 1; display: grid; gap: 5px; }
+.mau-catalog-row-copy strong { font-weight: var(--fw-medium, 500); font-size: var(--fs-base); }
+.mau-catalog-row-copy > span { color: var(--c-text-2); font-size: 12px; line-height: 1.5; }
+.mau-catalog-state { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--c-text-2); font-size: 12px; }
+.mau-catalog-state.is-available { color: var(--c-text); font-weight: var(--fw-medium, 500); }
+.mau-status-dot { display: inline-block; width: 6px; height: 6px; background: #53845f; border-radius: 50%; }
+.mau-connector-back { display: inline-flex; align-items: center; gap: 8px; padding: 7px 0; background: none; border: none; font: inherit; font-size: var(--fs-sm); color: var(--c-text-2); cursor: pointer; }
+.mau-connector-back svg { width: 17px; height: 17px; }
+.mau-connector-hero { text-align: center; padding: 22px 0 30px; }
+.mau-app-mark-large { width: 66px; height: 66px; border-radius: 18px; box-shadow: 0 3px 12px var(--c-line-06); }
+.mau-app-mark-large > svg { width: 40px; height: 40px; }
+.mau-connector-hero h1 { font-size: 26px; margin: 16px 0 8px; letter-spacing: -.6px; outline: none; }
+.mau-connector-section { margin-top: 26px; }
+.mau-account-panel { padding: 22px; }
+.mau-account-summary { display: flex; align-items: center; gap: 14px; }
+.mau-account-summary strong { font-size: var(--fs-sm); font-weight: var(--fw-medium, 500); }
+.mau-account-summary p { font-size: 12px; line-height: 1.6; margin: 5px 0 0; color: var(--c-text-2); }
+.mau-account-symbol, .mau-mini-avatar { background: var(--c-line-04, rgba(0,0,0,.035)); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mau-account-symbol { width: 40px; height: 40px; }.mau-account-symbol svg { width: 20px; height: 20px; }
+.mau-mini-avatar { width: 30px; height: 30px; font-size: 12px; color: var(--c-text-2); }
+.mau-agent-access { display: inline-flex; align-items: center; gap: 12px; }
+.mau-connector-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
+.mau-connector-buttons svg { width: 15px; height: 15px; }
+.mau-permission-row { box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 22px; font-size: var(--fs-sm); min-height: 52px; }
+.mau-permission-row + .mau-permission-row { border-top: 1px solid var(--c-line-06); }
+.mau-permission-row > span:last-child { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; text-align: right; }
+.mau-permission-enabled { color: #53845f; }.mau-permission-enabled svg { width: 14px; height: 14px; }
+.mau-detail-note { font-size: 12px; color: var(--c-text-2); line-height: 1.7; margin: 16px 4px; }
+.mau-disconnect-panel { padding: 18px 22px; margin-top: 24px; }.mau-disconnect-panel p { font-size: var(--fs-sm); line-height: 1.7; margin: 0; }
+.mau-text-danger { border: 0; padding: 0; background: transparent; font: inherit; font-size: var(--fs-sm); color: #b54a49; cursor: pointer; }.mau-text-danger:disabled { opacity: .5; cursor: default; }
+.mau-panel-note { margin: 0; padding: 12px 22px; line-height: 1.7; color: var(--c-text-2); font-size: 12px; }
+.mau-business-entry, .mau-channel-entry { padding-bottom: 16px; border-bottom: 1px solid var(--c-line-06); }.mau-business-entry:last-child, .mau-channel-entry:last-child { border-bottom: 0; }
+.mau-business-entry > button, .mau-business-entry > .product-status { margin-left: 22px; }
+.mau-tools-disclosure { font-size: 12px; color: var(--c-text-2); padding: 16px 22px 0; }.mau-tools-disclosure li { overflow-wrap: anywhere; line-height: 1.8; }
+.mau-channel-connected { font-size: 12px; color: #53845f; margin-left: 64px; }
+.mau-channel-entry .mau-permission-row { padding-bottom: 8px; }
+.mau-connector-empty { text-align: center; color: var(--c-text-2); padding: 46px 24px; }.mau-connector-empty > svg { width: 28px; height: 28px; margin: 0 auto 16px; }.mau-connector-empty h2 { color: var(--c-text); font-size: 16px; }.mau-connector-empty p { font-size: var(--fs-sm); line-height: 1.7; }
+.mau-connector-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--c-line-06); border-radius: 12px; margin-bottom: 16px; font-size: var(--fs-sm); }
+.mau-consent-link { display: inline-block; margin-top: 14px; font-size: var(--fs-sm); }
+.mau-featured-app:focus-visible, .mau-catalog-row:focus-visible, .mau-catalog-tabs button:focus-visible, .mau-connector-back:focus-visible { outline: 2px solid var(--c-text-2); outline-offset: 3px; }
+@media (max-width: 680px) {
+  .mau-connections { padding: 24px 16px 48px; }.mau-connectors-heading h1 { font-size: 23px; }
+  .mau-featured-apps { grid-template-columns: 1fr; gap: 10px; }.mau-featured-app { display: grid; grid-template-columns: 42px 1fr; column-gap: 14px; padding: 17px; }.mau-featured-app .mau-app-mark { width: 42px; height: 42px; grid-row: span 3; }.mau-featured-app > strong { margin: 0; }.mau-featured-app p { margin: 5px 0 9px; min-height: 0; }.mau-featured-app > span:last-child { grid-column: 2; }
+  .mau-catalog-list { padding: 0 12px; }.mau-catalog-row { gap: 12px; }.mau-catalog-row-copy > span { display: none; }.mau-catalog-row > svg { display: none; }.mau-catalog-state { font-size: 11px; }
+  .mau-permission-row { padding: 15px 16px; gap: 10px; }.mau-account-panel { padding: 18px; }.mau-connector-hero { padding: 18px 0 26px; }.mau-connector-hero p { max-width: 280px; margin: 0 auto; }
+}
+
+.mau-agent-access strong { font-weight: var(--fw-medium, 500); }
+.mau-catalog-search .rooms-search-wrap { margin: 0; padding: 0; }
+.mau-catalog-search .rooms-search { background: transparent; box-shadow: none; }
