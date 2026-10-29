@@ -85,7 +85,5 @@ run status, cancellation and `describeInteraction`/`answerInteraction` from Host
 Choice IDs and reply formats remain native; secret and multiple-value fields are
 preserved. Use `AgentInteraction` for Host's form, URL and unknown-native requests.
 
-`AgentProcess` and `projectAgentProcess` remain compatibility exports. They are a
-compact presentation, not the extracted OpenGrove run experience. For that
-experience use `RunMessage` from `@olorinm/agent-frontend/conversation` as a
+Use `RunMessage` from `@olorinm/agent-frontend/conversation` as a
 conversation message's `body`, which preserves its own process area and bubbles.

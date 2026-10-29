@@ -18,7 +18,7 @@ Agreed exclusions: browser extension features, confirmed unused leftovers, direc
 
 | Area | Previous gap or divergence | Result |
 | --- | --- | --- |
-| Run process | Original grouping, summaries, commentary, reasoning, tool detail and run controls absent; compact `AgentProcess` substituted | Original `process/activity-model`, `run-model`, `activity-presentation` and `room-run-presentation` extracted. Public `RunMessage` composes them. Compact export retained only for compatibility. |
+| Run process | Original grouping, summaries, commentary, reasoning, tool detail and run controls absent; compact `AgentProcess` substituted | Original `process/activity-model`, `run-model`, `activity-presentation` and `room-run-presentation` extracted. Public `RunMessage` composes them. The obsolete compact export was removed on 2026-10-29. |
 | Mau conversation | Whole run inside `MessageView.content`; history withheld until all pages fetched | Uses `MessageView.body` and original separate process/answer presentation. RunReader publishes each event page and drains the final page when the run ends. |
 | Host event mapping | Compact records could lose structured native detail | Public root adapter maps events to shared display parts, matching opaque call IDs; preserves command deltas, edits/search, public commentary, errors and full input/output. It does not call Host. |
 | Approvals/questions | Generic Host cards instead of original room cards | Original cards use normalized display choices/questions; Mau delegates native interpretation/answers to Host. Opaque choice IDs, secrets, arrays, expired/completed states retained. Form/URL/unknown native requests use existing explicit fallback. |

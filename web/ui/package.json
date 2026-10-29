@@ -37,7 +37,7 @@
     "./app.css": "./dist/app/app.css"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-styles.mjs",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\" && tsc -p tsconfig.json && node scripts/copy-styles.mjs",
     "prepack": "npm run build",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:browser": "npm run build && node scripts/test-browser.mjs",
