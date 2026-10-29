@@ -750,3 +750,42 @@ it.skipIf(!built)("opens real channel management and distinguishes connector set
   await page.screenshot({path:"/tmp/mau-connectors.png", fullPage:true});
   expect(errors).toEqual([]);
 });
+
+it.skipIf(!built)("offers provider consent and manual verification, and gates disconnect after an unknown outcome", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  let state = "authorization_required", failed = false;
+  const mutations: string[] = [];
+  await page.route("**/_mau/v1/connector-accounts**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [] }] } });
+    expect(route.request().postDataJSON()).toEqual({});
+    const action = path.split("/").at(-1)!; mutations.push(action);
+    if (action === "connect") return route.fulfill({ json: { state, verification: "none", scopes: [], authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=fixture" } });
+    if (action === "disconnect" && !failed) { failed = true; return route.fulfill({ status: 409, json: { error: "connector_action_unknown" } }); }
+    state = action === "disconnect" ? "disconnected" : "connected";
+    return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
+  });
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  await page.reload();
+  await page.getByRole("button", { name: "连接器", exact: true }).click();
+  await page.getByRole("button", { name: "授权账号", exact: true }).click();
+  await see(page.getByRole("link", { name: "继续前往服务商授权" })).toHaveAttribute("href", /^https:\/\/accounts.google.com\//);
+  await page.getByRole("button", { name: "检查授权", exact: true }).click();
+  await see(page.getByText("账号已连接", { exact: true })).toBeVisible();
+  await see(page.getByText("OAuth 授权已验证；各产品 API 的可用性仍需实际调用确认。", { exact: true })).toBeVisible();
+  await see(page.getByRole("link", { name: "继续前往服务商授权" })).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/mau-account-flow-fixture.png", fullPage: true });
+  await page.getByRole("button", { name: "断开账号", exact: true }).click();
+  await see(page.getByText(/将清除此连接保存的授权/)).toBeVisible();
+  expect(mutations).toEqual(["connect", "check"]);
+  await page.getByRole("button", { name: "确认断开", exact: true }).click();
+  await see(page.getByRole("alert")).toContainText("不会自动重试");
+  await see(page.getByRole("button", { name: "断开账号", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "检查授权", exact: true }).click();
+  await page.getByRole("button", { name: "断开账号", exact: true }).click();
+  await page.getByRole("button", { name: "确认断开", exact: true }).click();
+  await see(page.getByText("已断开", { exact: true })).toBeVisible();
+  expect(mutations).toEqual(["connect", "check", "disconnect", "check", "disconnect"]);
+  expect(errors).toEqual([]);
+});

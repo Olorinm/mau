@@ -12,10 +12,12 @@ import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-envi
 
 import { BusinessTools, businessToolsSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
+import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
   businessTools: businessToolsSchema,
+  connectorAccounts: connectorAccountsSchema,
   connectionsFile: z.string().min(1).optional(),
   publicHomeserver: z.url().optional(),
 }).strict();
@@ -36,6 +38,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
   const business = new BusinessTools(options.businessTools, base, businessStore);
+  const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
     ...(dependencies.router ? { dependencies: dependencies.router } : {}),
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
@@ -64,6 +67,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     next();
   });
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
+  product.get("/connector-accounts", async (_req, res) => res.json(await connectorAccounts.list(res.locals.owner)));
+  product.post("/connector-accounts/:id/:action", async (req, res) => {
+    z.object({}).strict().parse(req.body);
+    const action = z.enum(["check", "connect", "disconnect"]).parse(req.params.action);
+    res.json(await connectorAccounts.action(res.locals.owner, String(req.params.id), action));
+  });
   product.get("/connectors", (_req, res) => res.json({ data: business.inventory(res.locals.owner) }));
   product.post("/connectors/:agentId/check", async (req, res) => {
     z.object({}).strict().parse(req.body);
