@@ -5,6 +5,7 @@ import { BusinessDataClient, businessDataTools, businessDataOptionsSchema } from
 import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connectors/feishu-bot-reader";
 import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-connectors/cloudflare-read-client";
 import { DurableStore } from "./store.js";
+import { ConnectedApps, connectedAppDefinition, connectedAppInput, type ConnectedAppReader } from "./connected-apps.js";
 
 export const businessToolsSchema = z.array(z.union([businessDataOptionsSchema.extend({
   agentId: z.uuid(), owner: z.string().min(1), feishu: feishuBotReaderSchema.optional(),
@@ -22,7 +23,7 @@ const feishuDefinition = { name: "feishu_bot_read", timeoutMs: 90_000,
 type BusinessClient = Pick<BusinessDataClient, "call"> & { feishu?: Pick<FeishuBotReader, "read"> };
 export class BusinessTools {
   private readonly clients = new Map<string, { owner: string; client: BusinessClient }>();
-  constructor(options: z.input<typeof businessToolsSchema>, base: string, private readonly store: DurableStore) {
+  constructor(options: z.input<typeof businessToolsSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
     for (const entry of businessToolsSchema.parse(options)) {
       const {agentId, owner} = entry;
       if (this.clients.has(agentId)) throw new Error("duplicate_business_tool_agent");
@@ -53,25 +54,27 @@ export class BusinessTools {
   }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.clients.get(agentId);
-    if (!entry || entry.owner !== owner) return new HttpAgentHost(http);
-    return new BusinessHost(http, entry.client, this.store, `${agentId}:${binding}`);
+    const client = entry?.owner === owner ? entry.client : undefined, appReader = this.apps?.reader(agentId, owner);
+    if (!client && !appReader) return new HttpAgentHost(http);
+    return new BusinessHost(http, client, this.store, `${agentId}:${binding}`, appReader);
   }
 }
 export class BusinessHost extends HttpAgentHost {
   private readonly pending = new Map<string, Promise<void>>();
-  constructor(http: ServiceHttp, private readonly client: BusinessClient,
-    private readonly store: DurableStore, private readonly scope: string) { super(http); }
+  constructor(http: ServiceHttp, private readonly client: BusinessClient | undefined,
+    private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader) { super(http); }
   override async start(input: Parameters<HostPort["start"]>[0]) {
     // Router supplies channel tools only to conversations admitted by its channel policy.
     const allowed = input.tools?.some(tool => tool.name === "channel") === true;
-    const run = await super.start(allowed ? { ...input, tools: [...input.tools!, definition, ...(this.client.feishu ? [feishuDefinition] : [])] } : input);
+    const run = await super.start(allowed ? { ...input, tools: [...input.tools!, ...(this.client ? [definition] : []),
+      ...(this.client?.feishu ? [feishuDefinition] : []), ...(this.appReader ? [connectedAppDefinition] : [])] } : input);
     this.store.set("business_runs", `${this.scope}:${run.id}`, { allowed });
     return run;
   }
   override async calls(id: string): ReturnType<HostPort["calls"]> {
     const calls = await super.calls(id);
     for (const call of calls) {
-      if (![definition.name, feishuDefinition.name].includes(call.name) || call.kind !== "tool" || call.status !== "pending") continue;
+      if (![definition.name, feishuDefinition.name, connectedAppDefinition.name].includes(call.name) || call.kind !== "tool" || call.status !== "pending") continue;
       let operation = this.pending.get(call.id);
       if (!operation) {
         operation = (async () => {
@@ -79,28 +82,32 @@ export class BusinessHost extends HttpAgentHost {
           let result: unknown;
           try {
             if (!grant?.allowed || call.runId !== id) throw new Error("business_tool_not_authorized");
-            if (call.name === feishuDefinition.name) {
+            if (call.name === connectedAppDefinition.name) {
+              const parsed = connectedAppInput.safeParse(call.input);
+              if (!this.appReader || !parsed.success) throw new Error("business_tool_not_authorized");
+              result = await this.appReader(parsed.data);
+            } else if (call.name === feishuDefinition.name) {
               const parsed = feishuInput.safeParse(call.input);
-              if (!this.client.feishu || !parsed.success) throw new Error("invalid_business_arguments");
+              if (!this.client?.feishu || !parsed.success) throw new Error("invalid_business_arguments");
               result = await this.client.feishu.read(parsed.data.args);
             } else {
               const parsed = inputSchema.safeParse(call.input);
-              if (!parsed.success) throw new Error("invalid_business_arguments");
+              if (!this.client || !parsed.success) throw new Error("invalid_business_arguments");
               result = await this.client.call(parsed.data.tool, parsed.data.arguments);
             }
           } catch (error) {
             result = { isError: true, error: error instanceof Error && ["business_tool_not_authorized", "invalid_business_arguments", "feishu_write_requires_owner_approval"].includes(error.message)
-              ? error.message : call.name === feishuDefinition.name ? "feishu_read_unavailable" : "business_data_unavailable" };
+              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : call.name === feishuDefinition.name ? "feishu_read_unavailable" : "business_data_unavailable" };
           }
           let text = JSON.stringify(result);
           if (text.length > 1_000_000) text = JSON.stringify({ isError: true, error: "business_result_too_large", instruction: "Narrow the query." });
-          await super.resolve(id, call.id, { success: !(result as any)?.isError,
+          await super.resolve(id, call.id, { success: !(result as any)?.isError && !["failed", "uncertain"].includes((result as any)?.status),
             contentItems: [{ type: "inputText", text }] });
         })().finally(() => this.pending.delete(call.id));
         this.pending.set(call.id, operation);
       }
       await operation;
     }
-    return calls.filter(call => ![definition.name, feishuDefinition.name].includes(call.name) || call.kind !== "tool");
+    return calls.filter(call => ![definition.name, feishuDefinition.name, connectedAppDefinition.name].includes(call.name) || call.kind !== "tool");
   }
 }

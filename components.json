@@ -65,14 +65,9 @@
   },
   "connectors": {
     "repository": "Olorinm/agent-connectors",
-    "version": "0.1.0-alpha.2",
-    "distribution": "github-release",
-    "integrity": "sha512-6eFW9vXxfZXVx0tUJgFvDBXGq9q9iG97bMv6eToNnUrCPGU3V58O7+GV6fY9uAge2cEZka2I2ZtENFCEHF+qUQ==",
-    "revision": "61f969d4241532982fbce56d4015253eb5f55597",
-    "archive": {
-      "repository": "Olorinm/agent-connectors",
-      "tag": "v0.1.0-alpha.2",
-      "asset": "olorinm-agent-connectors-0.1.0-alpha.2.tgz"
-    }
+    "version": "0.1.0-alpha.3",
+    "distribution": "local-build",
+    "integrity": "sha512-H/86ZzUrNZjNxnwu3zXMou9ng6FdwFiVcISgmmLSIUDsKHga5PZZ7mLG5otAZIYPtVf9aljmGfw/DgC1Ao+LvA==",
+    "revision": "b8c4a05c2dd3198111843533aa70046d10ba7197"
   }
 }

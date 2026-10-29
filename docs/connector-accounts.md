@@ -2,22 +2,34 @@
 
 Mau's **Connectors** page composes the public Agent Connectors account-management API. It supports listing the current owner's configured accounts, starting provider consent, checking authorization, and disconnecting. The existing business read tools and communication channel controls remain available independently.
 
-This implements account management, not Agent tool delivery or proactive execution. Connecting a Google account does not grant an Agent access to it. Per-Agent tool grants, background grants and approval presentation still require integration before Agent tools can be enabled. A provider OAuth check is not proof that every product API works.
+Optional per-Agent assignments also expose a stable `connected_apps` read tool through Host's native tool protocol. The page shows assigned Agents before consent. Assignment alone does not authorize a provider account; provider consent and matching owner/Agent/connection assignment are both required. Writes and proactive execution are not enabled by this integration. An OAuth check is not proof that every product API works.
 
 ## Operator configuration
 
-Deploy the separately distributed Agent Connectors service according to its production security and account setup documentation first. Configure provider applications, redirect URI and encrypted credential storage there. The currently supported production configuration uses Google Cloud KMS with a restricted workload identity; the development-file mode is loopback-only and is not a production deployment shortcut. An existing Cloudflare read broker is a different service and cannot be used as this endpoint.
+Configure Agent Connectors using its production security and account setup documentation. It can run separately, or Mau can compose its public `startConfigured` API using `runtimeConfigFile`. Production encryption supports Google Cloud KMS or a separate Cloudflare Worker Secrets wrapping service; the latter is not non-exportable KMS. Both require encrypted application files restored only into private Linux tmpfs. Development-file mode is not a production shortcut. The existing Cloudflare business read broker is a different service and cannot be used as this endpoint.
 
 Add the following optional block to Mau's private options file (all values are examples):
 
 ```json
 {
   "connectorAccounts": {
-    "url": "https://connectors.example.test",
+    "url": "http://127.0.0.1:18100",
     "issuer": "https://router.example.test",
     "audience": "agent-connectors",
     "authorityKeyFile": "private/connectors-authority.jwk.json",
-    "consentOrigins": ["https://accounts.google.com"]
+    "consentOrigins": ["https://accounts.google.com"],
+    "runtimeConfigFile": "private/connectors.json"
+  },
+  "connectedApps": {
+    "url": "http://127.0.0.1:18100",
+    "issuer": "https://router.example.test",
+    "audience": "agent-connectors",
+    "callerKeyFile": "private/connectors-caller.jwk.json",
+    "assignments": [{
+      "agentId": "00000000-0000-4000-8000-000000000001",
+      "owner": "@alice:router.example.test",
+      "connections": ["alice-gmail"]
+    }]
   }
 }
 ```
@@ -26,7 +38,8 @@ Add the following optional block to Mau's private options file (all values are e
 - `issuer` and `audience` must match the ConnectorService trust configuration. Use the authority private JWK generated through the component's public issuer API/CLI, with a `kid`, in a private file (0600); install only its public key in ConnectorService. Never use the caller key or mount this key in an Agent environment.
 - `consentOrigins` must contain the exact HTTPS origins used by the configured providers. Approve these from provider configuration, not from an arbitrary model-supplied URL. Mau only returns a consent link from an explicit connect action; it never exposes it in the inventory.
 - Configure each connection's `owner` as the exact authenticated Router account ID. Mau filters the service-wide inventory and checks ownership again before every management action. Coordinate ownership/configuration changes between services; do not reassign connection IDs while an operation is in flight.
-- The browser callback goes directly to ConnectorService's configured `/oauth/callback`; do not add a Mau callback proxy or log callback query strings. The owner returns to Mau and clicks **Check authorization**. There is no credential in Mau's browser response.
+- With `runtimeConfigFile`, the service must listen on `127.0.0.1` at the configured port. Set its `oauthRedirectUrl` to the public Mau origin plus `/oauth/callback`. Mau binds the single-use provider state to an HttpOnly, SameSite=Lax browser cookie, accepts the callback through the public component API, then redirects to its Connectors page. Never log callback queries. `/mcp` and management routes remain loopback-only. A separately hosted service must supply its own browser binding and return flow.
+- The browser sends its owner bearer token when starting consent. It saves only the scoped browser-binding cookie and its existing Mau session; OAuth credentials remain in the connector service.
 - Start with explicit read-only provider scopes for the first live check. Do not inherit a provider's broad defaults without reviewing them. Existing Muse, ChatGPT or Codex authorizations are not transferable to Mau.
 
 Without this block the API reports `configured: false`; the UI shows setup is required and has no fake consent button. No KMS, provider application or account authorization is provisioned by adding the frontend.
@@ -39,7 +52,7 @@ For a personal pilot, add the owner as a test user. Gmail authorizations in an E
 
 ## Product API
 
-All routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body.
+The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -56,4 +69,6 @@ A failed mutation can have already changed authorization or invalidated pending 
 
 Repository tests use a local HTTP fixture with the component's real signature verifier. They cover owner isolation, refusal of extra request fields, consent destinations, response bounds, private-key permissions and mutations with unknown outcomes. The browser fixture covers consent, checking the callback result, disconnect confirmation and manual recovery after an unknown outcome. These are not live Google authorization tests.
 
-Before enabling an account in production: deploy the secured service, configure the provider app and exact callback, complete owner consent, verify the OAuth grant, then exercise one narrow product API read. Subsequently add separately reviewed Agent and background access and approval UI. Keep those gates closed until their corresponding server enforcement exists.
+Before enabling an account in production: deploy the secured service, configure the provider app and exact callback, complete owner consent, verify the OAuth grant, then exercise one narrow product API read through the assigned Agent. `connected_apps` uses a two-minute signed read-only caller token, checked by the service even for pre-approved writes. Mau admits it only on Router-authorized channel runs, persists that run admission and rechecks the configured Agent/owner at Host composition. The Agent never receives a signing key or provider token. Disconnection removes provider access; removing assignments takes effect after configuration reload/restart.
+
+Adding this native tool to an existing Host session can require a controlled execution-session rotation. Preserve conversation history, run records and native files; do not repeatedly retry a tool-definition conflict or clear Router state. Background rules, granular user-editable assignment UI and write approvals remain separate work.

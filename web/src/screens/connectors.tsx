@@ -25,13 +25,16 @@ function BusinessCard({ session, item, agent }: { session: Session; item: Busine
 }
 
 const products = ["Gmail", "Google Calendar", "Google Drive", "Google Docs", "Google Sheets", "Google Slides", "GitHub", "Notion"];
-function AccountCard({ session, item }: { session: Session; item: ConnectorAccount }) {
+function AccountCard({ session, item, agents }: { session: Session; item: ConnectorAccount; agents: AgentSummary[] }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [mustCheck, setMustCheck] = useState(false);
   const [current, setCurrent] = useState(item);
   const action = useMutation({ mutationFn: (name: "check" | "connect" | "disconnect") => mauApi(session.token).connectorAccountAction(item.id, name),
-    onSuccess: (data) => { setCurrent({ ...item, ...data }); setMustCheck(false); setConfirmDisconnect(false); },
+    onSuccess: (data, name) => { setCurrent({ ...item, ...data }); setMustCheck(false); setConfirmDisconnect(false);
+      const consent = safeExternalUrl(data.authorizationUrl);
+      if (name === "connect" && consent) window.location.assign(consent);
+    },
     onError: () => { setMustCheck(true); setConfirmDisconnect(false); } });
   const labels = zh ? { connected: "账号已连接", authorization_required: "等待授权", authorization_pending: "授权待完成", disconnected: "已断开", needs_setup: "待服务端配置", needs_attention: "需要检查" }
     : { connected: "Account connected", authorization_required: "Authorization required", authorization_pending: "Authorization pending", disconnected: "Disconnected", needs_setup: "Setup required", needs_attention: "Needs attention" };
@@ -39,10 +42,11 @@ function AccountCard({ session, item }: { session: Session; item: ConnectorAccou
   return <article className="mau-connection-card">
     <div className="mau-section-heading"><h2>{item.label}</h2><ProductStatus compact tone={current.state === "connected" && !mustCheck ? "success" : "neutral"} label={mustCheck ? labels.needs_attention : labels[current.state]} /></div>
     <p>{item.kind}</p>
-    <p className="mau-muted">{zh ? "连接账号与授予员工权限分开管理。此入口只管理账号，尚未为员工开放此账号的工具或后台访问。" : "Account connection and Agent access are separate. This screen manages the account; Agent tools and background access are not enabled here."}</p>
+    <p className="mau-muted">{item.assignedAgents?.length ? (zh ? "授权后，以下员工可在任务中只读访问：" : "After consent, these Agents can read this account during tasks: ") + item.assignedAgents.map(id => agents.find(a => a.agent.id === id)?.agent.name ?? id).join("、") : zh ? "此账号尚未分配给员工。" : "This account has not been assigned to an Agent."}</p>
+    {item.assignedAgents?.length ? <p className="mau-muted">{zh ? "不会发送、修改或删除内容；未启用后台任务。" : "Sending, modifying and deleting are unavailable. Background tasks are not enabled."}</p> : null}
     {current.verification === "oauth" ? <p className="mau-muted">{zh ? "OAuth 授权已验证；各产品 API 的可用性仍需实际调用确认。" : "OAuth verified; individual product APIs still require a live check."}</p> : null}
     {!!current.scopes.length && <details><summary>{zh ? "账号已授予的范围" : "Granted account scopes"}</summary><ul>{current.scopes.map(scope => <li key={scope}>{scope}</li>)}</ul></details>}
-    {url && !mustCheck ? <div><a href={url} target="_blank" rel="noreferrer noopener">{zh ? "继续前往服务商授权" : "Continue authorization with provider"}</a><p className="mau-muted">{zh ? "完成后返回这里，点击检查授权。" : "Return here after consent and check authorization."}{current.expiresAt ? ` ${new Date(current.expiresAt).toLocaleString()}` : ""}</p></div> : null}
+    {url && !mustCheck ? <div><a href={url} rel="noreferrer">{zh ? "继续前往服务商授权" : "Continue authorization with provider"}</a><p className="mau-muted">{zh ? "授权完成后返回 Mau。" : "Return to Mau after consent."}{current.expiresAt ? ` ${new Date(current.expiresAt).toLocaleString()}` : ""}</p></div> : null}
     {action.isError ? <p role="alert">{zh ? "操作未能确认完成。请先检查授权状态，再决定下一步；不会自动重试。" : "The outcome could not be confirmed. Check authorization before another action; no automatic retry will occur."}</p> : null}
     {confirmDisconnect ? <div>
       <p>{zh ? `断开 ${item.label} 将清除此连接保存的授权，并拒绝尚未批准的写入。服务商保留的授权需在其账号设置中撤销。` : `Disconnecting ${item.label} clears its saved authorization and denies pending writes. Revoke the provider grant in its account settings separately.`}</p>
@@ -80,7 +84,7 @@ export function ConnectorsScreen({ session }: { session: Session }) {
     {error ? <p role="alert" className="mau-error">{errorMessage(t, error instanceof ApiError ? error.code : "request_failed")} <Button onClick={() => { void business.refetch(); void agents.refetch(); void accounts.refetch(); }}>{zh ? "重新加载" : "Reload"}</Button></p> : null}
     {accounts.isPending ? <p role="status">{zh ? "正在读取账号连接…" : "Loading account connections…"}</p> : null}
     {tab === "connected" ? <div className="mau-connection-grid">
-      {accountItems.map(item => <AccountCard key={item.id + JSON.stringify(item)} item={item} session={session} />)}
+      {accountItems.map(item => <AccountCard key={item.id + JSON.stringify(item)} item={item} session={session} agents={agents.data ?? []} />)}
       {reads.map(item => { const agent = agents.data?.find(a => a.agent.id === item.agentId); return agent ? <BusinessCard key={item.agentId} item={item} agent={agent} session={session} /> : null; })}
       {channels.map(agent => <article key={agent.agent.id} className="mau-connection-card">
         <h2>{agent.agent.name}</h2><p className="mau-muted">{zh ? "通信渠道" : "Communication channels"}</p>

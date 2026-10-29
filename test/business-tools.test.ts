@@ -18,8 +18,8 @@ function fixture() {
   }("https://host.fixture", "host-secret");
   const call = vi.fn(async () => ({ isError: false, content: [{ type: "text", text: "catalog-result" }] }));
   const host = new BusinessHost(http, { call }, store, "agent:binding");
-  return { host, http, store, call, submitted: () => submitted, resolved, setCalls: (name = "business_data", tool = "catalog") => pending = [
-    { id: "business-call", runId: "run", name, kind: "tool", status: "pending", input: { tool, arguments: {} }, deadlineAt: new Date(Date.now() + 60_000).toISOString() },
+  return { host, http, store, call, submitted: () => submitted, resolved, setCalls: (name = "business_data", tool = "catalog", body?: unknown) => pending = [
+    { id: "business-call", runId: "run", name, kind: "tool", status: "pending", input: body ?? { tool, arguments: {} }, deadlineAt: new Date(Date.now() + 60_000).toISOString() },
     { id: "channel-call", runId: "run", name: "channel", kind: "tool", status: "pending", input: {}, deadlineAt: new Date(Date.now() + 60_000).toISOString() },
   ] };
 }
@@ -33,6 +33,34 @@ it("injects the reviewed tool only into channel runs and resolves it outside the
   expect(f.call).toHaveBeenCalledTimes(1); expect(f.call).toHaveBeenCalledWith("catalog", {});
   expect(f.resolved[0].success).toBe(true);
   expect(JSON.stringify(f.submitted())).not.toContain("host-secret");
+});
+
+it("serves connected apps through the native Host protocol only for admitted runs and preserves channel handling", async () => {
+  const f = fixture(), read = vi.fn(async () => ({ status: "completed", tools: [{ name: "gmail__list" }] }));
+  const host = new BusinessHost(f.http, undefined, f.store, "apps:binding", read);
+  await host.start({ ...input, tools });
+  expect(f.submitted().tools.map((tool: any) => tool.name)).toEqual(["channel", "connected_apps"]);
+  f.setCalls("connected_apps", "", { action: "tools" });
+  const result = await host.calls("run");
+  expect(result.map(c => c.name)).toEqual(["channel"]);
+  expect(read).toHaveBeenCalledWith({ action: "tools" });
+  expect(f.resolved.at(-1).success).toBe(true);
+  read.mockClear();
+  const unassigned = new BusinessHost(f.http, undefined, f.store, "apps:binding");
+  await unassigned.calls("run");
+  expect(read).not.toHaveBeenCalled(); expect(f.resolved.at(-1).success).toBe(false);
+  await host.start(input); await host.calls("run");
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("rejects malformed connected-app arguments and marks provider failures as failed native tool results", async () => {
+  const f = fixture(), read = vi.fn(async () => ({ status: "failed", error: "authorization_required" }));
+  const host = new BusinessHost(f.http, undefined, f.store, "apps:binding", read);
+  await host.start({ ...input, tools });
+  f.setCalls("connected_apps", "", { action: "call", name: "gmail__list", arguments: {} });
+  await host.calls("run"); expect(f.resolved.at(-1).success).toBe(false);
+  read.mockClear(); f.setCalls("connected_apps", "", { action: "call", name: "gmail__list", owner: "someone-else" });
+  await host.calls("run"); expect(read).not.toHaveBeenCalled();
 });
 it("refuses tool calls from an ungranted run or a different environment binding", async () => {
   const f = fixture(); await f.host.start(input); f.setCalls(); await f.host.calls("run");

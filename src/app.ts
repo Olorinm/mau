@@ -13,11 +13,14 @@ import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-envi
 import { BusinessTools, businessToolsSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
+import { ConnectorRuntime } from "./connector-runtime.js";
+import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
   businessTools: businessToolsSchema,
   connectorAccounts: connectorAccountsSchema,
+  connectedApps: connectedAppsSchema,
   connectionsFile: z.string().min(1).optional(),
   publicHomeserver: z.url().optional(),
 }).strict();
@@ -37,8 +40,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     throw new Error("invalid_public_homeserver_url");
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
-  const business = new BusinessTools(options.businessTools, base, businessStore);
+  const connectedApps = new ConnectedApps(options.connectedApps, base);
+  const business = new BusinessTools(options.businessTools, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
+  const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
+    resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
     ...(dependencies.router ? { dependencies: dependencies.router } : {}),
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
@@ -54,6 +60,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustedProxies ?? false);
+  app.get("/oauth/callback", rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false }), async (req, res) => {
+    if (!connectorRuntime) throw new RouterError("connector_service_not_configured", 503);
+    await connectorRuntime.callback(req, res);
+  });
   // The console only reads its own files; product and Router routes keep their own handlers.
   if (serving.webRoot) app.use(webConsole(serving.webRoot, publicHomeserver.origin));
   const product = express.Router();
@@ -67,11 +77,20 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     next();
   });
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
-  product.get("/connector-accounts", async (_req, res) => res.json(await connectorAccounts.list(res.locals.owner)));
+  product.get("/connector-accounts", async (_req, res) => {
+    const result = await connectorAccounts.list(res.locals.owner);
+    res.json({ ...result, data: result.data.map(account => {
+      const assignedAgents = connectedApps.assigned(res.locals.owner, account.id)
+        .filter(id => router.service.agents(res.locals.owner).some(agent => agent.id === id));
+      return { ...account, ...(assignedAgents.length ? { assignedAgents, permission: "read-only" } : {}) };
+    }) });
+  });
   product.post("/connector-accounts/:id/:action", async (req, res) => {
     z.object({}).strict().parse(req.body);
     const action = z.enum(["check", "connect", "disconnect"]).parse(req.params.action);
-    res.json(await connectorAccounts.action(res.locals.owner, String(req.params.id), action));
+    const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action);
+    if (result.authorizationUrl) connectorRuntime?.bind(result.authorizationUrl, res);
+    res.json(result);
   });
   product.get("/connectors", (_req, res) => res.json({ data: business.inventory(res.locals.owner) }));
   product.post("/connectors/:agentId/check", async (req, res) => {
@@ -163,8 +182,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed" });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, start: () => router.start(),
+  return { app, router, environments, start: async () => { await connectorRuntime?.start(); await router.start(); },
     attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
-    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); businessStore.close(); } };
+    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); await connectorRuntime?.close(); businessStore.close(); } };
 }

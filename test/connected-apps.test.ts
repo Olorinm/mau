@@ -1,0 +1,28 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
+import { ConnectorReadClient } from "@olorinm/agent-connectors/read-client";
+import { ConnectedApps } from "../src/connected-apps.js";
+import { privateFile } from "../src/files.js";
+const cleanup: Array<() => void> = [];
+afterEach(() => { cleanup.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
+it("binds app access to the configured Agent, owner and connections on every request", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "mau-apps-")); cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
+  const key = await generateSigningKey("caller"), agentId = randomUUID();
+  privateFile(join(directory, "caller.json"), key.privateJwk);
+  const options = { url: "http://127.0.0.1:18100", issuer: "mau", audience: "connectors", callerKeyFile: "caller.json",
+    assignments: [{ agentId, owner: "alice", connections: ["alice-gmail"] }] };
+  const client = new ConnectedApps(options, directory);
+  expect(client.reader(agentId, "bob")).toBeUndefined(); expect(client.reader(randomUUID(), "alice")).toBeUndefined();
+  expect(client.assigned("bob", "alice-gmail")).toEqual([]); expect(client.assigned("alice", "alice-gmail")).toEqual([agentId]);
+  const list = vi.spyOn(ConnectorReadClient.prototype, "tools").mockResolvedValue([]);
+  const call = vi.spyOn(ConnectorReadClient.prototype, "call").mockResolvedValue({ status: "completed" });
+  await client.reader(agentId, "alice")!({ action: "tools" });
+  expect(list).toHaveBeenCalledWith(options.assignments[0]);
+  await client.reader(agentId, "alice")!({ action: "call", name: "alice_gmail__list", arguments: { maxResults: 1 } });
+  expect(call).toHaveBeenCalledWith(options.assignments[0], "alice_gmail__list", { maxResults: 1 });
+  expect(() => new ConnectedApps({ ...options, assignments: [...options.assignments, ...options.assignments] }, directory)).toThrow("duplicate_connected_app_agent");
+});

@@ -38,7 +38,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const queries = useQueryClient();
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [view, setView] = useState(() =>
-    new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
+    new URLSearchParams(location.search).get("view") === "connectors" ? "connectors" : new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [conversationTarget, setConversationTarget] = useState<string>();

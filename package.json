@@ -61,7 +61,7 @@
   },
   "peerDependencies": {
     "@agent-router/server": "0.7.0-alpha.6",
-    "@olorinm/agent-connectors": "0.1.0-alpha.2",
+    "@olorinm/agent-connectors": "0.1.0-alpha.3",
     "@olorinm/agent-environment": "0.2.0-alpha.3"
   },
   "allowScripts": {

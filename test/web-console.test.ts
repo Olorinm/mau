@@ -751,11 +751,12 @@ it.skipIf(!built)("opens real channel management and distinguishes connector set
   expect(errors).toEqual([]);
 });
 
-it.skipIf(!built)("offers provider consent and manual verification, and gates disconnect after an unknown outcome", async () => {
+it.skipIf(!built)("redirects to provider consent in one click, returns to connectors and gates uncertain disconnects", async () => {
   const f = await mauFixture(cleanup, { webRoot });
   const { page, errors } = await browser(f.base);
   let state = "authorization_required", failed = false;
   const mutations: string[] = [];
+  await page.route("https://accounts.google.com/**", route => route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors" } }));
   await page.route("**/_mau/v1/connector-accounts**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [] }] } });
@@ -770,7 +771,8 @@ it.skipIf(!built)("offers provider consent and manual verification, and gates di
   await page.reload();
   await page.getByRole("button", { name: "连接器", exact: true }).click();
   await page.getByRole("button", { name: "授权账号", exact: true }).click();
-  await see(page.getByRole("link", { name: "继续前往服务商授权" })).toHaveAttribute("href", /^https:\/\/accounts.google.com\//);
+  await see(page).toHaveURL(f.base + "/?view=connectors");
+  await see(page.getByRole("heading", { name: "Gmail", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "检查授权", exact: true }).click();
   await see(page.getByText("账号已连接", { exact: true })).toBeVisible();
   await see(page.getByText("OAuth 授权已验证；各产品 API 的可用性仍需实际调用确认。", { exact: true })).toBeVisible();

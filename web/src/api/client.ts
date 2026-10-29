@@ -28,7 +28,7 @@ export interface ConnectorAccountState {
   authorizationUrl?: string;
   expiresAt?: string;
 }
-export interface ConnectorAccount extends ConnectorAccountState { id: string; kind: string; label: string }
+export interface ConnectorAccount extends ConnectorAccountState { id: string; kind: string; label: string; assignedAgents?: string[]; permission?: "read-only" }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -62,7 +62,7 @@ export function mauApi(token: string) {
   return {
     account: () => request<{ owner: string }>(mau + "/account", { token }),
     connectorAccounts: () => request<{ configured: boolean; data: ConnectorAccount[] }>(mau + "/connector-accounts", { token, timeoutMs: 95_000 }),
-    connectorAccountAction: (id: string, action: "check" | "connect" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, timeoutMs: 150_000 }),
+    connectorAccountAction: (id: string, action: "check" | "connect" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, credentials: "same-origin", timeoutMs: 150_000 }),
     connectors: () => request<{ data: BusinessConnection[] }>(mau + "/connectors", { token }).then(r => r.data),
     checkConnector: (id: string) => request<{ status: "verified"; checkedAt: string }>(mau + "/connectors/" + encodeURIComponent(id) + "/check", { token, body: {}, timeoutMs: 95_000 }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),

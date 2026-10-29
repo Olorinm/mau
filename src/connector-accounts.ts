@@ -8,6 +8,7 @@ export const connectorAccountsSchema = z.object({
   url: z.url(), issuer: z.string().min(1), audience: z.string().min(1),
   authorityKeyFile: z.string().min(1),
   consentOrigins: z.array(z.url()).min(1).max(20),
+  runtimeConfigFile: z.string().min(1).optional(),
 }).strict().optional();
 const idSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
 const entrySchema = z.object({ id: idSchema, kind: z.string().max(64), owner: z.string().max(256),

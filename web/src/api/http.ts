@@ -13,6 +13,7 @@ export async function request<T>(url: string, options: {
   body?: unknown;
   signal?: AbortSignal;
   timeoutMs?: number;
+  credentials?: "omit" | "same-origin";
 } = {}): Promise<T> {
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   // Matrix sync holds a request for 25 seconds. Bound the whole response, including its body.
@@ -22,7 +23,7 @@ export async function request<T>(url: string, options: {
   try {
     const response = await fetch(url, {
       method,
-      credentials: "omit",
+      credentials: options.credentials ?? "omit",
       redirect: "error",
       headers: {
         Accept: "application/json",
