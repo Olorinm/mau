@@ -356,3 +356,13 @@ body {
 .mau-run-status { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); color: var(--c-text-2); font-size: var(--fs-sm); }
 .mau-run pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mau-interaction { display: grid; gap: var(--sp-2); }
+
+.mau-connections { overflow: auto; padding: var(--sp-6); min-height: 0; }
+.mau-connection-toolbar, .mau-connection-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.mau-connection-toolbar { justify-content: space-between; margin: var(--sp-5) 0; }
+.mau-connection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--sp-4); }
+.mau-connection-card { min-width: 0; border: 1px solid var(--c-line-06); border-radius: var(--radius-lg, 12px); padding: var(--sp-5); }
+.mau-connection-card h2 { margin: 0; font-size: var(--fs-lg); }
+.mau-connection-card p { line-height: 1.6; }
+.mau-connection-card ul { padding-left: var(--sp-5); overflow-wrap: anywhere; }
+@media (max-width: 600px) { .mau-connections { padding: var(--sp-3); } }

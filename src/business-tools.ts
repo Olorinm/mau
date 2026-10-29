@@ -37,6 +37,20 @@ export class BusinessTools {
         ...(feishu ? { feishu: new FeishuBotReader({ ...feishu, appSecretFile: resolve(base, feishu.appSecretFile), directory: resolve(base, feishu.directory) }) } : {}) } });
     }
   }
+  inventory(owner: string) {
+    return [...this.clients].filter(([, entry]) => entry.owner === owner).map(([agentId, entry]) => ({
+      agentId, kind: "business-data" as const, status: "configured" as const,
+      tools: businessDataTools.filter(name => name !== "sql"), feishuBotRead: !!entry.client.feishu,
+      permission: "read-only" as const,
+    }));
+  }
+  async check(owner: string, agentId: string) {
+    const entry = this.clients.get(agentId);
+    if (!entry || entry.owner !== owner) throw new Error("business_tool_not_authorized");
+    const result = await entry.client.call("tools", {}) as { isError?: boolean; content?: unknown } | undefined;
+    if (!result || result.isError !== false || !Array.isArray(result.content)) throw new Error("connector_check_failed");
+    return { status: "verified" as const, checkedAt: new Date().toISOString() };
+  }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.clients.get(agentId);
     if (!entry || entry.owner !== owner) return new HttpAgentHost(http);

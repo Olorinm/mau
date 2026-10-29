@@ -64,6 +64,15 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     next();
   });
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
+  product.get("/connectors", (_req, res) => res.json({ data: business.inventory(res.locals.owner) }));
+  product.post("/connectors/:agentId/check", async (req, res) => {
+    z.object({}).strict().parse(req.body);
+    const id = String(req.params.agentId);
+    router.service.owned(id, res.locals.owner);
+    if (!business.inventory(res.locals.owner).some(item => item.agentId === id)) throw new RouterError("connector_not_configured", 404);
+    try { res.json(await business.check(res.locals.owner, id)); }
+    catch { throw new RouterError("connector_check_failed", 502); }
+  });
   product.get("/options", (_req, res) => res.json({
     environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, workspace }) => ({ id, label, kernel, workspace: workspace === true })),
   }));

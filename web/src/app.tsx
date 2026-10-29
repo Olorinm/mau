@@ -13,6 +13,7 @@ import { errorMessage, useI18n } from "./i18n";
 import { LoginScreen } from "./screens/login";
 import { AgentsScreen } from "./screens/agents";
 import { MessagesScreen } from "./screens/messages";
+import { ConnectorsScreen } from "./screens/connectors";
 import {
   AppsScreen,
   CreateAppScreen,
@@ -138,6 +139,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       id: "configuration",
       label: zh ? "配置" : "Configuration",
       items: [
+        { id: "connectors", label: zh ? "连接器" : "Connectors", icon: <ProductIcon name="network" /> },
         {
           id: "extensions",
           label: zh ? "扩展" : "Extensions",
@@ -218,6 +220,8 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           <FilesScreen />
         ) : view === "extensions" ? (
           <ExtensionsScreen />
+        ) : view === "connectors" ? (
+          <ConnectorsScreen session={session} />
         ) : view === "settings" ? (
           <SettingsScreen />
         ) : (

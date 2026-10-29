@@ -124,3 +124,44 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   expect(await second.evaluate(element => element === (window as unknown as {auditRun:Element}).auditRun)).toBe(true);
   expect(starts).toBe(2); expect(errors).toEqual([]);
 }, 60000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while a sleeping Host is unavailable, without polling or flashing loading states", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  const room = "!history:example.test";
+  let reads = 0;
+  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
+    id: "old-task", conversationId: "old-conversation", status: "completed", cancelRequested: false,
+    receivedAt: "2026-10-21T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
+    runs: [{claimId: "old-claim", runId: "old-run", phase: "finished"}], replyMessageIds: ["$reply"], interactionMessageIds: [],
+  }], next: null } }));
+  await page.route("**/communication/runs/**", route => { reads++; return route.fulfill({status: 409, json: {error: "environment_not_ready"}}); });
+  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
+    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
+  }, json: { next_batch: "1", rooms: { join: { [room]: {
+    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
+    timeline: { events: [
+      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "历史问题"}},
+      {event_id: "$reply", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "已经交付的历史回复"}},
+    ]},
+  } } } } }));
+  await page.goto(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
+  await page.reload();
+  const surface = page.locator(".mau-run");
+  await see(surface).toContainText("已经交付的历史回复");
+  await see(surface).toHaveAttribute("aria-label", "已完成");
+  expect(reads).toBe(0);
+  await page.getByRole("button", {name: "查看执行详情", exact: true}).click();
+  await see(surface.getByRole("alert")).toBeVisible();
+  await see(surface).toContainText("已经交付的历史回复");
+  const afterFailure = reads;
+  await page.waitForTimeout(3500);
+  expect(reads).toBe(afterFailure);
+  await see(surface).not.toContainText("正在读取执行过程");
+  await page.screenshot({path: "/tmp/mau-sleeping-history.png", fullPage: true});
+}, 20000);

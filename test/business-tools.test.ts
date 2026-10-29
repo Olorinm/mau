@@ -65,3 +65,22 @@ it("Cloudflare tools stay bound to the configured agent and owner", async () => 
   await manager.host(id,"mallory","binding",f.http).start({...input,tools});
   expect(f.submitted().tools).toEqual(tools);
 });
+
+it("shows only the owner's connector capabilities and verifies successful catalog reads without returning private configuration", async () => {
+  const { CloudflareReadClient } = await import("@olorinm/agent-connectors/cloudflare-read-client");
+  const call = vi.spyOn(CloudflareReadClient.prototype, "call").mockResolvedValue({isError: false, content: []});
+  const f = fixture(), id = randomUUID();
+  const manager = new BusinessTools([{mode:"cloudflare",agentId:id,owner:"alice",endpoint:"https://connectors.fixture/",tokenFile:"private-caller-key"}],".",f.store);
+  expect(manager.inventory("bob")).toEqual([]);
+  const catalog = manager.inventory("alice");
+  expect(catalog).toMatchObject([{agentId:id, permission:"read-only", feishuBotRead: true}]);
+  expect(catalog[0]!.tools).not.toContain("sql");
+  expect(JSON.stringify(catalog)).not.toMatch(/private-caller-key|https:/);
+  await expect(manager.check("bob", id)).rejects.toThrow("business_tool_not_authorized");
+  await expect(manager.check("alice", randomUUID())).rejects.toThrow("business_tool_not_authorized");
+  expect(call).not.toHaveBeenCalled();
+  await expect(manager.check("alice", id)).resolves.toMatchObject({status:"verified"});
+  expect(call).toHaveBeenCalledWith("tools", {});
+  call.mockResolvedValueOnce({isError:true,content:[]});
+  await expect(manager.check("alice", id)).rejects.toThrow("connector_check_failed");
+});

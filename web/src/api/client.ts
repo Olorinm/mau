@@ -20,6 +20,7 @@ export interface AgentSummary {
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
+export interface BusinessConnection { agentId: string; kind: "business-data"; status: "configured"; tools: string[]; feishuBotRead: boolean; permission: "read-only" }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -52,6 +53,8 @@ const agent = (id: string) => `/agents/${encodeURIComponent(id)}`;
 export function mauApi(token: string) {
   return {
     account: () => request<{ owner: string }>(mau + "/account", { token }),
+    connectors: () => request<{ data: BusinessConnection[] }>(mau + "/connectors", { token }).then(r => r.data),
+    checkConnector: (id: string) => request<{ status: "verified"; checkedAt: string }>(mau + "/connectors/" + encodeURIComponent(id) + "/check", { token, body: {}, timeoutMs: 95_000 }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),

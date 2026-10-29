@@ -185,7 +185,9 @@ it("does not invent successful sends and propagates cancellation", async () => {
   ).rejects.toMatchObject({ code: "M_FORBIDDEN", status: 403 });
   expect(api.snapshot()[0]!.messages).toEqual([]);
   await api.sync(controller.signal);
-  expect(observed).toBe(controller.signal);
+  expect(observed?.aborted).toBe(false);
+  controller.abort();
+  expect(observed?.aborted).toBe(true);
 });
 
 it("waits for a pending initial sync before opening an existing direct room", async () => {

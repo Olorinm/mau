@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
 import { RunMessage } from "@olorinm/agent-frontend/conversation";
@@ -39,17 +39,21 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   const queries = useQueryClient();
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
   const reader = useMemo(() => new RunReader(api, claimId), [api, claimId]);
+  const terminal = ["completed", "failed", "canceled", "rejected"].includes(task.status);
+  const [inspect, setInspect] = useState(false);
   const key = ["run", token, agentId, claimId];
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => reader.refresh(signal),
-    refetchInterval: (query) => query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
+    enabled: !terminal || inspect || !!queries.getQueryData(key), retry: false,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
+    refetchInterval: (query) => query.state.error ? false : query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
   const cancel = useMutation({ mutationFn: () => api.cancel(task.id),
     onSuccess: () => queries.invalidateQueries({ queryKey: ["run-tasks", token, agentId] }) });
   const data = query.data, active = data?.detail.run.status === "running";
   const calls = data?.detail.calls.filter((call) => call.kind === "interaction") ?? [];
   const pending = calls.some((call) => call.status === "pending" && Date.parse(call.deadlineAt) > Date.now());
   useEffect(() => blockBuildReload(!!active || pending), [active, pending]);
-  const status = data?.detail.run.status;
-  const label = !data ? zh ? "正在读取执行过程…" : "Loading execution…"
+  const status = data?.detail.run.status ?? (terminal ? task.status === "canceled" ? "cancelled" : task.status : undefined);
+  const label = !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
     : active ? pending ? zh ? "等待你的回应" : "Waiting for your response" : task.cancelRequested ? zh ? "正在停止…" : "Stopping…" : zh ? "正在执行" : "Running"
     : status === "completed" ? zh ? "已完成" : "Completed" : status === "cancelled" ? zh ? "已取消" : "Cancelled" : zh ? "执行未完成" : "Execution failed";
   const failure = query.error ?? cancel.error;
@@ -72,9 +76,10 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
     finally { await query.refetch(); }
   };
   return <section className="mau-run" data-run-id={claimId} aria-label={label}>
+    {terminal && !data && !inspect ? <Button onClick={() => setInspect(true)}>{zh ? "查看执行详情" : "View execution details"}</Button> : null}
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}
-      status={!data ? "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
+      status={!data && !terminal ? query.error ? "failed" : "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
       {...(!data || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
       {...(active ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label}} : {})}
       {...(active ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}

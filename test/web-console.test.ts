@@ -733,3 +733,20 @@ it.skipIf(!built)(
   },
   30_000,
 );
+
+it.skipIf(!built)("opens real channel management and distinguishes connector setup from authorization", async () => {
+  const f = await mauFixture(cleanup, {webRoot});
+  const {page, errors} = await browser(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token:"alice", owner:"@alice:example.test"})));
+  await page.reload();
+  await page.getByRole("button", {name:"连接器", exact:true}).click();
+  await see(page.getByRole("heading", {name:"helper", exact:true})).toBeVisible();
+  await page.getByRole("button", {name:"添加渠道", exact:true}).click();
+  await see(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", {name:"关闭", exact:true}).click();
+  await page.getByRole("button", {name:"添加连接", exact:true}).click();
+  await see(page.getByRole("heading", {name:"Gmail", exact:true})).toBeVisible();
+  await see(page.getByText("待服务端接入", {exact:true})).toHaveCount(8);
+  await page.screenshot({path:"/tmp/mau-connectors.png", fullPage:true});
+  expect(errors).toEqual([]);
+});

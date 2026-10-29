@@ -60,7 +60,8 @@ export function MessagesScreen({
     queryKey: key,
     queryFn: ({ signal }) => client.sync(signal),
     enabled: !!agents.data?.length,
-    refetchInterval: 1000,
+    retry: false,
+    refetchInterval: query => query.state.error ? false : 1000,
   });
   const [search, setSearch] = useState("");
   const [starting, setStarting] = useState(false);
@@ -73,7 +74,8 @@ export function MessagesScreen({
   const tasks = useQuery({
     queryKey: ["run-tasks", session.token, current?.agentId, current?.id],
     queryFn: ({ signal }) => runApi(session.token, current!.agentId).tasks(current!.id, signal),
-    enabled: !!current && !!agents.data?.find(({agent}) => agent.id === current.agentId)?.host, refetchInterval: 1000,
+    enabled: !!current && !!agents.data?.find(({agent}) => agent.id === current.agentId)?.host,
+    refetchInterval: query => query.state.error ? false : 3000,
   });
   const start = useMutation({
     mutationFn: (id: string) => client.start(id),
@@ -116,6 +118,7 @@ export function MessagesScreen({
         t,
         error instanceof ApiError ? error.code : "request_failed",
       )}
+      {agents.error || rooms.error || tasks.error ? <Button onClick={() => { void agents.refetch(); void rooms.refetch(); if (current) void tasks.refetch(); }}>{zh ? "重新连接" : "Reconnect"}</Button> : null}
     </p>
   ) : null;
   const requested = useRef<string | undefined>(undefined);
@@ -169,7 +172,7 @@ export function MessagesScreen({
         placeholder={zh ? "搜索会话" : "Search conversations"}
       />
       {failure}
-      {agents.isPending || (rooms.isFetching && !rooms.data) ? (
+      {!failure && (agents.isPending || (rooms.isPending && !rooms.data)) ? (
         <LoadingSurface label={t("common.loading")} />
       ) : null}
       <ItemList
@@ -204,7 +207,7 @@ export function MessagesScreen({
         <CollectionEmptyState
           label={zh ? "消息" : "Messages"}
           loading={
-            agents.isPending || (!!agents.data?.length && rooms.isPending)
+            !failure && (agents.isPending || (!!agents.data?.length && rooms.isPending))
           }
           illustration="messages"
           title={zh ? "还没有员工会话" : "No conversations yet"}
@@ -321,10 +324,10 @@ export function MessagesScreen({
                   }, ...attached.map((task) => ({
                     id: "task:" + task.id, role: "assistant" as const, title: current.title,
                     avatar: <EmployeeAvatar seed={current.agentId} fallbackName={current.title} size={28} />,
-                    copyText: current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n"),
+                    copyText: current.messages.filter((reply) => task.replyMessageIds.includes(reply.id) || reply.replyTo === message.id).map((reply) => reply.text).join("\n"),
                     body: <TaskSurface task={task} token={session.token} agentId={current.agentId}
                       onInsertPrompt={(value) => setDrafts((values) => ({...values, [current.id]: value}))}
-                      fallback={current.messages.filter((reply) => reply.replyTo === message.id).map((reply) => reply.text).join("\n")} />,
+                      fallback={current.messages.filter((reply) => task.replyMessageIds.includes(reply.id) || reply.replyTo === message.id).map((reply) => reply.text).join("\n")} />,
                   }))];
                 })}
                 composer={{
