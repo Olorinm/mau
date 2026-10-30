@@ -9,16 +9,31 @@ const json = (value: unknown) => value as JsonValue | undefined;
 /** The service adapter translates Host events into display records. UI components
  * consume these records without knowing the Host, transport, or native event stream.
  * Native inputs/results are retained; native call IDs are never replaced by tool names.
+ * Parts keep event order: text spoken between tool calls stays in the process as
+ * commentary, and only the final answer becomes answer text (OpenGrove room order).
  */
 export function projectHostMessage(events: readonly HostEvent[], options: { active?: boolean; answer?: string; detailsLabel?: string } = {}): MessagePart[] {
   const parts = new Map<string, MessagePart>();
   const phases = new Map<string, string>();
   const calls = new Map<string, ToolPart>();
-  let answer = "", reasoning = "", anonymous = 0;
+  let reasoning = "", anonymous = 0, segment = 0, pending = "", rootThread = "";
+  // Codex reports each agent message as a native item with a phase; prefer those over
+  // the aggregated text stream so commentary is not repeated inside the answer.
+  const nativeMessages = events.some(event => {
+    const item = record(record(record((event as unknown as Record<string, unknown>).notification).params).item);
+    return event.type === "native.notification" && item.type === "agentMessage";
+  });
+  const commentary = (key: string, value: string) => parts.set(key, { id: key, type: "note", tone: "diagnostic",
+    text: value, data: { kind: "agent_message", phase: "commentary" } });
+  // Text streamed before a tool call is the agent narrating its work, not the answer.
+  const flushPending = () => {
+    if (!pending.trim()) { pending = ""; return; }
+    commentary(`commentary:text-${segment++}`, pending); pending = "";
+  };
   for (const event of events) {
     const row = event as unknown as Record<string, unknown>;
-    if (event.type === "assistant.delta") answer += event.text ?? "";
-    if (event.type === "model.response") answer = event.text ?? answer;
+    if (!nativeMessages && event.type === "assistant.delta") pending += event.text ?? "";
+    if (!nativeMessages && event.type === "model.response" && segment === 0) pending = event.text ?? pending;
     if (event.type === "reasoning.delta") {
       reasoning += event.text ?? "";
       parts.set("reasoning", { id: "reasoning", type: "reasoning", reasoningId: "reasoning", kernelId: "",
@@ -26,16 +41,20 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     }
     if (event.type === "native.notification") {
       const notification = record(row.notification), params = record(notification.params), item = record(params.item);
+      const thread = text(params.threadId) || text(row.threadId);
+      rootThread ||= thread;
+      // Subagent threads are summarized by their parent's activity rows.
+      if (thread && thread !== rootThread) continue;
       const id = text(item.id) || text(params.itemId);
       if (id && item.phase) phases.set(id, text(item.phase));
       const phase = text(params.phase) || text(item.phase) || phases.get(id);
-      if (id && phase === "commentary") {
-        const key = `commentary:${id}`, previous = parts.get(key);
-        const delta = notification.method === "item/agentMessage/delta";
-        const complete = notification.method === "item/completed" && item.type === "agentMessage";
-        if (delta || complete) parts.set(key, { id: key, type: "note", tone: "diagnostic",
-          text: delta ? (previous?.type === "note" ? previous.text : "") + text(params.delta) : text(item.text),
-          data: { kind: "agent_message", phase: "commentary" } });
+      const delta = notification.method === "item/agentMessage/delta";
+      const complete = notification.method === "item/completed" && item.type === "agentMessage";
+      if (id && (delta || complete)) {
+        const key = phase === "commentary" ? `commentary:${id}` : `answer:${id}`, previous = parts.get(key);
+        const value = delta ? (previous && previous.type !== "tool" && "text" in previous ? previous.text : "") + text(params.delta) : text(item.text);
+        if (phase === "commentary") commentary(key, value);
+        else if (value) parts.set(key, { id: key, type: "text", text: value });
       }
       if (id && notification.method === "item/commandExecution/outputDelta") {
         const call = calls.get(id);
@@ -44,8 +63,23 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
           call.input = json({ ...input, aggregatedOutput: text(input.aggregatedOutput) + text(params.delta) });
         }
       }
+      // Native multi-agent items only arrive as notifications; show them as activity rows.
+      if (id && ["subAgentActivity", "collabAgentToolCall"].includes(text(item.type)) &&
+          ["item/started", "item/completed"].includes(text(notification.method))) {
+        const finished = notification.method === "item/completed";
+        const previous = calls.get(id);
+        const call: ToolPart = previous ? { ...previous, input: json(item) } : {
+          id: `${id}:call`, type: "tool", phase: "call", toolId: text(item.type), callId: id, title: text(item.type),
+          input: json(item), status: "running", error: "", approvalId: "", approvalStatus: "", approvalReason: "",
+          questionId: "", questionStatus: "", questionPrompt: "" };
+        const failed = text(item.status) === "failed";
+        if (finished) call.status = failed ? "error" : "complete";
+        calls.set(id, call); parts.set(call.id, call);
+        if (finished) parts.set(`${id}:result`, { ...call, id: `${id}:result`, phase: "result", result: json(item) });
+      }
     }
     if (!["native.tool", "tool.started", "tool.finished"].includes(event.type)) continue;
+    flushPending();
     const native = record(row.native);
     const callId = text(row.callId) || text(native.id) || text(native.toolCallId) || text(native.tool_use_id);
     const key = callId || `anonymous:${anonymous++}`;
@@ -86,7 +120,10 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     const output = part.phase === "result" ? part.result : result?.type === "tool" ? result.result : part.result ?? record(part.input).aggregatedOutput;
     part.detail = {label: options.detailsLabel ?? "Details", text: JSON.stringify({input: part.input ?? null, output: output ?? null}, null, 2)};
   }
-  const finalAnswer = options.answer ?? answer;
+  const answered = [...parts.values()].some(part => part.type === "text");
+  // A running Codex turn has no answer until its final_answer item; the aggregated text
+  // would repeat commentary. Finished runs may still fall back to the stored answer.
+  const finalAnswer = answered || (nativeMessages && options.active) ? "" : options.answer ?? pending;
   if (finalAnswer) parts.set("answer", { id: "answer", type: "text", text: finalAnswer });
   return [...parts.values()];
 }

@@ -5,6 +5,7 @@ export * from "./member-name";
 export * from "./employee-avatar-picker";
 export * from "./group-avatar";
 export * from "./group-settings";
+export * from "./create-group";
 export * from "./remote-agent-dialog";
 export * from "./remote-agent-menu-item";
 
