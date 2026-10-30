@@ -23,7 +23,7 @@ communication routes use `/_agent-router/v1`.
 With Node.js 24+, install the client from the public release:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.9/olorinm-mau-cli-0.1.0-alpha.9.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.10/olorinm-mau-cli-0.1.0-alpha.10.tgz
 mau --version
 ```
 
