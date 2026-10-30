@@ -12,11 +12,19 @@ export interface ConversationMessage {
 export interface ConversationView {
   id: string;
   title: string;
+  /** The employee of a direct chat, or the first owned employee of a group. */
   agentId: string;
+  /** Every owned employee in the room (one for a direct chat). */
+  agentIds: string[];
   group: boolean;
   participants: number;
   messages: ConversationMessage[];
   limited: boolean;
+}
+/** Who a group message addresses; Router starts only the mentioned employees. */
+export interface ConversationMentions {
+  agentIds: string[];
+  all: boolean;
 }
 interface MatrixEvent {
   event_id?: string;
@@ -40,6 +48,8 @@ interface Sync {
 }
 interface RoomState {
   name?: string;
+  /** Created as a group (Mau's `ai.mau.room` marker), even with one employee. */
+  group?: boolean;
   members: Map<string, string>;
   messages: Map<string, ConversationMessage>;
   limited: boolean;
@@ -126,6 +136,8 @@ export class MauConversations {
           typeof event.content?.name === "string"
         )
           room.name = event.content.name;
+        if (event.type === "ai.mau.room" && event.content?.kind === "group")
+          room.group = true;
         if (
           event.type === "m.room.member" &&
           event.state_key &&
@@ -200,34 +212,43 @@ export class MauConversations {
     return this.snapshot();
   }
   snapshot(): ConversationView[] {
-    return [...this.rooms].flatMap(([id, room]) => {
-      const member = [...room.members].find(
-        ([member, membership]) =>
-          this.owned.has(member) && ["join", "invite"].includes(membership),
-      );
-      const agent = member && this.owned.get(member[0]);
+    const views = [...this.rooms].flatMap(([id, room]) => {
       const participants = [...room.members].filter(([, membership]) =>
         ["join", "invite"].includes(membership),
       );
-      const group = participants.some(
-        ([id]) => id !== this.session.owner && id !== agent?.matrixId,
+      const agents = participants.flatMap(([member]) => {
+        const agent = this.owned.get(member);
+        return agent ? [agent] : [];
+      });
+      if (!agents.length) return [];
+      // A direct chat has only the owner and one employee; anything else is a group.
+      const group = room.group === true || agents.length > 1 || participants.some(
+        ([member]) => member !== this.session.owner && !this.owned.has(member),
       );
-      return agent
-        ? [
-            {
-              id,
-              title: room.name || agent.name,
-              agentId: agent.id,
-              group,
-              participants: participants.length,
-              messages: [...room.messages.values()].sort(
-                (a, b) => a.timestamp - b.timestamp,
-              ),
-              limited: room.limited,
-            },
-          ]
-        : [];
+      const messages = [...room.messages.values()].sort((a, b) => a.timestamp - b.timestamp);
+      return [{
+        id,
+        title: group ? room.name || agents.map((agent) => agent.name).join("、") : agents[0]!.name,
+        agentId: agents[0]!.id,
+        agentIds: agents.map((agent) => agent.id),
+        group,
+        participants: participants.length,
+        messages,
+        limited: room.limited,
+      }];
     });
+    // One direct chat per employee, as in OpenGrove: the most recently active room.
+    // Older duplicate rooms stay on the server and keep their history.
+    const latest = (view: ConversationView) => view.messages.at(-1)?.timestamp ?? 0;
+    const direct = new Map<string, ConversationView>();
+    for (const view of views) {
+      if (view.group) continue;
+      const kept = direct.get(view.agentId);
+      if (!kept || latest(view) > latest(kept)) direct.set(view.agentId, view);
+    }
+    return views
+      .filter((view) => view.group || direct.get(view.agentId) === view)
+      .sort((a, b) => latest(b) - latest(a));
   }
   async start(agentId: string): Promise<string> {
     const agent = [...this.owned.values()].find(
@@ -235,16 +256,7 @@ export class MauConversations {
     );
     if (!agent) throw new ApiError("agent_not_found", 404);
     if (!this.cursor) await this.sync();
-    const existing = this.snapshot().find(
-      (room) =>
-        room.agentId === agentId &&
-        [...this.rooms.get(room.id)!.members]
-          .filter(([, membership]) => ["join", "invite"].includes(membership))
-          .every(
-            ([id]) =>
-              id === this.session.owner || this.owned.get(id)?.id === agentId,
-          ),
-    );
+    const existing = this.snapshot().find((room) => !room.group && room.agentId === agentId);
     if (existing) return existing.id;
     const result = await this.api<{ room_id: string }>("/createRoom", {
       body: {
@@ -265,17 +277,51 @@ export class MauConversations {
     });
     return result.room_id;
   }
+  /** Created with the owner's account so the owner administers the room and invites are trusted. */
+  async createGroup(name: string, agentIds: string[]): Promise<string> {
+    const agents = agentIds.map((id) => [...this.owned.values()].find((agent) => agent.id === id));
+    if (!agents.length || agents.some((agent) => !agent)) throw new ApiError("agent_not_found", 404);
+    const result = await this.api<{ room_id: string }>("/createRoom", {
+      body: {
+        preset: "private_chat",
+        ...(name.trim() ? { name: name.trim() } : {}),
+        invite: agents.map((agent) => agent!.matrixId),
+        // Marks the room as a group for Mau and Router regardless of member count.
+        initial_state: [{ type: "ai.mau.room", state_key: "", content: { kind: "group" } }],
+      },
+    });
+    if (typeof result.room_id !== "string")
+      throw new ApiError("invalid_response", 200);
+    this.rooms.set(result.room_id, {
+      ...(name.trim() ? { name: name.trim() } : {}),
+      group: true,
+      members: new Map([
+        [this.session.owner, "join"],
+        ...agents.map((agent) => [agent!.matrixId, "invite"] as [string, string]),
+      ]),
+      messages: new Map(),
+      limited: false,
+    });
+    return result.room_id;
+  }
   async send(
     roomId: string,
     text: string,
     transactionId: string,
+    mentions?: ConversationMentions,
   ): Promise<void> {
-    if (!this.snapshot().some((room) => room.id === roomId))
+    if (!this.rooms.has(roomId))
       throw new ApiError("conversation_not_found", 404);
     if (!text.trim()) throw new ApiError("message_empty", 400);
+    // Matrix intentional mentions tell each employee's Router whether it was addressed.
+    const userIds = (mentions?.agentIds ?? []).flatMap((id) => {
+      const agent = [...this.owned.values()].find((agent) => agent.id === id);
+      return agent ? [agent.matrixId] : [];
+    });
     const result = await this.api<{ event_id: string }>(
       `/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${encodeURIComponent(transactionId)}`,
-      { method: "PUT", body: { msgtype: "m.text", body: text } },
+      { method: "PUT", body: { msgtype: "m.text", body: text,
+        ...(mentions ? { "m.mentions": { ...(userIds.length ? { user_ids: userIds } : {}), ...(mentions.all ? { room: true } : {}) } } : {}) } },
     );
     if (typeof result.event_id !== "string")
       throw new ApiError("invalid_response", 200);

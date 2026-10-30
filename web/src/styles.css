@@ -445,3 +445,20 @@ body {
 .mau-agent-access strong { font-weight: var(--fw-medium, 500); }
 .mau-catalog-search .rooms-search-wrap { margin: 0; padding: 0; }
 .mau-catalog-search .rooms-search { background: transparent; box-shadow: none; }
+
+/* OpenGrove group avatars take their size from the surrounding list or header. */
+.mau-room-avatar {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 8px;
+}
+.mau-room-avatar.has-members {
+  --room-avatar-stack-item-size: 18px;
+  --room-avatar-stack-overlap: 6px;
+  width: auto;
+}
+header .mau-room-avatar {
+  width: 30px;
+  height: 30px;
+}

@@ -121,7 +121,7 @@ it.skipIf(!built)(
       createApp.getByRole("textbox", { name: "App 名称", exact: true }),
     ).toHaveValue("");
     await createApp.getByRole("button", { name: "取消", exact: true }).click();
-    await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
+    await page.getByRole("button", { name: "通讯录", exact: true }).click();
     // The fixture pre-creates "helper" without an environment.
     await see(agentRow(page, "helper")).toBeVisible();
     await see(page.locator(".contacts-employee-runtime-card")).toContainText(
@@ -192,7 +192,7 @@ it.skipIf(!built)(
     await page.getByRole("button", { name: "账号", exact: true }).click();
     await page.getByRole("menuitem", { name: "English" }).click();
     await see(
-      page.getByRole("button", { name: "Agents", exact: true }),
+      page.getByRole("button", { name: "Contacts", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Account", exact: true }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
@@ -430,6 +430,7 @@ it.skipIf(!built)(
     );
     const requests: string[] = [];
     const transactions: string[] = [];
+    const groupBodies: any[] = [];
     let accepted = false;
     page.on("request", (request) =>
       requests.push(new URL(request.url()).pathname),
@@ -448,10 +449,18 @@ it.skipIf(!built)(
           return route.fulfill({ status: 204, headers: cors });
         if (url.pathname.endsWith("/createRoom")) {
           expect(request.postDataJSON().invite).toEqual([f.agent.matrixId]);
+          if (request.postDataJSON().preset === "private_chat") {
+            groupBodies.push(request.postDataJSON());
+            return route.fulfill({ json: { room_id: "!group:example.test" }, headers: cors });
+          }
           return route.fulfill({
             json: { room_id: "!direct:example.test" },
             headers: cors,
           });
+        }
+        if (url.pathname.includes(encodeURIComponent("!group:example.test")) && url.pathname.includes("/send/")) {
+          groupBodies.push(request.postDataJSON());
+          return route.fulfill({ json: { event_id: "group-sent" }, headers: cors });
         }
         if (url.pathname.includes("/send/")) {
           transactions.push(url.pathname.split("/").at(-1)!);
@@ -529,11 +538,11 @@ it.skipIf(!built)(
       },
     );
     await page.reload();
-    await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
+    await page.getByRole("button", { name: "通讯录", exact: true }).click();
     await see(agentRow(page, "helper")).toBeVisible();
     await page.screenshot({ path: "/tmp/mau-neutral-agents.png" });
     await page.getByRole("button", { name: "对话", exact: true }).click();
-    await page.getByRole("button", { name: "发起会话", exact: true }).click();
+    await page.getByRole("button", { name: "发起单聊", exact: true }).click();
     await page.getByLabel("选择员工").selectOption(f.agent.id);
     await page.getByRole("button", { name: "打开对话", exact: true }).click();
     await page.getByPlaceholder("发送消息…").fill("hello from Mau");
@@ -552,6 +561,25 @@ it.skipIf(!built)(
     expect(transactions[0]).toBe(transactions[1]);
     await see(page.getByPlaceholder("发送消息…")).toHaveValue("");
     await page.screenshot({ path: "/tmp/mau-neutral-messages.png" });
+    // Groups use the restored OpenGrove dialog, are marked as groups and send intentional mentions.
+    await page.getByRole("button", { name: "新建", exact: true }).click();
+    await page.getByRole("menuitem", { name: "发起群聊" }).click();
+    const group = page.getByRole("dialog", { name: "创建群聊" });
+    await group.getByRole("textbox").fill("发布组");
+    await group.getByRole("checkbox").first().check();
+    await group.getByRole("button", { name: "创建", exact: true }).click();
+    await see(page.getByRole("region", { name: "对话" }).getByText("发布组")).toBeVisible();
+    expect(groupBodies[0]).toMatchObject({ preset: "private_chat", name: "发布组",
+      initial_state: [{ type: "ai.mau.room", state_key: "", content: { kind: "group" } }] });
+    const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
+    await composer.pressSequentially("@");
+    await page.getByRole("option", { name: /helper/ }).click();
+    await see(composer).toHaveValue("@helper ");
+    await composer.pressSequentially("看一下");
+    await page.getByRole("button", { name: "发送消息", exact: true }).click();
+    await see.poll(() => groupBodies.length).toBe(2);
+    expect(groupBodies[1]).toEqual({ msgtype: "m.text", body: "@helper 看一下", "m.mentions": { user_ids: [f.agent.matrixId] } });
+    await page.screenshot({ path: "/tmp/mau-group-messages.png" });
     expect(
       requests.some(
         (path) =>

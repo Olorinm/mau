@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
 import { RunMessage } from "@olorinm/agent-frontend/conversation";
 import { Button } from "@olorinm/agent-ui/app";
+import { Disclosure } from "@olorinm/agent-ui";
+import { mauApi } from "../api/client";
 import { answerInteraction, describeInteraction, type InteractionAnswer, type NativeRequest } from "@olorinm/agent-host/interactions";
 import { blockBuildReload } from "../build-version";
 import { ApiError } from "../api/http";
@@ -40,10 +42,9 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
   const reader = useMemo(() => new RunReader(api, claimId), [api, claimId]);
   const terminal = ["completed", "failed", "canceled", "rejected"].includes(task.status);
-  const [inspect, setInspect] = useState(false);
   const key = ["run", token, agentId, claimId];
-  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => reader.refresh(signal),
-    enabled: !terminal || inspect || !!queries.getQueryData(key), retry: false,
+  // Finished runs are read from Router's copy, so history loads without waking the employee.
+  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => reader.refresh(signal), retry: false,
     refetchOnWindowFocus: false, refetchOnReconnect: false,
     refetchInterval: (query) => query.state.error ? false : query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
   const cancel = useMutation({ mutationFn: () => api.cancel(task.id),
@@ -56,7 +57,23 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   const label = !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
     : active ? pending ? zh ? "等待你的回应" : "Waiting for your response" : task.cancelRequested ? zh ? "正在停止…" : "Stopping…" : zh ? "正在执行" : "Running"
     : status === "completed" ? zh ? "已完成" : "Completed" : status === "cancelled" ? zh ? "已取消" : "Cancelled" : zh ? "执行未完成" : "Execution failed";
-  const failure = query.error ?? cancel.error;
+  // Older runs without Router's copy need the employee awake; expanding the row wakes it.
+  const sleeping = !data && terminal && query.error instanceof ApiError && query.error.code === "environment_not_ready";
+  const [opened, setOpened] = useState(false);
+  const wake = useMutation({
+    mutationFn: async () => {
+      const api = mauApi(token);
+      // An environment that is already awake (or waking) needs no resume request.
+      await api.environmentAction(agentId, "resume").catch(() => undefined);
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const environment = await api.environment(agentId);
+        if (environment.state === "ready" && !environment.busy) break;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      await query.refetch();
+    },
+  });
+  const failure = sleeping ? null : query.error ?? cancel.error ?? wake.error;
   const answer = active ? data?.view.text : data?.detail.run.answer || data?.view.text;
   const interactions = calls.map(call => ({call, request: describeInteraction({method: call.name, params: call.input} as NativeRequest)}));
   const parts = data ? projectHostMessage(data.view.events, {active, answer: answer ?? "", detailsLabel: zh ? "参数与结果" : "Input and output"}) : [];
@@ -76,7 +93,12 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
     finally { await query.refetch(); }
   };
   return <section className="mau-run" data-run-id={claimId} aria-label={label}>
-    {terminal && !data && !inspect ? <Button onClick={() => setInspect(true)}>{zh ? "查看执行详情" : "View execution details"}</Button> : null}
+    {sleeping ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
+      onToggle={(open) => { setOpened(open); if (open && !wake.isPending) wake.mutate(); }}
+      summary={wake.isPending ? zh ? "正在唤醒员工…" : "Waking the employee…" : zh ? "执行过程" : "Process"}>
+      <p className="mau-muted">{wake.isPending ? zh ? "员工醒来后会自动加载执行过程。" : "The process loads once the employee is awake."
+        : zh ? "展开即可唤醒员工并加载执行过程。" : "Expand to wake the employee and load the process."}</p>
+    </Disclosure> : null}
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}
       status={!data && !terminal ? query.error ? "failed" : "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}

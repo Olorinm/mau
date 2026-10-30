@@ -11,18 +11,26 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   type Event = { sequence: number; event: Record<string, unknown> };
   type Call = { id: string; runId: string; kind: string; name: string; input: unknown; status: string; deadlineAt: string; result?: unknown };
   let run: { id: string; sessionId: string; runtimeId: string; status: string; answer: string } | undefined;
+  const byRequest = new Map<string, { body: string; run: NonNullable<typeof run> }>();
   const events: Event[] = [], calls: Call[] = [], decisions: unknown[] = [];
   let starts = 0;
   const emit = (event: Record<string, unknown>) => events.push({ sequence: events.length + 1, event: { runId: run!.id, ...event } });
-  const f = await mauFixture(cleanup, { webRoot, host: (url, init) => {
+  const f = await mauFixture(cleanup, { webRoot, hostCapabilities: { runIdempotency: true }, host: (url, init) => {
     const method = init?.method ?? "GET", path = url.pathname;
     if (path.endsWith("/runs") && method === "POST") {
+      const input = JSON.parse(String(init?.body)); expect(input.requestKey).toEqual(expect.any(String));
+      const key = JSON.stringify([input.runtimeId, input.requestKey]), body = JSON.stringify(input), prior = byRequest.get(key);
+      if (prior) return prior.body === body ? Response.json(prior.run) : Response.json({ error: "run_request_conflict" }, { status: 409 });
       starts++; events.length = 0; calls.length = 0;
-      const input = JSON.parse(String(init?.body)); run = { id: "run-" + starts, sessionId: input.sessionId, runtimeId: input.runtimeId, status: "running", answer: "" };
+      run = { id: "run-" + starts, sessionId: input.sessionId, runtimeId: input.runtimeId, status: "running", answer: "" };
+      byRequest.set(key, { body, run });
       emit({ type: "native.tool", callId: "cmd-1", phase: "started", native: { type: "commandExecution", command: "pwd" } });
       if (starts === 1) emit({ type: "assistant.delta", text: "第一段" });
       return Response.json(run);
     }
+    if (path.endsWith("/runs/by-request") && method === "GET") return Response.json({
+      run: byRequest.get(JSON.stringify([url.searchParams.get("runtimeId"), url.searchParams.get("requestKey")]))?.run ?? null,
+    });
     if (path.endsWith("/events")) {
       const after = Number(url.searchParams.get("after") ?? 0);
       return Response.json({ events: events.filter((item) => item.sequence > after), cursor: events.length, hasMore: false, historyTruncated: false });
@@ -155,13 +163,62 @@ it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while 
   const surface = page.locator(".mau-run");
   await see(surface).toContainText("已经交付的历史回复");
   await see(surface).toHaveAttribute("aria-label", "已完成");
-  expect(reads).toBe(0);
-  await page.getByRole("button", {name: "查看执行详情", exact: true}).click();
-  await see(surface.getByRole("alert")).toBeVisible();
-  await see(surface).toContainText("已经交付的历史回复");
-  const afterFailure = reads;
+  // History is read once (Router serves finished runs from its copy); a sleeping Host shows the
+  // same collapsed process row as any run, with no error and no polling.
+  const toggle = surface.getByRole("button", {name: "执行过程"});
+  await see(toggle).toBeVisible();
+  await see(surface.getByRole("alert")).toHaveCount(0);
+  const initial = reads;
+  expect(initial).toBeGreaterThan(0);
   await page.waitForTimeout(3500);
-  expect(reads).toBe(afterFailure);
+  expect(reads).toBe(initial);
+  await toggle.click();
+  await see.poll(() => reads).toBeGreaterThan(initial);
+  await see(surface).toContainText("已经交付的历史回复");
+  const afterWake = reads;
+  await page.waitForTimeout(3500);
+  expect(reads).toBe(afterWake);
   await see(surface).not.toContainText("正在读取执行过程");
   await page.screenshot({path: "/tmp/mau-sleeping-history.png", fullPage: true});
 }, 20000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("shows a reply streamed during a running task once, and keeps later unrelated replies", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  const room = "!stream:example.test";
+  let status = "running", replies: string[] = [];
+  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
+    id: "live-task", conversationId: "c", status, cancelRequested: false,
+    receivedAt: "2026-10-30T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
+    runs: [{claimId: "live-claim", runId: "live-run", phase: status === "running" ? "running" : "finished"}], replyMessageIds: replies, interactionMessageIds: [],
+  }], next: null } }));
+  await page.route("**/communication/runs/**", route => route.fulfill({status: 409, json: {error: "environment_not_ready"}}));
+  const reply = (id: string, body: string) => ({event_id: id, sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2,
+    content: {msgtype: "m.text", body, "m.relates_to": {"m.in_reply_to": {event_id: "$question"}}}});
+  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
+    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
+  }, json: { next_batch: "1", rooms: { join: { [room]: {
+    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
+    timeline: { events: [
+      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "流式问题"}},
+      reply("$streamed", "流式回复的第一段"),
+      ...(status === "running" ? [] : [reply("$relay", "子 Agent 稍后的汇报")]),
+    ]},
+  } } } } }));
+  await page.goto(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
+  await page.reload();
+  const stream = page.locator(".room-chat-stream");
+  await see(page.locator(".mau-run")).toContainText("流式回复的第一段");
+  await page.waitForTimeout(3500);
+  await see(stream.getByText("流式回复的第一段", {exact: true})).toHaveCount(1);
+  // Once finished, Router lists the streamed reply; a later reply to the same message stays visible.
+  status = "completed"; replies = ["$streamed"];
+  await page.reload();
+  await see(stream.getByText("子 Agent 稍后的汇报", {exact: true})).toHaveCount(1);
+  await see(stream.getByText("流式回复的第一段", {exact: true})).toHaveCount(1);
+}, 30000);

@@ -102,9 +102,14 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       label: zh ? "原生应用" : "Native apps",
       items: [
         {
-          id: "employees",
-          label: t("agents.title"),
+          id: "messages",
+          label: zh ? "对话" : "Conversations",
           icon: <ProductIcon name="rooms" />,
+        },
+        {
+          id: "agents",
+          label: zh ? "通讯录" : "Contacts",
+          icon: <ProductIcon name="contacts" />,
         },
         {
           id: "files",
@@ -167,13 +172,9 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         navigation={
           <Navigation
             groups={groups}
-            selectedId={
-              view === "messages" || view === "agents" ? "employees" : view
-            }
+            selectedId={view}
             onSelect={(id) =>
-              id === "create-app"
-                ? setCreateOpen(true)
-                : setView(id === "employees" ? "messages" : id)
+              id === "create-app" ? setCreateOpen(true) : setView(id)
             }
             account={{
               name: session.owner,
@@ -214,7 +215,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             session={session}
             initialAgentId={conversationTarget}
             onStartHandled={() => setConversationTarget(undefined)}
-            onContacts={() => setView("agents")}
           />
         ) : view === "files" ? (
           <FilesScreen />

@@ -10,7 +10,6 @@ import {
   ListDetailLayout,
   ItemList,
   SidebarHeader,
-  CollaborationTabs,
   SearchField,
   LoadingSurface,
 } from "@olorinm/agent-frontend";
@@ -31,7 +30,7 @@ export function AgentsScreen({
   onMessages,
 }: {
   session: Session;
-  onMessages(id?: string): void;
+  onMessages(id: string): void;
 }) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
@@ -69,7 +68,7 @@ export function AgentsScreen({
           <>
             <SidebarHeader
               variant="contacts"
-              title={zh ? "消息" : "Messages"}
+              title={zh ? "通讯录" : "Contacts"}
               actions={[
                 {
                   id: "create",
@@ -77,17 +76,6 @@ export function AgentsScreen({
                   onSelect: () => setCreating(true),
                 },
               ]}
-            />
-            <CollaborationTabs
-              label={zh ? "员工视图" : "Agent views"}
-              items={[
-                { id: "messages", label: zh ? "对话" : "Conversations" },
-                { id: "contacts", label: zh ? "通讯录" : "Contacts" },
-              ]}
-              selectedId="contacts"
-              onSelect={(id) => {
-                if (id === "messages") onMessages();
-              }}
             />
             <SearchField
               value={search}
