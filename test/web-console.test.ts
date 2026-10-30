@@ -121,7 +121,7 @@ it.skipIf(!built)(
       createApp.getByRole("textbox", { name: "App 名称", exact: true }),
     ).toHaveValue("");
     await createApp.getByRole("button", { name: "取消", exact: true }).click();
-    await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
+    await page.getByRole("button", { name: "通讯录", exact: true }).click();
     // The fixture pre-creates "helper" without an environment.
     await see(agentRow(page, "helper")).toBeVisible();
     await see(page.locator(".contacts-employee-runtime-card")).toContainText(
@@ -192,7 +192,7 @@ it.skipIf(!built)(
     await page.getByRole("button", { name: "账号", exact: true }).click();
     await page.getByRole("menuitem", { name: "English" }).click();
     await see(
-      page.getByRole("button", { name: "Agents", exact: true }),
+      page.getByRole("button", { name: "Contacts", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Account", exact: true }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
@@ -430,6 +430,7 @@ it.skipIf(!built)(
     );
     const requests: string[] = [];
     const transactions: string[] = [];
+    const groupBodies: any[] = [];
     let accepted = false;
     page.on("request", (request) =>
       requests.push(new URL(request.url()).pathname),
@@ -448,10 +449,18 @@ it.skipIf(!built)(
           return route.fulfill({ status: 204, headers: cors });
         if (url.pathname.endsWith("/createRoom")) {
           expect(request.postDataJSON().invite).toEqual([f.agent.matrixId]);
+          if (request.postDataJSON().preset === "private_chat") {
+            groupBodies.push(request.postDataJSON());
+            return route.fulfill({ json: { room_id: "!group:example.test" }, headers: cors });
+          }
           return route.fulfill({
             json: { room_id: "!direct:example.test" },
             headers: cors,
           });
+        }
+        if (url.pathname.includes(encodeURIComponent("!group:example.test")) && url.pathname.includes("/send/")) {
+          groupBodies.push(request.postDataJSON());
+          return route.fulfill({ json: { event_id: "group-sent" }, headers: cors });
         }
         if (url.pathname.includes("/send/")) {
           transactions.push(url.pathname.split("/").at(-1)!);
@@ -529,11 +538,11 @@ it.skipIf(!built)(
       },
     );
     await page.reload();
-    await page.getByRole("button", { name: "查看通讯录", exact: true }).click();
+    await page.getByRole("button", { name: "通讯录", exact: true }).click();
     await see(agentRow(page, "helper")).toBeVisible();
     await page.screenshot({ path: "/tmp/mau-neutral-agents.png" });
     await page.getByRole("button", { name: "对话", exact: true }).click();
-    await page.getByRole("button", { name: "发起会话", exact: true }).click();
+    await page.getByRole("button", { name: "发起单聊", exact: true }).click();
     await page.getByLabel("选择员工").selectOption(f.agent.id);
     await page.getByRole("button", { name: "打开对话", exact: true }).click();
     await page.getByPlaceholder("发送消息…").fill("hello from Mau");
@@ -552,6 +561,25 @@ it.skipIf(!built)(
     expect(transactions[0]).toBe(transactions[1]);
     await see(page.getByPlaceholder("发送消息…")).toHaveValue("");
     await page.screenshot({ path: "/tmp/mau-neutral-messages.png" });
+    // Groups use the restored OpenGrove dialog, are marked as groups and send intentional mentions.
+    await page.getByRole("button", { name: "新建", exact: true }).click();
+    await page.getByRole("menuitem", { name: "发起群聊" }).click();
+    const group = page.getByRole("dialog", { name: "创建群聊" });
+    await group.getByRole("textbox").fill("发布组");
+    await group.getByRole("checkbox").first().check();
+    await group.getByRole("button", { name: "创建", exact: true }).click();
+    await see(page.getByRole("region", { name: "对话" }).getByText("发布组")).toBeVisible();
+    expect(groupBodies[0]).toMatchObject({ preset: "private_chat", name: "发布组",
+      initial_state: [{ type: "ai.mau.room", state_key: "", content: { kind: "group" } }] });
+    const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
+    await composer.pressSequentially("@");
+    await page.getByRole("option", { name: /helper/ }).click();
+    await see(composer).toHaveValue("@helper ");
+    await composer.pressSequentially("看一下");
+    await page.getByRole("button", { name: "发送消息", exact: true }).click();
+    await see.poll(() => groupBodies.length).toBe(2);
+    expect(groupBodies[1]).toEqual({ msgtype: "m.text", body: "@helper 看一下", "m.mentions": { user_ids: [f.agent.matrixId] } });
+    await page.screenshot({ path: "/tmp/mau-group-messages.png" });
     expect(
       requests.some(
         (path) =>
@@ -733,3 +761,83 @@ it.skipIf(!built)(
   },
   30_000,
 );
+
+it.skipIf(!built)("browses app categories, searches unavailable apps and opens real channel management", async () => {
+  const f = await mauFixture(cleanup, {webRoot});
+  const {page, errors} = await browser(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token:"alice", owner:"@alice:example.test"})));
+  await page.reload();
+  await page.getByRole("button", {name:"连接器", exact:true}).click();
+  await see(page.getByRole("button", {name:"Gmail 即将开放", exact:true})).toBeVisible();
+  await see(page.getByRole("heading", {name:"helper", exact:true})).toHaveCount(0);
+  await page.getByRole("textbox", {name:"搜索连接器", exact:true}).fill("Gmail");
+  await see(page.getByRole("button", {name:"飞书 连接", exact:true})).toHaveCount(0);
+  await page.getByRole("button", {name:"Gmail 即将开放", exact:true}).click();
+  await see(page.getByRole("heading", {name:"Gmail", exact:true})).toBeVisible();
+  await see(page.getByRole("heading", {name:"即将开放", exact:true})).toBeVisible();
+  await see(page.getByRole("button", {name:"连接 Gmail", exact:true})).toHaveCount(0);
+  await page.getByRole("button", {name:"所有连接器", exact:true}).click();
+  await page.getByRole("textbox", {name:"搜索连接器", exact:true}).fill("");
+  await page.getByRole("button", {name:"飞书 连接", exact:true}).click();
+  await see(page.getByText("helper", {exact:true})).toBeVisible();
+  await page.getByRole("button", {name:"连接", exact:true}).click();
+  await see(page.getByRole("dialog")).toBeVisible();
+  await see(page.getByRole("dialog").getByRole("heading", {name:"飞书", exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+it.skipIf(!built)("redirects from app details to consent, returns to catalog and gates uncertain disconnects", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  let state = "authorization_required", failed = false;
+  const mutations: string[] = [];
+  await page.route("https://accounts.google.com/**", route => route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors" } }));
+  await page.route("**/_mau/v1/connector-accounts**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only" }] } });
+    expect(route.request().postDataJSON()).toEqual({});
+    const action = path.split("/").at(-1)!; mutations.push(action);
+    if (action === "connect") return route.fulfill({ json: { state, verification: "none", scopes: [], authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=fixture" } });
+    if (action === "disconnect" && !failed) { failed = true; return route.fulfill({ status: 409, json: { error: "connector_action_unknown" } }); }
+    state = action === "disconnect" ? "disconnected" : "connected";
+    return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
+  });
+  await page.route("**/_mau/v1/connectors", route => route.fulfill({json:{data:[{agentId:f.agent.id,kind:"business-data",status:"configured",tools:["catalog","tools","read","search","summary","metrics","lookup"],feishuBotRead:true,permission:"read-only"}]}}));
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  await page.reload();
+  await page.getByRole("button", { name: "连接器", exact: true }).click();
+  await see(page.getByRole("button", { name: "Gmail 连接", exact: true })).toBeVisible();
+  await page.screenshot({path:"/tmp/mau-connectors-redesign-desktop.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await see(page.getByRole("button", { name: "Gmail 连接", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({path:"/tmp/mau-connectors-redesign-mobile.png",fullPage:true});
+  await page.setViewportSize({width:1200,height:900});
+  await page.getByRole("button", { name: "Gmail 连接", exact: true }).click();
+  await see(page.getByRole("button", { name: "断开连接", exact: true })).toHaveCount(0);
+  await page.screenshot({path:"/tmp/mau-connectors-redesign-gmail.png",fullPage:true});
+  await page.getByRole("button", { name: "连接 Gmail", exact: true }).click();
+  await see(page).toHaveURL(f.base + "/?view=connectors");
+  await page.getByRole("button", { name: "Gmail 连接", exact: true }).click();
+  await page.getByRole("button", { name: "检查连接", exact: true }).click();
+  await see(page.getByText("你的 Google 账号已授权给 Mau。", { exact: true })).toBeVisible();
+  await see(page.getByText("允许", {exact:true})).toHaveCount(4);
+  await see(page.getByRole("link", { name: "继续前往 Google 授权" })).toHaveCount(0);
+  await page.getByRole("button", { name: "所有连接器", exact: true }).click();
+  await page.getByRole("group", {name:"连接器分类"}).getByRole("button", {name:/^已连接/}).click();
+  await see(page.getByRole("button", {name:"Gmail 已连接",exact:true})).toBeVisible();
+  await see(page.getByRole("button", {name:"Google 日历 即将开放",exact:true})).toHaveCount(0);
+  await page.getByRole("button", {name:"Gmail 已连接",exact:true}).click();
+  await page.getByRole("button", { name: "断开连接", exact: true }).click();
+  await see(page.getByText(/将清除此连接保存的授权/)).toBeVisible();
+  expect(mutations).toEqual(["connect", "check"]);
+  await page.getByRole("button", { name: "确认断开", exact: true }).click();
+  await see(page.getByRole("alert")).toContainText("不会自动重试");
+  await see(page.getByRole("button", { name: "断开连接", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "检查连接", exact: true }).click();
+  await page.getByRole("button", { name: "断开连接", exact: true }).click();
+  await page.getByRole("button", { name: "确认断开", exact: true }).click();
+  await see(page.getByText("已断开", { exact: true })).toBeVisible();
+  expect(mutations).toEqual(["connect", "check", "disconnect", "check", "disconnect"]);
+  expect(errors).toEqual([]);
+});

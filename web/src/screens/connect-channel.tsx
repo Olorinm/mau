@@ -14,6 +14,7 @@ export function ConnectChannelDialog(props: {
   session: Session;
   summary: AgentSummary;
   job?: ConnectionJob;
+  initialKind?: ChannelKind;
   onClose(): void;
   onConnected(): void;
 }) {
@@ -22,7 +23,7 @@ export function ConnectChannelDialog(props: {
   const router = routerApi(props.session.token);
   const agentId = props.summary.agent.id;
   const connected = new Set(props.summary.connections.map((c) => c.kind));
-  const [kind, setKind] = useState<ChannelKind | null>(props.job?.kind ?? null);
+  const [kind, setKind] = useState<ChannelKind | null>(props.job?.kind ?? props.initialKind ?? null);
   const [job, setJob] = useState<ConnectionJob | null>(props.job ?? null);
   const [recovery, setRecovery] = useState<ConnectionJob["recovery"]>();
   const done = (channel: ChannelKind) => {

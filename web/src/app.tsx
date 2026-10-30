@@ -13,6 +13,7 @@ import { errorMessage, useI18n } from "./i18n";
 import { LoginScreen } from "./screens/login";
 import { AgentsScreen } from "./screens/agents";
 import { MessagesScreen } from "./screens/messages";
+import { ConnectorsScreen } from "./screens/connectors";
 import {
   AppsScreen,
   CreateAppScreen,
@@ -37,7 +38,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const queries = useQueryClient();
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [view, setView] = useState(() =>
-    new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
+    new URLSearchParams(location.search).get("view") === "connectors" ? "connectors" : new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [conversationTarget, setConversationTarget] = useState<string>();
@@ -101,9 +102,14 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       label: zh ? "原生应用" : "Native apps",
       items: [
         {
-          id: "employees",
-          label: t("agents.title"),
+          id: "messages",
+          label: zh ? "对话" : "Conversations",
           icon: <ProductIcon name="rooms" />,
+        },
+        {
+          id: "agents",
+          label: zh ? "通讯录" : "Contacts",
+          icon: <ProductIcon name="contacts" />,
         },
         {
           id: "files",
@@ -138,6 +144,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       id: "configuration",
       label: zh ? "配置" : "Configuration",
       items: [
+        { id: "connectors", label: zh ? "连接器" : "Connectors", icon: <ProductIcon name="network" /> },
         {
           id: "extensions",
           label: zh ? "扩展" : "Extensions",
@@ -165,13 +172,9 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         navigation={
           <Navigation
             groups={groups}
-            selectedId={
-              view === "messages" || view === "agents" ? "employees" : view
-            }
+            selectedId={view}
             onSelect={(id) =>
-              id === "create-app"
-                ? setCreateOpen(true)
-                : setView(id === "employees" ? "messages" : id)
+              id === "create-app" ? setCreateOpen(true) : setView(id)
             }
             account={{
               name: session.owner,
@@ -212,12 +215,13 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             session={session}
             initialAgentId={conversationTarget}
             onStartHandled={() => setConversationTarget(undefined)}
-            onContacts={() => setView("agents")}
           />
         ) : view === "files" ? (
           <FilesScreen />
         ) : view === "extensions" ? (
           <ExtensionsScreen />
+        ) : view === "connectors" ? (
+          <ConnectorsScreen session={session} />
         ) : view === "settings" ? (
           <SettingsScreen />
         ) : (

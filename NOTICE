@@ -15,3 +15,6 @@ distributed components retain their respective licenses and notices.
 Agent Environment includes OMA-derived code whose licensing and redistribution
 status is described in its own LICENSE and NOTICE. Mau's MIT license does not
 apply to that code.
+
+Bounded employee memory and review behavior are adapted from Hermes Agent.
+Source references and the upstream MIT notice are in THIRD_PARTY_NOTICES.

@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "private": true,
   "description": "Mau: an agent product composed from Agent Router, Host and Environment.",
   "type": "module",
@@ -28,6 +28,8 @@
     "README.md",
     "LICENSE",
     "NOTICE",
+    "THIRD_PARTY_NOTICES",
+    "components.json",
     "examples",
     "docs"
   ],
@@ -60,8 +62,8 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@agent-router/server": "0.7.0-alpha.6",
-    "@olorinm/agent-connectors": "0.1.0-alpha.2",
+    "@agent-router/server": "0.7.0-alpha.7",
+    "@olorinm/agent-connectors": "0.1.0-alpha.3",
     "@olorinm/agent-environment": "0.2.0-alpha.3"
   },
   "allowScripts": {

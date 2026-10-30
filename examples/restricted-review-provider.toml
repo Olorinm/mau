@@ -1,0 +1,19 @@
+# Install in the dedicated review CODEX_HOME/config.toml, never over the main
+# employee's config. Set MAU_REVIEW_API_KEY in the trusted service environment.
+# This is an example, not a configured or deployed account.
+model = "gpt-5.4"
+model_provider = "mau_review"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[features]
+api_key_model_discovery = false
+
+[model_providers.mau_review]
+name = "Dedicated memory review Responses provider"
+base_url = "https://api.openai.com/v1"
+wire_api = "responses"
+requires_openai_auth = false
+env_key = "MAU_REVIEW_API_KEY"
+
+# Do not configure MCP servers, model_catalog_json or model_catalog_url here.

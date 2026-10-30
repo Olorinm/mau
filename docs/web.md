@@ -103,11 +103,21 @@ Environment bootstrap enables the owner's Matrix connection for built-in chat.
 Host health alone does not verify message routing; live acceptance must send a
 message through the web console and observe its Agent reply.
 
-Mau displays joined account rooms involving its owned Agents. Starting a new
-conversation waits for the initial room sync and selects an owned Agent explicitly;
-a group containing another
-participant is not silently reused for a direct conversation. Existing groups are
-marked as groups with participant counts and sender identities. The product adapter
+Navigation has separate Conversations and Contacts entries. As in OpenGrove rooms,
+each owned Agent has one direct chat titled with its name: the most recently active
+room with only the owner and that Agent. Older duplicate rooms stay on the server and
+keep their history; the owner's private chats on every channel share one Router main
+session anyway. Chats and groups are listed together by recent activity; groups show
+member avatars. Starting a chat waits for the initial room sync and reuses the
+existing direct room.
+
+"New group" uses the restored OpenGrove create-group dialog. The browser creates the
+room with the owner's account (`preset: private_chat`) and an `ai.mau.room` state
+event `{kind: "group"}`, so a group with one employee is still a group for Mau and
+Router. In a group, only employees the owner @-mentions (Matrix `m.mentions`) or
+everyone (`@所有人`/`@all`, `m.mentions.room`) start work; each answering employee's
+process appears under the message. Employees in a group of only the owner and the
+owner's agents receive the owner's grants; mixed groups do not. The product adapter
 uses Matrix sync cursors and displays recent text/notice messages. A limited
 history is marked as such. Other message kinds and older-history pagination are
 not implemented in this first account-messaging integration.

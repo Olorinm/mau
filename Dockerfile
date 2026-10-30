@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS build
+FROM node:24.22.2-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -14,14 +14,14 @@ RUN npm --prefix web ci --ignore-scripts --no-audit --no-fund
 COPY web/ web/
 RUN npm run build:web
 
-FROM node:24-bookworm-slim
+FROM node:24.22.2-bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web
-COPY package.json LICENSE NOTICE components.json ./
+COPY package.json LICENSE NOTICE THIRD_PARTY_NOTICES components.json ./
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 ENV HOST=0.0.0.0 PORT=8790 MAU_STATE=/data/mau MAU_WEB_ROOT=/app/web

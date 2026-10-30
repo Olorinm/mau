@@ -1,0 +1,87 @@
+{
+  "stateDirectory": "/srv/mau-review/host-state",
+  "host": "127.0.0.1",
+  "port": 37421,
+  "runtimes": [
+    {
+      "id": "memory-review",
+      "kernel": "codex",
+      "cwd": "/srv/mau-review/workspace",
+      "command": "/opt/codex-0.165.0/codex",
+      "args": [
+        "app-server",
+        "--listen",
+        "stdio://",
+        "-c",
+        "features.api_key_model_discovery=false"
+      ],
+      "env": {
+        "HOME": "/srv/mau-review/home",
+        "CODEX_HOME": "/srv/mau-review/codex"
+      },
+      "thread": {
+        "model": "gpt-5.4",
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "ephemeral": true,
+        "environments": [],
+        "runtimeWorkspaceRoots": [],
+        "selectedCapabilityRoots": [],
+        "config": {
+          "features.apps": false,
+          "features.connectors": false,
+          "features.code_mode": false,
+          "features.code_mode_only": false,
+          "features.code_mode_host": false,
+          "features.context_management": false,
+          "features.current_time_reminder": false,
+          "features.deferred_executor": false,
+          "features.enable_fanout": false,
+          "features.goals": false,
+          "features.hooks": false,
+          "features.codex_hooks": false,
+          "features.plugin_hooks": false,
+          "features.image_generation": false,
+          "features.imagegenext": false,
+          "features.memories": false,
+          "features.memory_tool": false,
+          "features.multi_agent": false,
+          "features.multi_agent_v2": false,
+          "features.multi_agent_v2_dynamic_tools": false,
+          "features.plugins": false,
+          "features.request_permissions_tool": false,
+          "features.shell_snapshot": false,
+          "features.shell_tool": false,
+          "features.standalone_web_search": false,
+          "features.token_budget": false,
+          "features.tool_suggest": false,
+          "features.unified_exec": false,
+          "features.view_image": false,
+          "features.js_repl": false,
+          "features.browser_use": false,
+          "features.browser_use_external": false,
+          "features.computer_use": false,
+          "features.in_app_browser": false,
+          "features.send_message_to_user_async": false,
+          "features.sleep_tool": false,
+          "features.apply_patch_freeform": false,
+          "features.tool_search": false,
+          "features.skill_search": false,
+          "cloud.skills.enabled": false,
+          "skills.include_instructions": false,
+          "tools.experimental_request_user_input.enabled": false,
+          "tools.update_plan.enabled": false,
+          "project_doc_max_bytes": 0,
+          "web_search": "disabled",
+          "mcp_servers": {}
+        }
+      },
+      "nativeAccess": {
+        "methods": [
+          "config/read"
+        ],
+        "notifications": []
+      }
+    }
+  ]
+}

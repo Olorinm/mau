@@ -566,12 +566,13 @@ export class EnvironmentManager {
     agentId: string,
     operationId: string,
     allowStarting = false,
+    options: { activity?: boolean } = {},
   ): ServiceHttp {
-    const coordinator = this;
+    const coordinator = this, marksActivity = options.activity !== false;
     return new (class extends ServiceHttp {
       override async request(
         path: string,
-        options: Parameters<ServiceHttp["request"]>[1] = {},
+        request: Parameters<ServiceHttp["request"]>[1] = {},
       ) {
         const record = coordinator.binding(agentId);
         if (
@@ -586,18 +587,32 @@ export class EnvironmentManager {
           record.ref.id,
           profile.port,
         );
-        coordinator.activity.set(agentId, Date.now());
+        // Background observers read without extending the idle window.
+        if (marksActivity) coordinator.activity.set(agentId, Date.now());
         const headers = new Headers(endpoint.headers);
-        new Headers(options.headers).forEach((v, k) => headers.set(k, v));
+        new Headers(request.headers).forEach((v, k) => headers.set(k, v));
         return new ServiceHttp(
           endpoint.url,
           readFileSync(coordinator.token(record), "utf8").trim(),
-        ).request(path, { ...options, headers });
+        ).request(path, { ...request, headers });
       }
     })(`https://${agentId}.mau.invalid`, "");
   }
   host(agentId: string, operationId: string) {
     return new HttpAgentHost(this.http(agentId, operationId));
+  }
+  /** Ready environments with their runtime, for background observers that must not wake them. */
+  readyBindings() {
+    return this.store.entries<Binding>(collection).map(({ value }) => value)
+      .filter((record) => record.phase === "ready" && record.ref)
+      .flatMap((record) => {
+        const profile = this.options.profiles.find((p) => p.id === record.profileId);
+        return profile ? [{ agentId: record.agentId, operationId: record.operationId, runtimeId: profile.runtimeId, kernel: profile.kernel }] : [];
+      });
+  }
+  /** Native work outside Router runs (background subagents) keeps a ready environment awake. */
+  touch(agentId: string) {
+    if (this.binding(agentId)?.phase === "ready") this.activity.set(agentId, Date.now());
   }
   private async ready(record: Binding, profile: Profile) {
     const deadline = Date.now() + 180_000,

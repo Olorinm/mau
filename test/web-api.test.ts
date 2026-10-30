@@ -21,6 +21,17 @@ function stubFetch(respond: (call: Call) => Response) {
 }
 afterEach(() => { vi.unstubAllGlobals(); });
 
+it("bounds stalled requests and preserves caller cancellation", async () => {
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+    init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+  }));
+  await expect(request("/stalled", { timeoutMs: 10 })).rejects.toMatchObject({ code: "request_timeout" });
+  const controller = new AbortController();
+  const response = request("/cancelled", { signal: controller.signal });
+  controller.abort(new Error("navigation_cancelled"));
+  await expect(response).rejects.toThrow("navigation_cancelled");
+});
+
 it("requests carry the account bearer and map Mau, Router and Matrix failures to stable codes", async () => {
   const calls = stubFetch((call) =>
     call.url.endsWith("/mau") ? Response.json({ error: "environment_operation_running" }, { status: 409 })
