@@ -22,6 +22,7 @@ import { SessionHistory, historyQuery } from "./session-history.js";
 import { checkConnector } from "./connector-precheck.js";
 import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
 import { CompletedTurns } from "./completed-turns.js";
+import { NativeRelay } from "./native-relay.js";
 
 export { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "./restricted-memory-reviewer.js";
 export type { ReviewRuntimeBinding, ReviewToolBinding, CodexRestrictedReviewerDependencies } from "./restricted-memory-reviewer.js";
@@ -130,6 +131,17 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     sourceSessions: scope => sessions(scope.owner, scope.agentId),
   });
   const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.employeeTools);
+  const nativeRelay = new NativeRelay(businessStore, {
+    employees: () => options.nativeWork.employeeTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
+      try { return [{ agentId: b.agentId, owner: router.service.agent(b.agentId).owner, operationId: b.operationId, runtimeId: b.runtimeId }]; }
+      catch { return []; }
+    }) : [],
+    host: employee => new HttpAgentHost(environments.http(employee.agentId, employee.operationId, false, { activity: false })),
+    sessions,
+    publicSession: (owner, agentId, hostSessionId) => completedTurns.publicSession(owner, agentId, hostSessionId),
+    touch: agentId => environments.touch(agentId),
+    record: (owner, agentId, sessionId, source, text) => history.append(owner, agentId, sessionId, source, text),
+  });
   const reviewOrigin = (admission: import("./run-admission.js").RunAdmission) => reviews.list({ owner: admission.owner, agentId: admission.agentId }).find(job => job.id === admission.reference);
   business.setAdmissionValidator(admission => {
     const review = reviewOrigin(admission);
@@ -327,8 +339,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); },
+  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
     attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
-    close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
+    close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

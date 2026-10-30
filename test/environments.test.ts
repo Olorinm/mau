@@ -286,6 +286,34 @@ it("an idle environment sleeps and only deliverable work wakes it through Router
     vi.useRealTimers();
   }
 });
+it("background observers read without extending the idle window; native work explicitly keeps it awake", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    const f = await fixture();
+    f.mau.environments.options.profiles[0]!.idlePauseSeconds = 600;
+    await f.api(f.path, { profileId: "cloud" });
+    const { operationId } = await f.settled();
+    const environments = f.mau.environments as any, idle = () => environments.activity.set(f.agent.id, Date.now() - 601_000);
+    expect(f.mau.environments.readyBindings()).toEqual([expect.objectContaining({ agentId: f.agent.id, operationId })]);
+    idle();
+    await f.mau.environments.http(f.agent.id, operationId, false, { activity: false }).request("/v1/health");
+    expect(Date.now() - environments.activity.get(f.agent.id)).toBeGreaterThan(600_000);
+    f.mau.environments.touch(f.agent.id);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await f.settled()).state).toBe("ready");
+    idle();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await f.settled()).state).toBe("sleeping");
+    expect(f.mau.environments.readyBindings()).toEqual([]);
+    // Touching a sleeping environment neither wakes it nor fakes activity.
+    f.mau.environments.touch(f.agent.id);
+    await expect(f.mau.environments.http(f.agent.id, operationId, false, { activity: false }).request("/v1/health")).rejects.toThrow("environment_not_ready");
+    expect((await f.settled()).state).toBe("sleeping");
+  } finally {
+    for (const close of cleanup.splice(0).reverse()) await close();
+    vi.useRealTimers();
+  }
+});
 it("active or unresolved runs keep an idle environment awake without recording an error", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   try {
