@@ -406,7 +406,7 @@ function activityStats(items: ActivityItem[]) {
     reasoningCount: items.filter((item) => activityItemKind(item) === "reasoning").length,
     commandCount: items.filter((item) => activityItemKind(item) === "command").length,
     monitorCount: items.filter((item) => activityItemKind(item) === "monitor").length,
-    agentCount: items.filter((item) => activityItemKind(item) === "agent").length,
+    agentCount: countDelegatedAgents(items),
     editCount: countEditedFiles(items),
     reasoningElapsedMs: aggregateReasoningElapsedMs(items),
     planCount: items.filter((item) => activityItemKind(item) === "planning").length,
@@ -909,6 +909,7 @@ function activityItemKind(item: ActivityItem): string {
   if (nativeType === "imageView") return "read";
   if (nativeType === "imageGeneration") return "artifact";
   if (nativeType === "contextCompaction") return "memory";
+  if (nativeType === "subAgentActivity" || nativeType === "collabAgentToolCall") return "agent";
   const tool = item.call || item.result;
   const toolId = String(tool?.toolId || "").toLowerCase();
   if (isSkillInvokeToolId(toolId)) return "skill";
@@ -1062,6 +1063,10 @@ function claudeAgentMetadata(item: ActivityItem): { agentType: string; descripti
   if (item.type !== "tool") {
     return { agentType: "", description: "", status: "" };
   }
+  const native = codexNativeItemFromActivity(item);
+  if (stringValue(native.type) === "subAgentActivity") {
+    return { agentType: translate("activity.subagentLabel"), description: codexSubagentName(native), status: stringValue(native.kind) };
+  }
   const input = recordValue(item.call?.input ?? item.result?.input);
   const result = recordValue(item.result?.result ?? item.call?.result);
   return {
@@ -1102,7 +1107,22 @@ function codexNativeActivityTitle(item: ActivityItem, status: string): string {
       [stringValue(native.server), stringValue(native.tool)].filter(Boolean).join(".") || translate("activity.mcpTool");
     return statusAwareTitle(status, translate("activity.callingPrefix"), translate("activity.calledPrefix"), label);
   }
+  if (type === "subAgentActivity") {
+    const name = codexSubagentName(native);
+    const phase = stringValue(native.kind);
+    if (phase === "completed") return translate("activity.subagentCompleted", { name });
+    if (phase === "interacted") return translate("activity.subagentContinued", { name });
+    return translate("activity.subagentStarted", { name });
+  }
   if (type === "collabAgentToolCall") {
+    const tool = stringValue(native.tool).toLowerCase();
+    if (tool.includes("wait")) {
+      return statusAwareTitle(status, translate("activity.subagentWaitingPrefix"), translate("activity.subagentWaitedPrefix"),
+        translate("activity.subagentLabel"));
+    }
+    if (tool.includes("followup") || tool.includes("send")) {
+      return translate("activity.subagentMessaged");
+    }
     return statusAwareTitle(
       status,
       translate("activity.runningPrefix"),
@@ -1753,6 +1773,27 @@ function codexNativeItemFromActivity(item: ActivityItem): Record<string, unknown
   const resultItem = item.result ? codexNativeItemFromTool(item.result) : {};
   if (stringValue(resultItem.type)) return resultItem;
   return item.call ? codexNativeItemFromTool(item.call) : {};
+}
+
+
+/** Codex reports a subagent by its task path, for example `/root/trip_plan`. */
+function codexSubagentName(native: Record<string, unknown>): string {
+  const path = stringValue(native.agentPath);
+  return path.split("/").filter(Boolean).pop() || translate("activity.subagentLabel");
+}
+
+
+// One delegated agent can start, receive follow-ups and complete; count it once.
+function countDelegatedAgents(items: ActivityItem[]): number {
+  const agents = new Set<string>();
+  items.forEach((item, index) => {
+    if (activityItemKind(item) !== "agent") return;
+    const native = codexNativeItemFromActivity(item);
+    const type = stringValue(native.type);
+    if (type === "collabAgentToolCall") return;
+    agents.add(type === "subAgentActivity" ? stringValue(native.agentThreadId) || stringValue(native.agentPath) : `item:${index}`);
+  });
+  return agents.size;
 }
 
 

@@ -50,6 +50,8 @@ export interface ComposerAttachment {
 export interface ComposerMention {
   id: string;
   label: string;
+  /** "all" is the room-wide mention (@all) offered in groups, as in OpenGrove rooms. */
+  kind?: "member" | "all";
   avatar?: ReactNode;
   detail?: ReactNode;
   onSelect(): void;
@@ -86,14 +88,13 @@ export function Conversation({
   const stream = useRef<HTMLElement>(null);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [activeMention, setActiveMention] = useState(0);
-  const mentions: MentionOption[] = (composer.mentions ?? []).map((item) => ({
-    id: item.id,
-    kind: "member",
-    label: item.label,
-    avatar: item.avatar,
-  }));
+  const mentions: MentionOption[] = (composer.mentions ?? []).map((item) =>
+    item.kind === "all"
+      ? { id: "all", kind: "all", label: item.label, detail: typeof item.detail === "string" ? item.detail : "" }
+      : { id: item.id, kind: "member", label: item.label, avatar: item.avatar },
+  );
   const selectMention = (option: MentionOption) => {
-    composer.mentions?.find((item) => item.id === option.id)?.onSelect();
+    composer.mentions?.find((item) => (option.kind === "all" ? item.kind === "all" : item.id === option.id))?.onSelect();
     setMentionOpen(false);
     input.current?.focus();
   };
@@ -156,7 +157,14 @@ export function Conversation({
           mentionOpen,
           mentionOptions: mentions,
           activeMentionIndex: activeMention,
-          onDraftChange: (value) => composer.onChange(value),
+          onDraftChange: (value, cursor) => {
+            composer.onChange(value);
+            // Typing "@" opens the member picker, as in OpenGrove rooms.
+            if (composer.mentions?.length && value[cursor - 1] === "@") {
+              setActiveMention(0);
+              setMentionOpen(true);
+            }
+          },
           onOpenAttachmentPicker: () =>
             composer.onAttachmentClick
               ? composer.onAttachmentClick()

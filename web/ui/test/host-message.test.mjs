@@ -38,3 +38,39 @@ test("retains approval choice identity/scope and question ids, multiselect and s
  assert.equal(q.interaction.questions[0].id,"opaque"); assert.equal(q.interaction.questions[0].secret,true); assert.equal(q.interaction.questions[0].multiSelect,true); assert.equal(q.interaction.allowSkip,false);
  assert.equal(projectHostInteraction("url",{kind:"url",title:"Login",native:{}}),undefined);
 });
+const note = (method, params, threadId = "root") => ({type: "native.notification", runId: "run", threadId, notification: {method, params: {threadId, ...params}}});
+test("Codex runs keep commentary and subagent activity in the process and one final answer", () => {
+ const sub = {id: "spawn", type: "subAgentActivity", kind: "started", agentThreadId: "child", agentPath: "/root/trip_plan"};
+ const done = {id: "done", type: "subAgentActivity", kind: "completed", agentThreadId: "child", agentPath: "/root/trip_plan"};
+ const events = [
+  note("item/started", {item: {id: "c1", type: "agentMessage", phase: "commentary"}}),
+  note("item/agentMessage/delta", {itemId: "c1", delta: "I'll ask a subagent."}),
+  {type: "assistant.delta", runId: "run", text: "I'll ask a subagent."},
+  note("item/started", {item: sub}), note("item/completed", {item: sub}),
+  note("item/started", {item: {id: "w", type: "collabAgentToolCall", tool: "wait", status: "inProgress"}}),
+  note("item/completed", {item: {id: "x", type: "agentMessage", phase: "final_answer", text: "child answer"}}, "child"),
+  note("item/started", {item: done}), note("item/completed", {item: done}),
+  note("item/completed", {item: {id: "w", type: "collabAgentToolCall", tool: "wait", status: "completed"}}),
+  note("item/started", {item: {id: "f", type: "agentMessage", phase: "final_answer"}}),
+  note("item/agentMessage/delta", {itemId: "f", delta: "Plan ready."}),
+  {type: "assistant.delta", runId: "run", text: "Plan ready."},
+  note("item/completed", {item: {id: "f", type: "agentMessage", phase: "final_answer", text: "Plan ready."}}),
+ ];
+ const parts = projectHostMessage(events, {answer: "Plan ready."});
+ assert.deepEqual(parts.map(p => p.id), ["commentary:c1", "spawn:call", "spawn:result", "w:call", "done:call", "done:result", "w:result", "answer:f"]);
+ assert.equal(parts.filter(p => p.type === "text").length, 1);
+ assert.equal(parts.at(-1).text, "Plan ready.");
+ assert.ok(!parts.some(p => "text" in p && p.text === "child answer"));
+ assert.equal(parts.find(p => p.id === "w:call").status, "complete");
+ assert.equal(parts.find(p => p.id === "spawn:call").input.agentPath, "/root/trip_plan");
+});
+test("text streamed before a tool call becomes commentary for kernels without native items", () => {
+ const parts = projectHostMessage([
+  {type: "assistant.delta", runId: "run", text: "Let me check."},
+  {type: "tool.started", runId: "run", callId: "a", tool: "search", input: {query: "a"}},
+  {type: "tool.finished", runId: "run", callId: "a", tool: "search", result: {success: true}},
+  {type: "assistant.delta", runId: "run", text: "Found it."},
+ ]);
+ assert.equal(parts[0].type, "note"); assert.equal(parts[0].text, "Let me check."); assert.equal(parts[0].data.phase, "commentary");
+ assert.equal(parts.at(-1).type, "text"); assert.equal(parts.at(-1).text, "Found it.");
+});
