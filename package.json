@@ -28,6 +28,8 @@
     "README.md",
     "LICENSE",
     "NOTICE",
+    "THIRD_PARTY_NOTICES",
+    "components.json",
     "examples",
     "docs"
   ],

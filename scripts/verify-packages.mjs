@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Independent packages + actual Host process, with deterministic cloud/native fixtures.
-import { mkdtemp, writeFile, copyFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, copyFile, rm, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -16,6 +17,11 @@ const { values } = parseArgs({
 });
 for (const key of ["environment-archive", "host-archive", "host-fixture"])
   if (!values[key]) throw new Error("--" + key + " is required");
+const pins = JSON.parse(await readFile(new URL("../components.json", import.meta.url), "utf8"));
+for (const name of ["router", "host", "environment", "connectors"]) {
+  const integrity = "sha512-" + createHash("sha512").update(await readFile(resolve(values[`${name}-archive`]))).digest("base64");
+  if (pins[name].integrity !== integrity) throw new Error(`component_archive_integrity_mismatch: ${name}`);
+}
 const temporary = await mkdtemp(join(tmpdir(), "router-cloud-consumer-"));
 try {
   await writeFile(
@@ -50,6 +56,7 @@ try {
     new URL("../test/fixtures/cloud-driver.mjs", import.meta.url),
     join(temporary, "cloud-driver.mjs"),
   );
+  await copyFile(new URL("../test/fixtures/mau-native-server.mjs", import.meta.url), join(temporary, "mau-native-server.mjs"));
   execFileSync(
     process.execPath,
     [

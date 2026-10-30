@@ -35,6 +35,11 @@ export class DurableStore {
     return this.db.prepare("SELECT id,value FROM documents WHERE collection=? ORDER BY rowid").all(collection)
       .map((row) => ({ id: row.id as string, value: JSON.parse(row.value as string) as T }));
   }
+  entriesByStatus<T>(collection: string, statuses: string[]): Array<{ id: string; value: T }> {
+    if (!statuses.length) return [];
+    return this.db.prepare(`SELECT id,value FROM documents WHERE collection=? AND json_extract(value,'$.status') IN (${statuses.map(() => "?").join(",")}) ORDER BY rowid`)
+      .all(collection, ...statuses).map(row => ({ id: row.id as string, value: JSON.parse(row.value as string) as T }));
+  }
   transaction<T>(work: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
     try { const result = work(); this.db.exec("COMMIT"); return result; }

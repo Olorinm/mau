@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 const { values } = parseArgs({ options: {
-  "router-archive": { type: "string" }, "environment-archive": { type: "string" }, "connectors-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
+  "router-archive": { type: "string" }, "host-archive": { type: "string" }, "environment-archive": { type: "string" }, "connectors-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
 } });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
@@ -47,6 +47,14 @@ for (const name of ["router", "environment", "connectors", "ui", "frontend"]) {
     await copyFile(join(temporary, distribution.asset), destination);
   } finally { await rm(temporary, { recursive: true, force: true }); }
   await verifyArchive(name, destination);
+}
+// Host runs in the execution image. Keep its exact archive for image assembly and
+// the independent consumer without installing its implementation into Mau.
+if (values["host-archive"]) {
+  const source = resolve(values["host-archive"]);
+  const actual = "sha512-" + createHash("sha512").update(await readFile(source)).digest("base64");
+  if (actual !== pins.host.integrity) throw new Error("component_archive_integrity_mismatch: host");
+  await copyFile(source, new URL("agent-host.tgz", packages));
 }
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });

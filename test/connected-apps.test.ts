@@ -24,5 +24,13 @@ it("binds app access to the configured Agent, owner and connections on every req
   expect(list).toHaveBeenCalledWith(options.assignments[0]);
   await client.reader(agentId, "alice")!({ action: "call", name: "alice_gmail__list", arguments: { maxResults: 1 } });
   expect(call).toHaveBeenCalledWith(options.assignments[0], "alice_gmail__list", { maxResults: 1 });
+  list.mockResolvedValue([{ name: "alice_gmail__list", description: "List", inputSchema: { type: "object" } }, { name: "alice_gmail__read", description: "Read", inputSchema: { type: "object" } }]);
+  const scope = { connections: ["alice-gmail", "someone-elses-account"], operations: ["alice_gmail__list"] };
+  expect(await client.reader(agentId, "alice")!({ action: "tools" }, scope)).toMatchObject({ tools: [{ name: "alice_gmail__list" }] });
+  expect(list).toHaveBeenLastCalledWith(options.assignments[0]);
+  call.mockClear();
+  expect(await client.reader(agentId, "alice")!({ action: "call", name: "alice_gmail__read" }, scope)).toMatchObject({ error: "connected_app_operation_not_granted" });
+  expect(await client.reader(agentId, "alice")!({ action: "call", name: "alice_gmail__list" }, { connections: ["foreign"] })).toMatchObject({ error: "connected_app_not_granted" });
+  expect(call).not.toHaveBeenCalled();
   expect(() => new ConnectedApps({ ...options, assignments: [...options.assignments, ...options.assignments] }, directory)).toThrow("duplicate_connected_app_agent");
 });

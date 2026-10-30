@@ -1,5 +1,38 @@
 # Verification
 
+## Hermes-style memory and unified tasks — 2026-10-29
+
+Final local verification: **151 tests in 24 files**, type checking, server/web
+builds and independent-package installation/acceptance pass on Node.js 24.22.2.
+
+The subsequent local change replaces keyword-ranked facts with bounded memory
+files and frozen native instructions. Tests cover actual cross-process file
+writes, UTF-8/Unicode capacity, atomic edits, stale approvals, hostile-content
+screening, scope isolation, old-fact preservation, native fork/restart behavior,
+and original-text SQLite retrieval. Completion bookkeeping resolves public
+Router session IDs asynchronously and never waits for a review model in the
+owner's foreground turn.
+
+Unified-task tests cover direct reminders without Host calls, trusted connector
+prechecks, unchanged/failure/unknown outcomes, checkpoint commit timing, fresh
+and reused sessions, idle conversation execution, real Heartbeat defaults,
+legacy-rule preservation and cancellation races. The independent package
+consumer additionally verifies fixed-message provider acceptance with no extra
+native Agent call. These provider/cloud/model behaviors use deterministic
+fixtures, not live external accounts.
+
+The review isolation probe uses the actual Codex 0.165.0 executable with an
+isolated home and a local simulated Responses endpoint. Its configured model
+catalog is gpt-5.4. Only the designated dynamic memory tool is advertised;
+forced non-whitelisted calls are rejected. No external model, personal account
+or production employee is used. This establishes the tested version/profile
+boundary, not general future Codex tool isolation or live learning quality.
+
+See [memory behavior and deployment boundaries](hermes-memory.md) and the
+[pinned source audit](hermes-memory-source.md). A dedicated restricted worker
+and original-employee managed-tool mapping must be configured before automatic
+background review can run. The default product reports this as unsupported.
+
 Run `npm run typecheck`, `npm test` and `npm run build` after bootstrap. `npm run test:web`
 builds the [web console](web.md) and adds its connection-layer and browser tests.
 Lifecycle regressions cover owner isolation, concurrent allocation, private
@@ -43,6 +76,54 @@ deploy key (`ENVIRONMENT_READ_KEY`), rebuilds the uncompressed release archive a
 checks its exact lockfile integrity before installation. It does not upload or
 cache the private package. Fork CI requires an operator-authorized run with access.
 The public Mau archive contains no Environment implementation or deployment state.
+
+## Native work integration — 2026-10-29
+
+The earlier native-work checkpoint passed 102 Mau tests in 17 files, including browser
+fixtures and the unchanged HTTP security probe, on Node.js 24.22.2. A fresh
+`npm ci --ignore-scripts` from the pinned local Router archive, type checking,
+server build and web build also pass. The HTTP probe reports bundled Undici
+7.30.1, npm Undici 8.12.3, body-parser 2.4.0 and qs 6.17.1. It also passed on
+Node.js 26.13.0; older tested Node.js 24.21.0 failed the built-in fetch probe.
+Docker and CI retain the verified 24.22.2 baseline.
+
+Router and Host are unpublished working-tree builds with SHA-512/SHA-256 pins
+in `components.json`. Their base Git revisions are provenance, not claims that
+the uncommitted changes are already released. Bootstrap and the independent
+consumer verify archive bytes before installation. Ordinary remote release CI
+stops explicitly until these builds and the existing local Connectors package
+are published and repinned; it does not silently use old release code.
+
+The independent five-package consumer passes the original setup, restart and
+resume checks plus owner tool calls that create and wait for delegated work,
+fork with narrower run grants, native skills/memory discovery, per-turn facts,
+and a persisted scheduled trigger. The scheduled work remains queued during an
+explicit owner pause; after explicit resume, it executes through native
+`toolOutput` and obtains Router's provider-acceptance receipt. Repeating the
+trigger does not send another notification. Automatic idle sleep/wakeup and
+the rule that owner pause blocks automatic wakeup have separate lifecycle
+regressions. The package fixture does not simulate user pause as idle sleep.
+
+```sh
+node scripts/bootstrap.mjs --router-archive /path/pinned-router.tgz \
+  --connectors-archive /path/pinned-connectors.tgz \
+  --host-archive /path/pinned-host.tgz
+npm run build
+npm run build:web
+MAU_WEB_E2E=1 npm test
+node scripts/verify-packages.mjs \
+  --environment-archive .packages/agent-environment.tar \
+  --router-archive .packages/agent-router.tgz \
+  --host-archive .packages/agent-host.tgz \
+  --host-fixture /path/agent-host/test/fixtures/codex-server.mjs
+```
+
+These are local package, protocol and provider fixtures. This change does not
+deploy Mau, authorize accounts, read real Gmail, or send real channel messages.
+Mau has no current connector-backed cursor proof adapter: model cursor proposals
+are recorded as unverified and cannot advance source cursors. The native memory
+management endpoints retain actual runtime errors; enabling the management
+allowlist does not enable native memory generation.
 
 ## Shared workspaces — 2026-10-14
 

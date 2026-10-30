@@ -1,0 +1,13 @@
+{
+  "stateDirectory": "/home/user/.agent-host-service/state",
+  "workspaceFiles": true,
+  "runtimes": [{
+    "id": "personal",
+    "kernel": "codex",
+    "cwd": "/home/user/workspace",
+    "nativeAccess": {
+      "methods": ["skills/list", "skills/config/write", "memory/status", "thread/memory/read", "thread/memoryMode/set"],
+      "callbackTimeoutMs": 60000
+    }
+  }]
+}

@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Server } from "node:http";
 import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
-import { createRouter, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
+import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
 import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
@@ -15,12 +15,28 @@ import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
+import { EmployeeContext, MemoryError } from "./employee-context.js";
+import { ProactiveWork, type ProactivePort } from "./proactive.js";
+import { NativeEmployeeTools } from "./native-work.js";
+import { SessionHistory, historyQuery } from "./session-history.js";
+import { checkConnector } from "./connector-precheck.js";
+import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
+import { CompletedTurns } from "./completed-turns.js";
+
+export { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "./restricted-memory-reviewer.js";
+export type { ReviewRuntimeBinding, ReviewToolBinding, CodexRestrictedReviewerDependencies } from "./restricted-memory-reviewer.js";
+export type { RestrictedMemoryReviewer } from "./memory-review.js";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
   businessTools: businessToolsSchema,
   connectorAccounts: connectorAccountsSchema,
   connectedApps: connectedAppsSchema,
+  nativeWork: z.object({ employeeTools: z.boolean().default(false),
+    memory: z.object({ writeApproval: z.boolean().default(false) }).strict().default({ writeApproval: false }),
+    backgroundReview: z.object({ enabled: z.boolean().default(true), memoryInterval: z.number().int().min(0).max(1000000).default(10),
+      skillInterval: z.number().int().min(0).max(1000000).default(15) }).strict().prefault({}),
+  }).strict().prefault({}),
   connectionsFile: z.string().min(1).optional(),
   publicHomeserver: z.url().optional(),
 }).strict();
@@ -31,6 +47,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   router?: Omit<ServiceDependencies, "configure">;
   environments?: () => Promise<Environments>;
   workspaces?: () => Promise<WorkspaceBackend>;
+  reviewer?: RestrictedMemoryReviewer;
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
@@ -57,6 +74,79 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
+  const sessions = async (owner: string, agentId: string) => {
+    router.service.owned(agentId, owner);
+    const value = (await router.service.runtime(agentId)).extension?.sessions;
+    if (!value) throw new RouterError("host_sessions_unavailable", 409);
+    return value;
+  };
+  const assertOwned = (owner: string, agentId: string) => { router.service.owned(agentId, owner); };
+  const facts = new EmployeeContext(businessStore, assertOwned, { directory: join(config.stateDir, "mau", "memories"), writeApproval: options.nativeWork.memory.writeApproval });
+  const history = new SessionHistory(businessStore, assertOwned);
+  const proactiveStore = new DurableStore(join(config.stateDir, "proactive.sqlite"), config.serverName);
+  const delivery = (value: { state: string; externalId?: string | null | undefined; error?: string | null | undefined } | null) => value ? {
+    status: value.state === "accepted" ? "sent" : value.state,
+    ...(value.externalId ? { externalId: value.externalId } : {}),
+    ...(value.error ? { error: value.error } : {}),
+  } : null;
+  const proactivePort: ProactivePort = {
+    validate: async rule => {
+      const work = await sessions(rule.owner, rule.agentId);
+      work.validateTarget(rule.targetSessionId);
+      if (rule.session.type === "conversation") work.validateTarget(rule.session.sessionId);
+      const assigned = connectedApps.connections(rule.agentId, rule.owner);
+      if (rule.connections.some(id => !assigned.includes(id))) throw new RouterError("proactive_connection_not_assigned", 403);
+      if (rule.execution.type === "agent" && rule.skills.length) {
+        const catalog = z.object({ data: z.array(z.object({ skills: z.array(z.object({ name: z.string(), path: z.string(), enabled: z.boolean().optional() })) })) }).parse(await work.skills(true));
+        if (rule.skills.some(skill => !catalog.data.some(entry => entry.skills.some(found => found.name === skill.name && found.path === skill.path && found.enabled !== false))))
+          throw new RouterError("proactive_skill_not_available", 403);
+      }
+    },
+    authorized: async rule => {
+      router.service.owned(rule.agentId, rule.owner);
+      if (!rule.connections.length) return true;
+      const assigned = connectedApps.connections(rule.agentId, rule.owner), accounts = await connectorAccounts.list(rule.owner);
+      return rule.connections.every(id => assigned.includes(id) && accounts.data.some(a => a.id === id && a.state === "connected"));
+    },
+    check: (rule, input) => checkConnector(connectedApps, rule, input),
+    sessionState: async (rule, sessionId) => {
+      const runs = (await sessions(rule.owner, rule.agentId)).getSession(sessionId).runs;
+      if (runs.some(run => run.phase === "unknown")) return "unknown";
+      return runs.some(run => run.phase !== "finished") ? "busy" : "idle";
+    },
+    submit: async (rule, input) => {
+      if (input.idleOnly && await proactivePort.sessionState!(rule, input.sessionId) !== "idle") throw new RouterError("scheduled_session_busy", 409);
+      return (await sessions(rule.owner, rule.agentId)).submit(input);
+    },
+    lookup: async (rule, id) => (await sessions(rule.owner, rule.agentId)).lookup(id),
+    deliver: async (rule, input) => delivery((await sessions(rule.owner, rule.agentId)).deliver(input))!,
+    delivery: async (rule, id) => delivery((await sessions(rule.owner, rule.agentId)).lookupDelivery(id)),
+    cancel: async (rule, id) => { await (await sessions(rule.owner, rule.agentId)).cancel(id); },
+  };
+  const proactive = new ProactiveWork(proactiveStore, proactivePort);
+  const reviews = new MemoryReviewCoordinator(businessStore, {
+    config: options.nativeWork.backgroundReview,
+    ...(dependencies.reviewer ? { reviewer: dependencies.reviewer } : {}),
+    sourceSessions: scope => sessions(scope.owner, scope.agentId),
+  });
+  const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.employeeTools);
+  const reviewOrigin = (admission: import("./run-admission.js").RunAdmission) => reviews.list({ owner: admission.owner, agentId: admission.agentId }).find(job => job.id === admission.reference);
+  business.setAdmissionValidator(admission => {
+    const review = reviewOrigin(admission);
+    return review ? admission.kind === "delegation" && ["submitting", "running"].includes(review.status) && !review.cancellationRequested
+      : proactive.allows(admission);
+  });
+  business.setEmployeeTools((agentId, owner) => new NativeEmployeeTools(owner, agentId, () => sessions(owner, agentId),
+    facts, connectedApps, proactive, options.nativeWork.employeeTools, { history,
+      reminders: (admission, hostSessionId) => {
+        const sessionId = completedTurns.publicSession(admission.owner, admission.agentId, hostSessionId);
+        return sessionId ? reviews.nudges({ owner: admission.owner, agentId: admission.agentId, sessionId }).prompt : "";
+      },
+      isMemoryReview: admission => Boolean(reviewOrigin(admission)),
+    }));
+  business.onCompleted(turn => {
+    if (!reviewOrigin(turn.admission)) completedTurns.enqueue(turn);
+  });
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustedProxies ?? false);
@@ -77,6 +167,59 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     next();
   });
   product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
+  product.get("/proactive", (_req, res) => res.json({ data: proactive.list(res.locals.owner) }));
+  product.post("/proactive", async (req, res) => res.status(201).json(await proactive.save(res.locals.owner, req.body)));
+  product.put("/proactive/:id", async (req, res) => {
+    const { expectedVersion, rule } = z.object({ expectedVersion: z.number().int().positive(), rule: z.unknown() }).strict().parse(req.body);
+    res.json(await proactive.save(res.locals.owner, rule, String(req.params.id), expectedVersion));
+  });
+  product.get("/proactive/:id", (req, res) => res.json(proactive.rule(res.locals.owner, String(req.params.id))));
+  product.get("/proactive/:id/runs", (req, res) => res.json({ data: proactive.runs(res.locals.owner, String(req.params.id)), notifications: proactive.notices(res.locals.owner, String(req.params.id)) }));
+  product.post("/proactive/:id/state", async (req, res) => {
+    const { status } = z.object({ status: z.enum(["active", "paused"]) }).strict().parse(req.body);
+    res.json(await proactive.state(res.locals.owner, String(req.params.id), status));
+  });
+  product.post("/proactive/:id/run", async (req, res) => {
+    const { requestId } = z.object({ requestId: z.string().min(1).max(160) }).strict().parse(req.body);
+    res.status(202).json(await proactive.runNow(res.locals.owner, String(req.params.id), requestId));
+  });
+  product.post("/proactive/:id/cancel", async (req, res) => { z.object({}).strict().parse(req.body); await proactive.cancel(res.locals.owner, String(req.params.id)); res.json({ status: "requested" }); });
+  product.get("/agents/:id/memory", (req, res) => res.json(facts.read(res.locals.owner, String(req.params.id))));
+  product.post("/agents/:id/memory", (req, res) => res.json(facts.mutate(res.locals.owner, String(req.params.id), req.body, { origin: "owner" })));
+  product.post("/agents/:id/memory/search", (req, res) => res.json(history.search(res.locals.owner, String(req.params.id), historyQuery.parse(req.body))));
+  product.post("/agents/:id/memory/history/import", async (req, res) => {
+    const input = z.object({ sessionId: z.string().min(1).max(160), cursor: z.string().max(10000).optional() }).strict().parse(req.body);
+    const page = await (await sessions(res.locals.owner, String(req.params.id))).history(input.sessionId, { limit: 100, itemsView: "full", sortDirection: "asc", ...(input.cursor ? { cursor: input.cursor } : {}) });
+    res.json(history.importPage(res.locals.owner, String(req.params.id), input.sessionId, page));
+  });
+  product.get("/agents/:id/memory/pending", (req, res) => res.json({ data: facts.pending(res.locals.owner, String(req.params.id)) }));
+  product.get("/agents/:id/memory/reviews", (req, res) => {
+    const scope = { owner: res.locals.owner as string, agentId: String(req.params.id) }; assertOwned(scope.owner, scope.agentId);
+    res.json({ ...reviews.status(scope), data: reviews.list(scope) });
+  });
+  product.post("/agents/:id/memory/reviews/state", (req, res) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body);
+    const scope = { owner: res.locals.owner as string, agentId: String(req.params.id) }; assertOwned(scope.owner, scope.agentId);
+    if (enabled) reviews.resume(scope); else reviews.stop(scope); res.json(reviews.status(scope));
+  });
+  product.post("/agents/:id/memory/pending/:pendingId/approve", (req, res) => {
+    z.object({}).strict().parse(req.body); res.json(facts.approve(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
+  });
+  product.post("/agents/:id/memory/pending/:pendingId/discard", (req, res) => {
+    z.object({}).strict().parse(req.body); res.json(facts.discard(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
+  });
+  product.post("/agents/:id/native/discover", async (req, res) => { z.object({}).strict().parse(req.body); res.json(await (await sessions(res.locals.owner, String(req.params.id))).discover()); });
+  product.get("/agents/:id/native/skills", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).skills()));
+  product.post("/agents/:id/native/skills", async (req, res) => {
+    const { path, enabled } = z.object({ path: z.string().min(1).max(4096), enabled: z.boolean() }).strict().parse(req.body);
+    res.json(await (await sessions(res.locals.owner, String(req.params.id))).configureSkill(path, enabled));
+  });
+  product.get("/agents/:id/native/memory", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).memoryStatus()));
+  product.get("/agents/:id/work-sessions/:sessionId/memory", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).readMemory(String(req.params.sessionId))));
+  product.post("/agents/:id/work-sessions/:sessionId/memory", async (req, res) => {
+    const { mode } = z.object({ mode: z.enum(["enabled", "disabled"]) }).strict().parse(req.body);
+    res.json(await (await sessions(res.locals.owner, String(req.params.id))).memoryMode(String(req.params.sessionId), mode));
+  });
   product.get("/connector-accounts", async (_req, res) => {
     const result = await connectorAccounts.list(res.locals.owner);
     res.json({ ...result, data: result.data.map(account => {
@@ -179,11 +322,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       typeof error.status === "number" && error.status >= 400 && error.status < 500 ? error.status : undefined;
     res.status(error instanceof RouterError ? error.status : error instanceof z.ZodError ? 400 : parser ?? 500)
       .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
-        : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed" });
+        : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed",
+        ...(error instanceof RouterError && error.nativeError !== undefined ? { nativeError: error.nativeError } : {}),
+        ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, start: async () => { await connectorRuntime?.start(); await router.start(); },
+  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); },
     attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
-    close: async () => { for (const close of sshServers) close(); await environments.close(); await router.close(); await connectorRuntime?.close(); businessStore.close(); } };
+    close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

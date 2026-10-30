@@ -32,16 +32,17 @@ The build steps below are for running or developing the server.
 
 ## Build
 
-Requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). The components are not assumed to be on npm.
-`components.json` pins immutable component commits and verified release archives.
-Router, Connectors, Host and UI releases are public. Agent Environment 0.2.0-alpha.3 is a
+Package installation requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). For the server, use the verified Node.js 24.22.2 runtime or a newer version that passes the unchanged HTTP security probe. That probe passes on 24.22.2 (matching Docker and CI) and 26.13.0; tested 24.21.0 fails it. The components are not assumed to be on npm.
+`components.json` pins exact archive integrity. This branch uses unpublished Router and Host working-tree builds plus the existing local Connectors build; their release version numbers alone do not identify these bytes. Local builds must be supplied explicitly and are not substituted with old releases.
+UI releases are public. Agent Environment 0.2.0-alpha.3 is a
 private OMA-derived release. Bootstrap downloads its pinned archive from the private repository.
 The signed-in GitHub account must have access to any private component source. Bootstrap verifies the actual archive bytes against the lockfile.
 Environment uses an uncompressed npm tar archive so CI can reproduce the same
 bytes across platforms without differences from gzip implementations.
 
 ```sh
-node scripts/bootstrap.mjs
+node scripts/bootstrap.mjs --router-archive /path/pinned-router.tgz \
+  --connectors-archive /path/pinned-connectors.tgz --host-archive /path/pinned-host.tgz
 npm run build
 npm test
 node dist/cli.js --help
@@ -54,6 +55,7 @@ when supplying the pinned archives locally. The web console's
 page package uses `--frontend-archive /path/agent-frontend.tgz`; it contains no
 backend adapter. Both UI archives are pinned and checked against the web lockfile.
 See [verification](docs/verification.md) for the shared-source acceptance.
+The optional `--host-archive` is integrity-checked and copied to `.packages/agent-host.tgz` for the execution image and independent consumer; Host is not installed into the Mau server process. The working-tree component changes must be published and pinned to their release artifacts before an ordinary remote release build can reproduce this branch without local archives.
 
 An independent consumer installs all required archives together:
 `npm install ./router.tgz ./environment.tgz ./connectors.tgz ./mau.tgz`. Host is installed in the
@@ -65,8 +67,10 @@ The [web console](docs/web.md) (`MAU_WEB_ROOT`) covers sign-in, agents, environm
 channels and checks in a browser. The CLI offers the same operations.
 The console also provides [connector account management](docs/connector-accounts.md)
 when a separate OAuth account service is configured. Account connection, Agent tool access
-and background permission are separate; the [proactive-work design](docs/proactive-design.md)
-is an implementation specification, not a running scheduler.
+and background permission are separate. [Native work integration](docs/native-work.md)
+provides owner-scoped session tools, bounded Hermes-style memory, native skill/memory management,
+and persisted proactive rules. Product tools require explicit configuration; no
+rules or new account authorizations are created by enabling the integration.
 The console's Files entry is not connected yet; shared workspace operations remain
 available through the existing Mau API and CLI.
 

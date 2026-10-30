@@ -2,13 +2,14 @@
   "router": {
     "repository": "Olorinm/agent-router",
     "version": "0.7.0-alpha.6",
-    "integrity": "sha512-zRB1HospTOYQ4q2/PQ6XmLHxURuM4TcaT7QlzhUjqeRadreugdg4ZwY7lnSyG6zPU0ORDPNaaqy6jraRyxotiw==",
-    "distribution": "github-release",
-    "revision": "b4147789d5809c5218f1891c54e9b8017d9f8ba5",
-    "archive": {
-      "repository": "Olorinm/agent-router",
-      "tag": "v0.7.0-alpha.6",
-      "asset": "agent-router-server-0.7.0-alpha.6.tgz"
+    "distribution": "local-build",
+    "integrity": "sha512-BjDOP7bBCoZIH8/0sNGrMR5GSUpCJFhve3QjkDdZnzuwYj74c78N41rTXOZAB0yUwRtZPGIEeUmmuzqXbRfaxw==",
+    "sha256": "dd6652a269472ef0539e6b20975650139080bc6d4d8d3cb9047a04eb4a905ac0",
+    "source": {
+      "kind": "commit",
+      "revision": "ddc6da085b05603d1b58e0444fcdef27822c3fa5",
+      "branch": "claude/native-sessions-groups-archive-20261030",
+      "description": "Native work sessions, Matrix group mentions and private-group admission, and finished-run archives; unpublished, so the archive integrity identifies the build."
     }
   },
   "environment": {
@@ -29,39 +30,42 @@
   },
   "host": {
     "repository": "Olorinm/agent-host",
-    "revision": "10685e1e8dc0fc04596a959ea9d260528d119580",
     "version": "0.1.0-alpha.10",
-    "integrity": "sha512-4934HS2w/H/HcfrtcKtNDDaigileqcpVSPdzIK2q1svPzQ6iP7LmQdmA0Hs/Lgvv6Anp4aICSQT03Vyb1GRhZw==",
-    "distribution": "github-release",
-    "archive": {
-      "repository": "Olorinm/agent-host",
-      "tag": "v0.1.0-alpha.10",
-      "asset": "olorinm-agent-host-0.1.0-alpha.10.tgz"
+    "distribution": "local-build",
+    "integrity": "sha512-NruEOj9S8vGXyxHkH1pTs9t0KEmSCBZIP2eiz7+9M6+k0arkTTsIZR5/ILAr9OjeNercpRC17dy2+O6R6NR//Q==",
+    "sha256": "6b67f61ab4416f30f6dc41fbc2733ea969d4922e53ecd4ba24eb515c93d50c84",
+    "source": {
+      "kind": "commit",
+      "revision": "ccf7d66aa26e27090eeeb8f54fcf14755d6b96dd",
+      "branch": "claude/codex-native-0165-20261030",
+      "description": "Codex 0.165.0 native capability alignment; unpublished, so the archive integrity identifies the build."
     }
   },
   "ui": {
     "repository": "Olorinm/agent-ui",
-    "revision": "4566afd4b583ef5e9b081b9f57a1e5cf3ae6f6f8",
-    "archive": {
-      "repository": "Olorinm/agent-ui",
-      "tag": "v0.1.0-alpha.7",
-      "asset": "olorinm-agent-ui-0.1.0-alpha.7.tgz"
-    },
-    "version": "0.1.0-alpha.7",
-    "integrity": "sha512-yiYVMA4No5+Na1+opOoB0d5T1TL3vl3Dc3MxzL8R4+b+cunw+y18LTLqcVmLJI43+8rQeqhitq969gAKydhWog==",
-    "distribution": "github-release"
+    "version": "0.1.0-alpha.8",
+    "distribution": "local-build",
+    "sha256": "1562e8a96a038129bf89d6c8663d38850c5bd244529eb8b951bac017fc14c3a5",
+    "integrity": "sha512-esKq1PD3kuWe0Zoe6vpkiPFNpsTITJ9pQyMkyQZidi7bBci4qSwrIxrg68Ji8yrtQ9oIMOswZHqPH/uVb+5Kcw==",
+    "source": {
+      "kind": "commit",
+      "revision": "f6337d3f997ef4d1600766f44582fba2a400ef00",
+      "branch": "claude/ordered-process-groups-20261030",
+      "description": "Ordered room process, Codex subagent activity, restored group creation and @all mentions; unpublished, so the archive integrity identifies the build."
+    }
   },
   "frontend": {
     "repository": "Olorinm/agent-ui",
-    "revision": "4566afd4b583ef5e9b081b9f57a1e5cf3ae6f6f8",
-    "version": "0.1.0-alpha.7",
-    "integrity": "sha512-pqD2LLDobt5vowGiwwv4bJuqS8KKFa6KeTy/YGHJIYaiGoFHpq8xsEWEIfymXmwsyDIqV/IWlBOS7zhv8p3LLw==",
-    "archive": {
-      "repository": "Olorinm/agent-ui",
-      "tag": "frontend-v0.1.0-alpha.7",
-      "asset": "olorinm-agent-frontend-0.1.0-alpha.7.tgz"
-    },
-    "distribution": "github-release"
+    "version": "0.1.0-alpha.8",
+    "distribution": "local-build",
+    "sha256": "bd739b69e06607b66c79c4d7e36b7b00ff519891a8daacb7290fa222e8ab751c",
+    "integrity": "sha512-1JiK8NOzig8QzDg/10HxEx3Inq9DPeO6RUeDShWJ0mYyPsmholqcjt8R2C0SB7L6yha5/yXJ33cDl2C1YFpZ6g==",
+    "source": {
+      "kind": "commit",
+      "revision": "f6337d3f997ef4d1600766f44582fba2a400ef00",
+      "branch": "claude/ordered-process-groups-20261030",
+      "description": "Ordered room process, Codex subagent activity, restored group creation and @all mentions; unpublished, so the archive integrity identifies the build."
+    }
   },
   "connectors": {
     "repository": "Olorinm/agent-connectors",
