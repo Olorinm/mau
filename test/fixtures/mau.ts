@@ -80,6 +80,11 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     async writeFile(id, path, value) {
       cloud.get(id)!.files.set(path, value);
     },
+    async readFile(id, path) {
+      const value = cloud.get(id)?.files.get(path);
+      if (value === undefined) throw new Error("missing");
+      return typeof value === "string" ? new TextEncoder().encode(value) : value;
+    },
   };
   const actualFetch = fetch;
   vi.stubGlobal(

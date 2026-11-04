@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-alpha.11",
   "private": true,
   "description": "Mau: an agent product composed from Agent Router, Host and Environment.",
   "type": "module",
@@ -47,6 +47,7 @@
     "prepack": "npm run build 1>&2 && npm run build:web 1>&2"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "zod": "^4.5.4"
@@ -63,7 +64,7 @@
   },
   "peerDependencies": {
     "@agent-router/server": "0.7.0-alpha.7",
-    "@olorinm/agent-connectors": "0.1.0-alpha.3",
+    "@olorinm/agent-connectors": "0.1.0-alpha.4",
     "@olorinm/agent-environment": "0.2.0-alpha.3"
   },
   "allowScripts": {

@@ -58,9 +58,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     throw new Error("invalid_public_homeserver_url");
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
-  const connectedApps = new ConnectedApps(options.connectedApps, base);
+  // Owner writes need an approval presenter: only Mau's authority key (connectorAccounts) can sign grants.
+  const connectedApps = new ConnectedApps(options.connectedApps, base, !!options.connectorAccounts);
   const business = new BusinessTools(options.businessTools, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
+  if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
@@ -75,6 +77,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
+  business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
   const sessions = async (owner: string, agentId: string) => {
     router.service.owned(agentId, owner);
     const value = (await router.service.runtime(agentId)).extension?.sessions;

@@ -11,6 +11,7 @@ import { privateFile } from "./files.js";
 import { prepareSsh, type SshConnection } from "./ssh.js";
 import { Workspaces } from "./workspaces.js";
 import type { WorkspaceBackend, WorkspaceBinding } from "@olorinm/agent-environment/workspace";
+import type { SandboxFiles } from "./browser-relay.js";
 
 const key = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
 const remotePath = z
@@ -68,7 +69,7 @@ export const environmentOptionsSchema = z
   .strict();
 type Profile = z.infer<typeof environmentOptionsSchema>["profiles"][number];
 export type EnvironmentProvider = Pick<ComponentProvider,
-  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "writeFile">;
+  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "readFile" | "writeFile">;
 export interface Environments {
   provider(id: string): EnvironmentProvider;
 }
@@ -600,6 +601,31 @@ export class EnvironmentManager {
   }
   host(agentId: string, operationId: string) {
     return new HttpAgentHost(this.http(agentId, operationId));
+  }
+  /** Trusted file relay into a ready sandbox, rooted at the runtime's working directory. Never exposed to the model. */
+  async files(agentId: string, operationId: string): Promise<SandboxFiles> {
+    const record = this.binding(agentId);
+    if (!record?.ref || record.operationId !== operationId || record.phase !== "ready" || record.workspaceId && !this.verifiedWorkspaces.has(agentId))
+      throw new WorkError("environment_not_ready", 409);
+    const profile = this.profile(record), provider = await this.provider(record), id = record.ref.id;
+    const config = JSON.parse(readFileSync(profile.hostConfigFile, "utf8")) as { runtimes?: Array<{ id: string; cwd?: unknown }> };
+    const directory = remotePath.safeParse(config.runtimes?.find(r => r.id === profile.runtimeId)?.cwd);
+    if (!directory.success) throw new WorkError("environment_working_directory_unknown", 409);
+    this.activity.set(agentId, Date.now());
+    return {
+      directory: directory.data,
+      exec: async (argv) => {
+        let exitCode: number | null = null, stdout = "";
+        for await (const chunk of provider.exec(id, argv, { timeoutSeconds: 30, onExit: (e) => { exitCode = e.exitCode; } })) {
+          if (chunk.stream !== "stdout") continue;
+          stdout += chunk.text;
+          if (stdout.length > 64_000) throw new WorkError("environment_command_output_too_large", 502);
+        }
+        return { exitCode, stdout };
+      },
+      readFile: (path) => provider.readFile(id, path),
+      writeFile: (path, data) => provider.writeFile(id, path, data),
+    };
   }
   /** Ready environments with their runtime, for background observers that must not wake them. */
   readyBindings() {
