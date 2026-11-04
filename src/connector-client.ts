@@ -5,12 +5,13 @@ import { z } from "zod";
 import { signCallerToken } from "@olorinm/agent-connectors/issuer";
 import type { ReadPrincipal } from "@olorinm/agent-connectors/read-client";
 
-/** Owner-admitted caller. Writes still return approval_required; only the owner's grant executes them. */
+/** Owner-admitted caller. Writes still return approval_required; only the owner's grant executes them.
+ * MCP results repeat the outcome as text and structuredContent, so a 10 MB download is ~27 MB on the wire. */
 export class ConnectorCallerClient {
   private readonly url: URL;
   private readonly key: Parameters<typeof signCallerToken>[0]["key"];
   constructor(private readonly config: { url: string; issuer: string; audience: string; callerKeyFile: string },
-    private readonly maxResponseBytes = 16_000_000) {
+    private readonly maxResponseBytes = 32_000_000) {
     this.url = new URL(config.url);
     if ((this.url.protocol !== "https:" && !(this.url.protocol === "http:" && ["127.0.0.1", "[::1]"].includes(this.url.hostname))) ||
       this.url.username || this.url.password || this.url.hash || this.url.search || this.url.pathname !== "/")
