@@ -7,7 +7,9 @@ import { BusinessDataClient, businessDataTools, businessDataOptionsSchema } from
 import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connectors/feishu-bot-reader";
 import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-connectors/cloudflare-read-client";
 import { DurableStore } from "./store.js";
-import { ConnectedApps, connectedAppDefinition, connectedAppInput, type ConnectedAppReader } from "./connected-apps.js";
+import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
+import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalPort } from "./connector-approvals.js";
+import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, readUpload, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
 
 export const businessToolsSchema = z.array(z.union([businessDataOptionsSchema.extend({
@@ -38,6 +40,8 @@ export class BusinessTools {
   private admissionValidator?: AdmissionValidator;
   private employeeTools?: (agentId: string, owner: string) => EmployeeTools;
   private completed?: (input: CompletedEmployeeTurn) => void;
+  private approvals?: ApprovalPort;
+  private files?: (agentId: string, binding: string) => Promise<SandboxFiles>;
   constructor(options: z.input<typeof businessToolsSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
     for (const entry of businessToolsSchema.parse(options)) {
       const {agentId, owner} = entry;
@@ -70,22 +74,54 @@ export class BusinessTools {
   setAdmissionValidator(validate: AdmissionValidator) { this.admissionValidator = validate; }
   setEmployeeTools(provider: (agentId: string, owner: string) => EmployeeTools) { this.employeeTools = provider; }
   onCompleted(callback: (input: CompletedEmployeeTurn) => void) { this.completed = callback; }
+  /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
+  setApprovals(port: ApprovalPort) { this.approvals = port; }
+  setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.clients.get(agentId);
     const client = entry?.owner === owner ? entry.client : undefined, appReader = this.apps?.reader(agentId, owner);
     const employee = this.employeeTools?.(agentId, owner);
     if (!client && !appReader && !employee) return new HttpAgentHost(http);
+    const files = this.files;
     return new BusinessHost(http, client, this.store, `${agentId}:${binding}`, appReader,
-      { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed);
+      { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed,
+      appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
+        ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
+        ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
   }
 }
 export interface CompletedEmployeeTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
+/** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
+export interface ConnectedAppHosting {
+  connections: string[];
+  browser: string[];
+  approvals?: ApprovalPort;
+  files?: () => Promise<SandboxFiles>;
+}
+const WAITING = Symbol("approval_waiting");
+const HANDOFF_PREFIX = "mau-handoff:";
+const handoffCancel = "取消接管";
+// A structured single-choice question both Router's chat cards and the web console render with buttons.
+const handoffMethod = "item/tool/requestUserInput";
+const approvalRequired = z.object({ status: z.literal("approval_required"), operationId: z.string().min(1).max(64),
+  expiresAt: z.string().optional() }).passthrough();
 export class BusinessHost extends HttpAgentHost {
   private readonly pending = new Map<string, Promise<void>>();
+  private readonly approvals?: ConnectorApprovals;
   constructor(http: ServiceHttp, private readonly client: BusinessClient | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
     private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly employee?: EmployeeTools,
-    private readonly completed?: (input: CompletedEmployeeTurn) => void) { super(http); }
+    private readonly completed?: (input: CompletedEmployeeTurn) => void, private readonly apps?: ConnectedAppHosting) {
+    super(http);
+    if (apps?.approvals) this.approvals = new ConnectorApprovals(store, scope, apps.approvals, async (record, outcome) => {
+      let value: unknown;
+      try { value = await this.finishApp({ runId: record.runId, id: record.callId }, record.name, outcome); } catch { value = { status: "failed", error: "browser_relay_failed" }; }
+      const receiptKey = `${this.scope}:${record.runId}:${record.callId}`;
+      const receipt = this.store.get<{ hash: string }>("business_call_receipts", receiptKey);
+      if (receipt) this.store.set("business_call_receipts", receiptKey, { hash: receipt.hash, result: value });
+      await this.deliver(record.runId, record.callId, value, true);
+    });
+  }
   override async start(input: Parameters<HostPort["start"]>[0] & { admission?: RunAdmission }) {
     const { admission: supplied, ...request } = input;
     const admission = this.admission(supplied);
@@ -207,7 +243,8 @@ export class BusinessHost extends HttpAgentHost {
     return [definition, feishuDefinition, connectedAppDefinition, ...(this.employee?.definitions ?? [])].some(tool => sameTool(tool, call));
   }
   override async calls(id: string): ReturnType<HostPort["calls"]> {
-    const calls = await super.calls(id);
+    // Synthetic IDs belong to Mau. A sandbox Host listing one could put its own text on Mau's approval.
+    const calls = (await super.calls(id)).filter(call => !call.id.startsWith(APPROVAL_PREFIX) && !call.id.startsWith(HANDOFF_PREFIX));
     for (const call of calls) {
       if (!this.ownsCall(call) || call.kind !== "tool" || call.status !== "pending") continue;
       const pendingKey = `${id}:${call.id}`;
@@ -226,10 +263,11 @@ export class BusinessHost extends HttpAgentHost {
             if (!productTool && (kind === "connectedApps" ? !this.appReader : kind === "feishu" ? !this.client?.feishu : !this.client)) throw new Error("business_tool_not_authorized");
             const receiptKey = `${grantKey}:${call.id}`;
             const hash = createHash("sha256").update(JSON.stringify([call.namespace ?? null, call.name, call.input])).digest("hex");
-            const prior = this.store.get<{ hash: string; result?: unknown }>("business_call_receipts", receiptKey);
+            const prior = this.store.get<{ hash: string; result?: unknown; approval?: boolean }>("business_call_receipts", receiptKey);
             if (prior) {
               if (prior.hash !== hash) throw new Error("business_call_changed");
-              result = prior.result ?? { isError: true, status: "uncertain", error: "business_call_outcome_unknown" };
+              result = prior.approval && prior.result === undefined ? WAITING
+                : prior.result ?? { isError: true, status: "uncertain", error: "business_call_outcome_unknown" };
             } else {
             if (grant.count >= (admission.maxToolCalls ?? 1000)) throw new Error("business_tool_budget_exhausted");
             this.store.transaction(() => {
@@ -241,7 +279,7 @@ export class BusinessHost extends HttpAgentHost {
             } else if (call.name === connectedAppDefinition.name) {
               const parsed = connectedAppInput.safeParse(call.input);
               if (!this.appReader || !parsed.success) throw new Error("business_tool_not_authorized");
-              result = admission.toolGrants?.connectedApps ? await this.appReader(parsed.data, admission.toolGrants.connectedApps) : await this.appReader(parsed.data);
+              result = await this.connectedApp(parsed.data, admission, call);
             } else if (call.name === feishuDefinition.name) {
               const parsed = feishuInput.safeParse(call.input);
               if (!this.client?.feishu || !parsed.success) throw new Error("invalid_business_arguments");
@@ -251,7 +289,7 @@ export class BusinessHost extends HttpAgentHost {
               if (!this.client || !parsed.success) throw new Error("invalid_business_arguments");
               result = await this.client.call(parsed.data.tool, parsed.data.arguments);
             }
-            this.store.set("business_call_receipts", receiptKey, { hash, result });
+            this.store.set("business_call_receipts", receiptKey, result === WAITING ? { hash, approval: true } : { hash, result });
             }
           } catch (error) {
             const dependencyErrors = ["work_dependency_capacity_exhausted", "work_dependency_same_session", "work_dependency_run_not_active", "work_dependency_run_not_current", "work_dependency_context_mismatch", "work_dependency_wait_in_progress", "work_dependency_wait_unsupported", "invalid_dependency_wait_context"];
@@ -259,15 +297,117 @@ export class BusinessHost extends HttpAgentHost {
               ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : call.name === feishuDefinition.name ? "feishu_read_unavailable" : this.employee?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "business_data_unavailable",
               ...(error instanceof Error && error.message === "work_dependency_capacity_exhausted" ? { instruction: "The fixed execution capacity is full. Finish this turn and inspect the existing event later; do not create a replacement task." } : {}) };
           }
-          let text = JSON.stringify(result);
-          if (text.length > 1_000_000) text = JSON.stringify({ isError: true, error: "business_result_too_large", instruction: "Narrow the query." });
-          await super.resolve(id, call.id, { success: !(result as any)?.isError && !["failed", "uncertain"].includes((result as any)?.status),
-            contentItems: [{ type: "inputText", text }] });
+          // A write awaiting the owner keeps its Host call pending; the approval card resolves it.
+          if (result !== WAITING) await this.deliver(id, call.id, result);
         })().finally(() => this.pending.delete(pendingKey));
         this.pending.set(pendingKey, operation);
       }
       await operation;
     }
-    return calls.filter(call => !this.ownsCall(call) || call.kind !== "tool");
+    const cards = [...await this.approvals?.synthetic(id, calls) ?? [], ...this.handoffCards(id)];
+    return [...calls.filter(call => !this.ownsCall(call) || call.kind !== "tool"), ...cards];
+  }
+  /** Synthetic IDs are answered here and never forwarded to Host. */
+  override async resolve(id: string, callId: string, result: unknown) {
+    if (callId.startsWith(APPROVAL_PREFIX)) {
+      if (!this.approvals) throw new RouterError("approval_not_found", 404);
+      return this.approvals.decide(id, callId, result);
+    }
+    if (callId.startsWith(HANDOFF_PREFIX)) return this.answerHandoff(id, callId.slice(HANDOFF_PREFIX.length), result);
+    return super.resolve(id, callId, result);
+  }
+  /** Test and shutdown hook: wait for decided approvals of a run to reach Host. */
+  async settled(runId: string) { await this.approvals?.waitFor(runId); }
+  private async deliver(runId: string, callId: string, result: unknown, tolerateClosed = false) {
+    const images = result && typeof result === "object" && Array.isArray((result as Record<string, unknown>)[IMAGE_ITEMS])
+      ? (result as Record<string, unknown>)[IMAGE_ITEMS] as string[] : [];
+    const { [IMAGE_ITEMS]: _images, ...visible } = result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : { value: result };
+    const body = result && typeof result === "object" && !Array.isArray(result) ? visible : result;
+    let text = JSON.stringify(body);
+    if (text.length > 1_000_000) text = JSON.stringify({ isError: true, error: "business_result_too_large", instruction: "Narrow the query." });
+    const value = { success: !(body as any)?.isError && !["failed", "uncertain"].includes((body as any)?.status),
+      contentItems: [{ type: "inputText" as const, text }, ...images.map(imageUrl => ({ type: "inputImage" as const, imageUrl }))] };
+    try { await super.resolve(runId, callId, value); }
+    catch (error) {
+      // An approval decided after Host closed the call has nowhere to go; a transient failure retries.
+      if (!tolerateClosed || (await super.calls(runId)).some(call => call.id === callId && call.status === "pending")) throw error;
+    }
+  }
+  private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
+    const scope = admission.toolGrants?.connectedApps, apps = this.apps;
+    const connections = (apps?.connections ?? []).filter(id => !scope || scope.connections.includes(id));
+    const browser = (apps?.browser ?? []).filter(id => connections.includes(id));
+    // Only the owner's own conversation can approve; schedules and delegations keep read-only tokens.
+    const write = admission.kind === "owner" && !!this.approvals;
+    const options = write ? { write: true } : undefined;
+    const read = (value: z.infer<typeof connectedAppInput>) => options ? this.appReader!(value, scope, options)
+      : scope ? this.appReader!(value, scope) : this.appReader!(value);
+    if (input.action === "tools") return agentCatalog(await read(input), browser);
+    const found = input.name ? browserTool(input.name, browser) : undefined;
+    let args = input.arguments ?? {};
+    if (found?.tool === "upload") {
+      if (!apps?.files) return { status: "failed", error: "browser_workspace_unavailable" };
+      try { args = await readUpload(await apps.files(), args); }
+      catch (error) { if (error instanceof RelayError) return { status: "failed", error: error.message }; throw error; }
+    }
+    const outcome = await read({ ...input, arguments: args });
+    const approval = approvalRequired.safeParse(outcome);
+    if (approval.success) {
+      if (!write || !this.approvals) return { status: "failed", error: "owner_approval_unavailable" };
+      const requested = await this.approvals.request(call, input.name!, { owner: admission.owner, agentId: admission.agentId, connections }, approval.data);
+      return "result" in requested ? requested.result : WAITING;
+    }
+    return this.finishApp(call, input.name ?? "", outcome);
+  }
+  private async finishApp(call: Pick<HostCall, "runId" | "id">, name: string, outcome: unknown) {
+    const found = browserTool(name, this.apps?.browser ?? []);
+    if (!found) return scrub(outcome);
+    try {
+      return await finishBrowser(found.tool, outcome, this.apps?.files, handoff => {
+        const key = `${this.scope}:${call.runId}:${call.id}`;
+        this.store.insert("browser_handoffs", key, { ...handoff, connection: found.connection, runId: call.runId, callId: call.id, status: "open" } satisfies Handoff);
+      });
+    } catch (error) {
+      if (error instanceof RelayError) return { status: "failed", error: error.message };
+      throw error;
+    }
+  }
+  private handoffCards(runId: string): HostCall[] {
+    const prefix = `${this.scope}:${runId}:`, cards: HostCall[] = [];
+    for (const { id, value } of this.store.entriesByStatus<Handoff>("browser_handoffs", ["open"])) {
+      if (!id.startsWith(prefix)) continue;
+      if (Date.parse(value.expiresAt) <= Date.now()) { this.store.set("browser_handoffs", id, { ...value, status: "closed" }); continue; }
+      cards.push({ id: HANDOFF_PREFIX + value.callId, runId, kind: "interaction", name: handoffMethod, status: "pending", deadlineAt: value.expiresAt,
+        input: { questions: [{ id: "handoff", question: `浏览器已交给你接管（${value.expiresAt} 前有效）。请在此私密链接中操作，不要转发：\n${value.liveViewUrl}\n完成后直接回到对话告诉 Agent。`,
+          options: [{ label: handoffCancel }] }] } });
+    }
+    return cards;
+  }
+  private async answerHandoff(runId: string, callId: string, result: unknown) {
+    const key = `${this.scope}:${runId}:${callId}`, handoff = this.store.get<Handoff>("browser_handoffs", key);
+    if (!handoff || handoff.status !== "open") return;
+    this.store.set("browser_handoffs", key, { ...handoff, status: "closed" });
+    const answer = z.object({ answers: z.object({ handoff: z.object({ answers: z.array(z.string()).min(1) }) }) }).safeParse(result).data?.answers.handoff.answers[0];
+    if (answer !== handoffCancel) {
+      // Router routes the owner's next chat line to an open card; hand that text to the Agent instead of dropping it.
+      if (answer) await super.steer(runId, answer).catch(() => undefined);
+      return;
+    }
+    await this.cancelHandoff(handoff).catch(() => undefined);
+  }
+  /** The owner's click on the trusted card is the decision; a connector approval for this exact cancel is granted. */
+  private async cancelHandoff(handoff: Handoff) {
+    const grant = this.store.get<{ admission?: RunAdmission }>("business_runs", `${this.scope}:${handoff.runId}`);
+    const admission = this.admission(grant?.admission);
+    if (!admission || admission.kind !== "owner" || !this.appReader) return;
+    const name = browserToolName(handoff.connection, "handoff_cancel"), port = this.apps?.approvals;
+    const outcome = await this.appReader({ action: "call", name, arguments: { handoffId: handoff.handoffId } },
+      { connections: [handoff.connection] }, port ? { write: true } : undefined);
+    const approval = approvalRequired.safeParse(outcome);
+    if (!approval.success || !port) return;
+    const view = await port.operation(approval.data.operationId);
+    if (view?.status === "pending" && view.owner === admission.owner && view.agentId === admission.agentId && view.connectionId === handoff.connection &&
+      view.tool === "handoff_cancel" && JSON.stringify(view.input) === JSON.stringify({ handoffId: handoff.handoffId }))
+      await port.approve(admission.owner, view.id, view.digest);
   }
 }

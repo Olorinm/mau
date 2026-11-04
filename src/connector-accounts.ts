@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { RouterError } from "@agent-router/server";
-import { signServiceToken } from "@olorinm/agent-connectors/issuer";
+import { signGrant, signServiceToken } from "@olorinm/agent-connectors/issuer";
 
 export const connectorAccountsSchema = z.object({
   url: z.url(), issuer: z.string().min(1), audience: z.string().min(1),
@@ -13,6 +13,16 @@ export const connectorAccountsSchema = z.object({
 const idSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
 const entrySchema = z.object({ id: idSchema, kind: z.string().max(64), owner: z.string().max(256),
   label: z.string().max(200), account: z.record(z.string(), z.unknown()) });
+const operationIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/);
+const operationViewSchema = z.object({ id: z.string(), owner: z.string(), agentId: z.string(), connectionId: z.string(), tool: z.string(),
+  digest: z.string().regex(/^[0-9a-f]{64}$/), status: z.enum(["pending", "executing", "completed", "failed", "uncertain", "denied", "expired"]),
+  summary: z.string().max(4000), input: z.unknown(), createdAt: z.string(), expiresAt: z.string(),
+  outcome: z.record(z.string(), z.unknown()).optional() }).passthrough();
+export type OperationView = z.infer<typeof operationViewSchema>;
+const errorCode = (body: unknown) => {
+  const code = body && typeof body === "object" && "error" in body ? (body as { error: unknown }).error : undefined;
+  return typeof code === "string" && /^[a-z0-9_]{1,80}$/.test(code) ? code : "operation_refused";
+};
 export interface AccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
@@ -46,15 +56,22 @@ export class ConnectorAccounts {
       x: z.string().min(1), d: z.string().min(1) }).parse(JSON.parse(readFileSync(path, "utf8")));
     this.key = { kid: privateJwk.kid, privateJwk };
   }
-  private async request(path: string, mutation = false): Promise<unknown> {
+  private async request(path: string, mutation = false, options: { body?: unknown; service?: string; status?: (status: number, body: unknown) => unknown } = {}): Promise<unknown> {
     if (!this.options || !this.key || !this.endpoint) throw new RouterError("connector_service_not_configured", 503);
     let dispatched = false;
     try {
       const token = await signServiceToken({ key: this.key, issuer: this.options.issuer,
-        audience: this.options.audience, service: "mau-account-management", ttlSeconds: 120 });
+        audience: this.options.audience, service: options.service ?? "mau-account-management", ttlSeconds: 120 });
       dispatched = true;
       const response = await fetch(this.endpoint + path, { method: mutation ? "POST" : "GET", redirect: "error",
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(65_000) });
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}) },
+        ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(options.body !== undefined ? 150_000 : 65_000) });
+      if (!response.ok && options.status && response.status < 500) {
+        // Refusals (404/409/403) are definite answers for approvals; the body is only an error code.
+        const text = await response.text().catch(() => "");
+        let parsed: unknown; try { parsed = JSON.parse(text.slice(0, 10_000)); } catch { parsed = undefined; }
+        return options.status(response.status, parsed);
+      }
       if (!response.ok || !response.body) throw new Error("connector_service_unavailable");
       const reader = response.body.getReader(), chunks: Uint8Array[] = [];
       let length = 0;
@@ -72,6 +89,33 @@ export class ConnectorAccounts {
       // A timed-out connect/disconnect can already have invalidated prior tokens or approvals.
       throw new RouterError(mutation && dispatched ? "connector_action_unknown" : "connector_service_unavailable", mutation && dispatched ? 409 : 502);
     }
+  }
+  /** Trusted operation view for the approval card; the Agent never receives the service token or the grant. */
+  async operation(id: string): Promise<OperationView | undefined> {
+    if (!operationIdSchema.safeParse(id).success) return undefined;
+    const raw = await this.request(`/v1/operations/${id}`, false, { service: "mau-approvals", status: status => status === 404 ? null : undefined });
+    if (raw === null) return undefined;
+    const parsed = operationViewSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.id !== id) throw new RouterError("connector_service_unavailable", 502);
+    return parsed.data;
+  }
+  /** Sign a single-use grant for exactly this owner, operation and digest, then execute it upstream. */
+  async approve(owner: string, id: string, digest: string): Promise<{ outcome?: Record<string, unknown>; refused?: string }> {
+    if (!this.options || !this.key) throw new RouterError("connector_service_not_configured", 503);
+    if (!operationIdSchema.safeParse(id).success || !/^[0-9a-f]{64}$/.test(digest)) return { refused: "operation_not_found" };
+    const grant = await signGrant({ key: this.key, issuer: this.options.issuer, audience: this.options.audience,
+      owner, operationId: id, digest, approver: owner, ttlSeconds: 120 });
+    const raw = await this.request(`/v1/operations/${id}/approve`, true, { body: { grant }, service: "mau-approvals",
+      status: (_status, body) => ({ refused: errorCode(body) }) });
+    if (raw && typeof raw === "object" && "refused" in raw) return raw as { refused: string };
+    const parsed = z.record(z.string(), z.unknown()).safeParse(raw);
+    if (!parsed.success || typeof parsed.data.status !== "string") throw new RouterError("connector_action_unknown", 409);
+    return { outcome: parsed.data };
+  }
+  async deny(id: string): Promise<{ refused?: string }> {
+    if (!operationIdSchema.safeParse(id).success) return { refused: "operation_not_found" };
+    const raw = await this.request(`/v1/operations/${id}/deny`, true, { service: "mau-approvals", status: (_status, body) => ({ refused: errorCode(body) }) });
+    return raw && typeof raw === "object" && "refused" in raw ? raw as { refused: string } : {};
   }
   private async entries() {
     const result = z.object({ connections: z.array(entrySchema).max(1000) }).safeParse(await this.request("/v1/connections"));
