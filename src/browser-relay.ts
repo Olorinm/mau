@@ -85,7 +85,9 @@ export async function readUpload(files: SandboxFiles, args: Record<string, unkno
   // A swap to a symlink after the first check changes what realpath reports.
   if (await contained(files, relative) !== target) throw new RelayError("browser_upload_path_outside_workspace");
   const { path: _path, ...rest } = parsed.data, name = posix.basename(relative);
-  return { ...rest, file: { name, mediaType: resolveArtifactContentType(name), contentBase64: Buffer.from(bytes).toString("base64") } };
+  // Browser file inputs take a bare MIME type; drop parameters such as "; charset=utf-8".
+  const mediaType = resolveArtifactContentType(name).split(";")[0]!.trim().toLowerCase();
+  return { ...rest, file: { name, mediaType, contentBase64: Buffer.from(bytes).toString("base64") } };
 }
 const safeName = (name: string) => {
   const cleaned = posix.basename(name.replaceAll("\\", "/")).replace(/[\u0000-\u001f\u007f/]/g, "_").replace(/^\.+/, "").slice(-120);

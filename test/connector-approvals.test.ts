@@ -233,6 +233,12 @@ it("uploads only regular files inside the working directory, by path, up to 10 M
   expect(JSON.stringify(card!.input)).not.toContain(Buffer.from("%PDF-cv").toString("base64"));
   await f.host.resolve("run", card!.id, { choice: "once" }); await f.host.settled("run");
   expect(f.executed).toEqual([{ tool: "upload", input: { site: "s", ref: "r", file: { name: "cv.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("%PDF-cv").toString("base64") } } }]);
+  // Text files resolve to "text/plain; charset=utf-8"; browser file inputs take the bare MIME type.
+  writeFileSync(join(f.workspace, "notes.txt"), "hello");
+  f.call("browser__upload", { site: "s", ref: "r", path: "notes.txt" }, "text");
+  const [textCard] = (await f.host.calls("run")).filter(c => c.kind === "interaction");
+  await f.host.resolve("run", textCard!.id, { choice: "once" }); await f.host.settled("run");
+  expect(f.executed.at(-1)).toEqual({ tool: "upload", input: { site: "s", ref: "r", file: { name: "notes.txt", mediaType: "text/plain", contentBase64: Buffer.from("hello").toString("base64") } } });
 });
 
 it("relays downloads into browser_downloads/, screenshots as images, and keeps live views from the model", async () => {
