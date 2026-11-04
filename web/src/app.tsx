@@ -40,6 +40,18 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const [view, setView] = useState(() =>
     new URLSearchParams(location.search).get("view") === "connectors" ? "connectors" : new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
+  // Landing parameters (the OAuth callback's ?view=connectors&oauth=…) apply once;
+  // leaving them in the URL would reopen Connectors on every reload.
+  useEffect(() => {
+    const url = new URL(location.href), oauth = url.searchParams.get("oauth");
+    if (!url.searchParams.has("view") && !oauth) return;
+    url.searchParams.delete("view");
+    url.searchParams.delete("oauth");
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+    if (oauth === "connected") toast({ kind: "success", title: t("connectors.oauthConnected") });
+    else if (oauth === "failed") toast({ kind: "error", title: t("connectors.oauthFailed") });
+    else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
+  }, [t, toast]);
   const [createOpen, setCreateOpen] = useState(false);
   const [conversationTarget, setConversationTarget] = useState<string>();
   const current = useRef(session);

@@ -44,8 +44,15 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   const terminal = ["completed", "failed", "canceled", "rejected"].includes(task.status);
   const key = ["run", token, agentId, claimId];
   // Finished runs are read from Router's copy, so history loads without waking the employee.
-  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => reader.refresh(signal), retry: false,
-    refetchOnWindowFocus: false, refetchOnReconnect: false,
+  // They never change again: read every page before publishing (one paint, not one per page)
+  // and keep the result, so reopening a conversation does not read it again.
+  const query = useQuery({ queryKey: key, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+    queryFn: async ({ signal }) => {
+      let result = await reader.refresh(signal);
+      while (terminal && result.more) result = await reader.refresh(signal);
+      return result;
+    },
+    ...(terminal ? { staleTime: Infinity, gcTime: 30 * 60_000 } : {}),
     refetchInterval: (query) => query.state.error ? false : query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
   const cancel = useMutation({ mutationFn: () => api.cancel(task.id),
     onSuccess: () => queries.invalidateQueries({ queryKey: ["run-tasks", token, agentId] }) });
@@ -54,11 +61,14 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   const pending = calls.some((call) => call.status === "pending" && Date.parse(call.deadlineAt) > Date.now());
   useEffect(() => blockBuildReload(!!active || pending), [active, pending]);
   const status = data?.detail.run.status ?? (terminal ? task.status === "canceled" ? "cancelled" : task.status : undefined);
+  // A finished task already has its delivered reply, so it never shows a loading state.
   const label = !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
     : active ? pending ? zh ? "等待你的回应" : "Waiting for your response" : task.cancelRequested ? zh ? "正在停止…" : "Stopping…" : zh ? "正在执行" : "Running"
     : status === "completed" ? zh ? "已完成" : "Completed" : status === "cancelled" ? zh ? "已取消" : "Cancelled" : zh ? "执行未完成" : "Execution failed";
   // Older runs without Router's copy need the employee awake; expanding the row wakes it.
   const sleeping = !data && terminal && query.error instanceof ApiError && query.error.code === "environment_not_ready";
+  // Until a finished run's process arrives, hold its place with the same collapsed row.
+  const placeholder = !data && terminal && (sleeping || query.isPending);
   const [opened, setOpened] = useState(false);
   const wake = useMutation({
     mutationFn: async () => {
@@ -93,16 +103,16 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
     finally { await query.refetch(); }
   };
   return <section className="mau-run" data-run-id={claimId} aria-label={label}>
-    {sleeping ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
-      onToggle={(open) => { setOpened(open); if (open && !wake.isPending) wake.mutate(); }}
+    {placeholder ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
+      onToggle={(open) => { setOpened(open); if (open && sleeping && !wake.isPending) wake.mutate(); }}
       summary={wake.isPending ? zh ? "正在唤醒员工…" : "Waking the employee…" : zh ? "执行过程" : "Process"}>
-      <p className="mau-muted">{wake.isPending ? zh ? "员工醒来后会自动加载执行过程。" : "The process loads once the employee is awake."
-        : zh ? "展开即可唤醒员工并加载执行过程。" : "Expand to wake the employee and load the process."}</p>
+      {sleeping ? <p className="mau-muted">{wake.isPending ? zh ? "员工醒来后会自动加载执行过程。" : "The process loads once the employee is awake."
+        : zh ? "展开即可唤醒员工并加载执行过程。" : "Expand to wake the employee and load the process."}</p> : null}
     </Disclosure> : null}
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}
       status={!data && !terminal ? query.error ? "failed" : "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
-      {...(!data || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
+      {...((!data && !terminal) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
       {...(active ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label}} : {})}
       {...(active ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />

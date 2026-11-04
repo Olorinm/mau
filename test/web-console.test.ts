@@ -791,7 +791,7 @@ it.skipIf(!built)("redirects from app details to consent, returns to catalog and
   const { page, errors } = await browser(f.base);
   let state = "authorization_required", failed = false;
   const mutations: string[] = [];
-  await page.route("https://accounts.google.com/**", route => route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors" } }));
+  await page.route("https://accounts.google.com/**", route => route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors&oauth=connected" } }));
   await page.route("**/_mau/v1/connector-accounts**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only" }] } });
@@ -817,7 +817,9 @@ it.skipIf(!built)("redirects from app details to consent, returns to catalog and
   await see(page.getByRole("button", { name: "断开连接", exact: true })).toHaveCount(0);
   await page.screenshot({path:"/tmp/mau-connectors-redesign-gmail.png",fullPage:true});
   await page.getByRole("button", { name: "连接 Gmail", exact: true }).click();
-  await see(page).toHaveURL(f.base + "/?view=connectors");
+  // The callback's landing parameters are consumed once, so a reload opens the default view.
+  await see(page.getByText("授权完成，连接器已连接", { exact: true })).toBeVisible();
+  await see(page).toHaveURL(f.base + "/");
   await page.getByRole("button", { name: "Gmail 连接", exact: true }).click();
   await page.getByRole("button", { name: "检查连接", exact: true }).click();
   await see(page.getByText("你的 Google 账号已授权给 Mau。", { exact: true })).toBeVisible();
