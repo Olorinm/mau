@@ -29,14 +29,14 @@
   },
   "host": {
     "repository": "Olorinm/agent-host",
-    "version": "0.1.0-alpha.13",
-    "integrity": "sha512-6TLRh1QclHNiVfGdrY7SjQKctqfM5e8W6ehRSuxWHGyR07N9YvgM1zNsKAQ5QriPLM8618H4XcPEpAuWd01BKA==",
+    "version": "0.1.0-alpha.14",
+    "integrity": "sha512-X99VVkoOqiT7zzhSCVkmhuCEEy6nn/dlTwJbJ9AN8f76OqQy3tHXIA2Tf6glsK+cgzkPuLhHrIU5xemWY+2UWQ==",
     "distribution": "github-release",
-    "revision": "3aa67207b83a092f6e04a642c1c79956ed456aa2",
+    "revision": "66ec4d9f9895f955dbfffeabb49af386a0643243",
     "archive": {
       "repository": "Olorinm/agent-host",
-      "tag": "v0.1.0-alpha.13",
-      "asset": "olorinm-agent-host-0.1.0-alpha.13.tgz"
+      "tag": "v0.1.0-alpha.14",
+      "asset": "olorinm-agent-host-0.1.0-alpha.14.tgz"
     }
   },
   "ui": {
