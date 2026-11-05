@@ -111,6 +111,10 @@ const profileHash = (p: Profile) =>
 // One failed renewal request is not evidence the environment stopped. Three 30-second
 // attempts stay well inside the shortest 600-second lifetime.
 const renewalAttempts = 3;
+// Operator diagnostics for errors that are not product error codes: message and name only.
+const logUnexpected = (event: string, agentId: string, error: unknown) =>
+  process.stderr.write(JSON.stringify({ event, agentId, name: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error) }) + "\n");
 
 /** Product-owned provisioning journal; the external module alone operates cloud resources. */
 export class EnvironmentManager {
@@ -903,6 +907,8 @@ export class EnvironmentManager {
   /**
    * Destroy every environment an Agent still has (current, retained previous, retired) before its
    * identity is deleted. Records already `deleted` were confirmed by the provider and are skipped.
+   * A retained or retired record whose provider is no longer configured cannot be managed and is
+   * recorded as gone; the current environment must always be confirmed by its provider.
    */
   async removeAgent(owner: string, agentId: string) {
     this.assertOpen();
@@ -912,25 +918,52 @@ export class EnvironmentManager {
     let release!: () => void;
     this.jobs.set(agentId, { kind: "operation", promise: new Promise<void>((r) => { release = r; }) });
     try {
-      const current = this.binding(agentId);
-      const others = [current?.previous, ...this.store.entries<Binding>("retired_environments")
-        .map(({ value }) => value).filter((value) => value.agentId === agentId)];
-      for (const record of others) if (record && record.phase !== "deleted") await this.destroyCloud(record);
-      if (current && current.phase !== "deleted")
-        await this.configuration.withStoppedRuntime(owner, agentId, async () => {
-          current.phase = "deleting"; delete current.error; this.save(current);
-          await this.destroyCloud(current);
-          current.phase = "deleted"; this.save(current);
-        }, async () => {
-          current.phase = "needs_action"; current.error = "environment_lifecycle_unconfirmed"; this.save(current);
+      let current = this.binding(agentId);
+      if (current?.previous && current.previous.phase !== "deleted") {
+        const error = await this.destroyCloud(current.previous, true);
+        current = { ...current, previous: { ...current.previous, phase: "deleted", ...(error ? { error } : {}) } };
+        this.save(current);
+      }
+      for (const { id, value } of this.store.entries<Binding>("retired_environments")) {
+        if (value.agentId !== agentId || value.phase === "deleted") continue;
+        const error = await this.destroyCloud(value, true);
+        this.assertLease();
+        this.store.set("retired_environments", id, { ...value, phase: "deleted", ...(error ? { error } : {}), updatedAt: new Date().toISOString() });
+      }
+      if (current && current.phase !== "deleted") {
+        const record = current;
+        // Quiesce delivery and reject active work, but do not rebuild the runtime afterwards: the
+        // Agent is being deleted and a rebuild can fail once its environment is gone.
+        await this.service.configureRuntime(agentId, async () => {
+          record.phase = "deleting"; delete record.error; this.save(record);
+          await this.destroyCloud(record, false);
+          record.phase = "deleted"; this.verifiedWorkspaces.delete(agentId); this.save(record);
+          return undefined;
+        }, async (agent, connector) => {
+          record.phase = "needs_action"; record.error = "environment_lifecycle_unconfirmed"; this.save(record);
+          try { return await this.configuration.factory(agent, connector); }
+          catch (error) { logUnexpected("mau.environment_runtime_restore_failed", agentId, error); return undefined; }
         });
+      }
+    } catch (error) {
+      if (error instanceof WorkError) throw error;
+      logUnexpected("mau.environment_delete_failed", agentId, error);
+      throw new WorkError("environment_delete_failed", 502);
     } finally {
       this.jobs.delete(agentId);
       release();
     }
   }
-  private async destroyCloud(record: Binding) {
-    const provider = await this.provider(record);
+  /**
+   * Destroy one record's cloud resource unless the provider confirms it is missing. Returns
+   * `provider_not_configured` when a non-current record's provider was removed from configuration.
+   */
+  private async destroyCloud(record: Binding, retained: boolean): Promise<string | undefined> {
+    const provider = await this.configuredProvider(record);
+    if (!provider) {
+      if (retained) return "provider_not_configured";
+      throw new WorkError("environment_provider_unavailable", 503);
+    }
     let id = record.ref?.id;
     if (!id) {
       const found = await provider.list({ "mau-operation": record.operationId });
@@ -938,6 +971,19 @@ export class EnvironmentManager {
       id = found[0]?.id;
     }
     if (id && (await provider.info(id)).state !== "missing") await provider.destroy(id);
+    return undefined;
+  }
+  /** The record's provider, or undefined when the loaded configuration does not define its ID. */
+  private async configuredProvider(record: Binding) {
+    this.manager ??= this.load ? this.load() : this.importManager();
+    let manager: Environments;
+    try { manager = await this.manager; }
+    catch { this.manager = undefined; throw new WorkError("environment_provider_unavailable", 503); }
+    try { return manager.provider(record.provider); }
+    catch (error) {
+      if ((error as { code?: unknown })?.code === "unknown_provider") return undefined;
+      throw new WorkError("environment_provider_unavailable", 503);
+    }
   }
   /** Remove an Agent's environment records and tokens once Router has deleted the Agent. Workspaces belong to the owner. */
   forgetAgent(agentId: string) {

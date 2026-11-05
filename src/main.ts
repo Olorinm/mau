@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { loadServiceConfig } from "@agent-router/server";
-import { createMau } from "./app.js";
+import { createMau, startFailure } from "./app.js";
 
 const optionsFile = process.env.MAU_CONFIG_FILE;
 if (!optionsFile) throw new Error("MAU_CONFIG_FILE_required");
@@ -18,4 +18,4 @@ const stop = async () => {
 process.once("SIGTERM", () => { void stop(); });
 process.once("SIGINT", () => { void stop(); });
 mau.start().then(() => { process.stdout.write(JSON.stringify({ event: "mau.started" }) + "\n"); })
-  .catch(async () => { process.stderr.write("mau_start_failed\n"); await stop(); process.exitCode = 1; });
+  .catch(async (error: unknown) => { process.stderr.write(startFailure(error) + "\n"); await stop(); process.exitCode = 1; });

@@ -147,7 +147,10 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       hsToken: "h".repeat(48),
     },
     optionsFile,
-    { environments: async () => ({ provider: () => provider }),
+    { environments: async () => ({ provider: (id: string) => {
+      if (id !== "volc") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
+      return provider;
+    } }),
       ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
       provision: async () => {},
       deprovision: async () => {},

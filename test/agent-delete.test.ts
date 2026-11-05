@@ -1,17 +1,25 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DurableStore } from "../src/store.js";
-import { mauFixture, root } from "./fixtures/mau.js";
+import { alice, mauFixture, root } from "./fixtures/mau.js";
+import { startFailure } from "../src/app.js";
 
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
   vi.unstubAllGlobals();
 });
 const remove = (f: Awaited<ReturnType<typeof mauFixture>>, id: string, owner = "alice") =>
   fetch(`${f.base}${root}/agents/${id}`, { method: "DELETE", headers: { authorization: "Bearer " + owner } })
     .then(async (response) => ({ status: response.status, data: response.status === 204 ? null : await response.json() as any }));
+const captureStderr = () => {
+  const lines: string[] = [];
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk: any) => { lines.push(String(chunk)); return true; });
+  return lines;
+};
+const environments = (f: Awaited<ReturnType<typeof mauFixture>>) => (f.mau.environments as any).store as DurableStore;
 const rule = (agentId: string, id: string, extra: Record<string, unknown> = {}) => ({ id, owner: "@alice:example.test", agentId, status: "active", version: 1, ...extra });
 
 it("deletes an employee with its environment, memory, schedules and product records, leaving other employees and the workspace", async () => {
@@ -66,7 +74,10 @@ it("keeps the employee when a schedule run is in flight or the cloud refuses to 
   f.mau.proactive.store.set("triggers", "t1", { id: "t1", status: "completed", rule: { id: "r1" } });
   const destroy = f.provider.destroy;
   f.provider.destroy = async () => { throw new Error("cloud_unavailable"); };
-  expect((await remove(f, f.agent.id)).status).toBe(500);
+  const logged = captureStderr();
+  expect(await remove(f, f.agent.id)).toEqual({ status: 502, data: { error: "environment_delete_failed" } });
+  expect(logged.join("")).toContain('"event":"mau.environment_delete_failed"');
+  expect(logged.join("")).toContain('"message":"cloud_unavailable"');
   expect(f.service.agent(f.agent.id).status).toBe("active");
   expect((await f.api(f.path)).data.state).toBe("needs_action");
   expect(f.mau.proactive.store.get<any>("rules", "r1").status).toBe("paused");
@@ -84,4 +95,76 @@ it("deletes an employee whose environment was already destroyed, even when its p
   f.provider.info = async () => { throw new Error("provider_must_not_be_called"); };
   expect((await remove(f, f.agent.id)).status).toBe(204);
   expect((await f.api("/agents")).data.data).toEqual([]);
+});
+
+it("treats retained and retired environments of a removed provider as gone, but never the current one", async () => {
+  const f = await mauFixture(cleanup);
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  await f.settled();
+  const store = environments(f), current = store.get<any>("environments", f.agent.id);
+  const gone = (operationId: string) => ({ ...current, operationId, provider: "volc-shanghai", phase: "paused",
+    ref: { provider: "volc-shanghai", id: "released-cluster-sandbox" }, previous: undefined });
+  store.set("environments", f.agent.id, { ...current, previous: gone("00000000-0000-4000-8000-000000000001") });
+  store.set("retired_environments", "00000000-0000-4000-8000-000000000002", gone("00000000-0000-4000-8000-000000000002"));
+  // The current environment's outcome is unknown: retained records are settled, the employee stays.
+  const info = f.provider.info;
+  f.provider.info = async () => { throw new Error("cloud_timeout"); };
+  captureStderr();
+  expect((await remove(f, f.agent.id)).status).toBe(502);
+  const after = store.get<any>("environments", f.agent.id);
+  expect(after.phase).toBe("needs_action");
+  expect(after.previous).toMatchObject({ phase: "deleted", error: "provider_not_configured" });
+  expect(store.get<any>("retired_environments", "00000000-0000-4000-8000-000000000002"))
+    .toMatchObject({ phase: "deleted", error: "provider_not_configured" });
+  expect(f.service.agent(f.agent.id).status).toBe("active");
+  f.provider.info = info;
+  expect((await remove(f, f.agent.id)).status).toBe(204);
+  expect(f.cloud.size).toBe(0);
+
+  // A current binding on an unconfigured provider is never assumed gone.
+  const g = await mauFixture(cleanup);
+  expect((await g.api(g.path, { profileId: "cloud" })).status).toBe(202);
+  await g.settled();
+  const own = environments(g);
+  own.set("environments", g.agent.id, { ...own.get<any>("environments", g.agent.id), provider: "volc-shanghai" });
+  expect(await remove(g, g.agent.id)).toEqual({ status: 503, data: { error: "environment_provider_unavailable" } });
+  expect(g.service.agent(g.agent.id).status).toBe("active");
+});
+
+it("deletes an employee whose sandbox is already missing without rebuilding its channel runtime", async () => {
+  const f = await mauFixture(cleanup);
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  const connections = f.mau.router.connections, dir = connections.agentDirectory(f.agent.id);
+  writeFileSync(join(dir, "feishu-secret"), "fixture-secret\n", { mode: 0o600 });
+  writeFileSync(join(dir, "feishu.json"), JSON.stringify({ version: 1, appId: "cli_fixture", appSecretFile: "feishu-secret",
+    domain: "feishu", ownerOpenId: "ou_owner" }), { mode: 0o600 });
+  await connections.edit(alice, f.agent.id, (config) => {
+    config.connections.push({ id: "feishu", kind: "feishu", credentialsFile: join(dir, "feishu.json"), domain: "feishu",
+      personalTools: true, ownerAddresses: [], peerAddresses: [], groupIds: [] });
+  });
+  expect(connections.summary(f.service.agent(f.agent.id)).connections.map((c) => c.kind)).toEqual(["matrix", "feishu"]);
+  f.cloud.clear();
+  // Rebuilding this runtime now throws a plain Error (host_binding_configuration_changed). Before the fix,
+  // removeAgent rebuilt it after the cloud step: 500 operation_failed and needs_action/environment_lifecycle_unconfirmed.
+  (await f.service.runtime(f.agent.id)).connector.store.set("communication_host", "scope", "stale-scope");
+  f.provider.destroy = async () => { throw new Error("destroy_must_not_be_called"); };
+  expect((await remove(f, f.agent.id)).status).toBe(204);
+  expect((await f.api("/agents")).data.data).toEqual([]);
+});
+
+it("logs unexpected request errors and names the cause of a start failure", async () => {
+  const f = await mauFixture(cleanup);
+  const logged = captureStderr();
+  const response = await fetch(`${f.base}${root}/agents/${f.agent.id}/environment`, { headers: { authorization: "Bearer alice" } });
+  expect(response.status).toBe(200);
+  vi.spyOn(f.mau.environments, "summary").mockImplementation(() => { throw new Error("unexpected_fixture_failure"); });
+  const failed = await fetch(`${f.base}${root}/agents/${f.agent.id}/environment`, { headers: { authorization: "Bearer alice" } });
+  expect(failed.status).toBe(500);
+  expect(await failed.json()).toEqual({ error: "operation_failed" });
+  expect(logged).toContain(JSON.stringify({ event: "mau.error", code: "operation_failed", message: "unexpected_fixture_failure" }) + "\n");
+  const line = startFailure(Object.assign(new TypeError("router_state_unreadable"), { secret: "private-token" }));
+  expect(line).toMatch(/^mau_start_failed: router_state_unreadable \(TypeError, at .+\)$/);
+  expect(line).not.toContain("private-token");
+  expect(line.split("\n")).toHaveLength(1);
 });

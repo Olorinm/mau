@@ -54,6 +54,12 @@ function forgetEmployeeRecords(store: DurableStore, owner: string, agentId: stri
     .run(agentId, agentId, agentId, prefix, prefix, agentId, agentId);
 }
 
+/** One start-failure line for operators: the error's name, message and first stack frame, never its properties. */
+export function startFailure(error: unknown) {
+  if (!(error instanceof Error)) return `mau_start_failed: ${String(error)}`;
+  const frame = error.stack?.split("\n").map(line => line.trim()).find(line => line.startsWith("at "));
+  return `mau_start_failed: ${error.message} (${error.name}${frame ? ", " + frame : ""})`;
+}
 export function createMau(config: ServiceConfig, optionsFile: string, dependencies: {
   router?: Omit<ServiceDependencies, "configure">;
   environments?: () => Promise<Environments>;
@@ -361,6 +367,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     // Body parser rejections (malformed JSON, oversized bodies) are client errors.
     const parser = error instanceof Error && "type" in error && "status" in error &&
       typeof error.status === "number" && error.status >= 400 && error.status < 500 ? error.status : undefined;
+    if (!(error instanceof RouterError) && !(error instanceof z.ZodError) && parser === undefined)
+      process.stderr.write(JSON.stringify({ event: "mau.error", code: "operation_failed",
+        message: error instanceof Error ? error.message : String(error) }) + "\n");
     res.status(error instanceof RouterError ? error.status : error instanceof z.ZodError ? 400 : parser ?? 500)
       .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
         : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed",
