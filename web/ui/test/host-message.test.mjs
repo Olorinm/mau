@@ -74,3 +74,13 @@ test("text streamed before a tool call becomes commentary for kernels without na
  assert.equal(parts[0].type, "note"); assert.equal(parts[0].text, "Let me check."); assert.equal(parts[0].data.phase, "commentary");
  assert.equal(parts.at(-1).type, "text"); assert.equal(parts.at(-1).text, "Found it.");
 });
+test("finished Codex runs show reasoning from completed items once their deltas are gone", () => {
+ const note = (method, params) => ({type: "native.notification", runId: "run", notification: {method, params: {threadId: "t", ...params}}});
+ const completed = note("item/completed", {item: {id: "r1", type: "reasoning", summary: ["Plan the search"], content: []}});
+ const finished = projectHostMessage([completed, note("item/completed", {item: {id: "r2", type: "reasoning", summary: [], content: ["Raw step"]}})], {answer: "Done"});
+ assert.equal(finished.find(p => p.type === "reasoning").text, "Plan the search\n\nRaw step");
+ // Live: streamed fragments are replaced by their completed item, not repeated.
+ const live = projectHostMessage([{type: "reasoning.delta", runId: "run", text: "Plan the "}, {type: "reasoning.delta", runId: "run", text: "search"}, completed,
+  {type: "reasoning.delta", runId: "run", text: "Next"}], {active: true});
+ assert.equal(live.find(p => p.type === "reasoning").text, "Plan the search\n\nNext");
+});

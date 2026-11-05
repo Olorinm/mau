@@ -16,7 +16,13 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
   const parts = new Map<string, MessagePart>();
   const phases = new Map<string, string>();
   const calls = new Map<string, ToolPart>();
-  let reasoning = "", anonymous = 0, segment = 0, pending = "", rootThread = "";
+  let reasoning = "", reasoningTail = "", anonymous = 0, segment = 0, pending = "", rootThread = "";
+  // Deltas are live-only; a completed reasoning item replaces the fragments streamed for it.
+  const showReasoning = () => {
+    const value = [reasoning, reasoningTail].filter(Boolean).join("\n\n");
+    if (value) parts.set("reasoning", { id: "reasoning", type: "reasoning", reasoningId: "reasoning", kernelId: "",
+      kind: "summary", text: value, status: options.active ? "running" : "complete", redacted: false });
+  };
   // Codex reports each agent message as a native item with a phase; prefer those over
   // the aggregated text stream so commentary is not repeated inside the answer.
   const nativeMessages = events.some(event => {
@@ -35,9 +41,8 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     if (!nativeMessages && event.type === "assistant.delta") pending += event.text ?? "";
     if (!nativeMessages && event.type === "model.response" && segment === 0) pending = event.text ?? pending;
     if (event.type === "reasoning.delta") {
-      reasoning += event.text ?? "";
-      parts.set("reasoning", { id: "reasoning", type: "reasoning", reasoningId: "reasoning", kernelId: "",
-        kind: "summary", text: reasoning, status: options.active ? "running" : "complete", redacted: false });
+      reasoningTail += event.text ?? "";
+      showReasoning();
     }
     if (event.type === "native.notification") {
       const notification = record(row.notification), params = record(notification.params), item = record(params.item);
@@ -46,6 +51,11 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
       // Subagent threads are summarized by their parent's activity rows.
       if (thread && thread !== rootThread) continue;
       const id = text(item.id) || text(params.itemId);
+      if (notification.method === "item/completed" && item.type === "reasoning") {
+        const lines = (value: unknown) => Array.isArray(value) ? value.map(text).filter(Boolean).join("\n\n") : "";
+        const value = lines(item.summary) || lines(item.content);
+        if (value) { reasoning = [reasoning, value].filter(Boolean).join("\n\n"); reasoningTail = ""; showReasoning(); }
+      }
       if (id && item.phase) phases.set(id, text(item.phase));
       const phase = text(params.phase) || text(item.phase) || phases.get(id);
       const delta = notification.method === "item/agentMessage/delta";
