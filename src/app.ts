@@ -44,6 +44,15 @@ const optionsSchema = z.object({
 export const apiRoot = "/_mau/v1";
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
+/** Product records keyed or tagged by a deleted employee: business scopes (`agentId:operation`), JSON keys
+ * starting with [owner, agentId], and values naming the Agent. Hashed index rows are unreachable once the ID is gone. */
+function forgetEmployeeRecords(store: DurableStore, owner: string, agentId: string) {
+  const prefix = JSON.stringify([owner, agentId]).slice(0, -1);
+  store.db.prepare(`DELETE FROM documents WHERE id=? OR substr(id,1,length(?)+1)=?||':' OR substr(id,1,length(?))=?
+    OR json_extract(value,'$.agentId')=? OR json_extract(value,'$.admission.agentId')=?`)
+    .run(agentId, agentId, agentId, prefix, prefix, agentId, agentId);
+}
+
 export function createMau(config: ServiceConfig, optionsFile: string, dependencies: {
   router?: Omit<ServiceDependencies, "configure">;
   environments?: () => Promise<Environments>;
@@ -66,7 +75,24 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
-    ...(dependencies.router ? { dependencies: dependencies.router } : {}),
+    dependencies: {
+      ...dependencies.router,
+      // Deleting an employee: stop its schedules and destroy its environments while Router still has the Agent,
+      // then remove Mau's per-employee state after Router has deactivated it.
+      beforeDelete: async agent => {
+        proactive.suspendAgent(agent.id);
+        await environments.removeAgent(agent.owner, agent.id);
+        await dependencies.router?.beforeDelete?.(agent);
+      },
+      afterDelete: async agent => {
+        environments.forgetAgent(agent.id);
+        facts.forget(agent.owner, agent.id);
+        history.forget(agent.owner, agent.id);
+        proactive.forgetAgent(agent.id);
+        forgetEmployeeRecords(businessStore, agent.owner, agent.id);
+        await dependencies.router?.afterDelete?.(agent);
+      },
+    },
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
     hosts: {
       assertReady: (id, binding) => environments.assertReady(id, binding),
@@ -305,6 +331,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.status(202).json(summary(res.locals.owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
+  product.delete("/agents/:id", async (req, res) => {
+    await router.service.delete(res.locals.owner, String(req.params.id));
+    res.status(204).end();
+  });
   product.post("/agents/:id/ssh", async (req, res) => {
     const { publicKey } = z.object({ publicKey: z.string().max(128) }).strict().parse(req.body);
     sshKeyId(publicKey);

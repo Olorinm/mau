@@ -26,6 +26,15 @@ export class SessionHistory {
     this.store.db.prepare(`INSERT INTO memory_history(id,owner,agent,session,source,text,created) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET text=excluded.text`).run(id, owner, agent, session, source, text, new Date().toISOString());
   }
+  /** Remove a deleted Agent's original text, keeping the external-content index in step. */
+  forget(owner: string, agent: string) {
+    this.store.transaction(() => {
+      const rows = this.store.db.prepare("SELECT rowid, text FROM memory_history WHERE owner=? AND agent=?").all(owner, agent) as Array<{ rowid: number; text: string }>;
+      const unindex = this.store.db.prepare("INSERT INTO memory_history_fts(memory_history_fts,rowid,text) VALUES('delete',?,?)");
+      for (const row of rows) unindex.run(row.rowid, row.text);
+      this.store.db.prepare("DELETE FROM memory_history WHERE owner=? AND agent=?").run(owner, agent);
+    });
+  }
   importPage(owner: string, agent: string, session: string, page: unknown) {
     this.assertOwned(owner, agent);
     const parsed = z.object({ source: z.literal("native"), items: z.array(z.unknown()).max(1000), cursor: z.string().nullable().optional() }).passthrough().parse(page);

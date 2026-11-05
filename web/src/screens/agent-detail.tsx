@@ -94,6 +94,14 @@ export function AgentDetail(props: {
     onSuccess: refresh,
     onError: failed,
   });
+  const remove = useMutation({
+    mutationFn: () => mau.deleteAgent(agent.id),
+    onSuccess: () => {
+      toast({ kind: "success", title: t("agents.deleted", { name: agent.name }) });
+      void refresh();
+    },
+    onError: failed,
+  });
   const checks = useMutation({
     mutationFn: () => router.check(agent.id),
     onError: failed,
@@ -128,6 +136,15 @@ export function AgentDetail(props: {
       danger: true,
     });
     if (result === "primary") lifecycle.mutate("destroy");
+  };
+  const deleteAgent = async () => {
+    const result = await confirm({
+      title: t("agents.deleteTitle", { name: agent.name }),
+      body: t("agents.deleteBody"),
+      confirmLabel: t("agents.delete"),
+      danger: true,
+    });
+    if (result === "primary") remove.mutate();
   };
 
   return (
@@ -328,8 +345,8 @@ export function AgentDetail(props: {
               )}
             </ObjectSettingsSection>
 
-            {canDestroy(environment) ? (
-              <div className="mau-actions mau-danger">
+            <div className="mau-actions mau-danger">
+              {canDestroy(environment) ? (
                 <button
                   type="button"
                   className="danger-button"
@@ -338,8 +355,16 @@ export function AgentDetail(props: {
                 >
                   {t("env.destroy")}
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+              <button
+                type="button"
+                className="danger-button"
+                disabled={busy || remove.isPending}
+                onClick={() => void deleteAgent()}
+              >
+                {remove.isPending ? t("agents.deleting") : t("agents.delete")}
+              </button>
+            </div>
           </div>
         }
       />

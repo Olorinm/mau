@@ -57,6 +57,14 @@ changing cloud state. Resume retains the environment and native session binding.
 Missing environments are never silently replaced. Provider-retained snapshots
 may require separate cleanup.
 
+Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau delete NAME --yes`) first
+pauses its schedules and destroys its current, retained previous and retired
+environments; records already confirmed `deleted` are not contacted again, so an
+Agent whose provider was removed from configuration can still be deleted. A
+cloud failure leaves the Agent and its binding in place (`needs_action`). After
+Router deactivates the Agent, Mau removes its bindings, tokens, memory files,
+history, schedules and product records. Workspaces belong to the owner and stay.
+
 Ready environments renew every 30 seconds. `lifetimeSeconds` must be at least 600.
 A renewal request may fail twice; the third consecutive failure, or a confirmed
 stopped environment, becomes `needs_action`. Cloud timeout policy applies during
