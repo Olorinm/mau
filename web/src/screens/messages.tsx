@@ -30,6 +30,8 @@ import { MauConversations, type ConversationMentions, type ConversationView } fr
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { useI18n, errorMessage } from "../i18n";
+import { chatSourcePreference, ledgerApi, ledgerFeatures } from "../api/ledger";
+import { LedgerMessagesScreen } from "./ledger-messages";
 
 /** Everyone mentioned in a group draft, from the "@name" text the composer inserted. */
 function draftMentions(room: ConversationView, text: string, names: Map<string, string>): ConversationMentions {
@@ -39,15 +41,38 @@ function draftMentions(room: ConversationView, text: string, names: Map<string, 
 
 const terminalTask = (task: CommunicationTask) => ["completed", "failed", "canceled", "rejected"].includes(task.status);
 
-export function MessagesScreen({
-  session,
-  initialAgentId,
-  onStartHandled,
-}: {
+type MessagesProps = {
   session: Session;
   initialAgentId?: string | undefined;
   onStartHandled?(): void;
-}) {
+};
+
+/**
+ * Matrix stays the chat source unless this browser opted in (`localStorage["mau.chatSource"] = "ledger"`)
+ * and Router advertises the `history` feature (agent-router ADR 0005, phase 2). Otherwise nothing changes.
+ */
+export function MessagesScreen(props: MessagesProps) {
+  const { t } = useI18n();
+  const ledger = chatSourcePreference() === "ledger";
+  const me = useQuery({
+    queryKey: ["ledger-me", props.session.token],
+    queryFn: ({ signal }) => ledgerApi(props.session.token).me(signal),
+    enabled: ledger,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  if (!ledger) return <MatrixMessagesScreen {...props} />;
+  if (me.isPending) return <LoadingSurface label={t("common.loading")} />;
+  const features = ledgerFeatures(me.data);
+  // A Router without the ledger web API (or with history off) keeps the Matrix console.
+  return features.has("history") ? <LedgerMessagesScreen {...props} features={features} /> : <MatrixMessagesScreen {...props} />;
+}
+
+function MatrixMessagesScreen({
+  session,
+  initialAgentId,
+  onStartHandled,
+}: MessagesProps) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
   const queries = useQueryClient();

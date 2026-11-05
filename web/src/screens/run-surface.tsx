@@ -8,7 +8,7 @@ import { mauApi } from "../api/client";
 import { answerInteraction, describeInteraction, type InteractionAnswer, type NativeRequest } from "@olorinm/agent-host/interactions";
 import { blockBuildReload } from "../build-version";
 import { ApiError } from "../api/http";
-import { runApi, RunReader, type CommunicationTask, type RunDetail } from "../api/runs";
+import { runApi, RunReader, type RunDetail } from "../api/runs";
 import { errorMessage, useI18n } from "../i18n";
 
 function sameNativeAnswer(left: unknown, right: unknown): boolean {
@@ -36,7 +36,13 @@ function Interaction({ call, claimId, api, active, onAnswered }: {
   </div>;
 }
 
-function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }: { task: CommunicationTask; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
+/** The fields a run surface reads; a Router task or a ledger turn (TurnDetail) both provide them. */
+export interface TaskLike {
+  id: string; status: string; cancelRequested?: boolean;
+  runs: ReadonlyArray<{ claimId: string; runId: string | null; phase: string }>;
+}
+
+function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const queries = useQueryClient();
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
@@ -123,7 +129,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
   </section>;
 }
 
-export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt }: { task: CommunicationTask; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
+export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   if (!task.runs.length) return <p role="status">{task.status === "canceled" ? zh ? "已取消" : "Cancelled" : zh ? "等待执行…" : "Queued…"}</p>;
   return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} />
