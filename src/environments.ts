@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -899,6 +899,57 @@ export class EnvironmentManager {
         "upkeep",
       );
     }
+  }
+  /**
+   * Destroy every environment an Agent still has (current, retained previous, retired) before its
+   * identity is deleted. Records already `deleted` were confirmed by the provider and are skipped.
+   */
+  async removeAgent(owner: string, agentId: string) {
+    this.assertOpen();
+    this.service.owned(agentId, owner);
+    if (this.jobs.has(agentId) || this.sshActive.has(agentId) || this.sshPreparing.has(agentId))
+      throw new WorkError("environment_operation_running", 409);
+    let release!: () => void;
+    this.jobs.set(agentId, { kind: "operation", promise: new Promise<void>((r) => { release = r; }) });
+    try {
+      const current = this.binding(agentId);
+      const others = [current?.previous, ...this.store.entries<Binding>("retired_environments")
+        .map(({ value }) => value).filter((value) => value.agentId === agentId)];
+      for (const record of others) if (record && record.phase !== "deleted") await this.destroyCloud(record);
+      if (current && current.phase !== "deleted")
+        await this.configuration.withStoppedRuntime(owner, agentId, async () => {
+          current.phase = "deleting"; delete current.error; this.save(current);
+          await this.destroyCloud(current);
+          current.phase = "deleted"; this.save(current);
+        }, async () => {
+          current.phase = "needs_action"; current.error = "environment_lifecycle_unconfirmed"; this.save(current);
+        });
+    } finally {
+      this.jobs.delete(agentId);
+      release();
+    }
+  }
+  private async destroyCloud(record: Binding) {
+    const provider = await this.provider(record);
+    let id = record.ref?.id;
+    if (!id) {
+      const found = await provider.list({ "mau-operation": record.operationId });
+      if (found.length > 1) throw new WorkError("environment_creation_requires_operator_reconciliation", 409);
+      id = found[0]?.id;
+    }
+    if (id && (await provider.info(id)).state !== "missing") await provider.destroy(id);
+  }
+  /** Remove an Agent's environment records and tokens once Router has deleted the Agent. Workspaces belong to the owner. */
+  forgetAgent(agentId: string) {
+    this.assertLease();
+    this.store.transaction(() => {
+      this.store.delete(collection, agentId);
+      for (const { id, value } of this.store.entries<Binding>("retired_environments"))
+        if (value.agentId === agentId) this.store.delete("retired_environments", id);
+    });
+    rmSync(join(this.directory, "agents", agentId), { recursive: true, force: true });
+    for (const map of [this.activity, this.renewalFailures]) map.delete(agentId);
+    this.verifiedWorkspaces.delete(agentId);
   }
   async close() {
     this.closed = true;

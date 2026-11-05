@@ -150,6 +150,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     { environments: async () => ({ provider: () => provider }),
       ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
       provision: async () => {},
+      deprovision: async () => {},
       authenticate: async (token) => {
         if (token === "alice") return alice;
         if (token === "bob") return bob;

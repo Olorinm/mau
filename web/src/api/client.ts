@@ -70,6 +70,7 @@ export function mauApi(token: string) {
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
     createAgent: (name: string, profileId: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, profileId } }),
+    deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),
     environment: (id: string) => request<EnvironmentView>(mau + agent(id) + "/environment", { token }),
     createEnvironment: (id: string, profileId: string) =>
       request<EnvironmentView>(mau + agent(id) + "/environment", { token, body: { profileId } }),

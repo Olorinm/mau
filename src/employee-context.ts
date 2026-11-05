@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants, openSync, closeSync, readFileSync, writeFileSync, fsyncSync, fstatSync, lstatSync, mkdirSync, chmodSync, renameSync, unlinkSync } from "node:fs";
+import { constants, openSync, closeSync, readFileSync, writeFileSync, fsyncSync, fstatSync, lstatSync, mkdirSync, chmodSync, renameSync, unlinkSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { RouterError } from "@agent-router/server";
@@ -57,6 +57,8 @@ export class EmployeeContext {
     this.directory = resolve(options.directory); this.writeApproval = options.writeApproval ?? false;
     this.ensureDirectory(this.directory);
   }
+  /** Remove a deleted Agent's memory files. */
+  forget(owner: string, agentId: string) { rmSync(join(this.directory, scope(owner, agentId)), { recursive: true, force: true }); }
   read(owner: string, agentId: string) {
     this.assertOwned(owner, agentId);
     return this.store.transaction(() => ({ files: this.files(owner, agentId), writeApproval: this.writeApproval,

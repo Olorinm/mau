@@ -3,7 +3,7 @@
 Install Node.js 24 or later, then install the public client archive directly:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.17/olorinm-mau-cli-0.1.0-alpha.17.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.18/olorinm-mau-cli-0.1.0-alpha.18.tgz
 mau --version
 ```
 
@@ -29,6 +29,13 @@ already exists, use `mau agents` and `mau use NAME` instead of `setup`.
 One account can own several Agents. Each cloud Agent gets its own environment;
 logging in alone does not allocate a container. `mau pause` and `mau resume`
 operate on the selected Agent.
+
+`mau delete NAME --yes` permanently deletes an Agent: it destroys every cloud
+environment it still has, deactivates its Matrix account, and removes its
+memory, schedules, channel connections and product records. Sent messages stay
+in chat history; shared workspaces belong to the account and are kept. It is
+refused while work or a scheduled run is in progress. If it stops partway, the
+Agent stops receiving messages and running `mau delete` again finishes it.
 
 When the environment profile enables SSH, connect to an existing Agent:
 

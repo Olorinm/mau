@@ -15,6 +15,7 @@ const help = `Mau — your agent product
   mau setup NAME --environment PROFILE [--workspace ID]
   mau workspaces | workspace-create NAME
   mau agents | use NAME | status | check
+  mau delete NAME --yes   (permanently deletes the employee, its environment and memory)
   mau environment-create PROFILE [--workspace ID]
   mau environment-replace PROFILE | environment-rollback
   mau pause | resume | destroy | reconcile
@@ -35,7 +36,7 @@ const options = {
   user: { type: "string" }, "password-file": { type: "string" }, "token-file": { type: "string" },
   environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
   workspace: { type: "string" },
-  "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, "messaging-only": { type: "boolean" },
+  "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, "messaging-only": { type: "boolean" }, yes: { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
 } as const;
@@ -59,9 +60,9 @@ function endpoint(raw: string, allowHTTP: boolean): string {
     return fail("invalid_service_url");
   return u.origin;
 }
-async function request(base: string, path: string, token: string | undefined, body?: unknown): Promise<any> {
+async function request(base: string, path: string, token: string | undefined, body?: unknown, method?: "DELETE"): Promise<any> {
   const res = await fetch(base + path, {
-    method: body === undefined ? "GET" : "POST", redirect: "error", credentials: "omit",
+    method: method ?? (body === undefined ? "GET" : "POST"), redirect: "error", credentials: "omit",
     headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -78,7 +79,7 @@ async function main() {
   if (values.version) { output({ product: "mau", version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version }); return; }
   if (values.help || !command) { process.stdout.write(help); return; }
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
-    use: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
+    use: [1, 1], delete: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
     destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
   arity["environment-replace"] = [1, 1]; arity["environment-rollback"] = [0, 0];
   arity.workspaces = [0, 0]; arity["workspace-create"] = [1, 1];
@@ -150,6 +151,15 @@ async function main() {
     const selected = list.data.find((a: any) => a.agent.name === args[0]);
     if (!selected) fail("agent_not_found");
     select(selected.agent.id); output(selected); return;
+  }
+  if (command === "delete") {
+    if (!values.yes) fail("confirm_with_yes");
+    const list = await product("/agents");
+    const target = list.data.find((a: any) => a.agent.name === args[0]);
+    if (!target) fail("agent_not_found");
+    await request(url, `/_mau/v1/agents/${encodeURIComponent(target.agent.id)}`, session.token, undefined, "DELETE");
+    if (session.agentId === target.agent.id) { delete session.agentId; privateFile(stateFile, session); }
+    output({ deleted: target.agent.name }); return;
   }
   if (command === "setup") {
     if (!values.environment) fail("environment_profile_required");

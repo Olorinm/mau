@@ -188,6 +188,28 @@ export class ProactiveWork {
     // A submission may be in flight. Hold its identity until Router confirms it.
     if (await this.port.lookup(rule, trigger.id)) await this.port.cancel(rule, trigger.id);
   }
+  /** Stop an Agent's schedules before it is deleted; a schedule run still in flight blocks deletion. */
+  suspendAgent(agentId: string) {
+    const rules = this.store.entries<ProactiveRule>("rules").map(r => r.value).filter(r => r.agentId === agentId);
+    for (const rule of rules) {
+      const trigger = rule.activeRun ? this.store.get<Trigger>("triggers", rule.activeRun) : undefined;
+      if (trigger && !["completed", "failed", "cancelled"].includes(trigger.status)) throw new RouterError("proactive_run_active", 409);
+    }
+    for (const rule of rules) if (rule.status === "active") this.store.set("rules", rule.id, { ...rule, status: "paused", updatedAt: this.clock().toISOString() });
+  }
+  /** Remove a deleted Agent's schedules with their runs, notices, budgets and cursors. Seen-finding digests stay; nothing reads them without the rule. */
+  forgetAgent(agentId: string) {
+    const ids = this.store.entries<ProactiveRule>("rules").map(r => r.value).filter(r => r.agentId === agentId).map(r => r.id);
+    const run = (sql: string, ...values: string[]) => this.store.db.prepare(sql).run(...values);
+    this.store.transaction(() => {
+      for (const id of ids) {
+        run("DELETE FROM documents WHERE collection='triggers' AND json_extract(value,'$.rule.id')=?", id);
+        run("DELETE FROM documents WHERE collection='notices' AND json_extract(value,'$.ruleId')=?", id);
+        run("DELETE FROM documents WHERE collection IN ('daily_budgets','cursors') AND substr(id,1,length(?)+1)=?||':'", id, id);
+        run("DELETE FROM documents WHERE collection IN ('rules','precheck_checkpoints') AND id=?", id);
+      }
+    });
+  }
   allows(admission: RunAdmission) {
     if (admission.kind !== "schedule") return true;
     const trigger = this.store.get<Trigger>("triggers", admission.reference);
