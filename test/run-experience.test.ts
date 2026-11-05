@@ -222,3 +222,72 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows a reply streamed during a 
   await see(stream.getByText("子 Agent 稍后的汇报", {exact: true})).toHaveCount(1);
   await see(stream.getByText("流式回复的第一段", {exact: true})).toHaveCount(1);
 }, 30000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no plain-message flash, no loading state, all pages before display, no re-read on return", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  const room = "!paged:example.test", runId = "paged-run";
+  let reads = 0;
+  // Record anything a user would see flash by while the conversation assembles.
+  await page.addInitScript(() => {
+    const seen = { plainReply: false, loading: false, summaries: [] as string[] };
+    (window as unknown as { seen: typeof seen }).seen = seen;
+    new MutationObserver(() => {
+      for (const element of document.querySelectorAll(".room-chat-stream *")) {
+        if (element.children.length || !element.textContent?.includes("分页的历史回复")) continue;
+        if (!element.closest(".mau-run")) seen.plainReply = true;
+      }
+      for (const run of document.querySelectorAll(".mau-run")) {
+        if (run.textContent?.includes("正在读取执行过程")) seen.loading = true;
+        const summary = run.querySelector(".og-disclosure--room-run > .og-disclosure-row")?.textContent ?? "";
+        if (summary && !seen.summaries.includes(summary)) seen.summaries.push(summary);
+      }
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  await page.route("**/communication/tasks?*", async route => { await new Promise(r => setTimeout(r, 800)); return route.fulfill({ json: { data: [{
+    id: "paged-task", conversationId: "paged-conversation", status: "completed", cancelRequested: false,
+    receivedAt: "2026-11-04T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
+    runs: [{claimId: "paged-claim", runId, phase: "finished"}], replyMessageIds: ["$reply"], interactionMessageIds: [],
+  }], next: null } }); });
+  const tool = (callId: string, command: string, output: string) => ({ runId, type: "native.tool", callId, phase: "finished",
+    native: { type: "commandExecution", command, aggregatedOutput: output, exitCode: 0 } });
+  await page.route("**/communication/runs/**", async route => {
+    reads++;
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/events")) return route.fulfill({ json: { claimId: "paged-claim", runId,
+      run: { id: runId, sessionId: "s", runtimeId: "r", status: "completed", answer: "分页的历史回复" }, calls: [] } });
+    if (url.searchParams.get("after") === "0")
+      return route.fulfill({ json: { events: [{ sequence: 1, event: tool("one", "echo 第一页", "第一页") }], cursor: 1, hasMore: true, historyTruncated: false } });
+    await new Promise(r => setTimeout(r, 600));
+    return route.fulfill({ json: { events: [{ sequence: 2, event: tool("two", "echo 第二页", "第二页") }], cursor: 2, hasMore: false, historyTruncated: false } });
+  });
+  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
+    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
+  }, json: { next_batch: "1", rooms: { join: { [room]: {
+    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
+    timeline: { events: [
+      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "分页问题"}},
+      {event_id: "$reply", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "分页的历史回复"}},
+    ]},
+  } } } } }));
+  await page.goto(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
+  await page.reload();
+  const surface = page.locator(".mau-run");
+  await see(surface).toContainText("分页的历史回复");
+  await see(surface).toHaveAttribute("aria-label", "已完成");
+  await see.poll(() => reads).toBe(3);
+  await see(surface).toContainText("已运行 2 条命令");
+  // The collapsed process row only ever reads as a placeholder or the complete summary.
+  expect(await page.evaluate(() => (window as unknown as { seen: unknown }).seen)).toEqual({ plainReply: false, loading: false, summaries: ["执行过程", "已运行 2 条命令"] });
+  // Leaving and returning reuses the finished run instead of reading it again.
+  await page.getByRole("button", { name: "连接器", exact: true }).click();
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await see(surface).toContainText("分页的历史回复");
+  await page.waitForTimeout(1500);
+  expect(reads).toBe(3);
+}, 30000);

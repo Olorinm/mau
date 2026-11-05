@@ -104,6 +104,9 @@ export function MessagesScreen({
     error: taskQueries.find((query) => query.error)?.error ?? null,
     refetch: () => { for (const query of taskQueries) void query.refetch(); },
   };
+  // Replies are grouped under their tasks; showing the timeline before the task list arrives
+  // would paint them as plain messages and then rebuild them as runs.
+  const tasksSettled = !agents.isPending && taskQueries.every((query) => query.data || query.error);
   const createGroup = useMutation({
     mutationFn: () => client.createGroup(groupTitle, groupMembers),
     onSuccess: (id) => {
@@ -328,7 +331,8 @@ export function MessagesScreen({
                     ) : null}
                   </>
                 }
-                messages={current.messages.flatMap((message) => {
+                {...(!tasksSettled ? { empty: <LoadingSurface label={t("common.loading")} /> } : {})}
+                messages={!tasksSettled ? [] : current.messages.flatMap((message) => {
                   const attached = tasks.data?.data.filter((task) => task.source.messageId === message.id) ?? [];
                   const matrixId = (agentId: string) => agents.data?.find(({ agent }) => agent.id === agentId)?.agent.matrixId;
                   // A reply streamed while its task is still running is not in replyMessageIds yet.
