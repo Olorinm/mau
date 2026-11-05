@@ -27,11 +27,18 @@ export class RunReader {
   constructor(private api: ReturnType<typeof runApi>, private claimId: string) {}
   async refresh(signal?: AbortSignal) {
     const terminalBeforeRead = this.terminalDetail;
-    const [detail, page] = await Promise.all([
+    let [detail, page] = await Promise.all([
       terminalBeforeRead ?? this.api.run(this.claimId, signal),
       this.api.events(this.claimId, this.view?.sequence ?? 0, signal),
     ]);
     signal?.throwIfAborted();
+    // A finished run is served from Router's archive: completed items numbered from 1,
+    // not the Host's live sequence (whose fragments are gone). Rebuild once from the start.
+    if (!terminalBeforeRead && this.view && detail.run.status !== "running") {
+      this.view = undefined; this.truncated = false; this.clipped = false;
+      page = await this.api.events(this.claimId, 0, signal);
+      signal?.throwIfAborted();
+    }
     let view = this.view ?? createRunView(detail.run.id);
     // historyTruncated: events were lost. contentTruncated: long values keep only head and tail.
     if (page.historyTruncated) { this.truncated = true; view = createRunView(detail.run.id); }
