@@ -3,6 +3,9 @@ import { ServiceHttp } from "@agent-router/server";
 import { BusinessHost, BusinessTools } from "../src/business-tools.js";
 import { DurableStore } from "../src/store.js";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 const stores: DurableStore[] = [];
 afterEach(() => { stores.splice(0).forEach(s => s.close()); vi.restoreAllMocks(); });
 function fixture() {
@@ -90,7 +93,7 @@ it("refuses tool calls from an ungranted run or a different environment binding"
 });
 it("agent and owner configuration must both match before tools are attached", async () => {
   const f=fixture(), id=randomUUID();
-  const manager=new BusinessTools([{agentId:id,owner:"alice",appId:"cli_fixture",appSecretFile:"private-secret",domain:"feishu",directory:"bot"}], ".", f.store);
+  const manager=new BusinessTools([{agentId:id,owner:"alice",appId:"cli_fixture",appSecretFile:"private-secret",domain:"feishu",directory:"bot"}], mkdtempSync(join(tmpdir(), "mau-bot-")), f.store);
   await manager.host(id,"bob","binding",f.http).start({...input,tools,admission:{...admission,agentId:id}});
   expect(f.submitted().tools).toEqual(tools);
   await manager.host(randomUUID(),"alice","binding",f.http).start({...input,tools,admission:{...admission,agentId:id}});
