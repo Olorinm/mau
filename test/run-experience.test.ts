@@ -333,3 +333,49 @@ it.skipIf(!existsSync(webRoot + "index.html"))("names why a finished process is 
   await clipped.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
   await see(clipped).toContainText("先查看目录");
 }, 30000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the complete answer once a live run finishes and Router serves its archive", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  const room = "!live:example.test", runId = "live-run";
+  let finished = false;
+  const note = (method: string, params: Record<string, unknown>) => ({ runId, type: "native.notification", notification: { method, params: { threadId: "t", ...params } } });
+  const item = { id: "answer", type: "agentMessage", phase: "final_answer" };
+  // While running, the Host numbers events in its own sequence, fragments included.
+  const live = [note("item/started", { item }), ...["第一段", "，第二段"].map((delta) => note("item/agentMessage/delta", { itemId: "answer", delta }))]
+    .map((event, index) => ({ sequence: 101 + index, event }));
+  // Once finished, Router serves its archive: completed items only, numbered from 1.
+  const archive = [note("item/started", { item }), note("item/completed", { item: { ...item, text: "第一段，第二段，完整的最终回答。" } })]
+    .map((event, index) => ({ sequence: index + 1, event }));
+  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
+    id: "live-task", conversationId: "live", status: finished ? "completed" : "running", cancelRequested: false,
+    receivedAt: "2026-11-05T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
+    runs: [{claimId: "live-claim", runId, phase: finished ? "finished" : "running"}], replyMessageIds: finished ? ["$reply"] : [], interactionMessageIds: [],
+  }], next: null } }));
+  await page.route("**/communication/runs/**", route => {
+    const url = new URL(route.request().url()), after = Number(url.searchParams.get("after") ?? 0);
+    if (!url.pathname.endsWith("/events")) return route.fulfill({ json: { claimId: "live-claim", runId, calls: [],
+      run: { id: runId, sessionId: "s", runtimeId: "r", status: finished ? "completed" : "running", answer: finished ? "第一段，第二段，完整的最终回答。" : "" } } });
+    const events = (finished ? archive : live).filter((entry) => entry.sequence > after);
+    return route.fulfill({ json: { events, cursor: events.at(-1)?.sequence ?? after, hasMore: false, historyTruncated: false, liveGap: false } });
+  });
+  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
+    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
+  }, json: { next_batch: "1", rooms: { join: { [room]: {
+    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
+    timeline: { events: [{event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "直播问题"}}] },
+  } } } } }));
+  await page.goto(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
+  await page.reload();
+  const surface = page.locator(".mau-run");
+  await see(surface).toHaveAttribute("aria-label", "正在执行");
+  await see(surface).toContainText("第一段，第二段");
+  finished = true;
+  await see(surface).toHaveAttribute("aria-label", "已完成", { timeout: 10000 });
+  await see(surface).toContainText("第一段，第二段，完整的最终回答。", { timeout: 5000 });
+}, 30000);
