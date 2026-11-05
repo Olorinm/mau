@@ -31,26 +31,20 @@ the retired replacement allocated and paused for explicit operator cleanup.
 
 # Trusted read tools
 
-Optional `businessTools` entries in the server configuration select an exact
-`agentId` and `owner`, a business MCP `endpoint`, and a server-side `tokenFile`.
-`allowPrivateHttp` permits only explicitly configured private IPv4 or loopback
-endpoints; use it for a local hop to an encrypted tunnel. Remote connections should
-use HTTPS. Redirects and model-selected endpoints are refused.
+Optional `feishuBotReaders` entries in the server configuration select an exact
+`agentId` and `owner` with a Feishu bot identity (`appId`, `appSecretFile`, `domain`,
+`directory`), or a Cloudflare read broker (`mode: "cloudflare"`, `endpoint`,
+`tokenFile`). Mau exposes `feishu_bot_read` through Host's native dynamic tools,
+running the official CLI outside the Agent environment. Only CLI-declared reads
+whose dry-run plans are read-only may execute. Shell access, identity overrides and
+local file paths are not accepted.
 
-Mau imports the Connectors package's public adapters and exposes `business_data`
-through Host's native dynamic tools. The fixed read operation list is validated
-against the upstream tool schemas. `tool=tools, arguments={}` discovers those
-schemas. An optional `feishu` entry (`appId`, `appSecretFile`, `domain`, `directory`)
-exposes `feishu_bot_read`, running the official CLI outside the Agent environment.
-Only CLI-declared reads whose dry-run plans are read-only may execute. Shell access,
-identity overrides and local file paths are not accepted.
+The tool is provided only to conversations admitted by Router's channel policy;
+unadmitted runs and other Agents receive no grant. The Feishu bot's permissions
+still define which records can be read. This is not a per-person authorization
+system. Configure channel access accordingly.
 
-Tools are provided only to conversations admitted by Router's channel policy;
-unadmitted runs and other Agents receive no grant. The upstream business account
-and Feishu bot permissions still define which records can be read. This is not a
-per-person business authorization system. Configure channel access accordingly.
-
-These adapters reuse existing credentials from private server files. They do not
-deploy an OAuth vault or KMS. Business writes and personal Feishu authorization
-require the separate ConnectorService flow. Model authentication is also separate
-from these adapters and may still be present in the sandbox.
+The reader reuses existing credentials from private server files. It does not
+deploy an OAuth vault or KMS. Personal Feishu authorization and writes require the
+separate ConnectorService flow. Model authentication is also separate from this
+reader and may still be present in the sandbox.

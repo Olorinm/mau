@@ -13,7 +13,7 @@ export async function checkConnector(apps: ConnectedApps, rule: ProactiveRule, i
   if (!check || !rule.connections.includes(check.connectionId) || rule.operations && !rule.operations.includes(check.tool))
     throw new Error("precheck_not_granted");
   // Account-status reads encode an authorization/network failure inside a
-  // successful result envelope. They are not a business-data change source.
+  // successful result envelope. They are not a data change source.
   if (check.tool.endsWith("__connection_status")) throw new Error("precheck_business_read_required");
   const reader = apps.reader(rule.agentId, rule.owner);
   if (!reader) throw new Error("precheck_unavailable");

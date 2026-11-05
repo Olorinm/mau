@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ProductIcon, ProductStatus } from "@olorinm/agent-ui/app";
 import { SearchField } from "@olorinm/agent-frontend";
-import { mauApi, routerApi, type AgentSummary, type BusinessConnection, type ChannelKind, type ConnectorAccount } from "../api/client";
+import { mauApi, routerApi, type AgentSummary, type ChannelKind, type ConnectorAccount } from "../api/client";
 import type { Session } from "../api/session";
 import { ApiError, safeExternalUrl } from "../api/http";
 import { errorMessage, useI18n } from "../i18n";
@@ -19,7 +19,6 @@ const catalog: Product[] = [
   { id: "slides", name: "Google 幻灯片", en: "Google Slides", description: "阅读演示文稿，提取关键信息。", descriptionEn: "Read presentations and find the key points.", group: "knowledge" },
   { id: "notion", name: "Notion", description: "连接笔记、文档与团队知识。", descriptionEn: "Connect notes, documents and team knowledge.", group: "knowledge" },
   { id: "github", name: "GitHub", description: "了解代码仓库与项目进展。", descriptionEn: "Keep up with repositories and project progress.", group: "knowledge" },
-  { id: "business", name: "业务数据", en: "Business data", description: "让员工查询已授权的业务信息。", descriptionEn: "Let Agents read your authorized business information.", group: "work" },
   { id: "feishu", name: "飞书", en: "Feishu", description: "在飞书里交流，让员工参与日常工作。", descriptionEn: "Work with your Agents in Feishu.", group: "channels", channel: "feishu" },
   { id: "weixin", name: "微信", en: "WeChat", description: "从微信发起对话，接收员工回复。", descriptionEn: "Chat with your Agents through WeChat.", group: "channels", channel: "weixin" },
   { id: "telegram", name: "Telegram", description: "通过 Telegram 与员工保持联系。", descriptionEn: "Keep in touch with your Agents on Telegram.", group: "channels", channel: "telegram" },
@@ -39,7 +38,6 @@ function AppMark({ id, large = false }: { id: string; large?: boolean }) {
       : id === "feishu" ? <svg viewBox="0 0 32 32"><path d="m3 10 11 3 14-9-5 13-9 6z" fill="#3370ff"/><path d="m3 10 10 18 10-11-9 4z" fill="#00d6b9"/></svg>
       : id === "weixin" ? <ProductIcon name="chat" />
       : id === "telegram" ? <ProductIcon name="send" />
-      : id === "business" ? <ProductIcon name="archive" />
       : <ProductIcon name={id === "matrix" ? "rooms" : "mention"} />}
   </span>;
 }
@@ -88,42 +86,28 @@ function AccountDetail({ session, item, agents, changed }: { session: Session; i
     </section>}
   </>;
 }
-function BusinessDetail({ session, items, agents }: { session: Session; items: BusinessConnection[]; agents: AgentSummary[] }) {
-  const { language } = useI18n(), zh = language === "zh-CN";
-  const check = useMutation({ mutationFn: (id: string) => mauApi(session.token).checkConnector(id) });
-  return <><DetailSection title={zh ? "已连接的员工" : "Connected Agents"}>{items.map(item => <div className="mau-business-entry" key={item.agentId}>
-    <div className="mau-permission-row"><span>{agents.find(a => a.agent.id === item.agentId)?.agent.name ?? (zh ? "员工" : "Agent")}</span><span className="mau-muted">{zh ? "只读" : "Read-only"}</span></div>
-    <p className="mau-panel-note">{zh ? `可查询 ${item.tools.length} 项业务工具${item.feishuBotRead ? "，并读取飞书机器人可访问的文件" : ""}。` : `${item.tools.length} business tools available${item.feishuBotRead ? ", with Feishu bot file access" : ""}.`}</p>
-    <Button disabled={check.isPending} onClick={() => check.mutate(item.agentId)}>{zh ? "检查连接" : "Check connection"}</Button>
-    {check.variables === item.agentId && check.isSuccess && <ProductStatus compact tone="success" label={zh ? "连接正常" : "Connection verified"} />}
-    {check.variables === item.agentId && check.isError && <p role="alert">{zh ? "暂时无法检查，请稍后重试。" : "Could not verify the connection. Try again later."}</p>}
-    <details className="mau-tools-disclosure"><summary>{zh ? "查看可用工具" : "View available tools"}</summary><ul>{item.tools.map(tool => <li key={tool}>{tool}</li>)}</ul></details>
-  </div>)}</DetailSection></>;
-}
-
 export function ConnectorsScreen({ session }: { session: Session }) {
   const { language, t } = useI18n(), zh = language === "zh-CN";
   const [query, setQuery] = useState(""), [tab, setTab] = useState<"available" | "connected">("available");
   const [selected, setSelected] = useState<string>(), [connecting, setConnecting] = useState<{ agent: AgentSummary; kind: ChannelKind }>();
   const heading = useRef<HTMLHeadingElement>(null), content = useRef<HTMLDivElement>(null), queryClient = useQueryClient();
   const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: mauApi(session.token).agents });
-  const business = useQuery({ queryKey: ["connectors", session.owner], queryFn: mauApi(session.token).connectors, retry: false });
   const accountsKey = ["connector-accounts", session.owner];
   const accounts = useQuery({ queryKey: accountsKey, queryFn: mauApi(session.token).connectorAccounts, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const checks = useMutation({ mutationFn: (id: string) => routerApi(session.token).check(id) });
-  const error = accounts.error ?? business.error ?? agents.error;
+  const error = accounts.error ?? agents.error;
   const activeAgents = (agents.data ?? []).filter(a => a.environment?.state !== "deleted");
   const linked = (p: Product) => activeAgents.filter(a => a.connections.some(c => c.kind === p.channel));
   const accountFor = (p: Product) => accounts.data?.data.filter(a => `${a.label} ${a.id}`.toLowerCase().includes(p.id)) ?? [];
-  const connected = (p: Product) => p.channel ? linked(p).length > 0 : p.id === "business" ? !!business.data?.length : accountFor(p).some(a => a.state === "connected");
-  const available = (p: Product) => !!p.channel || (p.id === "business" ? !!business.data?.length : accountFor(p).some(a => a.state !== "needs_setup"));
+  const connected = (p: Product) => p.channel ? linked(p).length > 0 : accountFor(p).some(a => a.state === "connected");
+  const available = (p: Product) => !!p.channel || accountFor(p).some(a => a.state !== "needs_setup");
   const productName = (p: Product) => zh ? p.name : p.en ?? p.name;
   const description = (p: Product) => zh ? p.description : p.descriptionEn;
   const stateLabel = (p: Product) => connected(p) ? zh ? "已连接" : "Connected" : available(p) ? zh ? "连接" : "Connect" : zh ? "即将开放" : "Coming soon";
   const matches = (p: Product) => `${p.name} ${p.en ?? ""} ${p.id}`.toLowerCase().includes(query.trim().toLowerCase());
   const visible = catalog.filter(p => matches(p) && (tab === "available" || connected(p)));
   const chosen = catalog.find(p => p.id === selected);
-  const featured = !query && tab === "available" ? catalog.filter(p => ["gmail", "feishu", "business"].includes(p.id) && available(p)) : [];
+  const featured = !query && tab === "available" ? catalog.filter(p => ["gmail", "feishu"].includes(p.id) && available(p)) : [];
   const open = (p: Product) => setSelected(p.id);
   useEffect(() => { if (selected) { content.current?.scrollTo(0, 0); heading.current?.focus(); } }, [selected]);
   const row = (p: Product) => <button key={p.id} className="mau-catalog-row" onClick={() => open(p)} aria-label={`${productName(p)} ${stateLabel(p)}`}>
@@ -143,7 +127,7 @@ export function ConnectorsScreen({ session }: { session: Session }) {
           <button aria-pressed={tab === "connected"} onClick={() => setTab("connected")}>{zh ? "已连接" : "Connected"}{!accounts.isPending && <span>{catalog.filter(connected).length}</span>}</button>
         </div>
       </>}
-      {error && <div role="alert" className="mau-connector-error">{errorMessage(t, error instanceof ApiError ? error.code : "request_failed")}<Button onClick={() => { void business.refetch(); void agents.refetch(); void accounts.refetch(); }}>{zh ? "重新加载" : "Reload"}</Button></div>}
+      {error && <div role="alert" className="mau-connector-error">{errorMessage(t, error instanceof ApiError ? error.code : "request_failed")}<Button onClick={() => { void agents.refetch(); void accounts.refetch(); }}>{zh ? "重新加载" : "Reload"}</Button></div>}
       {accounts.isPending && <p role="status" className="mau-detail-note">{zh ? "正在读取连接状态…" : "Loading connections…"}</p>}
       {chosen ? <>
         {chosen.channel ? <>
@@ -157,8 +141,7 @@ export function ConnectorsScreen({ session }: { session: Session }) {
             </div>; })}
             {!activeAgents.length && !agents.isPending && <p className="mau-panel-note">{zh ? "先在通讯录创建一个员工，再连接此应用。" : "Create an Agent in Contacts to connect this app."}</p>}
           </DetailSection>
-        </> : chosen.id === "business" && business.data?.length ? <BusinessDetail session={session} items={business.data} agents={agents.data ?? []} />
-          : accountFor(chosen).length ? accountFor(chosen).map(item => <AccountDetail key={item.id} session={session} item={item} agents={agents.data ?? []} changed={next => queryClient.setQueryData(accountsKey, (old: { configured: boolean; data: ConnectorAccount[] } | undefined) => old && ({ ...old, data: old.data.map(a => a.id === next.id ? next : a) }))} />)
+        </> : accountFor(chosen).length ? accountFor(chosen).map(item => <AccountDetail key={item.id} session={session} item={item} agents={agents.data ?? []} changed={next => queryClient.setQueryData(accountsKey, (old: { configured: boolean; data: ConnectorAccount[] } | undefined) => old && ({ ...old, data: old.data.map(a => a.id === next.id ? next : a) }))} />)
           : !accounts.isPending && <div className="mau-connector-empty"><ProductIcon name="locked" /><h2>{zh ? "即将开放" : "Coming soon"}</h2><p>{zh ? "这个应用还没有开放账号连接，开放后可以直接在这里授权。" : "Account connections are not available yet. You will be able to connect here when it is ready."}</p></div>}
       </> : <>
         {!!featured.length && <section className="mau-catalog-section"><h2>{zh ? "从这里开始" : "Start here"}</h2><div className="mau-featured-apps">{featured.map(p => <button className="mau-featured-app" key={p.id} onClick={() => open(p)}><AppMark id={p.id} /><strong>{productName(p)}</strong><p>{description(p)}</p><span>{connected(p) ? zh ? "管理连接" : "Manage connection" : zh ? "了解并连接" : "Explore and connect"}<ProductIcon name="next" /></span></button>)}</div></section>}

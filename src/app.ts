@@ -10,7 +10,7 @@ import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type Serv
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
 import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
-import { BusinessTools, businessToolsSchema } from "./business-tools.js";
+import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
@@ -30,7 +30,7 @@ export type { RestrictedMemoryReviewer } from "./memory-review.js";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
-  businessTools: businessToolsSchema,
+  feishuBotReaders: feishuBotReadersSchema,
   connectorAccounts: connectorAccountsSchema,
   connectedApps: connectedAppsSchema,
   nativeWork: z.object({ employeeTools: z.boolean().default(false),
@@ -69,7 +69,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
   // Owner writes need an approval presenter: only Mau's authority key (connectorAccounts) can sign grants.
   const connectedApps = new ConnectedApps(options.connectedApps, base, !!options.connectorAccounts);
-  const business = new BusinessTools(options.businessTools, base, businessStore, connectedApps);
+  const business = new BusinessTools(options.feishuBotReaders, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
   if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
@@ -275,15 +275,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action);
     if (result.authorizationUrl) connectorRuntime?.bind(result.authorizationUrl, res);
     res.json(result);
-  });
-  product.get("/connectors", (_req, res) => res.json({ data: business.inventory(res.locals.owner) }));
-  product.post("/connectors/:agentId/check", async (req, res) => {
-    z.object({}).strict().parse(req.body);
-    const id = String(req.params.agentId);
-    router.service.owned(id, res.locals.owner);
-    if (!business.inventory(res.locals.owner).some(item => item.agentId === id)) throw new RouterError("connector_not_configured", 404);
-    try { res.json(await business.check(res.locals.owner, id)); }
-    catch { throw new RouterError("connector_check_failed", 502); }
   });
   product.get("/options", (_req, res) => res.json({
     environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, workspace }) => ({ id, label, kernel, workspace: workspace === true })),

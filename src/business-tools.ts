@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import type { ScheduledMemoryContext } from "./employee-context.js";
 import { z } from "zod";
 import { HttpAgentHost, RouterError, type HostPort, type ServiceHttp, type HostTool, type HostCall } from "@agent-router/server";
-import { BusinessDataClient, businessDataTools, businessDataOptionsSchema } from "@olorinm/agent-connectors/business-data";
 import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connectors/feishu-bot-reader";
 import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-connectors/cloudflare-read-client";
 import { DurableStore } from "./store.js";
@@ -12,20 +11,20 @@ import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalPort } from "./connec
 import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, readUpload, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
 
-export const businessToolsSchema = z.array(z.union([businessDataOptionsSchema.extend({
-  agentId: z.uuid(), owner: z.string().min(1), feishu: feishuBotReaderSchema.optional(),
+/** A Feishu bot identity read on the server, directly or through the Cloudflare read broker. */
+export const feishuBotReadersSchema = z.array(z.union([feishuBotReaderSchema.extend({
+  agentId: z.uuid(), owner: z.string().min(1),
 }).strict(), cloudflareReadSchema])).max(100).default([]);
-const inputSchema = z.object({ tool: z.enum([...businessDataTools.filter(t => t !== "sql"), "tools"]), arguments: z.record(z.string(), z.unknown()) }).strict();
-const definition = { name: "business_data", timeoutMs: 90_000,
-  description: "Read permitted business data through a server-side connector. Start with tool=tools and arguments={} to see the exact schemas of permitted operations, then catalog for source grants and schema for tables. Available operations: catalog, schema, rows, novel_chapters, novel_production, outline_novel, script_content. The catalog describes each operation's arguments and source grants. No write operations are allowed. Credentials are managed by Mau; never look for keys or internal endpoints in the sandbox.",
-  inputSchema: z.toJSONSchema(inputSchema) };
 
 /** Compose trusted tools with Host's native dynamic-tool protocol; no credential goes to Host. */
 const feishuInput = z.object({ args: z.array(z.string().max(100_000)).min(1).max(100) }).strict();
 const feishuDefinition = { name: "feishu_bot_read", timeoutMs: 90_000,
   description: "Read Feishu resources using the existing bot's permissions through the server-side official CLI. Start with args=[\"skills\",\"read\",\"lark-shared\"] and the relevant domain skill, or args=[\"--help\"]. Inspect a command with args=[\"schema\",\"drive files list\"]. Avoid the full schema catalog. Pass args without the executable, --as, --profile, shell syntax or local paths. Writes are refused. Sending replies/files in the current conversation uses the separate channel tool.",
   inputSchema: z.toJSONSchema(feishuInput) };
-type BusinessClient = Pick<BusinessDataClient, "call"> & { feishu?: Pick<FeishuBotReader, "read"> };
+type BotReader = Pick<FeishuBotReader, "read">;
+// Native tool catalogs are frozen per session, so older sessions still list removed tools.
+// Answer those calls at once instead of leaving them pending until Host's deadline.
+const removedTools = new Set(["business_data"]);
 const sameTool = (definition: Pick<HostTool, "name" | "namespace">, call: HostCall) =>
   definition.name === call.name && (definition.namespace ?? null) === (call.namespace ?? null);
 export interface EmployeeTools {
@@ -36,40 +35,25 @@ export interface EmployeeTools {
   execute(name: string, input: unknown, admission: RunAdmission, callId: string, runId: string): Promise<unknown>;
 }
 export class BusinessTools {
-  private readonly clients = new Map<string, { owner: string; client: BusinessClient }>();
+  private readonly readers = new Map<string, { owner: string; reader: BotReader }>();
   private admissionValidator?: AdmissionValidator;
   private employeeTools?: (agentId: string, owner: string) => EmployeeTools;
   private completed?: (input: CompletedEmployeeTurn) => void;
   private approvals?: ApprovalPort;
   private files?: (agentId: string, binding: string) => Promise<SandboxFiles>;
-  constructor(options: z.input<typeof businessToolsSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
-    for (const entry of businessToolsSchema.parse(options)) {
-      const {agentId, owner} = entry;
-      if (this.clients.has(agentId)) throw new Error("duplicate_business_tool_agent");
+  constructor(options: z.input<typeof feishuBotReadersSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
+    for (const entry of feishuBotReadersSchema.parse(options)) {
+      const { agentId, owner } = entry;
+      if (this.readers.has(agentId)) throw new Error("duplicate_business_tool_agent");
       if ("mode" in entry) {
-        const client = new CloudflareReadClient({...entry, tokenFile: resolve(base, entry.tokenFile)});
-        this.clients.set(agentId, {owner, client: {call: (name, input) => client.call(name, input), feishu: {read: args => client.read(args)}}});
+        const client = new CloudflareReadClient({ ...entry, tokenFile: resolve(base, entry.tokenFile) });
+        this.readers.set(agentId, { owner, reader: { read: args => client.read(args) } });
         continue;
       }
-      const {feishu, agentId: _agentId, owner: _owner, ...option} = entry;
-      const data = new BusinessDataClient({ ...option, tokenFile: resolve(base, option.tokenFile) });
-      this.clients.set(agentId, { owner, client: { call: (name, input) => data.call(name, input),
-        ...(feishu ? { feishu: new FeishuBotReader({ ...feishu, appSecretFile: resolve(base, feishu.appSecretFile), directory: resolve(base, feishu.directory) }) } : {}) } });
+      const { agentId: _agentId, owner: _owner, ...settings } = entry;
+      this.readers.set(agentId, { owner, reader: new FeishuBotReader({ ...settings,
+        appSecretFile: resolve(base, settings.appSecretFile), directory: resolve(base, settings.directory) }) });
     }
-  }
-  inventory(owner: string) {
-    return [...this.clients].filter(([, entry]) => entry.owner === owner).map(([agentId, entry]) => ({
-      agentId, kind: "business-data" as const, status: "configured" as const,
-      tools: businessDataTools.filter(name => name !== "sql"), feishuBotRead: !!entry.client.feishu,
-      permission: "read-only" as const,
-    }));
-  }
-  async check(owner: string, agentId: string) {
-    const entry = this.clients.get(agentId);
-    if (!entry || entry.owner !== owner) throw new Error("business_tool_not_authorized");
-    const result = await entry.client.call("tools", {}) as { isError?: boolean; content?: unknown } | undefined;
-    if (!result || result.isError !== false || !Array.isArray(result.content)) throw new Error("connector_check_failed");
-    return { status: "verified" as const, checkedAt: new Date().toISOString() };
   }
   setAdmissionValidator(validate: AdmissionValidator) { this.admissionValidator = validate; }
   setEmployeeTools(provider: (agentId: string, owner: string) => EmployeeTools) { this.employeeTools = provider; }
@@ -78,12 +62,12 @@ export class BusinessTools {
   setApprovals(port: ApprovalPort) { this.approvals = port; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
-    const entry = this.clients.get(agentId);
-    const client = entry?.owner === owner ? entry.client : undefined, appReader = this.apps?.reader(agentId, owner);
+    const entry = this.readers.get(agentId);
+    const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
     const employee = this.employeeTools?.(agentId, owner);
-    if (!client && !appReader && !employee) return new HttpAgentHost(http);
+    if (!bot && !appReader && !employee) return new HttpAgentHost(http);
     const files = this.files;
-    return new BusinessHost(http, client, this.store, `${agentId}:${binding}`, appReader,
+    return new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
@@ -108,7 +92,7 @@ const approvalRequired = z.object({ status: z.literal("approval_required"), oper
 export class BusinessHost extends HttpAgentHost {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly approvals?: ConnectorApprovals;
-  constructor(http: ServiceHttp, private readonly client: BusinessClient | undefined,
+  constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
     private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly employee?: EmployeeTools,
     private readonly completed?: (input: CompletedEmployeeTurn) => void, private readonly apps?: ConnectedAppHosting) {
@@ -130,10 +114,9 @@ export class BusinessHost extends HttpAgentHost {
     const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const sessionKey = `${this.scope}:${input.sessionId}`;
     const prepare = () => {
-      const granted = (kind: "business" | "feishu" | "connectedApps") => admission &&
+      const granted = (kind: "feishu" | "connectedApps") => admission &&
         (admission.kind === "owner" && !admission.toolGrants || Boolean(admission.toolGrants?.[kind]));
-      const proposed = [...(granted("business") && this.client ? [definition] : []),
-        ...(granted("feishu") && this.client?.feishu ? [feishuDefinition] : []),
+      const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
         ...(granted("connectedApps") && this.appReader ? [connectedAppDefinition] : []),
         ...(admission && admission.kind !== "schedule" ? this.employee?.definitions ?? [] : [])];
       const added = this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
@@ -240,7 +223,8 @@ export class BusinessHost extends HttpAgentHost {
     return this.principal ? validAdmission(value, this.principal.agentId, this.principal.owner, this.principal.validate) : undefined;
   }
   private ownsCall(call: HostCall) {
-    return [definition, feishuDefinition, connectedAppDefinition, ...(this.employee?.definitions ?? [])].some(tool => sameTool(tool, call));
+    return (removedTools.has(call.name) && !call.namespace) ||
+      [feishuDefinition, connectedAppDefinition, ...(this.employee?.definitions ?? [])].some(tool => sameTool(tool, call));
   }
   override async calls(id: string): ReturnType<HostPort["calls"]> {
     // Synthetic IDs belong to Mau. A sandbox Host listing one could put its own text on Mau's approval.
@@ -255,12 +239,13 @@ export class BusinessHost extends HttpAgentHost {
           const grant = this.store.get<{ admission?: RunAdmission; count: number }>("business_runs", grantKey);
           let result: unknown;
           try {
+            if (removedTools.has(call.name) && !call.namespace) throw new Error("tool_removed");
             const admission = this.admission(grant?.admission);
             if (!grant || !admission || call.runId !== id || !Number.isFinite(Date.parse(call.deadlineAt)) || Date.parse(call.deadlineAt) <= Date.now()) throw new Error("business_tool_not_authorized");
             const productTool = this.employee?.definitions.some(d => sameTool(d, call));
-            const kind = call.name === connectedAppDefinition.name ? "connectedApps" : call.name === feishuDefinition.name ? "feishu" : "business";
+            const kind = call.name === connectedAppDefinition.name ? "connectedApps" : "feishu";
             if (productTool ? admission.kind === "schedule" : !(admission.kind === "owner" && !admission.toolGrants) && !admission.toolGrants?.[kind]) throw new Error("business_tool_not_authorized");
-            if (!productTool && (kind === "connectedApps" ? !this.appReader : kind === "feishu" ? !this.client?.feishu : !this.client)) throw new Error("business_tool_not_authorized");
+            if (!productTool && (kind === "connectedApps" ? !this.appReader : !this.bot)) throw new Error("business_tool_not_authorized");
             const receiptKey = `${grantKey}:${call.id}`;
             const hash = createHash("sha256").update(JSON.stringify([call.namespace ?? null, call.name, call.input])).digest("hex");
             const prior = this.store.get<{ hash: string; result?: unknown; approval?: boolean }>("business_call_receipts", receiptKey);
@@ -280,21 +265,17 @@ export class BusinessHost extends HttpAgentHost {
               const parsed = connectedAppInput.safeParse(call.input);
               if (!this.appReader || !parsed.success) throw new Error("business_tool_not_authorized");
               result = await this.connectedApp(parsed.data, admission, call);
-            } else if (call.name === feishuDefinition.name) {
-              const parsed = feishuInput.safeParse(call.input);
-              if (!this.client?.feishu || !parsed.success) throw new Error("invalid_business_arguments");
-              result = await this.client.feishu.read(parsed.data.args);
             } else {
-              const parsed = inputSchema.safeParse(call.input);
-              if (!this.client || !parsed.success) throw new Error("invalid_business_arguments");
-              result = await this.client.call(parsed.data.tool, parsed.data.arguments);
+              const parsed = feishuInput.safeParse(call.input);
+              if (!this.bot || !parsed.success) throw new Error("invalid_business_arguments");
+              result = await this.bot.read(parsed.data.args);
             }
             this.store.set("business_call_receipts", receiptKey, result === WAITING ? { hash, approval: true } : { hash, result });
             }
           } catch (error) {
             const dependencyErrors = ["work_dependency_capacity_exhausted", "work_dependency_same_session", "work_dependency_run_not_active", "work_dependency_run_not_current", "work_dependency_context_mismatch", "work_dependency_wait_in_progress", "work_dependency_wait_unsupported", "invalid_dependency_wait_context"];
-            result = { isError: true, error: error instanceof Error && ["business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required", "steer_owner_admission_required", ...dependencyErrors].includes(error.message)
-              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : call.name === feishuDefinition.name ? "feishu_read_unavailable" : this.employee?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "business_data_unavailable",
+            result = { isError: true, error: error instanceof Error && ["tool_removed", "business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required", "steer_owner_admission_required", ...dependencyErrors].includes(error.message)
+              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.employee?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "feishu_read_unavailable",
               ...(error instanceof Error && error.message === "work_dependency_capacity_exhausted" ? { instruction: "The fixed execution capacity is full. Finish this turn and inspect the existing event later; do not create a replacement task." } : {}) };
           }
           // A write awaiting the owner keeps its Host call pending; the approval card resolves it.
