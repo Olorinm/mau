@@ -24,3 +24,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+Google Workspace CLI (gws) 0.22.5
+https://github.com/googleworkspace/cli
+The container image includes the project's official release binary at /opt/gws/gws, together with its
+LICENSE file, unmodified. Licensed under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). "This is not an officially supported Google product."

@@ -21,6 +21,8 @@ export class ConnectorRuntime {
     this.running = await startConfigured(resolve(this.file));
   }
   async close() { await this.running?.close(); this.running = undefined; }
+  /** Configured connections (kind and settings), without credentials. */
+  connections() { return loadConfig(this.file).connections.map(({ id, kind, settings }) => ({ id, kind, ...(settings ? { settings } : {}) })); }
   bind(authorizationUrl: string, res: Response) {
     const states = new URL(authorizationUrl).searchParams.getAll("state");
     if (states.length !== 1 || !states[0] || states[0].length > 256) throw new RouterError("connector_consent_state_invalid", 502);

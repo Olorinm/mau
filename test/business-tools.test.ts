@@ -183,3 +183,15 @@ it("answers a removed tool still listed in an older session's frozen catalog ins
   expect(f.call).not.toHaveBeenCalled();
   expect(f.resolved.at(-1)).toMatchObject({ success: false }); expect(JSON.stringify(f.resolved.at(-1))).toContain("tool_removed");
 });
+
+it("prepares connector skills before a run, and a failed preparation never blocks the run", async () => {
+  const f = fixture(), read = vi.fn(async () => ({ status: "completed", tools: [] }));
+  const host = new BusinessHost(f.http, undefined, f.store, "apps:binding", read, principal);
+  const prepared: string[] = [];
+  host.beforeStart = async () => { prepared.push("synced"); throw new Error("environment busy"); };
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  await host.start({ ...input, admission });
+  expect(prepared).toEqual(["synced"]);
+  expect(f.submitted().tools.map((tool: any) => tool.name)).toEqual(["connected_apps"]);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining("agent_skills_sync_failed"));
+});

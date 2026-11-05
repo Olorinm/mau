@@ -50,6 +50,26 @@ Create/select the application's Google Cloud project, enable the required API, c
 
 For a personal pilot, add the owner as a test user. Gmail authorizations in an External/Testing application expire after seven days, including offline refresh credentials; do not present this as a durable unattended deployment. Review the appropriate production or personal-use path before long-running automation. Public use of restricted scopes has separate verification requirements and exceptions. See [app audience rules](https://support.google.com/cloud/answer/15549945?hl=en) and [restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification). Do not automatically publish the app or accept new terms as part of a local code test.
 
+### Connector CLIs and guides in the Agent's environment
+
+When `runtimeConfigFile` is set, Mau brings each Agent's connectors into its environment before a run (at most every ten
+minutes per environment):
+
+- For every assigned connection whose connector ships a guide (`@olorinm/agent-connectors/guides`) and currently offers
+  the guide's CLI tools (`<connection>__gws_read`, `<connection>__cli_read`), the guide is written as a Codex skill
+  under `/home/user/.codex/skills/<name>/SKILL.md`. Codex lists installed skills with their one-line description, so the
+  Agent knows the connector from the first turn.
+- The guide's command (`gws`, `lark-cli`) is installed in `/usr/local/bin` as a two-line script that runs Agent Host's
+  `agent-host-relay`. The Agent types the official CLI's commands; Agent Host relays them, bound to the running shell
+  command, through the run's `connected_apps` tool. Credentials stay in ConnectorService, writes keep their approval
+  cards, and scheduled or delegated runs stay read-only.
+- Files Mau installs carry an `Installed by Mau` marker; unassigned ones are removed. Files without the marker (an
+  owner's own skill or CLI) are never overwritten. Environments whose Agent Host predates the relay client get guides
+  but no commands.
+
+The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
+ConnectorService runs for `gws_read`/`gws_write`.
+
 ## Product API
 
 The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
