@@ -30,7 +30,7 @@
   "host": {
     "repository": "Olorinm/agent-host",
     "version": "0.1.0-alpha.12",
-    "integrity": "sha512-rPuyjxwtdWj2gBuOhEHPUnEIjpKf37B6e85SqRRj1zdWxEuBwBewkV3hFWXVAuij5IlgvwtmuJoEPsc8xNVTKw==",
+    "integrity": "sha512-m5xgzzo44aqRpbBFcsbuweSnvwngbOuTFm+6V6nCnZruKuyaLmPPoFaR24Jbo42zLr9E2F1MvQFVyv09kYvwCQ==",
     "distribution": "github-release",
     "revision": "6fd5f7fafbdc64d7781ba0d5200ffd05b9508775",
     "archive": {
