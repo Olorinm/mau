@@ -9,7 +9,7 @@ const code = /^[A-Za-z0-9_]+$/;
 
 export async function request<T>(url: string, options: {
   token?: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
   timeoutMs?: number;

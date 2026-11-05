@@ -3,7 +3,8 @@ import { rateLimit } from "express-rate-limit";
 import { readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { z } from "zod";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
+import type { Duplex } from "node:stream";
 import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
 import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
@@ -378,7 +379,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   const sshServers = new Set<() => void>();
   return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
+    // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`, only with AGENT_LEDGER_READ)
+    // first, then SSH, which answers 404 for every other path. Older Routers have no `upgrade`.
     attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
-      (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId))); },
+      (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId),
+      (req, socket, head) => (router as { upgrade?: (req: IncomingMessage, socket: Duplex, head: Buffer) => boolean }).upgrade?.(req, socket, head) ?? false)); },
     close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

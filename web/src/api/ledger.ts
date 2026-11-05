@@ -1,0 +1,753 @@
+import { ApiError, request } from "./http";
+
+/*
+ * Router owner-ledger web channel (agent-router ADR 0005, section 8).
+ * HTTP carries every command and history read; one WebSocket per tab carries events.
+ * Durable events are ordered per chat by (generation, seq); gaps are repaired from history.
+ * This module has no React or Matrix dependency so the state machine is testable on its own.
+ */
+
+export const ledgerBase = "/_agent-router/v1/web";
+
+// ---- Shared types (ADR 0005 §8.2) ----
+export type Actor = { type: "person" | "agent" | "system" | "external"; id: string; name: string };
+export type ChannelTag = { kind: "web" | "room" | "matrix" | "feishu" | "grove-mail" | "agentmail" | "telegram" | "weixin" | "schedule"; label?: string };
+export type AttachmentRef = { attachmentId: string; name: string; contentType: string; size: number | null; sha256: string | null; url: string };
+export type DeliveryState = { deliveryId: string; channel: ChannelTag; status: "queued" | "sending" | "sent" | "suppressed" | "rejected" | "unknown" | "replied"; error?: string };
+export type CardStatus = "pending" | "answered" | "approved" | "rejected" | "expired" | "canceled";
+export interface Card {
+  cardId: string; agentId: string; turnId: string; claimId: string; callId: string;
+  kind: "question" | "approval" | "connector_approval" | "sensitive";
+  text: string;
+  choices: Array<{ choiceId: string; label: string; style?: "primary" | "danger" }>;
+  freeText: boolean;
+  native?: { method: string; params: unknown };
+  deadlineAt: string | null; status: CardStatus;
+}
+export type TurnState = "queued" | "running" | "waiting" | "completed" | "failed" | "canceled" | "unknown";
+export type ChatEventBody =
+  | { kind: "message"; role: "user" | "assistant"; text: string; html?: string; attachments?: AttachmentRef[];
+      mentions?: { agentIds: string[]; all: boolean }; replyTo?: string; final?: boolean; possibleDuplicate?: boolean;
+      deliveries?: DeliveryState[] }
+  | { kind: "notice"; text: string; level: "info" | "warning" }
+  | { kind: "action"; targetCardId: string; label: string }
+  | { kind: "card"; card: Card }
+  | { kind: "card.update"; cardId: string; status: CardStatus; answeredBy?: Actor; summary?: string }
+  | { kind: "turn"; agentId: string; state: TurnState; inputEventIds: string[]; error?: string }
+  | { kind: "delivery"; targetEventId: string; delivery: DeliveryState }
+  | { kind: "edit"; targetEventId: string; text: string }
+  | { kind: "redaction"; targetEventId: string }
+  | { kind: "reaction"; targetEventId: string; key: string; removed: boolean }
+  | { kind: "window"; window: number; reason: "reset" | "migration" }
+  | { kind: "member"; action: "add" | "remove" | "rename"; member?: Actor; title?: string };
+export type ChatEvent = {
+  chatId: string; seq: number; generation: number; eventId: string; at: string;
+  sender: Actor; channel?: ChannelTag; turnId?: string; idempotencyKey?: string;
+} & ChatEventBody;
+export interface ChatSummary {
+  chatId: string; kind: "dm" | "group" | "observed"; title: string; agentIds: string[];
+  readOnly: boolean; lastSeq: number; generation: number; readSeq: number; unread: number;
+  lastEvent: { eventId: string; at: string; preview: string; sender: Actor } | null;
+  activeTurns: number; pendingCards: number; updatedAt: string;
+}
+export interface Inflight { turnId: string; agentId: string; text: string; updatedAt: string; afterSeq: number }
+export interface EventPage {
+  chatId: string; generation: number; lastSeq: number;
+  mode: "page" | "delta" | "reset";
+  reset?: { reason: "generation_changed" | "gap_too_large" | "not_found" };
+  events: ChatEvent[];
+  olderCursor: number | null;
+  newerCursor: number | null;
+  inflight: Inflight[];
+}
+export interface SendRequest {
+  idempotencyKey: string; text: string; attachments?: string[];
+  mentions?: { agentIds: string[]; all?: boolean }; replyTo?: string;
+}
+export interface SendResponse {
+  status: "accepted" | "duplicate"; event: ChatEvent;
+  addressed: Array<{ agentId: string; state: "queued" | "control" | "not_addressed" }>;
+}
+export interface TurnDetail {
+  turnId: string; chatId: string; agentId: string; state: string; admission: string;
+  inputEventIds: string[]; finalEventId: string | null; cardIds: string[];
+  runs: Array<{ claimId: string; runId: string | null; phase: "submitting" | "running" | "finished" | "unknown"; error: string | null }>;
+}
+export type AnswerRequest = { idempotencyKey: string } & ({ choiceId: string } | { text: string } | { result: unknown });
+export interface LedgerMe {
+  person: { id: string; name: string }; ownerId: string; identities: unknown[];
+  /** `features` is a name → boolean map (ADR 0005 "Client contract" 1); a missing name is off. */
+  limits?: { features?: Partial<Record<LedgerFeature, boolean>> } & Record<string, unknown>;
+}
+export interface HistoryQuery { before?: number; after?: number; generation?: number; limit?: number; strict?: boolean }
+
+// ---- Flags ----
+/** Console features Router advertises per migration phase (ADR 0005 §11). */
+export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups";
+const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups"];
+export const chatSourceKey = "mau.chatSource";
+
+/** The console reads chats from Router only when the browser opted in; Matrix stays the default. */
+export function chatSourcePreference(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): "matrix" | "ledger" {
+  try { return storage?.getItem(chatSourceKey) === "ledger" ? "ledger" : "matrix"; } catch { return "matrix"; }
+}
+
+/** `limits.features` is a name → boolean map; only names set to `true` are on, unknown names are ignored. */
+export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeature> {
+  const raw = me?.limits?.features;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return new Set();
+  return new Set(featureNames.filter((name) => (raw as Record<string, unknown>)[name] === true));
+}
+
+// ---- HTTP ----
+const keyPattern = /^[A-Za-z0-9_-]{16,128}$/;
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
+
+async function failure(response: Response): Promise<ApiError> {
+  const data = await response.json().catch(() => undefined) as { error?: unknown } | undefined;
+  return new ApiError(typeof data?.error === "string" && /^[A-Za-z0-9_]+$/.test(data.error) ? data.error
+    : response.status === 429 ? "rate_limited" : "request_failed", response.status);
+}
+
+export function ledgerApi(token: string, base = ledgerBase) {
+  const chat = (id: string) => base + "/chats/" + encodeURIComponent(id);
+  const signalOf = (signal?: AbortSignal) => signal ? { signal } : {};
+  return {
+    me: (signal?: AbortSignal) => request<LedgerMe>(base + "/me", { token, ...signalOf(signal) }),
+    socketTicket: () => request<{ ticket: string; expiresAt: string }>(base + "/socket-tickets", { token, body: {} }),
+    chats: (cursor?: string | null, signal?: AbortSignal) => request<{ data: ChatSummary[]; next: string | null }>(
+      base + "/chats?" + new URLSearchParams({ archived: "false", ...(cursor ? { cursor } : {}) }), { token, ...signalOf(signal) }),
+    openDm: (agentId: string) => request<ChatSummary>(base + "/chats/dm", { token, body: { agentId } }),
+    chat: (chatId: string, signal?: AbortSignal) => request<ChatSummary & { members: Actor[] }>(chat(chatId), { token, ...signalOf(signal) }),
+    events: (chatId: string, query: HistoryQuery = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.before !== undefined) params.set("before", String(query.before));
+      if (query.after !== undefined) params.set("after", String(query.after));
+      if (query.generation !== undefined) params.set("generation", String(query.generation));
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.strict) params.set("strict", "true");
+      const search = params.toString();
+      return request<EventPage>(chat(chatId) + "/events" + (search ? "?" + search : ""), { token, ...signalOf(signal) });
+    },
+    send: (chatId: string, body: SendRequest) => {
+      if (!keyPattern.test(body.idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
+      return request<SendResponse>(chat(chatId) + "/messages", { token, body });
+    },
+    reset: (chatId: string, idempotencyKey: string) => request<{ window: number; event: ChatEvent }>(chat(chatId) + "/reset", { token, body: { idempotencyKey } }),
+    read: (chatId: string, seq: number) => request<{ readSeq: number; unread: number }>(chat(chatId) + "/read", { token, body: { seq } }),
+    turn: (chatId: string, turnId: string, signal?: AbortSignal) => request<TurnDetail>(chat(chatId) + "/turns/" + encodeURIComponent(turnId), { token, ...signalOf(signal) }),
+    cancelTurn: (chatId: string, turnId: string) => request<{ status: "accepted" }>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/cancel", { token, body: {} }),
+    steer: (chatId: string, turnId: string, text: string, idempotencyKey = newIdempotencyKey()) =>
+      request<{ status: "accepted" | "unsupported" }>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/steer", { token, body: { idempotencyKey, text } }),
+    answerCard: (chatId: string, cardId: string, answer: AnswerRequest) =>
+      request<{ status: "accepted" | "duplicate" | "stale"; card: Card }>(chat(chatId) + "/cards/" + encodeURIComponent(cardId) + "/answer", { token, body: answer }),
+    createGroup: (title: string, agentIds: string[], idempotencyKey = newIdempotencyKey()) =>
+      request<ChatSummary>(base + "/groups", { token, body: { idempotencyKey, title, agentIds } }),
+    updateGroup: (roomId: string, patch: { title?: string; archived?: boolean }) =>
+      request<ChatSummary>(base + "/groups/" + encodeURIComponent(roomId), { token, method: "PATCH", body: patch }),
+    addMember: (roomId: string, agentId: string) =>
+      request<{ members: Actor[] }>(base + "/groups/" + encodeURIComponent(roomId) + "/members", { token, body: { agentId } }),
+    removeMember: (roomId: string, agentId: string) =>
+      request<{ members: Actor[] }>(base + "/groups/" + encodeURIComponent(roomId) + "/members/" + encodeURIComponent(agentId), { token, method: "DELETE" }),
+    /** Raw-body upload (§8.3). Browsers set Content-Length themselves; it cannot be assigned by script. */
+    async uploadAttachment(file: Blob, name: string, signal?: AbortSignal): Promise<AttachmentRef> {
+      const bytes = await file.arrayBuffer();
+      const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const response = await fetch(base + "/attachments", {
+        // Same-origin cookies let an edge access gate (Cloudflare Access) pass the request.
+        method: "POST", credentials: "same-origin", redirect: "error", body: bytes,
+        headers: {
+          Accept: "application/json", Authorization: `Bearer ${token}`,
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": "UTF-8''" + encodeURIComponent(name),
+          "X-Sha256": digest,
+        },
+        ...signalOf(signal),
+      }).catch(() => { throw new ApiError("network_error", 0); });
+      if (!response.ok) throw await failure(response);
+      return await response.json() as AttachmentRef;
+    },
+    /** The URL needs the bearer header, so bytes are fetched and handed to the caller as a Blob. */
+    async downloadAttachment(attachmentId: string, signal?: AbortSignal): Promise<Blob> {
+      const response = await fetch(base + "/attachments/" + encodeURIComponent(attachmentId), {
+        credentials: "same-origin", redirect: "error", headers: { Authorization: `Bearer ${token}` }, ...signalOf(signal),
+      }).catch(() => { throw new ApiError("network_error", 0); });
+      if (!response.ok) throw await failure(response);
+      return response.blob();
+    },
+  };
+}
+export type LedgerApi = ReturnType<typeof ledgerApi>;
+/** What the state machine needs from HTTP; tests supply a fake server. */
+export type LedgerTransport = Pick<LedgerApi, "socketTicket" | "events" | "send" | "read" | "chats">;
+
+// ---- Socket ----
+export interface LedgerSocket {
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  onopen: ((event: unknown) => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: ((event: { code: number; reason?: string }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+}
+export type SocketFactory = (url: string) => LedgerSocket;
+export interface LedgerClock {
+  now(): number;
+  random(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+const systemClock: LedgerClock = {
+  now: () => Date.now(), random: () => Math.random(),
+  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+export function browserSocketUrl(ticket: string, location: Pick<Location, "protocol" | "host"> = globalThis.location): string {
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${ledgerBase}/socket?` + new URLSearchParams({ ticket });
+}
+
+// ---- State machine ----
+export type ConnectionState = "idle" | "connecting" | "open" | "reconnecting" | "closed";
+export interface PendingSend {
+  idempotencyKey: string; chatId: string; text: string; attachments: AttachmentRef[];
+  mentions?: { agentIds: string[]; all?: boolean }; replyTo?: string;
+  state: "sending" | "accepted" | "failed" | "rejected"; error?: string; createdAt: number;
+}
+export interface LedgerChatView {
+  chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
+  events: readonly ChatEvent[]; hasOlder: boolean; inflight: readonly Inflight[];
+  pending: readonly PendingSend[]; error?: string;
+}
+interface ChatState {
+  chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
+  events: ChatEvent[]; olderCursor: number | null;
+  inflight: Map<string, Inflight>;
+  /** Live frames past a gap, kept until history fills it. */
+  buffered: Map<number, ChatEvent>;
+  repair?: Promise<void>; retry?: unknown;
+  error?: string; view?: LedgerChatView;
+}
+interface Request { method: string; chatIds: string[] }
+
+const terminalTurn = new Set<TurnState>(["completed", "failed", "canceled", "unknown"]);
+const retryable = (error: unknown) => !(error instanceof ApiError) || error.status === 0 || error.status === 429 || error.status >= 500;
+
+export interface LedgerClientOptions {
+  socket: SocketFactory;
+  socketUrl?: (ticket: string) => string;
+  clock?: LedgerClock;
+  idempotencyKey?: () => string;
+  /** Maximum reconnect delay; the base doubles from 1 s. */
+  maxBackoffMs?: number;
+}
+
+/**
+ * Owner-scoped chat state over the ledger web API: history pages, a live socket with per-chat seq,
+ * gap catch-up, reset/snapshot reloads, reconnect with backoff, and optimistic sends deduped by idempotencyKey.
+ */
+export class LedgerClient {
+  readonly chats = new Map<string, ChatSummary>();
+  connection: { state: ConnectionState; epoch?: string; attempt: number; error?: string } = { state: "idle", attempt: 0 };
+  private readonly states = new Map<string, ChatState>();
+  /** Chats the UI has open; they are (re)subscribed on every socket. */
+  private readonly open = new Set<string>();
+  private readonly pending = new Map<string, PendingSend>();
+  private readonly listeners = new Set<() => void>();
+  private readonly requests = new Map<string, Request>();
+  private readonly clock: LedgerClock;
+  private socket: LedgerSocket | undefined;
+  private reconnectTimer: unknown;
+  private heartbeat: unknown;
+  private heartbeatMs = 30_000;
+  private lastFrameAt = 0;
+  private nextRequest = 1;
+  private version = 0;
+  private stopped = true;
+
+  constructor(private readonly api: LedgerTransport, private readonly options: LedgerClientOptions) {
+    this.clock = options.clock ?? systemClock;
+  }
+
+  // -- observation (useSyncExternalStore) --
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  getVersion = () => this.version;
+  private notify() {
+    this.version++;
+    for (const state of this.states.values()) delete state.view;
+    for (const listener of this.listeners) listener();
+  }
+
+  view(chatId: string): LedgerChatView {
+    const state = this.state(chatId);
+    if (state.view) return state.view;
+    const shown = new Set(state.events.flatMap((event) => event.idempotencyKey ? [event.idempotencyKey] : []));
+    return state.view = {
+      chatId, loaded: state.loaded, generation: state.generation, lastSeq: state.lastSeq, readSeq: state.readSeq,
+      events: state.events, hasOlder: state.olderCursor !== null, inflight: [...state.inflight.values()],
+      pending: [...this.pending.values()].filter((item) => item.chatId === chatId && !shown.has(item.idempotencyKey)),
+      ...(state.error ? { error: state.error } : {}),
+    };
+  }
+  private state(chatId: string): ChatState {
+    let state = this.states.get(chatId);
+    if (!state) {
+      state = { chatId, loaded: false, generation: 0, lastSeq: 0, readSeq: this.chats.get(chatId)?.readSeq ?? 0,
+        events: [], olderCursor: null, inflight: new Map(), buffered: new Map() };
+      this.states.set(chatId, state);
+    }
+    return state;
+  }
+
+  // -- chat index --
+  async loadChats(signal?: AbortSignal) {
+    let cursor: string | null = null;
+    const seen = new Set<string>();
+    do {
+      const page: { data: ChatSummary[]; next: string | null } = await this.api.chats(cursor, signal);
+      for (const summary of page.data) { seen.add(summary.chatId); this.updateSummary(summary); }
+      cursor = page.next;
+    } while (cursor);
+    for (const chatId of [...this.chats.keys()]) if (!seen.has(chatId)) this.chats.delete(chatId);
+    this.notify();
+    return [...this.chats.values()];
+  }
+  updateSummary(summary: ChatSummary) {
+    this.chats.set(summary.chatId, summary);
+    const state = this.states.get(summary.chatId);
+    if (!state) return;
+    if (summary.readSeq > state.readSeq) state.readSeq = summary.readSeq;
+    if (state.loaded && summary.generation !== state.generation) void this.snapshot(summary.chatId);
+  }
+  /** Newest activity first, as the server orders `GET /chats`. */
+  chatList(): ChatSummary[] {
+    return [...this.chats.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  }
+
+  // -- history --
+  /** Load the latest page once and keep the chat subscribed while open. */
+  async openChat(chatId: string) {
+    this.open.add(chatId);
+    const state = this.state(chatId);
+    if (!state.loaded) await this.snapshot(chatId);
+    else if (this.connection.state === "open") this.request("subscribe", [chatId]);
+  }
+  closeChat(chatId: string) {
+    if (!this.open.delete(chatId)) return;
+    if (this.connection.state === "open") this.request("unsubscribe", [chatId]);
+  }
+  async loadOlder(chatId: string) {
+    const state = this.state(chatId);
+    if (!state.loaded || state.olderCursor === null) return;
+    const page = await this.api.events(chatId, { before: state.olderCursor });
+    if (page.mode === "reset" || page.generation !== state.generation) return this.snapshot(chatId);
+    const first = state.events[0]?.seq ?? Infinity;
+    state.events = [...page.events.filter((event) => event.seq < first), ...state.events];
+    state.olderCursor = page.olderCursor;
+    this.notify();
+  }
+
+  /** Discard local events and load the latest page (reset, snapshot_required, generation change). */
+  private snapshot(chatId: string): Promise<void> {
+    const state = this.state(chatId);
+    return this.serial(state, () => this.load(state));
+  }
+  /** Gap repair; concurrent callers share the running repair. */
+  private repair(state: ChatState): Promise<void> {
+    return state.repair ?? this.serial(state, () => this.catchUp(state));
+  }
+  /** One history operation per chat at a time; live frames are buffered meanwhile. */
+  private serial(state: ChatState, task: () => Promise<void>): Promise<void> {
+    const run = (state.repair ?? Promise.resolve()).catch(() => undefined).then(task);
+    const tracked: Promise<void> = run.catch((error: unknown) => {
+      state.error = error instanceof ApiError ? error.code : "request_failed";
+      // A failed repair with frames still waiting retries on a timer, never in a tight loop.
+      if (state.buffered.size && state.retry === undefined)
+        state.retry = this.clock.setTimeout(() => { delete state.retry; void this.repair(state); }, 2000);
+    }).finally(() => {
+      if (state.repair !== tracked) return;
+      delete state.repair;
+      this.drain(state);
+      this.notify();
+      // Frames past a gap arrived while the repair ran: repair again unless a retry is already timed.
+      if (state.buffered.size && state.retry === undefined) void this.repair(state);
+    });
+    state.repair = tracked;
+    return run;
+  }
+  private async load(state: ChatState): Promise<void> {
+    const page = await this.api.events(state.chatId, {});
+    state.loaded = true;
+    state.generation = page.generation;
+    state.events = [...page.events];
+    state.olderCursor = page.olderCursor;
+    state.lastSeq = page.events.at(-1)?.seq ?? page.lastSeq;
+    state.inflight = new Map(page.inflight.map((item) => [item.turnId, item]));
+    state.buffered = new Map([...state.buffered].filter(([seq, event]) => seq > state.lastSeq && event.generation === page.generation));
+    delete state.error;
+    for (const event of page.events) this.settle(event);
+    this.notify();
+    if (this.open.has(state.chatId) && this.connection.state === "open") this.request("subscribe", [state.chatId]);
+    if (page.newerCursor !== null || page.lastSeq > state.lastSeq) await this.catchUp(state);
+  }
+
+  /** Fill `lastSeq+1 …` from history (`after=`); then drain buffered live frames. */
+  private async catchUp(state: ChatState): Promise<void> {
+    let guard = 0;
+    for (;;) {
+      const page = await this.api.events(state.chatId, { after: state.lastSeq, generation: state.generation });
+      if (page.mode === "reset" || page.generation !== state.generation) return this.load(state);
+      for (const event of page.events) this.accept(state, event);
+      if (page.newerCursor === null) {
+        for (const item of page.inflight) state.inflight.set(item.turnId, item);
+        break;
+      }
+      if (!page.events.length || ++guard > 1000) throw new ApiError("invalid_response", 200);
+    }
+    this.drain(state);
+    delete state.error;
+    // History has not reached a buffered frame yet (publication race): try again shortly.
+    if (state.buffered.size && state.retry === undefined)
+      state.retry = this.clock.setTimeout(() => { delete state.retry; void this.repair(state); }, 1000);
+  }
+
+  /** Apply one event from any source. Returns true when it was shown now. */
+  private ingest(event: ChatEvent): boolean {
+    const state = this.state(event.chatId);
+    if (!state.loaded) return false;            // the first page load will include it
+    if (state.repair) { state.buffered.set(event.seq, event); return false; }
+    if (event.generation !== state.generation) {
+      state.buffered.set(event.seq, event);
+      void this.snapshot(event.chatId).catch(() => undefined);
+      return false;
+    }
+    if (event.seq <= state.lastSeq) { this.settle(event); return false; }
+    if (event.seq > state.lastSeq + 1) {
+      state.buffered.set(event.seq, event);
+      void this.repair(state);
+      return false;
+    }
+    this.accept(state, event);
+    this.drain(state);
+    return true;
+  }
+  private accept(state: ChatState, event: ChatEvent) {
+    if (event.seq <= state.lastSeq) return;   // duplicate
+    if (event.seq !== state.lastSeq + 1 || event.generation !== state.generation) throw new ApiError("invalid_response", 200);
+    state.events.push(event);
+    state.lastSeq = event.seq;
+    state.buffered.delete(event.seq);
+    if (event.turnId && ((event.kind === "message" && event.final) || (event.kind === "turn" && terminalTurn.has(event.state))))
+      state.inflight.delete(event.turnId);
+    this.settle(event);
+  }
+  private drain(state: ChatState) {
+    for (const [seq, event] of [...state.buffered]) if (seq <= state.lastSeq || event.generation !== state.generation) state.buffered.delete(seq);
+    for (let next = state.buffered.get(state.lastSeq + 1); next; next = state.buffered.get(state.lastSeq + 1))
+      this.accept(state, next);
+  }
+  /** A stored event with the sender's key replaces the optimistic bubble. */
+  private settle(event: ChatEvent) {
+    if (event.idempotencyKey && this.pending.get(event.idempotencyKey)?.chatId === event.chatId)
+      this.pending.delete(event.idempotencyKey);
+  }
+
+  // -- commands --
+  async send(chatId: string, input: { text: string; attachments?: AttachmentRef[]; mentions?: { agentIds: string[]; all?: boolean }; replyTo?: string }) {
+    const key = (this.options.idempotencyKey ?? newIdempotencyKey)();
+    const item: PendingSend = { idempotencyKey: key, chatId, text: input.text, attachments: input.attachments ?? [], state: "sending", createdAt: this.clock.now(),
+      ...(input.mentions ? { mentions: input.mentions } : {}), ...(input.replyTo ? { replyTo: input.replyTo } : {}) };
+    this.pending.set(key, item);
+    this.notify();
+    return this.transmit(item);
+  }
+  /** Retry with the same key: the server answers `duplicate` if the first attempt was stored. */
+  retry(idempotencyKey: string) {
+    const item = this.pending.get(idempotencyKey);
+    if (!item || item.state === "sending" || item.state === "accepted") return Promise.resolve(undefined);
+    return this.transmit(item);
+  }
+  discard(idempotencyKey: string) {
+    if (this.pending.delete(idempotencyKey)) this.notify();
+  }
+  private async transmit(item: PendingSend): Promise<SendResponse | undefined> {
+    item.state = "sending"; delete item.error; this.notify();
+    try {
+      const response = await this.api.send(item.chatId, {
+        idempotencyKey: item.idempotencyKey, text: item.text,
+        ...(item.attachments.length ? { attachments: item.attachments.map((ref) => ref.attachmentId) } : {}),
+        ...(item.mentions ? { mentions: item.mentions } : {}), ...(item.replyTo ? { replyTo: item.replyTo } : {}),
+      });
+      // Shown as sent until the event is in order (socket or catch-up), whichever comes first.
+      if (this.pending.has(item.idempotencyKey)) item.state = "accepted";
+      this.ingest(response.event);
+      this.notify();
+      return response;
+    } catch (error) {
+      if (!this.pending.has(item.idempotencyKey)) return undefined;
+      item.state = retryable(error) ? "failed" : "rejected";
+      item.error = error instanceof ApiError ? error.code : "request_failed";
+      this.notify();
+      throw error;
+    }
+  }
+  /** Read markers are monotonic on the server; lower values are not sent. */
+  async markRead(chatId: string, seq: number) {
+    const state = this.state(chatId);
+    if (seq <= state.readSeq) return;
+    state.readSeq = seq;
+    const summary = this.chats.get(chatId);
+    if (summary) this.chats.set(chatId, { ...summary, readSeq: seq, unread: 0 });
+    this.notify();
+    const result = await this.api.read(chatId, seq);
+    if (result.readSeq > state.readSeq) state.readSeq = result.readSeq;
+    const latest = this.chats.get(chatId);
+    if (latest) this.chats.set(chatId, { ...latest, readSeq: Math.max(latest.readSeq, result.readSeq), unread: result.unread });
+    this.notify();
+  }
+
+  // -- socket --
+  connect() {
+    if (!this.stopped) return;
+    this.stopped = false;
+    void this.dial();
+  }
+  disconnect() {
+    this.stopped = true;
+    this.clock.clearTimeout(this.reconnectTimer);
+    this.clock.clearTimeout(this.heartbeat);
+    const socket = this.socket;
+    this.socket = undefined;
+    socket?.close(1000, "client_closed");
+    this.connection = { ...this.connection, state: "closed" };
+    this.notify();
+  }
+  private async dial() {
+    if (this.stopped) return;
+    this.connection = { ...this.connection, state: this.connection.attempt ? "reconnecting" : "connecting" };
+    this.notify();
+    let ticket: string;
+    try {
+      // Tickets are single-use and short-lived, so every dial asks for a new one.
+      ticket = (await this.api.socketTicket()).ticket;
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return this.stop(error.code);
+      return this.schedule();
+    }
+    if (this.stopped) return;
+    const socket = this.options.socket((this.options.socketUrl ?? browserSocketUrl)(ticket));
+    this.socket = socket;
+    this.lastFrameAt = this.clock.now();
+    socket.onmessage = (message) => { if (this.socket === socket) this.frame(message.data); };
+    socket.onclose = (event) => { if (this.socket === socket) this.closed(event.code); };
+    socket.onerror = () => undefined;
+  }
+  private stop(error: string) {
+    this.stopped = true;
+    this.connection = { ...this.connection, state: "closed", error };
+    this.notify();
+  }
+  private schedule(minimum = 0) {
+    if (this.stopped) return;
+    const attempt = this.connection.attempt++;
+    const ceiling = Math.min(this.options.maxBackoffMs ?? 30_000, 1000 * 2 ** attempt);
+    // Full jitter in [ceiling/2, ceiling] so many tabs do not reconnect together after a restart.
+    const delay = Math.max(minimum, Math.round(ceiling / 2 + this.clock.random() * ceiling / 2));
+    this.connection = { ...this.connection, state: "reconnecting" };
+    this.notify();
+    this.clock.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = this.clock.setTimeout(() => void this.dial(), delay);
+  }
+  private closed(code: number) {
+    this.socket = undefined;
+    this.clock.clearTimeout(this.heartbeat);
+    this.requests.clear();
+    for (const state of this.states.values()) state.inflight.clear();
+    if (this.stopped) return;
+    if (code === 4401) return this.stop("unauthorized");
+    if (code === 4403) return this.stop("forbidden");
+    // 4408 backpressure and 1012 restart reconnect and catch up through subscribe replay.
+    this.schedule(code === 4429 ? 30_000 : 0);
+  }
+  private beat() {
+    this.clock.clearTimeout(this.heartbeat);
+    this.heartbeat = this.clock.setTimeout(() => {
+      const socket = this.socket;
+      if (!socket) return;
+      // No frame (not even pong) for two intervals: the connection is dead.
+      if (this.clock.now() - this.lastFrameAt > this.heartbeatMs * 2) {
+        this.socket = undefined;
+        socket.close(4000, "heartbeat_timeout");
+        return this.closed(4000);
+      }
+      socket.send("ping");
+      this.beat();
+    }, this.heartbeatMs);
+  }
+  private request(method: "subscribe" | "unsubscribe", chatIds: string[]) {
+    const socket = this.socket;
+    if (!socket || !chatIds.length) return;
+    const id = String(this.nextRequest++);
+    this.requests.set(id, { method, chatIds });
+    const params = method === "subscribe"
+      ? { chats: chatIds.flatMap((chatId) => {
+          const state = this.states.get(chatId);
+          return state?.loaded ? [{ chatId, afterSeq: state.lastSeq, generation: state.generation }] : [];
+        }), index: true }
+      : { chatIds };
+    socket.send(JSON.stringify({ type: "req", id, method, params }));
+  }
+  private frame(raw: unknown) {
+    this.lastFrameAt = this.clock.now();
+    if (typeof raw !== "string" || raw === "pong") return;
+    let message: { type?: string; id?: string; ok?: boolean; result?: unknown; error?: { code?: string }; event?: string; data?: unknown };
+    try { message = JSON.parse(raw); } catch { return; }
+    if (message.type === "res" && typeof message.id === "string") return this.response(message);
+    if (message.type !== "event") return;
+    const data = message.data as Record<string, unknown> | undefined;
+    switch (message.event) {
+      case "hello": {
+        const hello = data as { epoch?: string; heartbeatMs?: number };
+        if (hello.epoch !== this.connection.epoch) for (const state of this.states.values()) state.inflight.clear();
+        if (typeof hello.heartbeatMs === "number" && hello.heartbeatMs > 0) this.heartbeatMs = hello.heartbeatMs;
+        this.connection = { state: "open", attempt: 0, ...(hello.epoch ? { epoch: hello.epoch } : {}) };
+        this.beat();
+        this.request("subscribe", [...this.open]);
+        this.notify();
+        return;
+      }
+      case "chat.event":
+        if (this.ingest(data as unknown as ChatEvent)) this.notify();
+        return;
+      case "chat.stream": {
+        const stream = data as { chatId: string; turnId: string; agentId: string; text: string; afterSeq: number };
+        const state = this.states.get(stream.chatId);
+        if (!state?.loaded) return;
+        state.inflight.set(stream.turnId, { turnId: stream.turnId, agentId: stream.agentId, text: stream.text,
+          afterSeq: stream.afterSeq, updatedAt: new Date(this.clock.now()).toISOString() });
+        this.notify();
+        return;
+      }
+      case "chats.updated":
+        this.updateSummary(data as unknown as ChatSummary);
+        this.notify();
+        return;
+      case "chat.read": {
+        const read = data as { chatId: string; readSeq: number };
+        const state = this.states.get(read.chatId);
+        if (state && read.readSeq > state.readSeq) state.readSeq = read.readSeq;
+        const summary = this.chats.get(read.chatId);
+        if (summary && read.readSeq > summary.readSeq) this.chats.set(read.chatId, { ...summary, readSeq: read.readSeq });
+        this.notify();
+        return;
+      }
+      case "snapshot_required": {
+        const chatId = (data as { chatId: string }).chatId;
+        const state = this.states.get(chatId);
+        if (state) { state.buffered.clear(); void this.snapshot(chatId).catch(() => undefined); }
+        return;
+      }
+    }
+  }
+  /**
+   * Subscribe results (ADR 0005 8.4): chats that failed are listed in `result.errors` and only they get an error;
+   * `ok:false` is a request-level failure for every chat in it. `mode` is informational: a `reset` is always
+   * followed by a `snapshot_required` frame, which is what reloads the chat.
+   */
+  private response(message: { id?: string; ok?: boolean; result?: unknown; error?: { code?: string } }) {
+    const request = this.requests.get(message.id!);
+    this.requests.delete(message.id!);
+    if (!request || request.method !== "subscribe") return;
+    const failed = message.ok
+      ? ((message.result as { errors?: Array<{ chatId: string; code?: string }> } | undefined)?.errors ?? [])
+      : request.chatIds.map((chatId) => ({ chatId, code: message.error?.code }));
+    for (const item of failed) {
+      const state = this.states.get(item.chatId);
+      if (state) state.error = item.code ?? "subscribe_failed";
+    }
+    if (failed.length) this.notify();
+  }
+}
+
+// ---- Folding (ADR 0005 §8.2 "Folding rules for clients") ----
+export interface LedgerBubble {
+  eventId: string; seq: number; at: string; sender: Actor; channel?: ChannelTag; turnId?: string;
+  kind: "message" | "notice" | "action" | "card" | "window" | "member";
+  role: "user" | "assistant" | "system"; text: string; html?: string;
+  attachments: AttachmentRef[]; replyTo?: string; final?: boolean; possibleDuplicate?: boolean; edited?: boolean;
+  reactions: Array<{ key: string; senders: string[] }>; deliveries: DeliveryState[];
+  level?: "info" | "warning"; card?: Card; idempotencyKey?: string;
+}
+export interface LedgerTurn { turnId: string; agentId: string; state: TurnState; inputEventIds: string[]; error?: string; seq: number }
+export interface LedgerFold { items: LedgerBubble[]; turns: Map<string, LedgerTurn>; cards: Map<string, Card> }
+
+/** edit, redaction, reaction, card.update and delivery modify their target and are not bubbles. */
+export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
+  const items: LedgerBubble[] = [], byId = new Map<string, LedgerBubble>();
+  const turns = new Map<string, LedgerTurn>(), cards = new Map<string, Card>();
+  const reactions = new Map<string, Map<string, Set<string>>>();
+  for (const event of events) {
+    const base = { eventId: event.eventId, seq: event.seq, at: event.at, sender: event.sender,
+      ...(event.channel ? { channel: event.channel } : {}), ...(event.turnId ? { turnId: event.turnId } : {}),
+      ...(event.idempotencyKey ? { idempotencyKey: event.idempotencyKey } : {}),
+      attachments: [] as AttachmentRef[], reactions: [] as LedgerBubble["reactions"], deliveries: [] as DeliveryState[] };
+    let bubble: LedgerBubble | undefined;
+    switch (event.kind) {
+      case "message":
+        bubble = { ...base, kind: "message", role: event.role, text: event.text, attachments: event.attachments ?? [], deliveries: [...(event.deliveries ?? [])],
+          ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
+          ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}) };
+        break;
+      case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;
+      case "action": bubble = { ...base, kind: "action", role: "user", text: event.label }; break;
+      case "card": cards.set(event.card.cardId, { ...event.card }); bubble = { ...base, kind: "card", role: "assistant", text: event.card.text, card: cards.get(event.card.cardId)! }; break;
+      case "window": bubble = { ...base, kind: "window", role: "system", text: String(event.window) }; break;
+      case "member": bubble = { ...base, kind: "member", role: "system", text: event.title ?? event.member?.name ?? "" }; break;
+      case "turn": {
+        const previous = turns.get(event.turnId ?? "");
+        const turnId = event.turnId;
+        if (turnId) turns.set(turnId, { turnId, agentId: event.agentId, state: event.state, seq: previous?.seq ?? event.seq,
+          inputEventIds: event.inputEventIds.length ? event.inputEventIds : previous?.inputEventIds ?? [], ...(event.error ? { error: event.error } : {}) });
+        break;
+      }
+      case "card.update": {
+        const card = cards.get(event.cardId);
+        if (card) card.status = event.status;
+        break;
+      }
+      case "edit": {
+        const target = byId.get(event.targetEventId);
+        if (target && target.sender.id === event.sender.id) { target.text = event.text; target.edited = true; delete target.html; }
+        break;
+      }
+      case "redaction": {
+        const target = byId.get(event.targetEventId);
+        if (target) { byId.delete(event.targetEventId); items.splice(items.indexOf(target), 1); }
+        break;
+      }
+      case "reaction": {
+        if (!byId.has(event.targetEventId)) break;
+        const keys = reactions.get(event.targetEventId) ?? new Map<string, Set<string>>();
+        const senders = keys.get(event.key) ?? new Set<string>();
+        if (event.removed) senders.delete(event.sender.id); else senders.add(event.sender.id);
+        keys.set(event.key, senders);
+        reactions.set(event.targetEventId, keys);
+        break;
+      }
+      case "delivery": {
+        const target = byId.get(event.targetEventId);
+        if (!target) break;
+        const index = target.deliveries.findIndex((item) => item.deliveryId === event.delivery.deliveryId);
+        if (index >= 0) target.deliveries[index] = event.delivery; else target.deliveries.push(event.delivery);
+        break;
+      }
+    }
+    if (bubble) { items.push(bubble); byId.set(bubble.eventId, bubble); }
+  }
+  for (const [eventId, keys] of reactions) {
+    const target = byId.get(eventId);
+    if (target) target.reactions = [...keys].filter(([, senders]) => senders.size).map(([key, senders]) => ({ key, senders: [...senders] }));
+  }
+  return { items, turns, cards };
+}
