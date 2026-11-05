@@ -61,17 +61,22 @@ export class BusinessTools {
   /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
   setApprovals(port: ApprovalPort) { this.approvals = port; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
+  private skills?: (agentId: string, owner: string, binding: string) => Promise<unknown>;
+  /** Connector guides and CLI commands are brought into the environment before a run starts. */
+  setSkills(sync: (agentId: string, owner: string, binding: string) => Promise<unknown>) { this.skills = sync; }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.readers.get(agentId);
     const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
     const employee = this.employeeTools?.(agentId, owner);
     if (!bot && !appReader && !employee) return new HttpAgentHost(http);
-    const files = this.files;
-    return new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
+    const files = this.files, skills = this.skills;
+    const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
+    if (appReader && skills) host.beforeStart = () => skills(agentId, owner, binding);
+    return host;
   }
 }
 export interface CompletedEmployeeTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
@@ -92,6 +97,7 @@ const approvalRequired = z.object({ status: z.literal("approval_required"), oper
 export class BusinessHost extends HttpAgentHost {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly approvals?: ConnectorApprovals;
+  beforeStart?: () => Promise<unknown>;
   constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
     private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly employee?: EmployeeTools,
@@ -108,6 +114,9 @@ export class BusinessHost extends HttpAgentHost {
   }
   override async start(input: Parameters<HostPort["start"]>[0] & { admission?: RunAdmission }) {
     const { admission: supplied, ...request } = input;
+    // Installing guides must never block or fail a run.
+    await this.beforeStart?.().catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_skills_sync_failed",
+      error: error instanceof Error ? error.message : "unknown" })));
     const admission = this.admission(supplied);
     if (supplied && !admission) throw new RouterError("business_run_admission_invalid", 403);
     const requestId = input.requestKey ? `${this.scope}:${input.runtimeId}:${input.requestKey}` : undefined;

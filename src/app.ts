@@ -15,6 +15,7 @@ import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
+import { AgentSkills } from "./agent-skills.js";
 import { EmployeeContext, MemoryError } from "./employee-context.js";
 import { ProactiveWork, type ProactivePort } from "./proactive.js";
 import { NativeEmployeeTools } from "./native-work.js";
@@ -104,6 +105,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
   business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
+  if (connectorRuntime) {
+    const skills = new AgentSkills(connectedApps, () => connectorRuntime.connections());
+    business.setSkills((agentId, owner, binding) => skills.sync(agentId, owner, binding, () => environments.files(agentId, binding)));
+  }
   const sessions = async (owner: string, agentId: string) => {
     router.service.owned(agentId, owner);
     const value = (await router.service.runtime(agentId)).extension?.sessions;
