@@ -103,7 +103,7 @@ export class NativeEmployeeTools implements EmployeeTools {
       return sessions.submit({ eventId, ...(input.action === "send" ? { sessionId: input.sessionId! } : {}),
         input: required(input.input, "input"), context: { source: "delegated_work", parentReference: admission.reference, callId },
         admission: { kind: "delegation", owner: this.owner, agentId: this.agentId, reference: callId,
-          toolGrants: admission.toolGrants ?? { business: true, feishu: true,
+          toolGrants: admission.toolGrants ?? { feishu: true,
             connectedApps: { connections: this.apps.connections(this.agentId, this.owner) } },
           ...(admission.expiresAt ? { expiresAt: admission.expiresAt } : {}),
           ...(admission.maxToolCalls ? { maxToolCalls: admission.maxToolCalls } : {}) } });

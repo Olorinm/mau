@@ -426,9 +426,7 @@ body {
 .mau-disconnect-panel { padding: 18px 22px; margin-top: 24px; }.mau-disconnect-panel p { font-size: var(--fs-sm); line-height: 1.7; margin: 0; }
 .mau-text-danger { border: 0; padding: 0; background: transparent; font: inherit; font-size: var(--fs-sm); color: #b54a49; cursor: pointer; }.mau-text-danger:disabled { opacity: .5; cursor: default; }
 .mau-panel-note { margin: 0; padding: 12px 22px; line-height: 1.7; color: var(--c-text-2); font-size: 12px; }
-.mau-business-entry, .mau-channel-entry { padding-bottom: 16px; border-bottom: 1px solid var(--c-line-06); }.mau-business-entry:last-child, .mau-channel-entry:last-child { border-bottom: 0; }
-.mau-business-entry > button, .mau-business-entry > .product-status { margin-left: 22px; }
-.mau-tools-disclosure { font-size: 12px; color: var(--c-text-2); padding: 16px 22px 0; }.mau-tools-disclosure li { overflow-wrap: anywhere; line-height: 1.8; }
+.mau-channel-entry { padding-bottom: 16px; border-bottom: 1px solid var(--c-line-06); }.mau-channel-entry:last-child { border-bottom: 0; }
 .mau-channel-connected { font-size: 12px; color: #53845f; margin-left: 64px; }
 .mau-channel-entry .mau-permission-row { padding-bottom: 8px; }
 .mau-connector-empty { text-align: center; color: var(--c-text-2); padding: 46px 24px; }.mau-connector-empty > svg { width: 28px; height: 28px; margin: 0 auto 16px; }.mau-connector-empty h2 { color: var(--c-text); font-size: 16px; }.mau-connector-empty p { font-size: var(--fs-sm); line-height: 1.7; }

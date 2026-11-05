@@ -802,7 +802,6 @@ it.skipIf(!built)("redirects from app details to consent, returns to catalog and
     state = action === "disconnect" ? "disconnected" : "connected";
     return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
   });
-  await page.route("**/_mau/v1/connectors", route => route.fulfill({json:{data:[{agentId:f.agent.id,kind:"business-data",status:"configured",tools:["catalog","tools","read","search","summary","metrics","lookup"],feishuBotRead:true,permission:"read-only"}]}}));
   await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
   await page.reload();
   await page.getByRole("button", { name: "连接器", exact: true }).click();

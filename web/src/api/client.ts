@@ -20,7 +20,6 @@ export interface AgentSummary {
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
-export interface BusinessConnection { agentId: string; kind: "business-data"; status: "configured"; tools: string[]; feishuBotRead: boolean; permission: "read-only" }
 export interface ConnectorAccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
@@ -63,8 +62,6 @@ export function mauApi(token: string) {
     account: () => request<{ owner: string }>(mau + "/account", { token }),
     connectorAccounts: () => request<{ configured: boolean; data: ConnectorAccount[] }>(mau + "/connector-accounts", { token, timeoutMs: 95_000 }),
     connectorAccountAction: (id: string, action: "check" | "connect" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, credentials: "same-origin", timeoutMs: 150_000 }),
-    connectors: () => request<{ data: BusinessConnection[] }>(mau + "/connectors", { token }).then(r => r.data),
-    checkConnector: (id: string) => request<{ status: "verified"; checkedAt: string }>(mau + "/connectors/" + encodeURIComponent(id) + "/check", { token, body: {}, timeoutMs: 95_000 }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),

@@ -7,6 +7,7 @@ export const runAdmissionSchema = z.object({
   expiresAt: z.iso.datetime().optional(),
   maxToolCalls: z.number().int().min(1).max(1000).optional(),
   toolGrants: z.object({
+    // `business` appears in grants stored before business data was removed; nothing reads it.
     business: z.boolean().optional(), feishu: z.boolean().optional(),
     connectedApps: z.object({ connections: z.array(z.string()).max(64),
       operations: z.array(z.string()).max(200).optional() }).strict().optional(),
