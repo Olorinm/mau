@@ -23,8 +23,9 @@ export async function request<T>(url: string, options: {
   try {
     const response = await fetch(url, {
       method,
-      credentials: options.credentials ?? "omit",
-      redirect: "error",
+      // Same-origin cookies carry an edge access session (e.g. Cloudflare Access) in front of the console.
+      credentials: options.credentials ?? "same-origin",
+      redirect: "manual",
       headers: {
         Accept: "application/json",
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
@@ -33,6 +34,9 @@ export async function request<T>(url: string, options: {
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       signal,
     });
+    // APIs never redirect; a redirect means the edge access session expired and the page must sign in again.
+    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400))
+      throw new ApiError("access_session_expired", 0);
     if (response.status === 204) return null as T;
     // Rate limiters and proxies may answer with text rather than JSON.
     const data = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
