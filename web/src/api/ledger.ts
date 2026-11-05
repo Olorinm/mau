@@ -76,7 +76,8 @@ export interface TurnDetail {
 export type AnswerRequest = { idempotencyKey: string } & ({ choiceId: string } | { text: string } | { result: unknown });
 export interface LedgerMe {
   person: { id: string; name: string }; ownerId: string; identities: unknown[];
-  limits?: { features?: string[] | Record<string, boolean> } & Record<string, unknown>;
+  /** `features` is a name → boolean map (ADR 0005 "Client contract" 1); a missing name is off. */
+  limits?: { features?: Partial<Record<LedgerFeature, boolean>> } & Record<string, unknown>;
 }
 export interface HistoryQuery { before?: number; after?: number; generation?: number; limit?: number; strict?: boolean }
 
@@ -91,11 +92,11 @@ export function chatSourcePreference(storage: Pick<Storage, "getItem"> | undefin
   try { return storage?.getItem(chatSourceKey) === "ledger" ? "ledger" : "matrix"; } catch { return "matrix"; }
 }
 
-/** `limits.features` may be a list of names or a name → boolean map; unknown names are ignored. */
+/** `limits.features` is a name → boolean map; only names set to `true` are on, unknown names are ignored. */
 export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeature> {
   const raw = me?.limits?.features;
-  const names = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.entries(raw).filter(([, on]) => on === true).map(([name]) => name) : [];
-  return new Set(featureNames.filter((name) => names.includes(name)));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return new Set();
+  return new Set(featureNames.filter((name) => (raw as Record<string, unknown>)[name] === true));
 }
 
 // ---- HTTP ----
@@ -155,7 +156,8 @@ export function ledgerApi(token: string, base = ledgerBase) {
       const bytes = await file.arrayBuffer();
       const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
       const response = await fetch(base + "/attachments", {
-        method: "POST", credentials: "omit", redirect: "error", body: bytes,
+        // Same-origin cookies let an edge access gate (Cloudflare Access) pass the request.
+        method: "POST", credentials: "same-origin", redirect: "error", body: bytes,
         headers: {
           Accept: "application/json", Authorization: `Bearer ${token}`,
           "Content-Type": file.type || "application/octet-stream",
@@ -170,7 +172,7 @@ export function ledgerApi(token: string, base = ledgerBase) {
     /** The URL needs the bearer header, so bytes are fetched and handed to the caller as a Blob. */
     async downloadAttachment(attachmentId: string, signal?: AbortSignal): Promise<Blob> {
       const response = await fetch(base + "/attachments/" + encodeURIComponent(attachmentId), {
-        credentials: "omit", redirect: "error", headers: { Authorization: `Bearer ${token}` }, ...signalOf(signal),
+        credentials: "same-origin", redirect: "error", headers: { Authorization: `Bearer ${token}` }, ...signalOf(signal),
       }).catch(() => { throw new ApiError("network_error", 0); });
       if (!response.ok) throw await failure(response);
       return response.blob();
@@ -648,21 +650,23 @@ export class LedgerClient {
       }
     }
   }
+  /**
+   * Subscribe results (ADR 0005 8.4): chats that failed are listed in `result.errors` and only they get an error;
+   * `ok:false` is a request-level failure for every chat in it. `mode` is informational: a `reset` is always
+   * followed by a `snapshot_required` frame, which is what reloads the chat.
+   */
   private response(message: { id?: string; ok?: boolean; result?: unknown; error?: { code?: string } }) {
     const request = this.requests.get(message.id!);
     this.requests.delete(message.id!);
     if (!request || request.method !== "subscribe") return;
-    if (!message.ok) {
-      for (const chatId of request.chatIds) {
-        const state = this.states.get(chatId);
-        if (state) state.error = message.error?.code ?? "subscribe_failed";
-      }
-      this.notify();
-      return;
+    const failed = message.ok
+      ? ((message.result as { errors?: Array<{ chatId: string; code?: string }> } | undefined)?.errors ?? [])
+      : request.chatIds.map((chatId) => ({ chatId, code: message.error?.code }));
+    for (const item of failed) {
+      const state = this.states.get(item.chatId);
+      if (state) state.error = item.code ?? "subscribe_failed";
     }
-    const chats = (message.result as { chats?: Array<{ chatId: string; mode?: string }> } | undefined)?.chats ?? [];
-    for (const chat of chats)
-      if (chat.mode === "reset" || chat.mode === "snapshot") void this.snapshot(chat.chatId).catch(() => undefined);
+    if (failed.length) this.notify();
   }
 }
 

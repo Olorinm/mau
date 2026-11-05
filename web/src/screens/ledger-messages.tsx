@@ -242,6 +242,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       });
       for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
     }
+    // Active turns whose input and replies are not loaded (older page) still show their run surface.
+    for (const turn of fold.turns.values()) if (!placed.has(turn.turnId) && !terminalTurn.includes(turn.state)) messages.push(turnView(turn));
     // Streams of turns not yet in the loaded page (accumulated text; durable events replace it).
     for (const item of view.inflight) if (!fold.turns.has(item.turnId)) {
       const name = names.get(item.agentId) ?? current.title;

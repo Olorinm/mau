@@ -33,17 +33,19 @@ class FakeSocket implements LedgerSocket {
     if (data === "ping") return this.push("pong");
     const req = JSON.parse(data) as { id: string; method: string; params: { chats?: Array<{ chatId: string; afterSeq: number; generation: number }>; chatIds?: string[] } };
     if (req.method === "unsubscribe") { for (const id of req.params.chatIds ?? []) this.subscriptions.delete(id); return this.push({ type: "res", id: req.id, ok: true, result: {} }); }
-    const replay: unknown[] = [], result: unknown[] = [];
+    const replay: unknown[] = [], result: unknown[] = [], errors: unknown[] = [];
     for (const want of req.params.chats ?? []) {
+      if (this.server.missing.has(want.chatId)) { errors.push({ chatId: want.chatId, code: "chat_not_found" }); continue; }
       const chat = this.server.chat(want.chatId);
       this.subscriptions.add(want.chatId);
       const missed = chat.events.filter((event) => event.seq > want.afterSeq);
-      if (want.generation !== chat.generation || missed.length > 500)
+      const reset = want.generation !== chat.generation || missed.length > 500;
+      if (reset)
         replay.push({ type: "event", event: "snapshot_required", data: { chatId: want.chatId, reason: want.generation !== chat.generation ? "generation_changed" : "gap_too_large" } });
       else replay.push(...missed.map((event) => ({ type: "event", event: "chat.event", data: event })));
-      result.push({ chatId: want.chatId, mode: "delta", lastSeq: chat.lastSeq });
+      result.push({ chatId: want.chatId, mode: reset ? "reset" : "delta", lastSeq: chat.lastSeq, generation: chat.generation });
     }
-    this.push({ type: "res", id: req.id, ok: true, result: { chats: result } });
+    this.push({ type: "res", id: req.id, ok: true, result: { chats: result, errors } });
     for (const frame of replay) this.push(frame);
   }
   close() { this.closed = true; }
@@ -54,6 +56,8 @@ class FakeLedger implements LedgerTransport {
   epoch = "ep_1";
   pageLimit = 3;
   tickets = new Set<string>();
+  /** Chats the socket reports in `result.errors` (deleted agent, foreign chat). */
+  missing = new Set<string>();
   issued = 0;
   sockets: FakeSocket[] = [];
   history: HistoryQuery[] = [];
@@ -349,14 +353,15 @@ it("folds edits, redactions, reactions, card updates, deliveries and turns into 
   expect(fold.turns.get("t1")).toMatchObject({ state: "completed", inputEventIds: ["ev_1"], seq: 2 });
 });
 
-it("keeps Matrix unless the browser opts in, and reads features as a list or a map", () => {
+it("keeps Matrix unless the browser opts in, and reads features from the boolean map only", () => {
   const storage = (value: string | null) => ({ getItem: () => value });
   expect(chatSourcePreference(storage(null))).toBe("matrix");
   expect(chatSourcePreference(storage("matrix"))).toBe("matrix");
   expect(chatSourcePreference(storage("ledger"))).toBe("ledger");
   expect(chatSourcePreference({ getItem: () => { throw new Error("denied"); } })).toBe("matrix");
   const me = (features: unknown) => ({ person: { id: "p", name: "n" }, ownerId: "o", identities: [], limits: { features } }) as never;
-  expect([...ledgerFeatures(me(["history", "send", "bogus"]))]).toEqual(["history", "send"]);
+  expect([...ledgerFeatures(me(["history", "send", "bogus"]))]).toEqual([]);
+  expect([...ledgerFeatures(me({ history: true, send: false, cards: false, attachments: false, reset: false, groups: false, bogus: true }))]).toEqual(["history"]);
   expect([...ledgerFeatures(me({ history: true, cards: false, groups: true }))]).toEqual(["history", "groups"]);
   expect(ledgerFeatures(me(undefined)).size).toBe(0);
 });
@@ -382,6 +387,7 @@ it("calls the web API with encoded chat ids, cursors, idempotency keys and raw a
     ["POST", "/_agent-router/v1/web/attachments"],
   ]);
   expect(JSON.parse(calls[2]!.init.body as string)).toEqual({ idempotencyKey: "0123456789abcdef", text: "hi" });
+  expect(calls.map(({ init }) => init.credentials)).toEqual(["same-origin", "same-origin", "same-origin", "same-origin", "same-origin"]);
   expect(calls[4]!.init.headers).toMatchObject({
     Authorization: "Bearer token", "Content-Type": "text/plain", "X-File-Name": "UTF-8''%E7%AC%94%E8%AE%B0%201.txt",
     "X-Sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -399,4 +405,22 @@ it("retries a send whose response was lost with the same key and shows one messa
   expect(texts(client)).toEqual(["once"]);
   expect(client.view(chatId).pending).toEqual([]);
   expect(server.chat(chatId).events).toHaveLength(1);
+});
+
+it("marks only the chats a subscribe reports in errors, and reloads a reset chat once", async () => {
+  const { server, client } = setup();
+  server.append(say("one"), {}, false);
+  await client.openChat(chatId);
+  await client.openChat("dm:gone");
+  server.missing.add("dm:gone");
+  client.connect(); await tick();
+  expect(client.view(chatId).error).toBeUndefined();
+  expect(client.view("dm:gone").error).toBe("chat_not_found");
+  // Reconnect after a rewrite: the result says mode "reset" and a snapshot_required frame follows; one reload.
+  server.rewrite(["new"]);
+  const loads = server.history.filter((query) => query.after === undefined && query.before === undefined).length;
+  server.live.serverClose(1012);
+  await tick(2000);
+  expect(texts(client)).toEqual(["new"]);
+  expect(server.history.filter((query) => query.after === undefined && query.before === undefined).length - loads).toBe(1);
 });
