@@ -49,7 +49,9 @@ export interface SshConnection { url: URL; headers: Record<string, string>; rele
 
 /** Upgrade is authenticated separately because Express does not handle it. */
 export function attachSsh(server: Server, authenticate: (token: string) => Promise<string>,
-  connect: (owner: string, agentId: string, keyId: string) => Promise<SshConnection>) {
+  connect: (owner: string, agentId: string, keyId: string) => Promise<SshConnection>,
+  /** Other upgrade handlers on the same server (Router's event socket); true when one took the request. */
+  delegate: (req: IncomingMessage, socket: Duplex, head: Buffer) => boolean = () => false) {
   const sockets = new Set<Duplex>();
   let closing = false;
   async function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
@@ -82,7 +84,10 @@ export function attachSsh(server: Server, authenticate: (token: string) => Promi
       else socket.destroy();
     } finally { clearTimeout(timer); }
   }
-  const listener = (req: IncomingMessage, socket: Duplex, head: Buffer) => { void upgrade(req, socket, head); };
+  const listener = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (!closing && delegate(req, socket, head)) return;
+    void upgrade(req, socket, head);
+  };
   server.on("upgrade", listener);
   return () => { closing = true; server.off("upgrade", listener); for (const socket of sockets) socket.destroy(); };
 }
