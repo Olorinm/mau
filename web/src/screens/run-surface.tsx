@@ -116,8 +116,8 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
       {...(active ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label}} : {})}
       {...(active ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
-    {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p>
-      : data?.clipped ? <p className="mau-muted">{zh ? "部分过长的输出只保留了开头和结尾。" : "Some long output keeps only its beginning and end."}</p> : null}
+    {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
+    {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p> : null}
     {interactions.filter(({request}) => request.kind !== "approval" && request.kind !== "questions").map(({call}) =>
       <Interaction key={call.id} call={call} claimId={claimId} api={api} active={active} onAnswered={() => query.refetch()} />)}
   </section>;
