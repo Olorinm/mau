@@ -291,3 +291,45 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
   await page.waitForTimeout(1500);
   expect(reads).toBe(3);
 }, 30000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("names why a finished process is incomplete, and shows reasoning from completed items", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  const room = "!limits:example.test";
+  const task = (id: string, messageId: string, reply: string) => ({ id, conversationId: "limits", status: "completed", cancelRequested: false,
+    receivedAt: "2026-11-05T00:00:00Z", source: {connectionId: "matrix", target: room, messageId, sender: alice, scope: "direct"},
+    runs: [{claimId: id + "-claim", runId: id + "-run", phase: "finished"}], replyMessageIds: [reply], interactionMessageIds: []});
+  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [task("clipped", "$q1", "$r1"), task("lost", "$q2", "$r2")], next: null } }));
+  await page.route("**/communication/runs/**", route => {
+    const url = new URL(route.request().url()), claim = decodeURIComponent(url.pathname.split("/runs/")[1]!.split("/")[0]!), runId = claim.replace("-claim", "-run");
+    if (!url.pathname.endsWith("/events")) return route.fulfill({ json: { claimId: claim, runId,
+      run: { id: runId, sessionId: "s", runtimeId: "r", status: "completed", answer: claim === "clipped-claim" ? "截断的回复" : "丢失的回复" }, calls: [] } });
+    const reasoning = { runId, type: "native.notification", notification: { method: "item/completed", params: { threadId: "t", item: { id: "r", type: "reasoning", summary: ["先查看目录"], content: [] } } } };
+    return route.fulfill({ json: { events: [{ sequence: 1, event: reasoning }], cursor: 1, hasMore: false, liveGap: false,
+      historyTruncated: claim === "lost-claim", contentTruncated: claim === "clipped-claim" } });
+  });
+  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
+    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
+  }, json: { next_batch: "1", rooms: { join: { [room]: {
+    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
+    timeline: { events: [
+      {event_id: "$q1", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "问题一"}},
+      {event_id: "$r1", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "截断的回复"}},
+      {event_id: "$q2", sender: alice, type: "m.room.message", origin_server_ts: 3, content: {msgtype: "m.text", body: "问题二"}},
+      {event_id: "$r2", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 4, content: {msgtype: "m.text", body: "丢失的回复"}},
+    ]},
+  } } } } }));
+  await page.goto(f.base);
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
+  await page.reload();
+  const [clipped, lost] = [page.locator('.mau-run[data-run-id="clipped-claim"]'), page.locator('.mau-run[data-run-id="lost-claim"]')];
+  await see(clipped).toContainText("部分过长的输出只保留了开头和结尾。");
+  await see(clipped).not.toContainText("未能保留");
+  await see(lost).toContainText("部分执行过程未能保留。");
+  await clipped.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
+  await see(clipped).toContainText("先查看目录");
+}, 30000);

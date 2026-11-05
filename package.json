@@ -63,7 +63,7 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@agent-router/server": "0.7.0-alpha.7",
+    "@agent-router/server": "0.7.0-alpha.8",
     "@olorinm/agent-connectors": "0.1.0-alpha.5",
     "@olorinm/agent-environment": "0.2.0-alpha.3"
   },
