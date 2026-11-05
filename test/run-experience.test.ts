@@ -292,7 +292,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
   expect(reads).toBe(3);
 }, 30000);
 
-it.skipIf(!existsSync(webRoot + "index.html"))("names why a finished process is incomplete, and shows reasoning from completed items", async () => {
+it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not shortened values, and shows reasoning from completed items", async () => {
   const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
@@ -327,8 +327,8 @@ it.skipIf(!existsSync(webRoot + "index.html"))("names why a finished process is 
   await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
   await page.reload();
   const [clipped, lost] = [page.locator('.mau-run[data-run-id="clipped-claim"]'), page.locator('.mau-run[data-run-id="lost-claim"]')];
-  await see(clipped).toContainText("部分过长的输出只保留了开头和结尾。");
-  await see(clipped).not.toContainText("未能保留");
+  await see(clipped).toContainText("截断的回复");
+  await see(clipped.locator(".mau-muted")).toHaveCount(0);
   await see(lost).toContainText("部分执行过程未能保留。");
   await clipped.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
   await see(clipped).toContainText("先查看目录");

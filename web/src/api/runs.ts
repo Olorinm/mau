@@ -22,7 +22,6 @@ export function runApi(token: string, agentId: string) {
 export class RunReader {
   private view: RunView | undefined;
   private truncated = false;
-  private clipped = false;
   private terminalDetail: RunDetail | undefined;
   constructor(private api: ReturnType<typeof runApi>, private claimId: string) {}
   async refresh(signal?: AbortSignal) {
@@ -35,14 +34,13 @@ export class RunReader {
     // A finished run is served from Router's archive: completed items numbered from 1,
     // not the Host's live sequence (whose fragments are gone). Rebuild once from the start.
     if (!terminalBeforeRead && this.view && detail.run.status !== "running") {
-      this.view = undefined; this.truncated = false; this.clipped = false;
+      this.view = undefined; this.truncated = false;
       page = await this.api.events(this.claimId, 0, signal);
       signal?.throwIfAborted();
     }
     let view = this.view ?? createRunView(detail.run.id);
-    // historyTruncated: events were lost. contentTruncated: long values keep only head and tail.
+    // historyTruncated: events were lost. (contentTruncated values are marked inline.)
     if (page.historyTruncated) { this.truncated = true; view = createRunView(detail.run.id); }
-    if ("contentTruncated" in page && page.contentTruncated) this.clipped = true;
     for (const item of page.events) {
       if (typeof item.event.type !== "string" || item.event.runId !== detail.run.id || !Number.isSafeInteger(item.sequence) || item.sequence <= 0)
         throw new ApiError("invalid_response", 200);
@@ -55,6 +53,6 @@ export class RunReader {
     // Publish every page immediately. If completion raced the parallel event read,
     // drain once more after observing the terminal status so final events cannot be lost.
     const more = page.hasMore || (!!this.terminalDetail && !terminalBeforeRead);
-    return { detail, view, truncated: this.truncated, clipped: this.clipped, more };
+    return { detail, view, truncated: this.truncated, more };
   }
 }
