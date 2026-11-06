@@ -25,6 +25,8 @@ import { checkConnector } from "./connector-precheck.js";
 import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
 import { CompletedTurns } from "./completed-turns.js";
 import { NativeRelay } from "./native-relay.js";
+import { OwnerPrivateConnections, ownerPrivateAdmission } from "./owner-private.js";
+import { chatChannelApplication } from "./feishu-entry.js";
 
 export { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "./restricted-memory-reviewer.js";
 export type { ReviewRuntimeBinding, ReviewToolBinding, CodexRestrictedReviewerDependencies } from "./restricted-memory-reviewer.js";
@@ -137,6 +139,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
   business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
+  // Rule: owner-identity connections (Feishu personal authorization) only in the owner's private conversation.
+  const ownerPrivate = new OwnerPrivateConnections([...connectedApps.ownerPrivateConnections,
+    ...(connectorRuntime?.connections().filter(c => c.kind === "feishu").map(c => c.id) ?? [])],
+    connectorAccounts.configured ? () => connectorAccounts.usage() : undefined);
+  business.setOwnerPrivate({ connections: () => ownerPrivate.ids(),
+    admitted: async admission => ownerPrivateAdmission(admission, await router.service.runtime(admission.agentId).then(r => r.extension, () => undefined)) });
   if (connectorRuntime) {
     const skills = new AgentSkills(connectedApps, () => connectorRuntime.connections());
     business.setSkills((agentId, owner, binding) => skills.sync(agentId, owner, binding, () => environments.files(agentId, binding)));
@@ -312,9 +320,17 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       return { ...account, ...(assignedAgents.length ? { assignedAgents, permission: "read-only" } : {}) };
     }) });
   });
+  // Unified 飞书 entry, step 2: hand the app of the Agent's Feishu chat channel to the owner's Feishu connection.
+  product.post("/connector-accounts/:id/feishu-application", async (req, res) => {
+    const { agentId } = z.object({ agentId: z.uuid() }).strict().parse(req.body);
+    const owner = res.locals.owner as string, agent = router.service.owned(agentId, owner), id = String(req.params.id);
+    if (!connectedApps.assigned(owner, id).includes(agentId)) throw new RouterError("connector_not_assigned_to_agent", 409);
+    const application = chatChannelApplication(router.connections.configuration(agent)?.connections, router.connections.agentDirectory(agentId));
+    res.json(await connectorAccounts.provideApplication(owner, id, application));
+  });
   product.post("/connector-accounts/:id/:action", async (req, res) => {
     z.object({}).strict().parse(req.body);
-    const action = z.enum(["check", "connect", "disconnect"]).parse(req.params.action);
+    const action = z.enum(["check", "connect", "complete", "disconnect"]).parse(req.params.action);
     const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action);
     if (result.authorizationUrl) connectorRuntime?.bind(result.authorizationUrl, res);
     res.json(result);

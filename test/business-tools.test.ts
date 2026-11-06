@@ -195,3 +195,34 @@ it("prepares connector skills before a run, and a failed preparation never block
   expect(f.submitted().tools.map((tool: any) => tool.name)).toEqual(["connected_apps"]);
   expect(warn).toHaveBeenCalledWith(expect.stringContaining("agent_skills_sync_failed"));
 });
+
+it("admits owner-identity connections only in the owner's private conversation, with a clear refusal elsewhere", async () => {
+  const f = fixture();
+  const read = vi.fn(async (input: any, scope?: any) => input.action === "tools"
+    ? { status: "completed", tools: (scope?.connections ?? ["alice-feishu", "alice-gmail"]).map((id: string) => ({ name: `${id.replaceAll("-", "_")}__read` })) }
+    : { status: "completed", result: "ok" });
+  let privateConversation = false, known: Set<string> | undefined = new Set(["alice-feishu"]);
+  const hosting = { connections: ["alice-feishu", "alice-gmail"], browser: [],
+    ownerPrivate: { connections: async () => known, admitted: async () => privateConversation } };
+  const host = new BusinessHost(f.http, undefined, f.store, "private:binding", read, principal, undefined, undefined, hosting);
+  await host.start({ ...input, tools, admission });
+  const answer = async (body: unknown, id: string) => { f.setCalls("connected_apps", "", body, id); await host.calls("run"); return JSON.parse(f.resolved.at(-1).contentItems[0].text); };
+  // A group turn (Router admits the owner's private-group turns as `owner`): Feishu is reported unavailable, Gmail stays.
+  const listed = await answer({ action: "tools" }, "group-tools");
+  expect(listed.tools.map((t: any) => t.name)).toEqual(["alice_gmail__read"]);
+  expect(listed.unavailableHere).toEqual([{ connection: "alice-feishu", reason: "connected_app_owner_private_only" }]);
+  read.mockClear();
+  const refused = await answer({ action: "call", name: "alice_feishu__read", arguments: {} }, "group-call");
+  expect(refused).toMatchObject({ status: "failed", error: "connected_app_owner_private_only", connection: "alice-feishu" });
+  expect(refused.message).toMatch(/私聊/);
+  expect(read).not.toHaveBeenCalled();
+  expect((await answer({ action: "call", name: "alice_gmail__read", arguments: {} }, "group-gmail")).status).toBe("completed");
+  expect(read.mock.calls.at(-1)![1]).toEqual({ connections: ["alice-gmail"] });
+  // Unknown usage (service unavailable) fails closed outside the private conversation.
+  known = undefined;
+  expect((await answer({ action: "call", name: "alice_gmail__read", arguments: {} }, "unknown-gmail")).error).toBe("connected_app_owner_private_only");
+  // The owner's private conversation uses both.
+  privateConversation = true; read.mockClear();
+  expect((await answer({ action: "tools" }, "dm-tools")).tools).toHaveLength(2);
+  expect((await answer({ action: "call", name: "alice_feishu__read", arguments: {} }, "dm-call")).status).toBe("completed");
+});

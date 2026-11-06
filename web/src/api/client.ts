@@ -23,13 +23,19 @@ export interface AgentSummary {
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
 export interface ConnectorAccountState {
-  state: "connected" | "authorization_required" | "authorization_pending" | "disconnected" | "needs_setup" | "needs_attention";
+  state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
   scopes: string[];
+  /** Why it expired or needs setup, e.g. `refresh_token_expired`, `application_not_provided`. */
+  reason?: string;
+  /** Authorized user's display name (Feishu). */
+  name?: string;
   authorizationUrl?: string;
   expiresAt?: string;
 }
-export interface ConnectorAccount extends ConnectorAccountState { id: string; kind: string; label: string; assignedAgents?: string[]; permission?: "read-only" }
+export interface ConnectorAccount extends ConnectorAccountState { id: string; kind: string; label: string; assignedAgents?: string[]; permission?: "read-only";
+  /** Acts as the owner; usable only in the owner's private conversation. */
+  usage?: "owner_private" }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -64,7 +70,9 @@ export function mauApi(token: string) {
   return {
     account: () => request<{ owner: string }>(mau + "/account", { token }),
     connectorAccounts: () => request<{ configured: boolean; data: ConnectorAccount[] }>(mau + "/connector-accounts", { token, timeoutMs: 95_000 }),
-    connectorAccountAction: (id: string, action: "check" | "connect" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, credentials: "same-origin", timeoutMs: 150_000 }),
+    /** Unified 飞书 entry: give the Agent's Feishu chat app to the owner's Feishu connection (no second app or QR). */
+    feishuApplication: (id: string, agentId: string) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/feishu-application", { token, body: { agentId }, timeoutMs: 150_000 }),
+    connectorAccountAction: (id: string, action: "check" | "connect" | "complete" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, credentials: "same-origin", timeoutMs: 150_000 }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),

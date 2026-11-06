@@ -881,3 +881,44 @@ it.skipIf(!built || !edgeRouter)(
   },
   60_000,
 );
+
+it.skipIf(!built)("one 飞书 entry: chat and personal access, expiry banner and re-authorization on the same app", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f.base);
+  let state: Record<string, unknown> = { state: "expired", reason: "refresh_token_expired" }, confirmed = false;
+  const requests: Array<[string, unknown]> = [];
+  await page.route("**/_mau/v1/agents", async route => {
+    const response = await route.fetch(), body = await response.json();
+    body.data = body.data.map((a: any) => ({ ...a, connections: [...a.connections, { id: "feishu", kind: "feishu", personalTools: false }] }));
+    return route.fulfill({ response, json: body });
+  });
+  await page.route("**/_mau/v1/connector-accounts**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [
+      { id: "alice-feishu", kind: "feishu", label: "飞书", usage: "owner_private", verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only", ...state }] } });
+    const action = path.split("/").at(-1)!; requests.push([action, route.request().postDataJSON()]);
+    if (action === "feishu-application") return route.fulfill({ json: { ...state, verification: "none", scopes: [] } });
+    if (action === "connect") return route.fulfill({ json: { state: "authorization_required", verification: "none", scopes: [], authorizationUrl: "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE" } });
+    state = confirmed ? { state: "connected", name: "Alice" } : { state: "authorization_pending", authorizationUrl: "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE" };
+    return route.fulfill({ json: { verification: confirmed ? "provider" : "none", scopes: [], ...state } });
+  });
+  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
+  await page.reload();
+  await page.getByRole("button", { name: "连接器", exact: true }).click();
+  await see(page.getByRole("alert").filter({ hasText: "飞书的授权已过期" })).toContainText("需要重新授权");
+  await see(page.getByRole("button", { name: "飞书 需要重新授权", exact: true })).toBeVisible();
+  await page.getByRole("alert").getByRole("button", { name: "重新授权", exact: true }).click();
+  await see(page.getByText("聊天已连接", { exact: true })).toBeVisible();
+  await see(page.getByText("已过期", { exact: true })).toBeVisible();
+  await see(page.getByText(/授权已到期。员工暂时无法使用你的飞书文档/)).toBeVisible();
+  await see(page.getByText(/只在你与员工的私聊中可用，群聊中不可用/)).toBeVisible();
+  await page.screenshot({ path: "/tmp/mau-feishu-entry-expired.png", fullPage: true });
+  await page.locator('[data-step="personal"]').getByRole("button", { name: "重新授权", exact: true }).click();
+  await see(page.getByRole("link", { name: "在浏览器中打开" })).toHaveAttribute("href", "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE");
+  expect(requests.slice(0, 2)).toEqual([["feishu-application", { agentId: f.agent.id }], ["connect", {}]]);
+  confirmed = true;
+  await see(page.getByText("已授权 · Alice", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await see(page.getByRole("link", { name: "在浏览器中打开" })).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/mau-feishu-entry-connected.png", fullPage: true });
+  expect(errors).toEqual([]);
+}, 60_000);

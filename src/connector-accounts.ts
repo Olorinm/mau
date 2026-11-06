@@ -12,7 +12,9 @@ export const connectorAccountsSchema = z.object({
 }).strict().optional();
 const idSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
 const entrySchema = z.object({ id: idSchema, kind: z.string().max(64), owner: z.string().max(256),
-  label: z.string().max(200), account: z.record(z.string(), z.unknown()) });
+  label: z.string().max(200), usage: z.string().max(64).optional(), account: z.record(z.string(), z.unknown()) });
+/** An application the product already holds (Router's Feishu chat bot), handed to the connector for owner authorization. */
+export interface FeishuApplication { appId: string; appSecret: string; domain: "feishu" | "lark"; ownerOpenId: string }
 const operationIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/);
 const operationViewSchema = z.object({ id: z.string(), owner: z.string(), agentId: z.string(), connectionId: z.string(), tool: z.string(),
   digest: z.string().regex(/^[0-9a-f]{64}$/), status: z.enum(["pending", "executing", "completed", "failed", "uncertain", "denied", "expired"]),
@@ -24,9 +26,13 @@ const errorCode = (body: unknown) => {
   return typeof code === "string" && /^[a-z0-9_]{1,80}$/.test(code) ? code : "operation_refused";
 };
 export interface AccountState {
-  state: "connected" | "authorization_required" | "authorization_pending" | "disconnected" | "needs_setup" | "needs_attention";
+  state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
   scopes: string[];
+  /** Why the account is expired or needs setup, e.g. `refresh_token_expired`, `application_not_provided`. */
+  reason?: string;
+  /** The authorized user's display name (Feishu), shown to that owner only. */
+  name?: string;
   authorizationUrl?: string;
   expiresAt?: string;
 }
@@ -129,10 +135,14 @@ export class ConnectorAccounts {
     const account = parsed.data, status = account.status;
     const connected = status === "connected" || (account.authorized === true && account.verified === true);
     const state: AccountState["state"] = connected ? "connected"
-      : ["authorization_required", "authorization_pending", "disconnected"].includes(String(status)) ? status as AccountState["state"]
+      : ["authorization_required", "authorization_pending", "expired", "disconnected"].includes(String(status)) ? status as AccountState["state"]
       : typeof status === "string" && /configuration|client.*required|redirect.*required|account_management_unavailable/.test(status) ? "needs_setup" : "needs_attention";
     const result: AccountState = { state, verification: connected ? account.verification === "oauth" ? "oauth" : "provider" : "none",
-      scopes: z.array(z.string().max(256)).max(100).safeParse(account.scopes).data ?? [] };
+      scopes: z.array(z.string().max(256)).max(100).safeParse(account.scopes ?? account.scope).data ?? [] };
+    const reason = z.string().regex(/^[a-z0-9_]{1,64}$/).safeParse(account.reason);
+    if (reason.success && state !== "connected") result.reason = reason.data;
+    const name = z.string().min(1).max(200).safeParse(account.userName);
+    if (name.success && connected) result.name = name.data.replace(/[\x00-\x1f\x7f]/g, "");
     if (includeConsent) {
       const rawUrl = account.authorizationUrl ?? account.verificationUrl;
       if (typeof rawUrl === "string") {
@@ -149,9 +159,20 @@ export class ConnectorAccounts {
   async list(owner: string) {
     if (!this.configured) return { configured: false, data: [] };
     return { configured: true, data: (await this.entries()).filter(entry => entry.owner === owner)
-      .map(entry => ({ id: entry.id, kind: entry.kind, label: entry.label, ...this.state(entry.account) })) };
+      .map(entry => ({ id: entry.id, kind: entry.kind, label: entry.label, ...(entry.usage === "owner_private" ? { usage: "owner_private" as const } : {}),
+        ...this.state(entry.account) })) };
   }
-  async action(owner: string, id: string, action: "check" | "connect" | "disconnect") {
+  /** Connection IDs and declared usage, for admission policy. Service-wide; never returned to a browser. */
+  async usage() { return (await this.entries()).map(({ id, usage }) => ({ id, usage })); }
+  /** Hand over an app Mau already holds to this owner's Feishu connection; the secret goes only to the connector service. */
+  async provideApplication(owner: string, id: string, application: FeishuApplication) {
+    if (!idSchema.safeParse(id).success) throw new RouterError("connector_account_not_found", 404);
+    const entry = (await this.entries()).find(entry => entry.id === id && entry.owner === owner);
+    if (!entry) throw new RouterError("connector_account_not_found", 404);
+    if (entry.kind !== "feishu") throw new RouterError("connector_application_not_supported", 409);
+    return this.state(await this.request(`/v1/connections/${id}/application`, true, { body: application }));
+  }
+  async action(owner: string, id: string, action: "check" | "connect" | "complete" | "disconnect") {
     if (!idSchema.safeParse(id).success) throw new RouterError("connector_account_not_found", 404);
     // Service tokens are service-wide: authenticate and recheck upstream ownership before every action.
     const entry = (await this.entries()).find(entry => entry.id === id && entry.owner === owner);
@@ -159,6 +180,8 @@ export class ConnectorAccounts {
     if (action === "check") return this.state(entry.account);
     // Do not invalidate a working account just because Connect was clicked twice.
     if (action === "connect" && this.state(entry.account).state === "connected") return this.state(entry.account);
-    return this.state(await this.request(`/v1/connections/${id}/${action}`, true), action === "connect");
+    // Device-flow consent (Feishu) is finished by `complete`; while it waits, the same consent link is returned.
+    if (action === "complete" && entry.kind !== "feishu") throw new RouterError("connector_action_not_supported", 409);
+    return this.state(await this.request(`/v1/connections/${id}/${action}`, true), action === "connect" || action === "complete");
   }
 }

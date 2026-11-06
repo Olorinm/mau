@@ -10,6 +10,7 @@ import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolNa
 import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalPort } from "./connector-approvals.js";
 import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, readUpload, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
+import { ownerPrivateRefusal, OWNER_PRIVATE_ONLY, type OwnerPrivatePolicy } from "./owner-private.js";
 
 /** A Feishu bot identity read on the server, directly or through the Cloudflare read broker. */
 export const feishuBotReadersSchema = z.array(z.union([feishuBotReaderSchema.extend({
@@ -61,6 +62,9 @@ export class BusinessTools {
   /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
   setApprovals(port: ApprovalPort) { this.approvals = port; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
+  private ownerPrivate?: OwnerPrivatePolicy;
+  /** Owner-identity connections are admitted only in the owner's private conversation. */
+  setOwnerPrivate(policy: OwnerPrivatePolicy) { this.ownerPrivate = policy; }
   private skills?: (agentId: string, owner: string, binding: string) => Promise<unknown>;
   /** Connector guides and CLI commands are brought into the environment before a run starts. */
   setSkills(sync: (agentId: string, owner: string, binding: string) => Promise<unknown>) { this.skills = sync; }
@@ -74,6 +78,7 @@ export class BusinessTools {
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
+        ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
     if (appReader && skills) host.beforeStart = () => skills(agentId, owner, binding);
     return host;
@@ -86,6 +91,7 @@ export interface ConnectedAppHosting {
   browser: string[];
   approvals?: ApprovalPort;
   files?: () => Promise<SandboxFiles>;
+  ownerPrivate?: OwnerPrivatePolicy;
 }
 const WAITING = Symbol("approval_waiting");
 const HANDOFF_PREFIX = "mau-handoff:";
@@ -324,15 +330,29 @@ export class BusinessHost extends HttpAgentHost {
     }
   }
   private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
-    const scope = admission.toolGrants?.connectedApps, apps = this.apps;
-    const connections = (apps?.connections ?? []).filter(id => !scope || scope.connections.includes(id));
+    const granted = admission.toolGrants?.connectedApps, apps = this.apps;
+    let connections = (apps?.connections ?? []).filter(id => !granted || granted.connections.includes(id));
+    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation.
+    let blocked: string[] = [];
+    if (apps?.ownerPrivate && !(await apps.ownerPrivate.admitted(admission))) {
+      const ids = await apps.ownerPrivate.connections();
+      blocked = connections.filter(id => !ids || ids.has(id));
+      connections = connections.filter(id => !blocked.includes(id));
+    }
+    const scope = blocked.length ? { connections, ...(granted?.operations ? { operations: granted.operations } : {}) } : granted;
     const browser = (apps?.browser ?? []).filter(id => connections.includes(id));
     // Only the owner's own conversation can approve; schedules and delegations keep read-only tokens.
     const write = admission.kind === "owner" && !!this.approvals;
     const options = write ? { write: true } : undefined;
     const read = (value: z.infer<typeof connectedAppInput>) => options ? this.appReader!(value, scope, options)
       : scope ? this.appReader!(value, scope) : this.appReader!(value);
-    if (input.action === "tools") return agentCatalog(await read(input), browser);
+    const unavailable = blocked.map(connection => ({ connection, reason: OWNER_PRIVATE_ONLY }));
+    if (input.action === "tools") {
+      const catalog = blocked.length && !connections.length ? { status: "completed", tools: [] } : agentCatalog(await read(input), browser);
+      return unavailable.length && catalog && typeof catalog === "object" && !Array.isArray(catalog) ? { ...catalog, unavailableHere: unavailable } : catalog;
+    }
+    const refused = blocked.find(id => input.name?.startsWith(`${id.replaceAll("-", "_")}__`));
+    if (refused) return ownerPrivateRefusal(refused);
     const found = input.name ? browserTool(input.name, browser) : undefined;
     let args = input.arguments ?? {};
     if (found?.tool === "upload") {
