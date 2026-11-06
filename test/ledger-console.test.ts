@@ -8,8 +8,8 @@ import { accessIssuer } from "./fixtures/access.js";
 import { ManagedService } from "@agent-router/server";
 
 // Browser acceptance of the ledger console's phase 4 features (agent-router ADR 0005 section 16) against the built
-// console and the local Router build: controls ("新对话", a Router card answered by its button, purge with a typed
-// name) and attachments (16.5). Released Routers before phase 4 skip them.
+// console and the local Router build: controls (the "/new" and "/clear" commands, a Router card answered by its button,
+// purge with a typed name) and attachments (16.5). Released Routers before phase 4 skip them.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
@@ -44,10 +44,17 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await page.getByRole("button", { name: "发起单聊", exact: true }).first().click();
   await page.getByLabel("选择员工").selectOption(f.agent.id);
   await page.getByRole("button", { name: "打开对话", exact: true }).click();
-  await see(page.getByRole("button", { name: "新对话", exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "新对话", exact: true }).click();
-  await see(page.getByText("—— 新的会话窗口 ——")).toBeVisible();
+  // No control buttons in the header: "/" lists the commands, Enter runs the highlighted one.
+  await see(page.getByRole("button", { name: "新对话", exact: true })).toHaveCount(0);
+  const composer = page.getByPlaceholder("发送消息…");
+  await composer.fill("/");
+  const commands = page.getByRole("listbox", { name: "斜杠命令" });
+  await see(commands.getByRole("option")).toHaveText([/\/new/, /\/clear/]);
+  await composer.fill("/ne");
+  await see(commands.getByRole("option")).toHaveText([/\/new/]);
+  await composer.press("Enter");
+  await see(composer).toHaveValue("");
+  await see(page.locator(".mau-chat-divider[data-kind='window']")).toHaveText("新对话");
 
   // An unknown turn's Router card (ADR 6.2.4), written into the agent ledger as the Host worker would.
   const runtime = await f.service.runtime(f.agent.id);
@@ -73,7 +80,8 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await see(shown).toContainText("已回答");
   expect(db.prepare("SELECT status, answer_surface FROM ledger_cards WHERE card_id=?").get(cardId)).toMatchObject({ status: "answered", answer_surface: "web" });
 
-  await page.getByRole("button", { name: "清空聊天记录", exact: true }).click();
+  await composer.fill("/clear");
+  await page.getByRole("option", { name: /\/clear/ }).click();
   const purge = page.getByRole("dialog", { name: "清空聊天记录？" });
   await see(purge).toContainText("Agent 已经写入的记忆不会被删除");
   await see(purge.getByRole("button", { name: "永久清空" })).toBeDisabled();
@@ -84,7 +92,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   // The purged chat restarts with its new window only.
   await see.poll(async () => (await (await fetch(f.base + `/_agent-router/v1/web/chats/${encodeURIComponent("dm:" + f.agent.id)}/events`,
     { headers: { authorization: "Bearer alice" } })).json() as { events: Array<{ kind: string }> }).events.map((event) => event.kind)).toEqual(["window"]);
-  await see(page.getByText("—— 新的会话窗口 ——")).toHaveCount(1);
+  await see(page.locator(".mau-chat-divider[data-kind='window']")).toHaveCount(1);
   expect(Number((db.prepare("SELECT generation FROM ledger_sessions WHERE session_key=?").get(session.session_key) as { generation: number }).generation)).toBe(2);
   expect(errors).toEqual([]);
 }, 60_000);
@@ -98,7 +106,7 @@ const header = Buffer.alloc(13); header.writeUInt32BE(2, 0); header.writeUInt32B
 const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header),
   chunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255]))), chunk("IEND", Buffer.alloc(0))]);
 
-it.skipIf(!built)("attaches, uploads with progress, sends and renders images inline and files as download chips", async (context) => {
+it.skipIf(!built)("attaches, uploads with progress, sends and renders images inline and files as download cards", async (context) => {
   const runs = new Map<string, Record<string, unknown>>(), media: unknown[][] = [];
   const host = (url: URL, init?: RequestInit) => {
     const method = init?.method ?? "GET", path = url.pathname;
@@ -161,16 +169,23 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
 
   await composer.fill("看附件");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
-  // The stored message renders the image inline (fetched with the bearer, shown as a blob: URL) and the file as a chip.
+  // The stored message renders the image inline (fetched with the bearer, shown as a blob: URL) and the file as a card
+  // with its kind, above the text.
   const image = page.locator(".mau-attachment-image img[alt='图.png']").first();
   await see(image).toBeVisible();
   await see.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(2);
   expect(await image.getAttribute("src")).toMatch(/^blob:/);
-  const chip = page.getByRole("button", { name: "下载 notes.txt，6 B", exact: true }).first();
-  await see(chip).toBeVisible();
+  const chip = page.locator(".room-chat-stream .room-message-file", { hasText: "notes.txt" }).first();
+  await see(chip).toHaveText(/notes\.txt\s*文本 · 6 B/);
+  await see(chip).toHaveAttribute("title", "下载 notes.txt");
+  const sent = page.locator(".room-chat-message.from-user", { has: page.locator(".room-message-file", { hasText: "notes.txt" }) }).first();
+  expect(await sent.evaluate((element) => {
+    const card = element.querySelector(".mau-attachments")!, bubble = element.querySelector(".room-chat-bubble")!;
+    return card.getBoundingClientRect().bottom <= bubble.getBoundingClientRect().top;
+  })).toBe(true);
   await see(page.locator(".room-chat-stream").getByText("收到-1").first()).toBeVisible();
   expect(media[0]).toMatchObject([{ name: "图.png", mediaType: "image/png" }, { name: "notes.txt", mediaType: "text/plain" }]);
-  // The download chip saves the bytes.
+  // The file card saves the bytes.
   const [download] = await Promise.all([page.waitForEvent("download"), chip.click()]);
   expect(download.suggestedFilename()).toBe("notes.txt");
   // Composer cleared after the send.
@@ -251,5 +266,72 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
   await see.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(2);
   expect(await image.getAttribute("src")).toMatch(/^\/_agent-router\/v1\/web\/attachments\/at_/);
   expect(authorization).toEqual([]);
+  expect(errors).toEqual([]);
+}, 60_000);
+
+it.skipIf(!built)("while a reply runs, the send button stops it and text sent goes into the running turn", async (context) => {
+  const runs = new Map<string, Record<string, unknown>>(), steered: string[] = [], started: string[] = [];
+  const host = (url: URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET", path = url.pathname;
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
+      started.push(String(body.input));
+      const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "" };
+      runs.set(id, run); return Response.json(run);
+    }
+    if (path.endsWith("/runs/by-request")) return Response.json({ run: null });
+    if (path.endsWith("/events")) return Response.json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+    if (path.endsWith("/calls")) return Response.json({ calls: [] });
+    if (path.endsWith("/steer")) { steered.push(String(JSON.parse(String(init?.body)).input)); return Response.json({}); }
+    const cancel = /\/runs\/(run-\d+)\/cancel$/.exec(path)?.[1];
+    if (cancel && runs.has(cancel)) { runs.get(cancel)!.status = "cancelled"; return Response.json({ cancellationRequested: true }); }
+    const run = /\/runs\/(run-\d+)$/.exec(path)?.[1];
+    if (run && runs.has(run)) return Response.json(runs.get(run));
+    return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+  };
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+    { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  if (!me.limits?.features?.reset) return context.skip();
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(f.base);
+  await page.evaluate(() => {
+    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
+    localStorage.setItem("mau.chatSource", "ledger");
+  });
+  await page.reload();
+  page.setDefaultTimeout(10_000);
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
+  await page.getByLabel("选择员工").selectOption(f.agent.id);
+  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  const composer = page.getByPlaceholder("发送消息…");
+  await composer.fill("查一下天气");
+  await composer.press("Enter");
+  await see.poll(() => started.length).toBe(1);
+
+  // Running: an empty draft shows stop; there is no separate "补充" control.
+  const stop = page.getByRole("button", { name: "停止运行", exact: true });
+  await see(stop).toBeVisible();
+  await see(page.getByRole("button", { name: "补充", exact: true })).toHaveCount(0);
+  await composer.fill("顺便看看明天");
+  await see(page.getByRole("button", { name: "发送消息", exact: true })).toBeEnabled();
+  await composer.press("Enter");
+  // The text joined the running turn (no second run) and shows as the owner's own message.
+  await see.poll(() => steered).toEqual(["顺便看看明天"]);
+  expect(started).toHaveLength(1);
+  await see(page.locator(".room-chat-message.from-user", { hasText: "顺便看看明天" })).toBeVisible();
+  await see(page.getByText("补充：")).toHaveCount(0);
+
+  await stop.click();
+  await see.poll(() => runs.get("run-1")?.status).toBe("cancelled");
+  await see(page.getByRole("button", { name: "发送消息", exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 }, 60_000);

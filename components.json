@@ -53,14 +53,14 @@
   },
   "frontend": {
     "repository": "Olorinm/agent-ui",
-    "version": "0.1.0-alpha.8",
-    "integrity": "sha512-fUYqZOCnhF6IvH5HPzEf4qRnLrzbFXcI+6z4FRJWzImgbbuYxrWMZLRZkkWZ+igQmMNLeYYbLlGpMNaItKeOeQ==",
+    "version": "0.1.0-alpha.9",
+    "integrity": "sha512-gnhty0dPjD/pP85Yow09nHU98pkDxi/i2Ui/QpbK0E6BZPOGTw+9yTgRgRa/KHC4+LZu3bBtTQRSmXz3ajVQJw==",
     "distribution": "github-release",
-    "revision": "34b5776c38e82c4fbe7262fca79ebd1ad76a4842",
+    "revision": "0e36018cd9dd1fdfacf61769c47775444a56baa1",
     "archive": {
       "repository": "Olorinm/agent-ui",
-      "tag": "frontend-v0.1.0-alpha.8",
-      "asset": "olorinm-agent-frontend-0.1.0-alpha.8.tgz"
+      "tag": "frontend-v0.1.0-alpha.9",
+      "asset": "olorinm-agent-frontend-0.1.0-alpha.9.tgz"
     }
   },
   "connectors": {

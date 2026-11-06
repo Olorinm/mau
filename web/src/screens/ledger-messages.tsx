@@ -6,6 +6,7 @@ import {
   ItemList,
   ListDetailLayout,
   LoadingSurface,
+  MessageFileCard,
   PageHeader,
   RoomGroupAvatar,
   RoomHeaderActions,
@@ -80,9 +81,9 @@ function LedgerCardView({ client, api, chatId, card, answer, answerable }: {
 }
 
 /** One ledger turn rendered with the existing run surface, keyed by turnId instead of Matrix event ids. */
-function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, steers }: {
+function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
-  controls?: RunControls | undefined; steers?: readonly string[] | undefined;
+  controls?: RunControls | undefined;
 }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   const terminal = terminalTurn.includes(turn.state);
@@ -97,12 +98,7 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
     : <p role="status">{zh ? "等待执行…" : "Queued…"}</p>;
   const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
-  return <>
-    {steers?.length ? <ul className="mau-run-steers" aria-label={zh ? "补充说明" : "Added instructions"}>
-      {steers.map((text, index) => <li key={index}><span className="mau-muted">{zh ? "补充：" : "Added: "}</span>{text}</li>)}
-    </ul> : null}
-    <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />
-  </>;
+  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />;
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
@@ -141,14 +137,23 @@ function LedgerImage({ api, attachment, onError, direct }: { api: LedgerApi; att
   </>;
 }
 /** A file as a download chip (name and size). */
+const codeExtensions = /\.(?:[cm]?[jt]sx?|json|ya?ml|toml|py|go|rs|java|kt|swift|rb|php|sh|css|html?|xml|sql)$/i;
+/** "Text", "PDF", "PNG"…: the file's kind, from its type or extension. */
+function fileKind(attachment: AttachmentRef, zh: boolean) {
+  const extension = /\.([a-z0-9]{1,8})$/i.exec(attachment.name)?.[1];
+  if (attachment.contentType.startsWith("text/") && !codeExtensions.test(attachment.name)) return zh ? "文本" : "Text";
+  if (extension) return extension.toUpperCase();
+  return attachment.contentType.split("/")[1]?.toUpperCase() ?? (zh ? "文件" : "File");
+}
+/** A file in a message: a card with its kind; a click downloads it. */
 function AttachmentChip({ api, attachment, onError, detail }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; detail?: string }) {
   const { language } = useI18n(), zh = language === "zh-CN";
-  const meta = detail ?? formatBytes(attachment.size);
-  const label = zh ? `下载 ${attachment.name}` : `Download ${attachment.name}`;
-  return <Button className="mau-attachment-chip" title={label} aria-label={meta ? `${label}，${meta}` : label}
-    onClick={() => void saveAttachment(api, attachment).catch(onError)}>
-    <span className="mau-attachment-name">{attachment.name}</span>{meta ? <span className="mau-attachment-meta">{meta}</span> : null}
-  </Button>;
+  const size = formatBytes(attachment.size);
+  const kind = attachmentKind(attachment.contentType);
+  return <MessageFileCard name={attachment.name} title={zh ? `下载 ${attachment.name}` : `Download ${attachment.name}`}
+    kind={kind === "image" ? "image" : codeExtensions.test(attachment.name) ? "code" : kind === "text" ? "text" : "file"}
+    detail={detail ?? (size ? `${fileKind(attachment, zh)} · ${size}` : fileKind(attachment, zh))}
+    onOpen={() => void saveAttachment(api, attachment).catch(onError)} />;
 }
 /** Message attachments: images inline, other files as download chips. */
 function LedgerAttachments({ api, attachments, onError, direct }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void; direct: boolean }) {
@@ -218,7 +223,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   }, [client, selected]);
   const list = client.chatList();
   useEffect(() => {
-    if (!selected && list.length && matchMedia("(min-width: 901px)").matches) setSelected(list[0]!.chatId);
+    const first = list.find((chat) => !observedKey(chat)?.startsWith("work:"));
+    if (!selected && first && matchMedia("(min-width: 901px)").matches) setSelected(first.chatId);
   }, [list.length, selected]);
 
   const current: ChatSummary | undefined = selected ? client.chats.get(selected) : undefined;
@@ -293,7 +299,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     <RoomGroupAvatar title={chat.title} className="mau-room-avatar"
       members={chat.agentIds.map((id) => ({ id, name: names.get(id) ?? id, avatarSeed: id }))} />
   ) : <EmployeeAvatar seed={chat.agentIds[0] ?? chat.chatId} fallbackName={chat.title} size={size} />;
-  const visible = list.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase()));
+  // Observed sessions are titled by their session key when they have no label. Feishu groups read as the channel;
+  // an Agent's own work sessions ("work:…") are not conversations and stay out of the list.
+  const observedKey = (chat: ChatSummary) => chat.kind === "observed" ? /^obs:[^:]+:(.+)$/.exec(chat.chatId)?.[1] : undefined;
+  const titleOf = (chat: ChatSummary) => {
+    const key = observedKey(chat);
+    if (!key || chat.title !== key && chat.title !== chat.chatId) return chat.title;
+    const agent = names.get(chat.agentIds[0] ?? "");
+    const channel = /^feishu:group:/.test(key) ? (zh ? "飞书群聊" : "Feishu group") : /^feishu:/.test(key) ? (zh ? "飞书" : "Feishu")
+      : channelNames[key.split(":")[0]!]?.[zh ? 0 : 1] ?? (zh ? "其他渠道" : "Other channel");
+    return agent ? `${agent} · ${channel}` : channel;
+  };
+  const visible = list.filter((chat) => !observedKey(chat)?.startsWith("work:") && titleOf(chat).toLowerCase().includes(search.toLowerCase()));
 
   const insertPrompt = (value: string) => { if (selected) setDrafts((values) => ({ ...values, [selected]: value })); };
   const actorAvatar = (bubble: LedgerBubble) => <EmployeeAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} />;
@@ -335,9 +352,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       turnsByInput.set(input, [...(turnsByInput.get(input) ?? []), turn]);
       placed.add(turn.turnId);
     }
-    // Steered text belongs to its turn's run surface (ADR 0005 16.2), not to the message list.
-    const steers = new Map<string, string[]>();
-    for (const item of fold.items) if (item.steer && item.turnId && !item.redacted) steers.set(item.turnId, [...(steers.get(item.turnId) ?? []), item.text]);
     const chatId = current.chatId;
     // The run surface answers through the card (one record for every surface); cancel and steer use the turn routes.
     const controlsFor = (turn: LedgerTurn): RunControls | undefined => !cardsOn && !controlOn ? undefined : {
@@ -350,7 +364,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         if (response?.status === "stale") throw new ApiError("card_answer_stale", 409);
       } } : {}),
       ...(controlOn ? { cancel: () => client.cancelTurn(chatId, turn.turnId),
-        steer: async (text: string) => (await client.steer(chatId, turn.turnId, text)).status } : {}),
+        ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}) } : {}),
     };
     const turnView = (turn: LedgerTurn): MessageView => {
       const name = agentName(turn.agentId);
@@ -359,32 +373,35 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         avatar: <EmployeeAvatar seed={turn.agentId} fallbackName={name} size={28} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
-          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} steers={steers.get(turn.turnId)} />,
+          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} />,
       };
     };
     for (const item of fold.items) {
       const turn = item.turnId ? fold.turns.get(item.turnId) : undefined;
-      if (item.steer && turn) continue;
       // Replies and Host cards of a turn are shown inside its run surface; Router's own cards have no Host call there.
       if (turn && item.role !== "user" && (item.kind === "message" || item.kind === "card" && item.card?.source !== "router")) {
         if (!placed.has(turn.turnId)) { placed.add(turn.turnId); messages.push(turnView(turn)); }
         continue;
       }
       const system = item.kind === "notice" || item.kind === "window" || item.kind === "member" || item.kind === "action";
-      const text = item.kind === "window" ? (zh ? "—— 新的会话窗口 ——" : "—— New session window ——")
+      const text = item.kind === "window" ? (zh ? "新对话" : "New chat")
         : item.kind === "member" ? room.memberText(item.eventId) ?? item.text : item.text;
       const details = describe(item), channel = badge(item), addressed = item.redacted ? "" : room.addressedLine(item.eventId);
       const withdrawal = redactions.get(item.eventId);
+      // Window, notice and member lines are centred, like a time separator, with no sender.
+      if (system) { messages.push({ id: item.eventId, role: "system",
+        content: <span className="mau-chat-divider" data-kind={item.kind}>{text}</span> });
+        for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
+        continue; }
       messages.push({
         id: item.eventId, role: item.role === "user" ? "user" : "assistant",
         ...(item.redacted ? {} : { copyText: text }),
-        title: system ? "Mau" : item.sender.name,
-        ...(system ? {} : { avatar: actorAvatar(item) }),
+        title: item.sender.name,
+        avatar: actorAvatar(item),
         ...(channel || details ? { subtitle: <>{channel}{channel && details ? " " : null}{details}</> } : {}),
-        content: system ? <p className="mau-muted">{text}</p>
-          : item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} answerable={cardsOn} />
+        content: item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} answerable={cardsOn} />
           : item.redacted ? <p className="mau-muted mau-redacted">{item.sender.type === "person" ? (zh ? "消息已撤回" : "Message withdrawn") : (zh ? "消息已删除" : "Message deleted")}</p>
-          : <ChatMarkdown markdown={text} />,
+          : text ? <ChatMarkdown markdown={text} /> : undefined,
         ...(canRedact(item) && !withdrawal ? { menuActions: [{ id: "redact", label: zh ? "撤回" : "Withdraw",
           onSelect: () => setWithdrawing({ chatId: current.chatId, eventId: item.eventId }) }] } : {}),
         // A state keeps the line visible; a stateless status is a hover-only timestamp.
@@ -412,7 +429,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     }
     for (const item of view.pending) messages.push({
       id: "pending:" + item.idempotencyKey, role: "user", title: session.owner, copyText: item.text,
-      content: <ChatMarkdown markdown={item.text} />,
+      ...(item.text ? { content: <ChatMarkdown markdown={item.text} /> } : {}),
       ...(item.attachments.length ? { attachments: attachmentsOf(item.attachments) } : {}),
       state: item.state === "accepted" ? "sent" : item.state === "sending" ? "pending" : "failed",
       status: item.state === "sending" ? (zh ? "发送中…" : "Sending…") : item.state === "accepted" ? (zh ? "已发送" : "Sent")
@@ -423,6 +440,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <Button onClick={() => client.discard(item.idempotencyKey)}>{zh ? "放弃" : "Dismiss"}</Button>
       </> } : {}),
     });
+    // A reply following one from the same sender drops the repeated avatar and name.
+    for (let index = 1; index < messages.length; index++) {
+      const message = messages[index]!, previous = messages[index - 1]!;
+      if (message.role === "assistant" && previous.role === "assistant" && message.title === previous.title) messages[index] = { ...message, continued: true };
+    }
   }
 
   const groupWritable = features.has("groups") && features.has("send");
@@ -443,6 +465,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   })) as unknown as NonNullable<ConversationComposer["attachments"]>;
   const attachable = features.has("attachments") && sendable && canSend;
   const failedDrafts = current ? uploads.list(current.chatId).filter((item) => item.state === "failed") : [];
+  // While a DM reply runs, the send button stops it and text sent goes into it (steer, ADR 0005 16.2).
+  const activeTurn = current?.kind === "dm" && fold
+    ? [...fold.turns.values()].reverse().find((turn) => !terminalTurn.includes(turn.state)) : undefined;
+  const runningTurn = controlOn && canSend ? activeTurn : undefined;
+  const clearDraft = (chatId: string) => setDrafts((values) => ({ ...values, [chatId]: "" }));
+  // Slash commands in a DM: "/new" is Router's reset (the same as typing it in Feishu), "/clear" asks before purging.
+  const commands = controlOn && current?.kind === "dm" && !current.readOnly ? [
+    { id: "new", name: "new", description: zh ? "开始新对话，之前的上下文不再带入" : "Start a new chat without the earlier context",
+      onSelect: () => { clearDraft(current.chatId); reset.mutate({ chatId: current.chatId, cancelActive: false }); } },
+    { id: "clear", name: "clear", description: zh ? "永久清空与它的聊天记录" : "Permanently clear the chat history",
+      onSelect: () => { clearDraft(current.chatId); purge.reset(); setPurging({ chatId: current.chatId, title: current.title, typed: "", busy: false }); } },
+  ] : undefined;
   const onSend = () => {
     if (!current) return;
     const text = drafts[current.chatId] ?? "", chatId = current.chatId;
@@ -450,6 +484,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (uploads.busy(chatId)) return;
     const ready = uploads.ready(chatId);
     if (!text.trim() && !ready.length) return;
+    // Text alone goes into the running reply. When the kernel cannot take it, or the reply has just ended, it is an
+    // ordinary message instead (the next turn), with the usual sending state and retry.
+    if (runningTurn && !ready.length) {
+      clearDraft(chatId);
+      const asMessage = () => void client.send(chatId, { text }).then(room.record, () => undefined);
+      void client.steer(chatId, runningTurn.turnId, text.trim())
+        .then(({ status }) => { if (status === "unsupported") asMessage(); }, asMessage);
+      return;
+    }
     // Phase 3: Router stores the message (one key per intent, reused on retry); no Matrix room is touched.
     if (sendable) {
       const attachments = uploads.take(chatId);
@@ -475,7 +518,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       {!failure && chats.isPending ? <LoadingSurface label={t("common.loading")} /> : null}
       <ItemList label={zh ? "对话" : "Conversations"} {...(selected ? { selectedId: selected } : {})} onSelect={setSelected}
         items={visible.map((chat) => ({
-          id: chat.chatId, title: chat.title, description: chat.lastEvent?.preview ?? "", leading: avatar(chat, 24),
+          id: chat.chatId, title: titleOf(chat), description: chat.lastEvent?.preview ?? "", leading: avatar(chat, 24),
           ...(chat.unread ? { trailing: <span className="mau-badge">{chat.unread}</span> } : {}),
         }))} />
     </>
@@ -507,13 +550,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 },
               } : {})}>
             <Conversation conversationId={current.chatId}
-              header={<PageHeader avatar={avatar(current, 30)} title={current.title}
+              header={<PageHeader avatar={avatar(current, 30)} title={titleOf(current)}
                 description={current.kind === "group" ? `${current.agentIds.length + 1} ${zh ? "位成员" : "participants"}` : undefined}
                 actions={<>
-                  {controlOn && current.kind === "dm" && !current.readOnly ? <>
-                    <Button disabled={reset.isPending} onClick={() => reset.mutate({ chatId: current.chatId, cancelActive: false })}>{zh ? "新对话" : "New chat"}</Button>
-                    <Button onClick={() => { purge.reset(); setPurging({ chatId: current.chatId, title: current.title, typed: "", busy: false }); }}>{zh ? "清空聊天记录" : "Clear history"}</Button>
-                  </> : null}
                   <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
                   messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
                   onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
@@ -562,6 +601,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的员工都回答" : "Every employee in the group answers",
                     onSelect: () => insertMention(current.chatId, zh ? "所有人" : "all") },
                 ] } : {}),
+                ...(commands ? { commands } : {}),
+                ...(runningTurn ? { running: true, onStop: () => void client.cancelTurn(current.chatId, runningTurn.turnId).catch(setUploadError) } : {}),
                 onSend,
               }} />
             </div>
