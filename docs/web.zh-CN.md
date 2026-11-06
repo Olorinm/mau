@@ -50,6 +50,7 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 - Access 会话过期（接口被重定向、`401` 或套接字重新取票失败）时显示“登录已过期”横幅；“重新登录”把未发送的输入按对话存入 `sessionStorage` 后刷新页面。
 - 对话始终使用 Router 账本；“退出登录”跳转 Access 退出。
 - 命令行和自动化的 bearer 调用继续可用，除非 Router 设置 `bearer: "deny"`。
+- Cloudflare 对跨站请求同样附加 JWT，因此边缘身份的非 GET 请求必须带控制台的 `Origin`（`edgeIdentity.origins`，默认取公开地址的源，或与请求自身 Host 相同），且请求体类型不能是表单可发送的类型。Access 之后的非浏览器调用方需带 bearer 令牌或显式 `Origin`。
 
 ## 渠道
 

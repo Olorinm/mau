@@ -14,8 +14,9 @@ async function accessFixture() {
   const f = await mauFixture(cleanup, {}, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) }, {},
     { edgeIdentityCerts: access.certsUrl });
   const jwt = access.jwt;
-  const call = async (path: string, headers: Record<string, string>) => {
-    const response = await fetch(f.base + path, { headers });
+  const call = async (path: string, headers: Record<string, string>, body?: unknown) => {
+    const response = await fetch(f.base + path, { headers: { "content-type": "application/json", ...headers },
+      ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) });
     return { status: response.status, data: await response.json() as any };
   };
   return { f, jwt, call };
@@ -35,6 +36,10 @@ it.skipIf(!supported)("authenticates /_mau/v1, Router owner routes and the SSH u
   expect(await call("/_mau/v1/account", { "cf-access-jwt-assertion": jwt({ aud: ["other"] }), authorization: "Bearer alice" }))
     .toEqual({ status: 401, data: { error: "edge_identity_invalid" } });
   expect((await call("/_mau/v1/account", { "cf-access-authenticated-user-email": "alice@example.test" })).status).toBe(401);
+  // Unsafe edge requests need the console's own origin (Cloudflare adds the JWT to cross-site requests too).
+  for (const headers of [{ origin: "https://evil.example.test" }, {}])
+    expect(await call("/_mau/v1/proactive", { ...edge, ...headers }, { name: "x" })).toEqual({ status: 403, data: { error: "origin_not_allowed" } });
+  expect((await call("/_mau/v1/proactive", { ...edge, origin: f.base }, {})).status).toBe(400);
   // Bearer callers still work alongside.
   expect((await call("/_mau/v1/account", { authorization: "Bearer alice" })).data).toMatchObject({ owner: alice, via: "bearer" });
   const ssh = new URL(`${f.base}/_mau/v1/agents/00000000-0000-4000-8000-000000000000/ssh/${"a".repeat(64)}`);

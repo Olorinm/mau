@@ -79,6 +79,9 @@ SSH upgrade, and maps its email (or a configured service token) to an owner. The
   "Sign in again" keeps unsent composer text in `sessionStorage` and reloads the page.
 - Messages always use Router's ledger. "Sign out" goes to the Access logout.
 - Bearer callers (the CLIs, automation) keep working unless Router's `bearer` is `"deny"`.
+- Cloudflare adds the JWT to cross-site requests too, so Router accepts an unsafe (non-GET) edge request only with
+  an `Origin` of the console (`edgeIdentity.origins`, default the public URL's origin, or the request's own host)
+  and a JSON-like body type. Non-browser callers behind Access send a bearer token or an explicit `Origin`.
 
 ## Channels
 

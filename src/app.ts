@@ -49,7 +49,8 @@ export const apiRoot = "/_mau/v1";
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
 interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number }
 type EdgeIdentityConfig = ServiceConfig extends { edgeIdentity?: infer T } ? T : never;
-interface EdgeRouterService { authenticateRequest?(request: { headers: IncomingMessage["headers"] }): Promise<OwnerPrincipal> }
+interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined }
+interface EdgeRouterService { authenticateRequest?(request: OwnerRequest): Promise<OwnerPrincipal> }
 const bearer = (req: { headers: IncomingMessage["headers"] }) => req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "";
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
@@ -123,8 +124,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // A Router without request authentication would silently ignore the edge config.
   if (edgeIdentity && typeof owners.authenticateRequest !== "function") throw new Error("router_edge_identity_unsupported");
   /** Every owner route and the SSH upgrade: the Access JWT when edge identity is on, otherwise the bearer token. */
-  const authenticateRequest = async (req: { headers: IncomingMessage["headers"] }): Promise<OwnerPrincipal> =>
-    owners.authenticateRequest ? owners.authenticateRequest({ headers: req.headers })
+  // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests.
+  const authenticateRequest = async (req: OwnerRequest): Promise<OwnerPrincipal> =>
+    owners.authenticateRequest ? owners.authenticateRequest({ headers: req.headers, method: req.method })
       : { ownerId: await router.service.authenticate(bearer(req)), via: "bearer" };
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
