@@ -4,6 +4,17 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.27] - 2026-11-06
+
+- A reply no longer blanks or shows a second loading line when it finishes, and Router's streamed
+  text stays on screen while the run loads.
+- One working line from queued to running, always below what the reply has shown so far.
+- Tool rows show their arguments on one line; input and output are in the expandable code block,
+  with Codex dynamic tool results read from their content.
+- Pins Agent UI 0.1.0-alpha.10 and Agent Frontend 0.1.0-alpha.10.
+
+PR: [#40](https://github.com/Olorinm/mau/pull/40)
+
 ## [0.1.0-alpha.26] - 2026-11-06
 
 - Pins Router 0.7.0-alpha.12 and Agent Connectors 0.1.0-alpha.9.

@@ -130,9 +130,9 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
     </Disclosure> : null}
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}
-      status={!data && !terminal ? query.error ? "failed" : "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
-      {...((!data && !terminal) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
-      {...(active ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label}} : {})}
+      status={!data && !terminal ? query.error ? "failed" : "running" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
+      {...((!data && !terminal && query.error) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
+      {...(active || (!data && !terminal && !query.error) ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label: active ? label : zh ? "正在执行" : "Running"}} : {})}
       {...(active && !controls?.stopInComposer ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
     {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
@@ -142,9 +142,18 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   </section>;
 }
 
+/** Queued or starting: the same "working" line a running reply shows, in the same place. */
+export function WorkingSurface({ fallback = "" }: { fallback?: string }) {
+  const { language } = useI18n(), zh = language === "zh-CN";
+  return <RunMessage id="working" parts={[]} fallbackText={fallback} status="running"
+    agentPresentation={{ state: "working", label: zh ? "正在执行" : "Running" }}
+    onResolveApproval={() => undefined} onResolveQuestion={() => undefined} onInsertPrompt={() => undefined} />;
+}
+
 export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
-  if (!task.runs.length) return <p role="status">{task.status === "canceled" ? zh ? "已取消" : "Cancelled" : zh ? "等待执行…" : "Queued…"}</p>;
+  if (!task.runs.length) return task.status === "canceled" ? <p role="status">{zh ? "已取消" : "Cancelled"}</p> : <WorkingSurface fallback={fallback} />;
   return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />
-    : <p role="status" key={run.claimId}>{run.phase === "unknown" ? zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically." : zh ? "正在启动…" : "Starting…"}</p>)}</>;
+    : run.phase === "unknown" ? <p role="status" key={run.claimId}>{zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically."}</p>
+    : <WorkingSurface key={run.claimId} fallback={fallback} />)}</>;
 }
