@@ -8,3 +8,7 @@
 - Keep credentials, production addresses, environment IDs and operational state outside this repository.
 - There are no Router provisioning aliases or compatibility routes.
 - Verify separate distributable packages; distinguish fixtures from live cloud/model acceptance.
+
+CI browser checks use the official Playwright image pinned by version and digest. Update its pin
+together with `@playwright/test` and the lockfile; keep the image-version/browser check before
+builds and tests. Do not reinstall browser system dependencies during each CI run.

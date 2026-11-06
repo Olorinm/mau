@@ -9,6 +9,13 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Keep this image in sync with @playwright/test in package-lock.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -16,6 +23,15 @@ jobs:
           node-version: 24.22.2
       # Do not cache npm here: its file-package cache contains private Environment source.
       - run: npm install --global npm@11.16.0
+      - name: Install pinned GitHub CLI for component downloads
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/gh.tar.gz" \
+            https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  $RUNNER_TEMP/gh.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gh.tar.gz" -C "$RUNNER_TEMP" gh_2.103.3_linux_amd64/bin/gh
+          install "$RUNNER_TEMP/gh_2.103.3_linux_amd64/bin/gh" /usr/local/bin/gh
+          gh --version
       - id: pins
         run: |
           node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
@@ -51,11 +67,20 @@ jobs:
       - run: node scripts/bootstrap.mjs --environment-archive "$RUNNER_TEMP/olorinm-agent-environment-${{ steps.pins.outputs.environment_version }}.tar"
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Check preinstalled Playwright browser
+        run: |
+          node --input-type=commonjs <<'JS'
+          const assert = require('node:assert/strict');
+          const { readFileSync, accessSync, constants } = require('node:fs');
+          const { driverVersion } = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
+          assert.equal(driverVersion, require('@playwright/test/package.json').version,
+            'Update the Playwright image and npm package together');
+          accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
+          JS
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
       - run: npm --prefix web run typecheck
       - run: npm run build:web
-      - run: npx playwright install --with-deps chromium
       - run: npm test
         env:
           # The browser acceptance must not skip silently when the console build is missing.
