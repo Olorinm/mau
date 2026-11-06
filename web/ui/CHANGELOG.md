@@ -1,0 +1,68 @@
+# Changelog
+
+Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` has its own
+[`frontend/CHANGELOG.md`](frontend/CHANGELOG.md). Each version has a GitHub Release (`v*` tags) with
+the same notes and the package archive. When releasing, add the new section here in the version-bump
+commit; the Release notes are copied from it.
+
+## [0.1.0-alpha.9] - 2026-11-05
+
+- Reasoning comes from completed Codex items. Finished runs keep their reasoning now that Agent Host
+  makes streaming deltas live-only. During a live run, a completed item replaces its streamed
+  fragments.
+
+PR: [#6](https://github.com/Olorinm/agent-ui/pull/6)
+
+## [0.1.0-alpha.8] - 2026-10-30
+
+- Native run parts appear in event order: Codex commentary in the process, and one final answer.
+- Codex subagent activity.
+- Restored the create-group dialog and @all mentions.
+
+PR: [#5](https://github.com/Olorinm/agent-ui/pull/5)
+
+## [0.1.0-alpha.7] - 2026-10-21
+
+- Releases the merged main branch, together with Agent Frontend 0.1.0-alpha.7, so that the two
+  packages share a unified run presentation. The package content is the same as 0.1.0-alpha.6.
+
+PR: [#4](https://github.com/Olorinm/agent-ui/pull/4)
+
+## [0.1.0-alpha.6] - 2026-10-16
+
+- Native Host message and interaction projections for the original frontend run renderer. They keep:
+  - call identity;
+  - streaming command output;
+  - structured native tool data;
+  - opaque approval choices;
+  - question fields.
+
+## [0.1.0-alpha.5] - 2026-10-16
+
+- `AgentProcess` and `projectAgentProcess` on the optional `agent-host` entry point: a public Host
+  process view built from the existing Disclosure and ActivityRow components. It keeps invocation
+  IDs, original tool arguments and results, and public commentary. Callers own events, labels,
+  lifecycle and transport.
+- The event accumulator treats `model.response` as the authoritative text snapshot.
+
+## [0.1.0-alpha.4] - 2026-10-15
+
+- The shared scoped portal API used by Agent Frontend 0.1.0-alpha.4.
+- Project code is licensed under MIT. The original OpenGrove attribution and third-party notices
+  remain.
+
+## [0.1.0-alpha.3] - 2026-10-15
+
+- Caller-owned portal containers for dialogs, tooltips and toasts. Without a portal provider,
+  consumers keep document portals.
+- Controlled dialogs return focus to the element that opened them when they close.
+
+## [0.1.0-alpha.2] - 2026-10-14
+
+- First release from this repository. It was previously `packages/react` in Olorinm/agent-host.
+- `@olorinm/agent-ui`: chat messages, Markdown, composer, process details, approvals, questions and
+  resource cards. An optional `@olorinm/agent-ui/agent-host` interaction adapter.
+- `@olorinm/agent-ui/app`: buttons, dialogs, confirmation, toasts, empty states, avatars, settings
+  rows, status pills, tooltips and state indicators, extracted from OpenGrove. Design tokens for
+  light and dark themes, and a base reset, are in `@olorinm/agent-ui/app.css`.
+- React 19 is a peer dependency.
