@@ -559,3 +559,9 @@ header .mau-room-avatar {
   gap: var(--sp-2);
   align-items: center;
 }
+
+.mau-feishu-step { display: inline-flex; align-items: center; gap: 10px; }
+.mau-feishu-entry .mau-error, .mau-feishu-entry > .mau-inline-panel, .mau-feishu-entry > [role="status"] { margin: 0 22px 10px; }
+.mau-feishu-entry .mau-error { font-size: 12px; }
+.mau-catalog-state.is-expired { color: #b4492f; }
+.mau-reauthorize-banner { border-color: #e7b9a8; }

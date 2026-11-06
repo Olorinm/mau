@@ -83,8 +83,6 @@ function ChannelForm(props: {
 }) {
   const { t } = useI18n();
   const [domain, setDomain] = useState<"feishu" | "lark">(props.recovery?.domain ?? "feishu");
-  const hostReady = !!props.summary.host;
-  const [personalTools, setPersonalTools] = useState(props.recovery?.personalTools ?? hostReady);
   const [appId, setAppId] = useState(props.recovery?.appId ?? "");
   const existingRequired = props.recovery?.action === "authorize_existing_app";
   const [token, setToken] = useState("");
@@ -101,7 +99,7 @@ function ChannelForm(props: {
       case "feishu": {
         const id = appId.trim();
         if (existingRequired && !id || id && !/^cli_[a-zA-Z0-9_]{1,128}$/.test(id)) return null;
-        return { kind: "feishu", domain, personalTools: hostReady && personalTools, ...(id ? { appId: id } : {}) };
+        return { kind: "feishu", domain, ...(id ? { appId: id } : {}) };
       }
       case "weixin": return { kind: "weixin" };
       case "matrix": return { kind: "matrix" };
@@ -135,11 +133,6 @@ function ChannelForm(props: {
               </label>
             ))}
           </fieldset>
-          <label className="mau-check">
-            <input type="checkbox" checked={hostReady && personalTools} disabled={!hostReady}
-              onChange={(e) => setPersonalTools(e.target.checked)} />
-            <span>{t("connect.personalTools")}{hostReady ? null : <small>{t("connect.personalToolsNeedsHost")}</small>}</span>
-          </label>
         </>
       ) : null}
       {props.kind === "telegram" ? (
@@ -219,7 +212,7 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
         {current.error ? ` · ${errorMessage(t, current.error)}` : ""}</p>
       {current.kind === "feishu" ? <>
         <p>{t("connect.recoveryHint")}</p>
-        <Button onClick={() => props.onRecover(current.recovery ?? { action: "authorize_existing_app", domain: "feishu", personalTools: false })}>
+        <Button onClick={() => props.onRecover(current.recovery ?? { action: "authorize_existing_app", domain: "feishu" })}>
           {t("connect.recover")}
         </Button>
       </> : null}

@@ -7,7 +7,7 @@ import type { Session } from "../api/session";
 import { ApiError, safeExternalUrl } from "../api/http";
 import { errorMessage, useI18n } from "../i18n";
 import { ConnectChannelDialog } from "./connect-channel";
-import { FeishuAuthorizationRow } from "./feishu-authorization";
+import { FeishuEntry } from "./feishu-entry";
 import { useMatrixAvailable } from "../api/features";
 
 type Product = { id: string; name: string; en?: string; description: string; descriptionEn: string; group: "work" | "knowledge" | "channels"; channel?: ChannelKind };
@@ -57,8 +57,8 @@ function AccountDetail({ session, item, agents, changed }: { session: Session; i
       if (name === "connect" && consent) window.location.assign(consent);
     }, onError: () => { setMustCheck(true); setConfirmDisconnect(false); } });
   const connected = item.state === "connected", ready = connected && !mustCheck;
-  const labels = zh ? { connected: "已连接", authorization_required: "尚未连接", authorization_pending: "等待完成授权", disconnected: "已断开", needs_setup: "暂未开放", needs_attention: "需要重新检查" }
-    : { connected: "Connected", authorization_required: "Not connected", authorization_pending: "Finish authorization", disconnected: "Disconnected", needs_setup: "Coming soon", needs_attention: "Needs attention" };
+  const labels = zh ? { connected: "已连接", authorization_required: "尚未连接", authorization_pending: "等待完成授权", expired: "授权已过期，需要重新授权", disconnected: "已断开", needs_setup: "暂未开放", needs_attention: "需要重新检查" }
+    : { connected: "Connected", authorization_required: "Not connected", authorization_pending: "Finish authorization", expired: "Expired — re-authorize", disconnected: "Disconnected", needs_setup: "Coming soon", needs_attention: "Needs attention" };
   const assigned = item.assignedAgents?.map(id => agents.find(a => a.agent.id === id)?.agent.name).filter(Boolean) ?? [];
   const url = safeExternalUrl(item.authorizationUrl);
   return <>
@@ -104,10 +104,14 @@ export function ConnectorsScreen({ session }: { session: Session }) {
   const linked = (p: Product) => activeAgents.filter(a => a.connections.some(c => c.kind === p.channel));
   const accountFor = (p: Product) => accounts.data?.data.filter(a => `${a.label} ${a.id}`.toLowerCase().includes(p.id)) ?? [];
   const connected = (p: Product) => p.channel ? linked(p).length > 0 : accountFor(p).some(a => a.state === "connected");
+  // Rule: lapsed authorization is shown, never silently dropped (tools also report it to the Agent).
+  const expiredAccounts = accounts.data?.data.filter(a => a.state === "expired") ?? [];
+  const reauthorize = (p: Product) => accountFor(p).some(a => a.state === "expired");
+  const updateAccount = (next: ConnectorAccount) => queryClient.setQueryData(accountsKey, (old: { configured: boolean; data: ConnectorAccount[] } | undefined) => old && ({ ...old, data: old.data.map(a => a.id === next.id ? next : a) }));
   const available = (p: Product) => !!p.channel || accountFor(p).some(a => a.state !== "needs_setup");
   const productName = (p: Product) => zh ? p.name : p.en ?? p.name;
   const description = (p: Product) => zh ? p.description : p.descriptionEn;
-  const stateLabel = (p: Product) => connected(p) ? zh ? "已连接" : "Connected" : available(p) ? zh ? "连接" : "Connect" : zh ? "即将开放" : "Coming soon";
+  const stateLabel = (p: Product) => reauthorize(p) ? zh ? "需要重新授权" : "Re-authorize" : connected(p) ? zh ? "已连接" : "Connected" : available(p) ? zh ? "连接" : "Connect" : zh ? "即将开放" : "Coming soon";
   const matches = (p: Product) => `${p.name} ${p.en ?? ""} ${p.id}`.toLowerCase().includes(query.trim().toLowerCase());
   const visible = catalog.filter(p => matches(p) && (tab === "available" || connected(p)));
   const chosen = catalog.find(p => p.id === selected);
@@ -116,7 +120,7 @@ export function ConnectorsScreen({ session }: { session: Session }) {
   useEffect(() => { if (selected) { content.current?.scrollTo(0, 0); heading.current?.focus(); } }, [selected]);
   const row = (p: Product) => <button key={p.id} className="mau-catalog-row" onClick={() => open(p)} aria-label={`${productName(p)} ${stateLabel(p)}`}>
     <AppMark id={p.id} /><span className="mau-catalog-row-copy"><strong>{productName(p)}</strong><span>{description(p)}</span></span>
-    <span className={`mau-catalog-state ${connected(p) ? "is-connected" : available(p) ? "is-available" : ""}`}>{connected(p) && <span className="mau-status-dot" />}{stateLabel(p)}</span><ProductIcon name="next" />
+    <span className={`mau-catalog-state ${reauthorize(p) ? "is-expired" : connected(p) ? "is-connected" : available(p) ? "is-available" : ""}`}>{connected(p) && <span className="mau-status-dot" />}{stateLabel(p)}</span><ProductIcon name="next" />
   </button>;
   return <main className="mau-connections" ref={content}>
     <div className={`mau-connectors-content${chosen ? " is-detail" : ""}`}>
@@ -132,20 +136,27 @@ export function ConnectorsScreen({ session }: { session: Session }) {
         </div>
       </>}
       {error && <div role="alert" className="mau-connector-error">{errorMessage(t, error instanceof ApiError ? error.code : "request_failed")}<Button onClick={() => { void agents.refetch(); void accounts.refetch(); }}>{zh ? "重新加载" : "Reload"}</Button></div>}
+      {!!expiredAccounts.length && <div role="alert" className="mau-connector-error mau-reauthorize-banner">
+        <span>{zh ? `${expiredAccounts.map(a => a.label).join("、")}的授权已过期，员工暂时无法使用，需要重新授权。` : `${expiredAccounts.map(a => a.label).join(", ")}: authorization expired. Re-authorize so your Agents can use it.`}</span>
+        {(() => { const target = catalog.find(p => expiredAccounts.some(a => accountFor(p).includes(a)));
+          return target && target.id !== selected ? <Button onClick={() => open(target)}>{zh ? "重新授权" : "Re-authorize"}</Button> : null; })()}
+      </div>}
       {accounts.isPending && <p role="status" className="mau-detail-note">{zh ? "正在读取连接状态…" : "Loading connections…"}</p>}
       {chosen ? <>
-        {chosen.channel ? <>
+        {chosen.id === "feishu" && accounts.data?.data.some(a => a.kind === "feishu") ? <DetailSection title={zh ? "聊天与个人权限" : "Chat and personal access"}>
+          <FeishuEntry session={session} agents={activeAgents} loading={agents.isPending} accounts={accounts.data.data.filter(a => a.kind === "feishu")}
+            changed={updateAccount} agentsChanged={() => { void agents.refetch(); void accounts.refetch(); }} />
+        </DetailSection> : chosen.channel ? <>
           <DetailSection title={zh ? "连接到员工" : "Connect to an Agent"}>
             {activeAgents.map(agent => { const has = agent.connections.some(c => c.kind === chosen.channel); return <div className="mau-channel-entry" key={agent.agent.id}>
               <div className="mau-permission-row"><span className="mau-agent-access"><span className="mau-mini-avatar">{agent.agent.name.slice(0,1).toUpperCase()}</span><strong>{agent.agent.name}</strong></span><Button disabled={checks.isPending} onClick={() => has ? checks.mutate(agent.agent.id) : setConnecting({ agent, kind: chosen.channel! })}>{has ? zh ? "检查连接" : "Check connection" : zh ? "连接" : "Connect"}</Button></div>
               {has && <span className="mau-channel-connected">{zh ? "已连接" : "Connected"}</span>}
-              {has && chosen.channel === "feishu" && agent.connections.some(c => c.kind === "feishu" && c.personalTools) && <FeishuAuthorizationRow session={session} agentId={agent.agent.id} />}
               {checks.variables === agent.agent.id && checks.data && <p className="mau-panel-note" role="status">{checks.data.filter(c => c.kind === chosen.channel).map(c => c.detail).join(" · ") || (zh ? "检查完成" : "Check complete")}</p>}
               {checks.variables === agent.agent.id && checks.isError && <p role="alert">{zh ? "连接检查失败，请稍后重试。" : "Connection check failed. Try again later."}</p>}
             </div>; })}
             {!activeAgents.length && !agents.isPending && <p className="mau-panel-note">{zh ? "先在通讯录创建一个员工，再连接此应用。" : "Create an Agent in Contacts to connect this app."}</p>}
           </DetailSection>
-        </> : accountFor(chosen).length ? accountFor(chosen).map(item => <AccountDetail key={item.id} session={session} item={item} agents={agents.data ?? []} changed={next => queryClient.setQueryData(accountsKey, (old: { configured: boolean; data: ConnectorAccount[] } | undefined) => old && ({ ...old, data: old.data.map(a => a.id === next.id ? next : a) }))} />)
+        </> : accountFor(chosen).length ? accountFor(chosen).map(item => <AccountDetail key={item.id} session={session} item={item} agents={agents.data ?? []} changed={updateAccount} />)
           : !accounts.isPending && <div className="mau-connector-empty"><ProductIcon name="locked" /><h2>{zh ? "即将开放" : "Coming soon"}</h2><p>{zh ? "这个应用还没有开放账号连接，开放后可以直接在这里授权。" : "Account connections are not available yet. You will be able to connect here when it is ready."}</p></div>}
       </> : <>
         {!!featured.length && <section className="mau-catalog-section"><h2>{zh ? "从这里开始" : "Start here"}</h2><div className="mau-featured-apps">{featured.map(p => <button className="mau-featured-app" key={p.id} onClick={() => open(p)}><AppMark id={p.id} /><strong>{productName(p)}</strong><p>{description(p)}</p><span>{connected(p) ? zh ? "管理连接" : "Manage connection" : zh ? "了解并连接" : "Explore and connect"}<ProductIcon name="next" /></span></button>)}</div></section>}

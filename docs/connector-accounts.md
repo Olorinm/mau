@@ -80,8 +80,10 @@ The following account routes require the authenticated owner's bearer session. N
 | POST | `/_mau/v1/connector-accounts/:id/connect` | Provider consent link or current status |
 | POST | `/_mau/v1/connector-accounts/:id/check` | Current authorization status |
 | POST | `/_mau/v1/connector-accounts/:id/disconnect` | Disconnect result |
+| POST | `/_mau/v1/connector-accounts/:id/complete` | Feishu: finish the device-flow authorization; returns the consent link while it waits |
+| POST | `/_mau/v1/connector-accounts/:id/feishu-application` | Feishu: body `{ "agentId" }`; hands that Agent's chat app to this connection (see below) |
 
-POST bodies must be `{}`. An unknown account and another owner's account both return 404. Responses use a small status vocabulary and allow-listed fields; raw upstream errors, credentials, arbitrary metadata and private keys are never forwarded. Management requests use fresh two-minute service tokens and do not retry automatically. The upstream response has a time and size bound.
+POST bodies must be `{}`, except `feishu-application`. An unknown account and another owner's account both return 404. Responses use a small status vocabulary and allow-listed fields; raw upstream errors, credentials, arbitrary metadata and private keys are never forwarded. Management requests use fresh two-minute service tokens and do not retry automatically. The upstream response has a time and size bound.
 
 A failed mutation can have already changed authorization or invalidated pending writes. Mau reports `connector_action_unknown`, leaves the outcome unresolved, and the UI requires a status check before another mutation. Checking state is not a retry. Disconnect clears local authorization and denies pending writes in ConnectorService; the provider grant may still need to be revoked in provider settings. Already dispatched writes are not cancelled by disconnect.
 
@@ -92,6 +94,67 @@ Repository tests use a local HTTP fixture with the component's real signature ve
 Before enabling an account in production: deploy the secured service, configure the provider app and exact callback, complete owner consent, verify the OAuth grant, then exercise one narrow product API read through the assigned Agent. `connected_apps` uses a two-minute signed read-only caller token, checked by the service even for pre-approved writes. Mau admits it only on Router-authorized channel runs, persists that run admission and rechecks the configured Agent/owner at Host composition. The Agent never receives a signing key or provider token. Disconnection removes provider access; removing assignments takes effect after configuration reload/restart.
 
 Adding this native tool to an existing Host session can require a controlled execution-session rotation. Preserve conversation history, run records and native files; do not repeatedly retry a tool-definition conflict or clear Router state. Background rules, granular user-editable assignment UI and write approvals remain separate work.
+
+## Feishu: one entry for chat and personal access
+
+Feishu is split by direction, on **one** Feishu app (like Feishu aily or Coze):
+
+| | Owned by | Identity | What |
+| --- | --- | --- | --- |
+| 1 · 聊天 | Router chat channel | the app's bot | receive and send messages, cards |
+| 2 · 个人权限 | Agent Connectors (`kind: "feishu"`, official `lark-cli`) | the owner (user authorization on the same app) | docs, calendar, drive, mail…; writes need the owner's approval |
+
+The connectors page shows a single 飞书 card per Agent with both statuses (聊天已连接 / 个人权限 已授权 · 已过期 · 未授权):
+
+1. **Chat** uses Router's existing flow (`registerApp` QR, `credentials.json` with `appId`, `appSecretFile`, `ownerOpenId`).
+   The chat channel only carries messages; acting as the owner is the connector's job.
+2. **Personal access**: Mau reads the chat channel's saved app (`credentials.json` and `app-secret` in Router's Agent
+   directory) and hands it to the connector (`POST /v1/connections/:id/application`). No second app or app QR. Then
+   `connect` starts the official device flow; the card shows the consent QR/link and polls `complete` until the owner
+   confirms. Handing over the same app again keeps the authorization, so 重新授权 always hands over and reconnects.
+   The CLI refreshes tokens itself. The hand-over runs automatically right after the chat channel connects.
+
+The hand-over requires the owner's Agent, a connection owned by that owner, and an assignment of that connection to
+that Agent (`connectedApps.assignments`). The secret goes only to the connector service and never to the browser.
+
+### Rule 1: personal access only in the owner's private conversation
+
+Connections the service lists with `usage: "owner_private"` (Feishu), plus `connectedApps.ownerPrivateConnections` and
+every `kind: "feishu"` connection of the composed runtime, are admitted by `connected_apps` only when the run is the
+owner's private conversation. The check is in Mau's `connected_apps` admission (`src/owner-private.ts`), from Router's
+own records, not from the Agent:
+
+- Channel message (`owner` admission): Router's `isOwnerInput` must hold: direct scope from the owner's address, or the
+  owner-main conversation. Router also admits the owner's turns in private groups (owner plus the owner's Agents) as
+  `owner`; those are groups and are refused. Visitors and other senders are never `owner`.
+- Owner-authenticated work events (Router work-events API, the web console): allowed unless the session contains a
+  message that is not the owner's direct input (a group or visitor session).
+- Schedules: allowed, read-only. Rules are created by the owner, and Router requires their target and conversation
+  sessions to be owner conversations (`notification_requires_owner_conversation`); delivery goes only there.
+- Delegated work and memory reviews: refused. Unknown usage (service unavailable): every connection is treated as
+  owner-private (fail closed).
+
+Elsewhere, `action: "tools"` lists them in `unavailableHere` and a call returns `connected_app_owner_private_only` with a
+message for the requester. The installed `lark-cli` relay goes through the same check.
+
+### Rule 2: expiry is visible
+
+Connector status `expired` (with `reason`, e.g. `refresh_token_expired`) becomes `state: "expired"`; the page shows a
+banner, the catalog row says 需要重新授权, and the card offers 重新授权. Tools stay listed: a call returns
+`feishu_personal_authorization_required` with `state`, a message saying re-authorization is needed and the consent
+link, which the Agent passes to the owner.
+
+### Production configuration
+
+Requires Agent Connectors 0.1.0-alpha.9 and Router 0.7.0-alpha.12 or later (the versions pinned in `components.json`).
+
+1. `connectors.json` (runtime): a Feishu connection per owner whose `owner` is the exact Router account and whose
+   `directory` is inside the encrypted `secretFiles` bundle, e.g.
+   `{ "id": "<owner>-feishu", "kind": "feishu", "owner": "@owner:server", "settings": { "directory": "feishu/<owner>" } }`.
+   No app files are needed; Mau hands them over.
+2. Mau options: add the connection to the Agent's `connectedApps.assignments[].connections` (as for Gmail) and add
+   `https://accounts.feishu.cn` (`https://accounts.larksuite.com` for Lark) to `connectorAccounts.consentOrigins`.
+   Then open 飞书 → 个人权限 → 授权 once.
 
 ## Connector catalog
 

@@ -23,7 +23,6 @@ import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
-import { FeishuAuthorizationRow } from "./feishu-authorization";
 
 const actionLabel = {
   pause: "env.pause",
@@ -283,14 +282,6 @@ export function AgentDetail(props: {
                   }
                 />
               ))}
-              {connections.some(
-                (c) => c.kind === "feishu" && c.personalTools,
-              ) ? (
-                <FeishuAuthorizationRow
-                  session={props.session}
-                  agentId={agent.id}
-                />
-              ) : null}
               {pending.map((job) => (
                 <ObjectSettingsRow
                   key={job.id}
@@ -323,13 +314,11 @@ export function AgentDetail(props: {
                     title={
                       check.kind === "host"
                         ? t("check.host")
-                        : check.kind === "feishu_personal"
-                          ? t("feishu.personal")
-                          : check.kind === "connections"
-                            ? t("channels.title")
-                            : isChannel(check.kind)
-                              ? t(`channel.${check.kind}`)
-                              : check.kind
+                        : check.kind === "connections"
+                          ? t("channels.title")
+                          : isChannel(check.kind)
+                            ? t(`channel.${check.kind}`)
+                            : check.kind
                     }
                     detail={check.detail}
                     value={

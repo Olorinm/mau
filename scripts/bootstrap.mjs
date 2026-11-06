@@ -58,5 +58,5 @@ if (values["host-archive"]) {
 }
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });
-// Router's official Feishu authorization/tool bridge needs its platform binary.
+// Agent Connectors' Feishu connection runs the official Lark CLI, which needs its platform binary.
 execFileSync("npm", ["rebuild", "@larksuite/cli", "--ignore-scripts=false"], { cwd: root, stdio: "inherit" });

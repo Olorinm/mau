@@ -4,6 +4,22 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.26] - 2026-11-06
+
+- Pins Router 0.7.0-alpha.12 and Agent Connectors 0.1.0-alpha.9.
+- One 飞书 entry on the connectors page: 聊天 (Router's chat channel, bot identity) and 个人权限 (Agent Connectors as the
+  owner, through the official lark-cli) on the same Feishu app. Mau hands the chat app to the connector, so there is no
+  second app or app QR; the owner then authorizes with the official device flow.
+- Personal (owner-identity) connections are admitted by `connected_apps` only in the owner's private conversation:
+  never in groups (including Router's private groups), for other senders or delegated work; owner-created schedules
+  stay read-only. Elsewhere they are listed as unavailable and calls return `connected_app_owner_private_only`.
+- Expired authorization is shown as 已过期 with a banner and 重新授权; tool results say 需要重新授权 with the link.
+- Removed Router's Feishu personal tools, which Router 0.7.0-alpha.12 dropped: the CLI `channel-auth` command and
+  `--messaging-only` flag, the `personalTools` option when connecting Feishu, the console's personal-tools checkbox and
+  Router authorization row, and the `feishu_personal` check label. Feishu personal access is only the connector's.
+
+PRs: [#36](https://github.com/Olorinm/mau/pull/36)
+
 ## [0.1.0-alpha.25] - 2026-11-06
 
 - Chat controls live in the composer: in a DM, `/new` starts a new chat and `/clear` clears the
