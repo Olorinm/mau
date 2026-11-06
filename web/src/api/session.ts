@@ -42,8 +42,11 @@ const logoutPath = (value: unknown) => typeof value === "string" && /^\/[^/\\]/.
  * read with the same-origin Access cookie only; otherwise the stored Matrix session (or the login page) is used.
  */
 export async function bootSession(storage: Storage = localStorage): Promise<Boot> {
-  const info = await request<MauInfo>("/_mau/v1/info").catch(() => undefined);
-  if (info?.login !== "edge") return { mode: "matrix", session: loadSession(storage) };
+  // No answer says nothing about the login: the Matrix form or a stored token would be a dead end on an edge deployment.
+  let info: MauInfo;
+  try { info = await request<MauInfo>("/_mau/v1/info"); }
+  catch (error) { return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" }; }
+  if (info.login !== "edge") return { mode: "matrix", session: loadSession(storage) };
   clearSession(storage);
   const logoutUrl = logoutPath(info.logoutUrl);
   try {
@@ -57,32 +60,6 @@ export async function bootSession(storage: Storage = localStorage): Promise<Boot
       return { mode: "edge-denied", logoutUrl, ...(error.details.email ? { email: error.details.email } : {}) };
     return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" };
   }
-}
-
-async function verify(token: string, homeserver?: string): Promise<Session> {
-  const { owner } = await request<{ owner: string }>("/_mau/v1/account", { token });
-  if (typeof owner !== "string") throw new ApiError("invalid_account_response", 200);
-  return { token, owner, ...(homeserver ? { homeserver } : {}) };
-}
-
-/** Same sequence as `mau login`: public homeserver → Matrix password login → Mau account. */
-export async function loginWithPassword(user: string, password: string): Promise<Session> {
-  const { homeserver } = await request<{ homeserver: string }>("/_mau/v1/info");
-  const origin = new URL(homeserver).origin;
-  const login = await request<{ access_token?: unknown }>(origin + "/_matrix/client/v3/login", {
-    body: {
-      type: "m.login.password",
-      identifier: { type: "m.id.user", user: user.trim() },
-      password,
-      initial_device_display_name: "Mau Web",
-    },
-  });
-  if (typeof login.access_token !== "string") throw new ApiError("invalid_login_response", 200);
-  return verify(login.access_token, origin);
-}
-
-export function loginWithToken(token: string): Promise<Session> {
-  return verify(token.trim());
 }
 
 const draftsKey = "mau.reloadDrafts";
@@ -110,7 +87,7 @@ export function reloadDrafts(storage: Storage = sessionStorage, clear = false): 
 /** Revoke a password-login device; a pasted token belongs to whoever issued it. */
 export async function logout(session: Session) {
   if (session.edge) { location.assign(session.edge.logoutUrl); return; }
-  if (session.homeserver)
-    await request(session.homeserver + "/_matrix/client/v3/logout", { token: session.token, body: {} }).catch(() => undefined);
+  // The Matrix client code loads only for a Matrix login (agent-router ADR 0005 19.3).
+  if (session.homeserver) await import("./matrix-login").then((matrix) => matrix.matrixLogout(session)).catch(() => undefined);
   clearSession();
 }

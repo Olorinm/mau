@@ -93,6 +93,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const edgeIdentity = options.edgeIdentity ?? (config as { edgeIdentity?: unknown }).edgeIdentity;
   if (options.edgeIdentity && (config as { edgeIdentity?: unknown }).edgeIdentity) throw new Error("edge_identity_configured_twice");
   const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), ...(edgeIdentity ? { edgeIdentity: edgeIdentity as EdgeIdentityConfig } : {}) };
+  // agent-router ADR 0005 19.1: `AGENT_MATRIX=off` reaches Router through the service config. Without Matrix there is
+  // no Matrix login, so owners must sign in through the edge identity.
+  const matrix = (config as { matrix?: { enabled?: boolean } }).matrix?.enabled !== false;
+  if (!matrix && !edgeIdentity) throw new Error("matrix_off_requires_edge_identity");
+  // Without Matrix the console's only chat source is the ledger (Router refuses `ledgerRead` without `ledgerSend`).
+  if (!matrix && !(config as { ledgerRead?: boolean }).ledgerRead) throw new Error("matrix_off_requires_ledger_read");
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
@@ -227,7 +233,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     await connectorRuntime.callback(req, res);
   });
   // The console only reads its own files; product and Router routes keep their own handlers.
-  if (serving.webRoot) app.use(webConsole(serving.webRoot, publicHomeserver.origin));
+  if (serving.webRoot) app.use(webConsole(serving.webRoot, matrix ? publicHomeserver.origin : undefined));
   const product = express.Router();
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
   product.use(express.json({ limit: "16kb" }));

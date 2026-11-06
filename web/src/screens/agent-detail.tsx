@@ -35,6 +35,7 @@ const checkTone: Record<string, ProductStatusTone> = {
   verified: "success",
   needs_action: "warning",
   not_verified: "neutral",
+  disabled: "neutral",
 };
 const channels = [
   "feishu",

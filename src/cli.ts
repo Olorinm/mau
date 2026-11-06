@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
@@ -11,6 +12,7 @@ const help = `Mau — your agent product
 
   mau login --url URL --token-file FILE
   mau login --url URL --user MATRIX_ID --password-file FILE
+  mau login --url URL --edge   (Cloudflare Access; the default when the service has no Matrix login)
   mau options
   mau setup NAME --environment PROFILE [--workspace ID]
   mau workspaces | workspace-create NAME
@@ -28,6 +30,10 @@ Options: --no-wait, --allow-http (loopback development only),
   --bot-token-file FILE, --domain feishu|lark, --messaging-only,
   --app-id cli_... (authorize an existing Feishu/Lark app),
   --mail-service ID, --inbox ID, --owner-email EMAIL, --api-key-file FILE
+Edge login: run cloudflared access login URL first, or use an Access service token:
+  --access-client-id-file FILE --access-client-secret-file FILE (or CF_ACCESS_CLIENT_ID[_FILE],
+  CF_ACCESS_CLIENT_SECRET[_FILE]); --access-token-file FILE or CF_ACCESS_TOKEN[_FILE] pass a token.
+  Access credentials are read on every call and never saved.
 Credentials and selection are saved in ~/.config/mau/session.json.
 Router owns accounts and connections; Mau owns environment operations.
 `;
@@ -39,9 +45,12 @@ const options = {
   "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, "messaging-only": { type: "boolean" }, yes: { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
+  edge: { type: "boolean" }, "access-client-id-file": { type: "string" }, "access-client-secret-file": { type: "string" },
+  "access-token-file": { type: "string" },
 } as const;
 const stateFile = join(process.env.MAU_CONFIG_DIR ?? join(homedir(), ".config", "mau"), "session.json");
-interface Session { url: string; token: string; owner: string; agentId?: string }
+/** `login: "edge"`: no token is stored; Cloudflare Access credentials are resolved for every run. */
+interface Session { url: string; token: string; owner: string; agentId?: string; login?: "edge" }
 const controller = new AbortController();
 process.once("SIGINT", () => controller.abort());
 process.once("SIGTERM", () => controller.abort());
@@ -60,10 +69,38 @@ function endpoint(raw: string, allowHTTP: boolean): string {
     return fail("invalid_service_url");
   return u.origin;
 }
-async function request(base: string, path: string, token: string | undefined, body?: unknown, method?: "DELETE"): Promise<any> {
+type Auth = string | Record<string, string> | undefined;
+const authHeaders = (auth: Auth): Record<string, string> => typeof auth === "string" ? (auth ? { Authorization: `Bearer ${auth}` } : {}) : auth ?? {};
+/** One non-empty line from a file, or from an environment variable (`NAME_FILE` names a file). */
+function configured(file: string | undefined, name: string): string | undefined {
+  const path = file ?? process.env[name + "_FILE"];
+  const value = path ? readFileSync(path, "utf8").trim() : process.env[name]?.trim();
+  if (value === undefined || value === "") return undefined;
+  if (value.length > 16384 || /[\r\n\0]/.test(value)) return fail("invalid_credential_file");
+  return value;
+}
+/**
+ * Cloudflare Access credentials (agent-router ADR 0005 18.3): an Access service token (client id and secret), an Access
+ * token, or `cloudflared access token -app=URL` after `cloudflared access login URL`. `Origin` is the service's own
+ * origin: Router accepts unsafe edge requests only with an allowed Origin (its CSRF guard).
+ */
+function accessHeaders(url: string, values: { "access-client-id-file"?: string | undefined; "access-client-secret-file"?: string | undefined;
+  "access-token-file"?: string | undefined }): Record<string, string> {
+  const id = configured(values["access-client-id-file"], "CF_ACCESS_CLIENT_ID"), secret = configured(values["access-client-secret-file"], "CF_ACCESS_CLIENT_SECRET");
+  if (!id !== !secret) return fail("access_service_token_requires_client_id_and_secret");
+  if (id && secret) return { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret, Origin: url };
+  let token = configured(values["access-token-file"], "CF_ACCESS_TOKEN");
+  if (!token) {
+    try { token = execFileSync("cloudflared", ["access", "token", "-app=" + url], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 }).trim(); }
+    catch { token = undefined; }
+  }
+  if (!token || /\s/.test(token)) return fail("access_credentials_required");
+  return { "cf-access-token": token, Origin: url };
+}
+async function request(base: string, path: string, auth: Auth, body?: unknown, method?: "DELETE"): Promise<any> {
   const res = await fetch(base + path, {
     method: method ?? (body === undefined ? "GET" : "POST"), redirect: "error", credentials: "omit",
-    headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    headers: { Accept: "application/json", ...authHeaders(auth),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
@@ -92,9 +129,21 @@ async function main() {
     if (!/^cli_[a-zA-Z0-9_]{1,128}$/.test(values["app-id"])) fail("invalid_feishu_app_id");
   }
   const allowHTTP = values["allow-http"] ?? false;
+  const accessOptions = ["access-client-id-file", "access-client-secret-file", "access-token-file"] as const;
   if (command === "login") {
     if (!values.url) fail("url_required");
     const url = endpoint(values.url!, allowHTTP);
+    // Edge login: explicit, or the default when the service offers no Matrix login (Matrix off).
+    const edge = values.edge || !values["token-file"] && !values.user && !values["password-file"]
+      && (await request(url, "/_mau/v1/info", undefined).catch(() => ({}))).login === "edge";
+    if (edge) {
+      if (values["token-file"] || values.user || values["password-file"]) fail("choose_one_login_method");
+      const account = await request(url, "/_mau/v1/account", accessHeaders(url, values));
+      if (typeof account.owner !== "string") fail("invalid_account_response");
+      privateFile(stateFile, { url, token: "", owner: account.owner, login: "edge" });
+      output({ owner: account.owner, url, login: "edge" }); return;
+    }
+    if (accessOptions.some((name) => values[name])) fail("access_credentials_require_edge_login");
     let token: string;
     if (values["token-file"]) {
       if (values.user || values["password-file"]) fail("choose_one_login_method");
@@ -119,8 +168,11 @@ async function main() {
   try { session = JSON.parse(readFileSync(stateFile, "utf8")); } catch { return fail("login_required"); }
   const url = endpoint(session.url, allowHTTP);
   if (values.url && endpoint(values.url, allowHTTP) !== url) fail("login_to_selected_service_first");
-  const product = (path: string, body?: unknown) => request(url, "/_mau/v1" + path, session.token, body);
-  const routing = (path: string, body?: unknown) => request(url, "/_agent-router/v1" + path, session.token, body);
+  if (session.login !== "edge" && accessOptions.some((name) => values[name])) fail("access_credentials_require_edge_login");
+  let resolved: Record<string, string> | undefined;
+  const auth = (): Auth => session.login === "edge" ? resolved ??= accessHeaders(url, values) : session.token;
+  const product = (path: string, body?: unknown) => request(url, "/_mau/v1" + path, auth(), body);
+  const routing = (path: string, body?: unknown) => request(url, "/_agent-router/v1" + path, auth(), body);
   const select = (id: string) => { session.agentId = id; privateFile(stateFile, session); };
   const pollEnvironment = async (id: string, status: any) => {
     const deadline = Date.now() + 15 * 60_000;
@@ -142,7 +194,7 @@ async function main() {
     const list = await product("/agents");
     const agent = list.data.find((a: any) => a.agent.name === args[0]);
     if (!agent) fail("agent_not_found");
-    process.exitCode = await runSsh(url, session.token, agent.agent.id,
+    process.exitCode = await runSsh(url, authHeaders(auth()), agent.agent.id,
       publicKey => product(`/agents/${encodeURIComponent(agent.agent.id)}/ssh`, { publicKey }), args.slice(1), controller.signal);
     return;
   }
@@ -157,7 +209,7 @@ async function main() {
     const list = await product("/agents");
     const target = list.data.find((a: any) => a.agent.name === args[0]);
     if (!target) fail("agent_not_found");
-    await request(url, `/_mau/v1/agents/${encodeURIComponent(target.agent.id)}`, session.token, undefined, "DELETE");
+    await request(url, `/_mau/v1/agents/${encodeURIComponent(target.agent.id)}`, auth(), undefined, "DELETE");
     if (session.agentId === target.agent.id) { delete session.agentId; privateFile(stateFile, session); }
     output({ deleted: target.agent.name }); return;
   }

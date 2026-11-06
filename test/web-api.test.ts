@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError, accessExpiredEvent, request, safeExternalUrl } from "../web/src/api/http.js";
-import { bootSession, clearSession, loadSession, loginWithPassword, loginWithToken, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
+import { bootSession, clearSession, loadSession, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
+import { loginWithPassword, loginWithToken } from "../web/src/api/matrix-login.js";
 import { mauApi, routerApi } from "../web/src/api/client.js";
 
 class MemoryStorage {
@@ -134,6 +135,18 @@ it("edge login boots without a login page or token; Matrix login stays for login
   saveSession({ token: "kept", owner: "@alice:agents.example" }, storage);
   vi.stubGlobal("fetch", async () => Response.json({ login: "matrix", homeserver: "https://matrix.example", matrix: true }));
   expect(await bootSession(storage)).toEqual({ mode: "matrix", session: { token: "kept", owner: "@alice:agents.example" } });
+});
+
+it("never answers a failed /info with the Matrix login or a stored Matrix session", async () => {
+  const storage = new MemoryStorage() as unknown as Storage;
+  saveSession({ token: "stale", owner: "@alice:agents.example" }, storage);
+  vi.stubGlobal("fetch", async () => { throw new TypeError("fetch failed"); });
+  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "network_error" });
+  vi.stubGlobal("fetch", async () => new Response("bad gateway", { status: 502 }));
+  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "request_failed" });
+  vi.stubGlobal("dispatchEvent", () => true);
+  vi.stubGlobal("fetch", async () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
+  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "access_session_expired" });
 });
 
 it("keeps unsent composer text across the Access re-login reload", () => {

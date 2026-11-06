@@ -7,7 +7,8 @@ import type { Duplex } from "node:stream";
 import { connectSshTunnel } from "./ssh-transport.js";
 
 interface Access { username: string; hostKey: string; keyId: string }
-export async function runSsh(base: string, token: string, agentId: string,
+/** `auth` are the request headers that authenticate the owner (a bearer token or Cloudflare Access credentials). */
+export async function runSsh(base: string, auth: Record<string, string>, agentId: string,
   prepare: (publicKey: string) => Promise<Access>, command: string[], signal: AbortSignal) {
   const directory = mkdtempSync(join(tmpdir(), "mau-ssh-"));
   const identity = join(directory, "identity"), knownHosts = join(directory, "known_hosts");
@@ -27,7 +28,7 @@ export async function runSsh(base: string, token: string, agentId: string,
     server = createServer(socket => {
       if (connected) { socket.destroy(); return; } connected = true;
       socket.pause(); sockets.add(socket); socket.on("error", () => {});
-      void connectSshTunnel(url, { Authorization: "Bearer " + token }, signal).then(upstream => {
+      void connectSshTunnel(url, auth, signal).then(upstream => {
         if (socket.destroyed) { upstream.destroy(); return; }
         sockets.add(upstream); upstream.on("error", () => socket.destroy());
         upstream.once("close", () => socket.destroy()); socket.once("close", () => upstream.destroy());
