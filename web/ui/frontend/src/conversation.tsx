@@ -31,6 +31,8 @@ export interface MessageView {
   dateLabel?: ReactNode;
   dateKey?: string;
   copyText?: string;
+  /** Follows a message from the same sender: no avatar or author line, a tighter gap. */
+  continued?: boolean;
   reply?: { senderName?: string; text: string };
   onAuthorClick?(): void;
   onMention?(): void;
@@ -56,12 +58,21 @@ export interface ComposerMention {
   detail?: ReactNode;
   onSelect(): void;
 }
+/** A slash command offered when the draft is "/" followed by part of its name. */
+export interface ComposerCommand {
+  id: string;
+  /** Typed after "/", for example "new". */
+  name: string;
+  description?: string;
+  onSelect(): void;
+}
 export type ConversationComposer = ComponentProps<typeof ChatComposer> & {
   onAttachmentClick?(): void;
   onFiles?(files: File[]): void;
   attachments?: readonly ComposerAttachment[];
   mentions?: readonly ComposerMention[];
   onMentionClick?(): void;
+  commands?: readonly ComposerCommand[];
   reply?: { title: string; text: string; onCancel(): void };
 };
 
@@ -93,6 +104,18 @@ export function Conversation({
       ? { id: "all", kind: "all", label: item.label, detail: typeof item.detail === "string" ? item.detail : "" }
       : { id: item.id, kind: "member", label: item.label, avatar: item.avatar },
   );
+  // "/" plus part of a name lists the matching commands; Escape hides the list until the draft changes.
+  const [hiddenFor, setHiddenFor] = useState<string>();
+  const [activeCommand, setActiveCommand] = useState(0);
+  const slash = /^\/(\S*)$/.exec(composer.value);
+  const commands = slash
+    ? (composer.commands ?? []).filter((item) => item.name.startsWith(slash[1]!.toLowerCase()))
+    : [];
+  const commandOpen = commands.length > 0 && hiddenFor !== composer.value;
+  const selectCommand = (command: ComposerCommand) => {
+    command.onSelect();
+    input.current?.focus();
+  };
   const selectMention = (option: MentionOption) => {
     composer.mentions?.find((item) => (option.kind === "all" ? item.kind === "all" : item.id === option.id))?.onSelect();
     setMentionOpen(false);
@@ -107,16 +130,21 @@ export function Conversation({
   useLayoutEffect(() => {
     if (stream.current) stream.current.scrollTop = stream.current.scrollHeight;
   }, [messages.length, conversationId]);
-  const keyboard = useRoomComposerKeyboard({
-    mentionMenu: { open: mentionOpen, activeIndex: activeMention },
-    mentionOptions: mentions,
-    moveMentionSelection: (delta) =>
-      setActiveMention((index) =>
-        mentions.length
-          ? (index + delta + mentions.length) % mentions.length
-          : 0,
-      ),
-    applyMention: selectMention,
+  const keyboard = useRoomComposerKeyboard<MentionOption | ComposerCommand>({
+    mentionMenu: commandOpen
+      ? { open: true, activeIndex: Math.min(activeCommand, commands.length - 1) }
+      : { open: mentionOpen, activeIndex: activeMention },
+    mentionOptions: commandOpen ? commands : mentions,
+    moveMentionSelection: (delta) => {
+      const length = commandOpen ? commands.length : mentions.length;
+      (commandOpen ? setActiveCommand : setActiveMention)((index) =>
+        length ? (index + delta + length) % length : 0,
+      );
+    },
+    applyMention: (value) =>
+      commandOpen
+        ? selectCommand(value as ComposerCommand)
+        : selectMention(value as MentionOption),
     sendDraft: () => {
       if (
         !composer.disabled &&
@@ -157,8 +185,22 @@ export function Conversation({
           mentionOpen,
           mentionOptions: mentions,
           activeMentionIndex: activeMention,
+          commandOpen,
+          commandOptions: commands.map(({ id, name, description }) => ({ id, name, description })),
+          activeCommandIndex: Math.min(activeCommand, commands.length - 1),
+          onSelectCommand: (id) => {
+            const command = commands.find((item) => item.id === id);
+            if (command) selectCommand(command);
+          },
+          onHoverCommand: setActiveCommand,
+          onCommandOpenChange: (open) => {
+            if (!open) setHiddenFor(composer.value);
+          },
+          running: !!composer.running,
+          onStop: composer.onStop,
           onDraftChange: (value, cursor) => {
             composer.onChange(value);
+            setActiveCommand(0);
             // Typing "@" opens the member picker, as in OpenGrove rooms.
             if (composer.mentions?.length && value[cursor - 1] === "@") {
               setActiveMention(0);
@@ -195,6 +237,11 @@ export function Conversation({
           onHoverMention: setActiveMention,
           onSelectMention: selectMention,
           onKeyDown: (event) => {
+            if (event.key === "Escape" && commandOpen) {
+              event.preventDefault();
+              setHiddenFor(composer.value);
+              return;
+            }
             if (event.key === "Escape" && mentionOpen) {
               event.preventDefault();
               setMentionOpen(false);

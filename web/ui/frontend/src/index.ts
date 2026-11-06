@@ -40,6 +40,7 @@ export {
   type ConversationComposer,
   type ComposerAttachment,
   type ComposerMention,
+  type ComposerCommand,
 } from "./conversation";
 export { Catalog, type CatalogItem } from "./catalog";
 export {
@@ -106,6 +107,7 @@ export {
 export { RoomComposer, type MentionOption } from "./presentation/room-composer";
 export { RoomChatSurface } from "./presentation/room-chat-surface";
 export { RoomMessageStream } from "./presentation/room-message-stream";
+export { MessageFileCard } from "./presentation/message-file-card";
 export {
   AppCreateWizard,
   type AppBuilderRequest,

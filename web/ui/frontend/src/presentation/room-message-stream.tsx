@@ -177,6 +177,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
       className={
         isUser ? "room-chat-message from-user" : "room-chat-message from-agent"
       }
+      data-continued={message.continued ? "true" : undefined}
       data-context-menu-open={contextMenuOpen ? "true" : undefined}
       data-overflow-menu-open={overflowMenuOpen ? "true" : undefined}
       data-action-surface-active={actionSurfaceActive ? "true" : "false"}
@@ -197,7 +198,9 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
         }
       }}
     >
-      {!isUser ? (
+      {!isUser && message.continued ? (
+        <span className="room-chat-avatar-gap" aria-hidden="true" />
+      ) : !isUser ? (
         message.onAuthorClick ? (
           <Tooltip content={t("employee.profileSettingsTitle")} side="right">
             <button
@@ -216,7 +219,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
         )
       ) : null}
       <div ref={contentRef} className="room-chat-content">
-        {!isUser ? (
+        {!isUser && !message.continued ? (
           <div className="room-chat-author">
             {canMentionAuthor ? (
               <motion.button
@@ -272,11 +275,17 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
           </div>
           )
         ) : (
-          <RoomTextBubble isUser={isUser} replyPreview={message.reply}>
-            {message.content}
-          </RoomTextBubble>
+          <>
+            {/* The owner's files sit above their text, as in chat apps. */}
+            {message.attachments}
+            {message.content ? (
+              <RoomTextBubble isUser={isUser} replyPreview={message.reply}>
+                {message.content}
+              </RoomTextBubble>
+            ) : null}
+          </>
         )}
-        {message.attachments}
+        {!isUser ? message.attachments : null}
         {message.actions}
         {isUser && statusText ? (
           <div
