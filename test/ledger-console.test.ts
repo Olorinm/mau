@@ -1,11 +1,15 @@
 import { afterEach, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { crc32, deflateSync } from "node:zlib";
 import { chromium, expect as see } from "@playwright/test";
-import { mauFixture } from "./fixtures/mau.js";
+import { alice, mauFixture } from "./fixtures/mau.js";
+import { accessIssuer } from "./fixtures/access.js";
+import { ManagedService } from "@agent-router/server";
 
-// Browser acceptance of the ledger console's phase 4 controls (agent-router ADR 0005 section 16) against the built
-// console and the local Router build: "新对话", a Router card answered by its button, and purge with a typed name.
+// Browser acceptance of the ledger console's phase 4 features (agent-router ADR 0005 section 16) against the built
+// console and the local Router build: controls ("新对话", a Router card answered by its button, purge with a typed
+// name) and attachments (16.5). Released Routers before phase 4 skip them.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
@@ -82,5 +86,170 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
     { headers: { authorization: "Bearer alice" } })).json() as { events: Array<{ kind: string }> }).events.map((event) => event.kind)).toEqual(["window"]);
   await see(page.getByText("—— 新的会话窗口 ——")).toHaveCount(1);
   expect(Number((db.prepare("SELECT generation FROM ledger_sessions WHERE session_key=?").get(session.session_key) as { generation: number }).generation)).toBe(2);
+  expect(errors).toEqual([]);
+}, 60_000);
+
+// A 2×2 RGB PNG, so the inline image has real dimensions.
+const chunk = (type: string, data: Buffer) => {
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]), out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0); body.copy(out, 4); out.writeUInt32BE(crc32(body), 8 + data.length); return out;
+};
+const header = Buffer.alloc(13); header.writeUInt32BE(2, 0); header.writeUInt32BE(2, 4); header[8] = 8; header[9] = 2;
+const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header),
+  chunk("IDAT", deflateSync(Buffer.from([0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255]))), chunk("IEND", Buffer.alloc(0))]);
+
+it.skipIf(!built)("attaches, uploads with progress, sends and renders images inline and files as download chips", async (context) => {
+  const runs = new Map<string, Record<string, unknown>>(), media: unknown[][] = [];
+  const host = (url: URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET", path = url.pathname;
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
+      media.push(Array.isArray(body.attachments) ? body.attachments : []);
+      const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: `收到-${runs.size + 1}` };
+      runs.set(id, run); return Response.json(run);
+    }
+    if (path.endsWith("/events")) return Response.json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+    if (path.endsWith("/calls")) return Response.json({ calls: [] });
+    const run = /\/runs\/(run-\d+)$/.exec(path)?.[1];
+    if (run && runs.has(run)) return Response.json(runs.get(run));
+    return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+  };
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+    { ledgerRead: true, ledgerSend: true, ledgerAttachments: true });
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  if (!me.limits?.features?.attachments) return context.skip();
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const errors: string[] = [], violations: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (/Content Security Policy/i.test(message.text())) violations.push(message.text()); });
+  const uploads: Array<Record<string, string>> = [];
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/_agent-router/v1/web/attachments") uploads.push(request.headers()); });
+  await page.goto(f.base);
+  await page.evaluate(() => {
+    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
+    localStorage.setItem("mau.chatSource", "ledger");
+  });
+  await page.reload();
+  page.setDefaultTimeout(10_000);
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
+  await page.getByLabel("选择员工").selectOption(f.agent.id);
+  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  const composer = page.getByPlaceholder("发送消息…");
+  await see(composer).toBeEnabled();
+
+  // The attach button's file input (shared composer), then a paste of a text file into the composer.
+  await page.locator("input[type=file]").setInputFiles([{ name: "图.png", mimeType: "image/png", buffer: png }]);
+  await composer.focus();
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["备忘"], "notes.txt", { type: "text/plain" }));
+    document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  // Both uploaded: the composer chips show their size instead of the progress.
+  const drafts = page.locator(".room-composer");
+  await see(drafts.getByText(/notes\.txt\s*6 B/)).toBeVisible();
+  await see(drafts.getByText(/上传中/)).toHaveCount(0);
+  expect(uploads.map((headers) => [headers["content-type"], headers["x-file-name"]])).toEqual([
+    ["image/png", "UTF-8''%E5%9B%BE.png"], ["text/plain", "UTF-8''notes.txt"]]);
+  expect(uploads.every((headers) => /^[0-9a-f]{64}$/.test(headers["x-sha256"] ?? ""))).toBe(true);
+
+  await composer.fill("看附件");
+  await page.getByRole("button", { name: "发送消息", exact: true }).click();
+  // The stored message renders the image inline (fetched with the bearer, shown as a blob: URL) and the file as a chip.
+  const image = page.locator(".mau-attachment-image img[alt='图.png']").first();
+  await see(image).toBeVisible();
+  await see.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(2);
+  expect(await image.getAttribute("src")).toMatch(/^blob:/);
+  const chip = page.getByRole("button", { name: "下载 notes.txt，6 B", exact: true }).first();
+  await see(chip).toBeVisible();
+  await see(page.locator(".room-chat-stream").getByText("收到-1").first()).toBeVisible();
+  expect(media[0]).toMatchObject([{ name: "图.png", mediaType: "image/png" }, { name: "notes.txt", mediaType: "text/plain" }]);
+  // The download chip saves the bytes.
+  const [download] = await Promise.all([page.waitForEvent("download"), chip.click()]);
+  expect(download.suggestedFilename()).toBe("notes.txt");
+  // Composer cleared after the send.
+  await see(drafts.getByText(/notes\.txt\s*6 B/)).toHaveCount(0);
+
+  // Drag and drop onto the conversation: a file over the advertised 25 MB limit fails without an upload request.
+  const before = uploads.length;
+  await page.evaluate(() => {
+    const target = document.querySelector(".mau-dropzone .room-chat-stream") ?? document.querySelector(".mau-dropzone *")!, data = new DataTransfer();
+    data.items.add(new File([new Uint8Array(25 * 1024 * 1024 + 1)], "huge.bin", { type: "application/octet-stream" }));
+    target.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
+    target.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+  });
+  await see(page.getByRole("alert").getByText(/huge\.bin：文件超过 25 MB/)).toBeVisible();
+  expect(uploads.length).toBe(before);
+  await page.getByRole("alert").getByRole("button", { name: "移除", exact: true }).click();
+  await see(page.getByText(/huge\.bin/)).toHaveCount(0);
+  expect(errors).toEqual([]);
+  expect(violations).toEqual([]);
+}, 60_000);
+
+// Edge login needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2); the pinned release skips.
+const edgeRouter = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
+it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer and shows inline images from their same-origin URL", async (context) => {
+  const runs = new Map<string, Record<string, unknown>>();
+  const host = (url: URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET", path = url.pathname;
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
+      const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: `收到-${runs.size + 1}` };
+      runs.set(id, run); return Response.json(run);
+    }
+    if (path.endsWith("/events")) return Response.json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+    if (path.endsWith("/calls")) return Response.json({ calls: [] });
+    const run = /\/runs\/(run-\d+)$/.exec(path)?.[1];
+    if (run && runs.has(run)) return Response.json(runs.get(run));
+    return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+  };
+  const access = await accessIssuer(cleanup);
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined,
+    { edgeIdentity: access.config({ "alice@example.test": alice }) }, { ledgerRead: true, ledgerSend: true, ledgerAttachments: true },
+    { edgeIdentityCerts: access.certsUrl });
+  const jwt = access.jwt();
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> }; auth?: { via?: string } };
+  // Released Routers before edge login and attachments skip.
+  if (!me.limits?.features?.attachments || me.auth?.via !== "edge") return context.skip();
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  // Cloudflare adds the JWT to every request behind Access; the console itself sends no token.
+  const browser = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: { "cf-access-jwt-assertion": jwt } });
+  await browser.addInitScript(() => localStorage.setItem("mau.chatSource", "ledger"));
+  const page = await browser.newPage();
+  const errors: string[] = [], authorization: string[] = [], uploads: number[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => { const value = request.headers()["authorization"]; if (value) authorization.push(value); });
+  page.on("response", (response) => { if (response.request().method() === "POST" && new URL(response.url()).pathname === "/_agent-router/v1/web/attachments") uploads.push(response.status()); });
+  await page.goto(f.base);
+  page.setDefaultTimeout(10_000);
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
+  await page.getByLabel("选择员工").selectOption(f.agent.id);
+  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  const composer = page.getByPlaceholder("发送消息…");
+  await see(composer).toBeEnabled();
+  // A text/plain upload passes Router's edge CSRF guard because it carries X-File-Name (ADR 0005 attachments note 13).
+  await page.locator("input[type=file]").setInputFiles([{ name: "图.png", mimeType: "image/png", buffer: png },
+    { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("备忘") }]);
+  await see(page.locator(".room-composer").getByText(/notes\.txt\s*6 B/)).toBeVisible();
+  expect(uploads).toEqual([201, 201]);
+  await composer.fill("边缘登录的附件");
+  await page.getByRole("button", { name: "发送消息", exact: true }).click();
+  const image = page.locator(".mau-attachment-image img[alt='图.png']").first();
+  await see(image).toBeVisible();
+  await see.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(2);
+  expect(await image.getAttribute("src")).toMatch(/^\/_agent-router\/v1\/web\/attachments\/at_/);
+  expect(authorization).toEqual([]);
   expect(errors).toEqual([]);
 }, 60_000);

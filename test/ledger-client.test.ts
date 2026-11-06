@@ -2,9 +2,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../web/src/api/http";
 import { readFileSync } from "node:fs";
 import {
-  LedgerClient, cardAnswerBody, chatSourcePreference, foldEvents, ledgerApi, ledgerFeatures,
-  type AnswerRequest, type AnswerResponse, type Card, type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery,
-  type LedgerCommands, type LedgerSocket, type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse,
+  AttachmentDrafts, LedgerClient, attachmentKind, attachmentLimits, attachmentUrl, cardAnswerBody, chatSourcePreference, foldEvents, formatBytes, ledgerApi, ledgerFeatures,
+  type AnswerRequest, type AnswerResponse, type AttachmentRef, type Card, type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery,
+  type LedgerCommands, type LedgerSocket, type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse, type UploadOptions,
 } from "../web/src/api/ledger";
 
 // A fake Router web channel implementing the ADR 0005 §8 shapes: history paging, socket replay and idempotent send.
@@ -726,4 +726,142 @@ it("never answers through runApi() in the ledger console: run surfaces get card 
   // The run API answer is only the fallback when no card control is supplied (Matrix mode).
   expect(surface.match(/api\.answer\(/g)).toHaveLength(1);
   expect(surface).toMatch(/controls\?\.answer \? controls\.answer\(callId, request, answer\) : api\.answer\(/);
+});
+
+// ---- Attachments (ADR 0005 16.5) ----
+// Uploads and sha256 digests settle on real I/O callbacks, not on the fake clock.
+const realTimers = () => vi.useRealTimers();
+/** A browser XMLHttpRequest stand-in: records the request and lets the test drive progress and the response. */
+class FakeXhr {
+  static last: FakeXhr | undefined;
+  method = ""; url = ""; headers: Record<string, string> = {}; body: unknown; status = 0; responseText = ""; aborted = false;
+  upload: { onprogress: ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+  onload: (() => void) | null = null; onerror: (() => void) | null = null; onabort: (() => void) | null = null;
+  constructor() { FakeXhr.last = this; }
+  open(method: string, url: string) { this.method = method; this.url = url; }
+  setRequestHeader(name: string, value: string) { this.headers[name] = value; }
+  send(body: unknown) { this.body = body; }
+  abort() { this.aborted = true; this.onabort?.(); }
+  respond(status: number, data: unknown) { this.status = status; this.responseText = JSON.stringify(data); this.onload?.(); }
+}
+const ref = (id: string, name = id, contentType = "image/png", size = 3): AttachmentRef =>
+  ({ attachmentId: id, name, contentType, size, sha256: "0".repeat(64), url: `/_agent-router/v1/web/attachments/${id}` });
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function until<T>(read: () => T | undefined | null | false): Promise<T> {
+  for (let n = 0; n < 200; n++) { const value = read(); if (value) return value; await flush(); }
+  throw new Error("timeout");
+}
+
+it("uploads a Blob body over XMLHttpRequest with progress, name, type and sha256, and maps 413 codes", async () => {
+  realTimers();
+  vi.stubGlobal("XMLHttpRequest", FakeXhr);
+  const api = ledgerApi("token"), file = new Blob(["abc"], { type: "image/png" }), progress: Array<[number, number]> = [];
+  const uploading = api.uploadAttachment(file, "截图 1.png", { onProgress: (loaded, total) => progress.push([loaded, total]) });
+  await until(() => FakeXhr.last?.body);
+  const xhr = FakeXhr.last!;
+  // The Blob itself (never a stream), so the browser sets Content-Length.
+  expect([xhr.method, xhr.url, xhr.body]).toEqual(["POST", "/_agent-router/v1/web/attachments", file]);
+  expect(xhr.headers).toEqual({ Accept: "application/json", Authorization: "Bearer token", "Content-Type": "image/png",
+    "X-File-Name": "UTF-8''%E6%88%AA%E5%9B%BE%201.png", "X-Sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" });
+  xhr.upload.onprogress!({ lengthComputable: true, loaded: 1, total: 3 });
+  xhr.respond(201, ref("at_1"));
+  expect(await uploading).toEqual(ref("at_1"));
+  expect(progress).toEqual([[1, 3], [3, 3]]);
+
+  const quota = api.uploadAttachment(file, "a.png");
+  await until(() => FakeXhr.last !== xhr && FakeXhr.last?.body);
+  FakeXhr.last!.respond(413, { error: "attachment_quota_exceeded" });
+  await expect(quota).rejects.toMatchObject({ code: "attachment_quota_exceeded", status: 413 });
+  // Too large for `limits.attachmentBytes`: refused before any request.
+  const before = FakeXhr.last;
+  await expect(api.uploadAttachment(new Blob(["abcd"]), "big", { maxBytes: 3 })).rejects.toMatchObject({ code: "attachment_too_large", status: 413 });
+  expect(FakeXhr.last).toBe(before);
+  // Abort ends the request.
+  const abort = new AbortController(), canceled = api.uploadAttachment(file, "c.png", { signal: abort.signal });
+  await until(() => FakeXhr.last !== before && FakeXhr.last?.body);
+  abort.abort();
+  await expect(canceled).rejects.toMatchObject({ code: "upload_aborted" });
+  expect(FakeXhr.last!.aborted).toBe(true);
+});
+
+it("downloads from the same-origin attachment URL built from the id, with the bearer", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => { calls.push({ url, init }); return new Response("img", { status: 200 }); });
+  const api = ledgerApi("token");
+  // A forged url never redirects the console elsewhere.
+  expect(await (await api.downloadAttachment({ ...ref("at_1"), url: "https://evil.example/x" } as AttachmentRef)).text()).toBe("img");
+  expect(calls[0]).toMatchObject({ url: "/_agent-router/v1/web/attachments/at_1", init: { credentials: "same-origin", headers: { Authorization: "Bearer token" } } });
+  expect(attachmentUrl("at/2")).toBe("/_agent-router/v1/web/attachments/at%2F2");
+  vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ error: "attachment_not_found" }), { status: 404 }));
+  await expect(api.downloadAttachment("at_x")).rejects.toMatchObject({ code: "attachment_not_found", status: 404 });
+});
+
+it("classifies, formats and reads attachment limits", () => {
+  expect(["image/png", "image/jpeg", "image/svg+xml", "text/plain", "application/pdf"].map(attachmentKind)).toEqual(["image", "image", "file", "text", "file"]);
+  expect([null, 12, 2048, 3 * 1024 * 1024, 30 * 1024 * 1024].map(formatBytes)).toEqual(["", "12 B", "2.0 KB", "3.0 MB", "30 MB"]);
+  expect(attachmentLimits({ person: { id: "p", name: "n" }, ownerId: "o", identities: [],
+    limits: { attachmentBytes: 100, attachmentsPerMessage: 2, attachmentQuotaBytes: 1000 } })).toEqual({ bytes: 100, perMessage: 2, quotaBytes: 1000 });
+  expect(attachmentLimits(undefined)).toEqual({ bytes: 25 * 1024 * 1024, perMessage: 10, quotaBytes: null });
+});
+
+it("uploads composer files one at a time per chat, with progress, limits, removal, retry and take", async () => {
+  realTimers();
+  const started: Array<{ name: string; options: UploadOptions; resolve(ref: AttachmentRef): void; reject(error: unknown): void }> = [];
+  const revoked: string[] = [];
+  let id = 0;
+  const drafts = new AttachmentDrafts((file, name, options) => new Promise((resolve, reject) => started.push({ name, options, resolve, reject })), {
+    limits: () => ({ bytes: 5, perMessage: 3 }), preview: (file) => file.type.startsWith("image/") ? `blob:${file.name}` : undefined,
+    revoke: (url) => revoked.push(url), id: () => `d${++id}`,
+  });
+  const file = (name: string, size: number, type = "image/png") => new File(["x".repeat(size)], name, { type });
+  drafts.add(chatId, [file("a.png", 3), file("b.txt", 2, "text/plain"), file("huge.png", 6), file("c.png", 1), file("d.png", 1)]);
+  expect(drafts.list(chatId).map((item) => [item.name, item.kind, item.state, item.error ?? null, item.previewUrl ?? null])).toEqual([
+    ["a.png", "image", "uploading", null, "blob:a.png"], ["b.txt", "text", "uploading", null, null],
+    ["huge.png", "image", "failed", "attachment_too_large", "blob:huge.png"], ["c.png", "image", "uploading", null, "blob:c.png"],
+    ["d.png", "image", "failed", "too_many_attachments", "blob:d.png"]]);
+  expect(drafts.busy(chatId)).toBe(true);
+  await flush();
+  // One at a time: only the first upload has started, with the size bound.
+  expect(started.map((item) => item.name)).toEqual(["a.png"]);
+  expect(started[0]!.options.maxBytes).toBe(5);
+  started[0]!.options.onProgress!(2, 3);
+  expect(drafts.list(chatId)[0]!.loaded).toBe(2);
+  started[0]!.resolve(ref("at_a", "a.png"));
+  await until(() => started.length === 2 || undefined);
+  started[1]!.reject(new ApiError("rate_limit_exceeded", 429));
+  await until(() => started.length === 3 || undefined);
+  // Removing an uploading file aborts it and revokes its preview.
+  drafts.remove(chatId, "d4");
+  expect(started[2]!.options.signal!.aborted).toBe(true);
+  expect(revoked).toEqual(["blob:c.png"]);
+  started[2]!.resolve(ref("at_c"));
+  await flush();
+  expect(drafts.list(chatId).map((item) => [item.name, item.state, item.error ?? null])).toEqual([
+    ["a.png", "ready", null], ["b.txt", "failed", "rate_limit_exceeded"], ["huge.png", "failed", "attachment_too_large"], ["d.png", "failed", "too_many_attachments"]]);
+  // A failed upload can be retried; files refused by the limits cannot.
+  drafts.retry(chatId, "d3");
+  drafts.retry(chatId, "d2");
+  await until(() => started.length === 4 || undefined);
+  expect(started[3]!.name).toBe("b.txt");
+  started[3]!.resolve(ref("at_b", "b.txt", "text/plain"));
+  await flush();
+  expect(drafts.busy(chatId)).toBe(false);
+  expect(drafts.ready(chatId).map((item) => item.attachmentId)).toEqual(["at_a", "at_b"]);
+  expect(drafts.list("dm:other")).toEqual([]);
+  expect(drafts.take(chatId).map((item) => item.attachmentId)).toEqual(["at_a", "at_b"]);
+  expect(drafts.list(chatId)).toEqual([]);
+  expect(revoked.sort()).toEqual(["blob:a.png", "blob:c.png", "blob:d.png", "blob:huge.png"]);
+});
+
+it("sends uploaded attachment ids with the message and keeps the refs on the optimistic bubble", async () => {
+  const sent: SendRequest[] = [];
+  const api = { send: async (_chatId: string, body: SendRequest) => { sent.push(body); throw new ApiError("network_error", 0); } } as unknown as LedgerTransport;
+  const client = new LedgerClient(api, { socket: () => { throw new Error("unused"); }, idempotencyKey: () => "0123456789abcdef", sendRetries: 0 });
+  await client.send(chatId, { text: "", attachments: [ref("at_1"), ref("at_2", "b.pdf", "application/pdf")] }).catch(() => undefined);
+  expect(sent).toEqual([{ idempotencyKey: "0123456789abcdef", text: "", attachments: ["at_1", "at_2"] }]);
+  expect(client.view(chatId).pending[0]!.attachments.map((item) => item.name)).toEqual(["at_1", "b.pdf"]);
+  // Folding keeps message attachments and clears them on redaction.
+  const message = { chatId, seq: 1, generation: 1, eventId: "ev_1", at: "", sender: owner, kind: "message", role: "user", text: "", attachments: [ref("at_1")] } as ChatEvent;
+  expect(foldEvents([message]).items[0]!.attachments).toEqual([ref("at_1")]);
+  expect(foldEvents([message, { chatId, seq: 2, generation: 1, eventId: "ev_2", at: "", sender: owner, kind: "redaction", targetEventId: "ev_1" }]).items[0]!.attachments).toEqual([]);
 });

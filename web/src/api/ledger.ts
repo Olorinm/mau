@@ -195,28 +195,38 @@ export function ledgerApi(token: string, base = ledgerBase) {
     pairingCodes: (signal?: AbortSignal) => request<{ data: PendingPairingCode[] }>(base + "/identities/pairing-codes", { token, ...signalOf(signal) }),
     createPairingCode: () => request<PairingCode>(base + "/identities/pairing-codes", { token, body: {} }),
     cancelPairingCode: (id: string) => request<null>(base + "/identities/pairing-codes/" + encodeURIComponent(id), { token, method: "DELETE" }),
-    /** Raw-body upload (§8.3). Browsers set Content-Length themselves; it cannot be assigned by script. */
-    async uploadAttachment(file: Blob, name: string, signal?: AbortSignal): Promise<AttachmentRef> {
-      const bytes = await file.arrayBuffer();
-      const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    /**
+     * Raw-body upload (ADR 0005 16.5, client contract 8): the body is the `Blob` itself, never a `ReadableStream`, so the
+     * browser sets `Content-Length`. In a browser it goes through XMLHttpRequest for upload progress; elsewhere through fetch.
+     */
+    async uploadAttachment(file: Blob, name: string, options: AbortSignal | UploadOptions = {}): Promise<AttachmentRef> {
+      const { signal, onProgress, maxBytes } = options instanceof AbortSignal ? { signal: options } as UploadOptions : options;
+      if (maxBytes !== undefined && file.size > maxBytes) throw new ApiError("attachment_too_large", 413);
+      const headers = {
+        // An edge login (Cloudflare Access) has no token: no bearer, the edge adds its JWT.
+        Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": file.type || "application/octet-stream",
+        "X-File-Name": "UTF-8''" + encodeURIComponent(name),
+        "X-Sha256": await sha256Hex(file),
+      };
+      if (typeof XMLHttpRequest === "function") return xhrUpload(base + "/attachments", file, headers, onProgress, signal);
       const response = await fetch(base + "/attachments", {
         // Same-origin cookies let an edge access gate (Cloudflare Access) pass the request.
-        method: "POST", credentials: "same-origin", redirect: "error", body: bytes,
-        headers: {
-          Accept: "application/json", Authorization: `Bearer ${token}`,
-          "Content-Type": file.type || "application/octet-stream",
-          "X-File-Name": "UTF-8''" + encodeURIComponent(name),
-          "X-Sha256": digest,
-        },
+        method: "POST", credentials: "same-origin", redirect: "error", body: await file.arrayBuffer(), headers,
         ...signalOf(signal),
-      }).catch(() => { throw new ApiError("network_error", 0); });
+      }).catch(() => { throw new ApiError(signal?.aborted ? "upload_aborted" : "network_error", 0); });
       if (!response.ok) throw await failure(response);
-      return await response.json() as AttachmentRef;
+      const ref = await response.json() as AttachmentRef;
+      onProgress?.(file.size, file.size);
+      return ref;
     },
-    /** The URL needs the bearer header, so bytes are fetched and handed to the caller as a Blob. */
-    async downloadAttachment(attachmentId: string, signal?: AbortSignal): Promise<Blob> {
-      const response = await fetch(base + "/attachments/" + encodeURIComponent(attachmentId), {
-        credentials: "same-origin", redirect: "error", headers: { Authorization: `Bearer ${token}` }, ...signalOf(signal),
+    /**
+     * Bytes of an attachment from its same-origin URL. Before the edge identity (phase 6) the URL needs the bearer
+     * header, so the console fetches it and shows it through `URL.createObjectURL`.
+     */
+    async downloadAttachment(attachment: string | Pick<AttachmentRef, "attachmentId">, signal?: AbortSignal): Promise<Blob> {
+      const response = await fetch(attachmentUrl(attachment, base), {
+        credentials: "same-origin", redirect: "error", headers: token ? { Authorization: `Bearer ${token}` } : {}, ...signalOf(signal),
       }).catch(() => { throw new ApiError("network_error", 0); });
       if (!response.ok) throw await failure(response);
       return response.blob();
@@ -224,6 +234,166 @@ export function ledgerApi(token: string, base = ledgerBase) {
   };
 }
 export type LedgerApi = ReturnType<typeof ledgerApi>;
+
+// ---- Attachments (ADR 0005 16.5) ----
+export interface UploadOptions {
+  signal?: AbortSignal;
+  /** Bytes sent so far and the total, as the browser reports them. */
+  onProgress?(loaded: number, total: number): void;
+  /** `limits.attachmentBytes`: larger files are refused before any bytes are sent (413 `attachment_too_large`). */
+  maxBytes?: number;
+}
+async function sha256Hex(file: Blob): Promise<string> {
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function xhrUpload(url: string, file: Blob, headers: Record<string, string>, onProgress: UploadOptions["onProgress"], signal: AbortSignal | undefined): Promise<AttachmentRef> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new ApiError("upload_aborted", 0)); return; }
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    xhr.open("POST", url);
+    // Same-origin requests carry the edge access cookie by default (`withCredentials` only affects cross-origin).
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded, event.total); };
+    xhr.onload = () => {
+      signal?.removeEventListener("abort", abort);
+      let data: { error?: unknown } | undefined;
+      try { data = JSON.parse(xhr.responseText); } catch { data = undefined; }
+      if (xhr.status === 201 || xhr.status === 200) { onProgress?.(file.size, file.size); resolve(data as unknown as AttachmentRef); return; }
+      reject(new ApiError(typeof data?.error === "string" && /^[A-Za-z0-9_]+$/.test(data.error) ? data.error
+        : xhr.status === 429 ? "rate_limited" : xhr.status === 413 ? "attachment_too_large" : "request_failed", xhr.status));
+    };
+    xhr.onerror = () => { signal?.removeEventListener("abort", abort); reject(new ApiError("network_error", 0)); };
+    xhr.onabort = () => { signal?.removeEventListener("abort", abort); reject(new ApiError("upload_aborted", 0)); };
+    signal?.addEventListener("abort", abort, { once: true });
+    xhr.send(file);
+  });
+}
+/**
+ * The same-origin download URL (`/_agent-router/v1/web/attachments/<id>`, the `url` the server returns). It is built
+ * from the id, so a stored or forged `url` can never point the console at another origin or path.
+ */
+export function attachmentUrl(attachment: string | Pick<AttachmentRef, "attachmentId">, base = ledgerBase): string {
+  return base + "/attachments/" + encodeURIComponent(typeof attachment === "string" ? attachment : attachment.attachmentId);
+}
+export type AttachmentKind = "image" | "text" | "file";
+/** Inline images: raster types only (SVG downloads like any other file). */
+export function attachmentKind(contentType: string): AttachmentKind {
+  return /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(contentType) ? "image" : contentType.startsWith("text/") ? "text" : "file";
+}
+export function formatBytes(size: number | null | undefined): string {
+  if (size === null || size === undefined) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(size / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+/** Attachment limits from `GET /me` (`limits.attachmentBytes`, `attachmentsPerMessage`), with the ADR defaults. */
+export function attachmentLimits(me: LedgerMe | null | undefined): { bytes: number; perMessage: number; quotaBytes: number | null } {
+  const limits = me?.limits ?? {}, number = (value: unknown, fallback: number) => typeof value === "number" && value > 0 ? value : fallback;
+  return { bytes: number(limits.attachmentBytes, 25 * 1024 * 1024), perMessage: number(limits.attachmentsPerMessage, 10),
+    quotaBytes: typeof limits.attachmentQuotaBytes === "number" ? limits.attachmentQuotaBytes : null };
+}
+
+export interface DraftAttachment {
+  id: string; chatId: string; name: string; contentType: string; size: number; kind: AttachmentKind;
+  state: "uploading" | "ready" | "failed";
+  /** Bytes sent so far while uploading. */
+  loaded: number;
+  error?: string; ref?: AttachmentRef;
+  /** A local object URL for image previews in the composer. */
+  previewUrl?: string;
+}
+interface DraftEntry { item: DraftAttachment; file: File; abort?: AbortController }
+export interface AttachmentDraftOptions {
+  limits?(): { bytes: number; perMessage: number };
+  preview?(file: File): string | undefined;
+  revoke?(url: string): void;
+  id?(): string;
+}
+/**
+ * Composer attachments per chat: each picked, pasted or dropped file is uploaded at once (one at a time per chat),
+ * with progress; too many or too large files fail before upload. A send takes the uploaded references.
+ */
+export class AttachmentDrafts {
+  private readonly chats = new Map<string, DraftEntry[]>();
+  private readonly queues = new Map<string, Promise<void>>();
+  private readonly listeners = new Set<() => void>();
+  private version = 0;
+  private next = 0;
+  constructor(private readonly upload: (file: File, name: string, options: UploadOptions) => Promise<AttachmentRef>, private readonly options: AttachmentDraftOptions = {}) {}
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  getVersion = () => this.version;
+  private notify() { this.version++; for (const listener of this.listeners) listener(); }
+  private entries(chatId: string) { let list = this.chats.get(chatId); if (!list) this.chats.set(chatId, list = []); return list; }
+  list(chatId: string): DraftAttachment[] { return (this.chats.get(chatId) ?? []).map((entry) => entry.item); }
+  busy(chatId: string): boolean { return this.list(chatId).some((item) => item.state === "uploading"); }
+  ready(chatId: string): AttachmentRef[] { return this.list(chatId).flatMap((item) => item.state === "ready" && item.ref ? [item.ref] : []); }
+  add(chatId: string, files: readonly File[]): void {
+    const limits = this.options.limits?.() ?? { bytes: 25 * 1024 * 1024, perMessage: 10 };
+    const list = this.entries(chatId);
+    for (const file of files) {
+      const kind = attachmentKind(file.type), name = file.name || "attachment";
+      const preview = kind === "image" ? this.options.preview?.(file) : undefined;
+      const item: DraftAttachment = { id: this.options.id?.() ?? `draft-${++this.next}`, chatId, name, contentType: file.type || "application/octet-stream",
+        size: file.size, kind, state: "uploading", loaded: 0, ...(preview ? { previewUrl: preview } : {}) };
+      const entry: DraftEntry = { item, file };
+      const counted = list.filter((other) => other.item.state !== "failed").length;
+      list.push(entry);
+      if (counted >= limits.perMessage) { this.fail(entry, "too_many_attachments"); continue; }
+      if (file.size > limits.bytes) { this.fail(entry, "attachment_too_large"); continue; }
+      this.enqueue(entry);
+    }
+    this.notify();
+  }
+  private fail(entry: DraftEntry, error: string) { entry.item = { ...entry.item, state: "failed", error }; }
+  private enqueue(entry: DraftEntry) {
+    const chatId = entry.item.chatId, prior = this.queues.get(chatId) ?? Promise.resolve();
+    entry.abort = new AbortController();
+    const run = prior.then(() => this.send(entry));
+    this.queues.set(chatId, run);
+    void run.finally(() => { if (this.queues.get(chatId) === run) this.queues.delete(chatId); });
+  }
+  private async send(entry: DraftEntry) {
+    if (!this.has(entry) || entry.abort?.signal.aborted) return;
+    try {
+      const limits = this.options.limits?.();
+      const ref = await this.upload(entry.file, entry.item.name, { signal: entry.abort!.signal, ...(limits ? { maxBytes: limits.bytes } : {}),
+        onProgress: (loaded) => { if (!this.has(entry)) return; entry.item = { ...entry.item, loaded }; this.notify(); } });
+      if (!this.has(entry)) return;
+      entry.item = { ...entry.item, state: "ready", loaded: entry.item.size, ref };
+      delete entry.item.error;
+    } catch (error) {
+      if (!this.has(entry)) return;
+      this.fail(entry, error instanceof ApiError ? error.code : "request_failed");
+    }
+    this.notify();
+  }
+  private has(entry: DraftEntry) { return this.chats.get(entry.item.chatId)?.includes(entry) ?? false; }
+  /** Upload a failed file again (not for files refused by the limits). */
+  retry(chatId: string, id: string) {
+    const entry = this.chats.get(chatId)?.find((other) => other.item.id === id);
+    if (!entry || entry.item.state !== "failed" || ["too_many_attachments", "attachment_too_large"].includes(entry.item.error ?? "")) return;
+    entry.item = { ...entry.item, state: "uploading", loaded: 0 }; delete entry.item.error;
+    this.enqueue(entry);
+    this.notify();
+  }
+  remove(chatId: string, id: string) {
+    const list = this.chats.get(chatId), index = list?.findIndex((entry) => entry.item.id === id) ?? -1;
+    if (!list || index < 0) return;
+    const [entry] = list.splice(index, 1);
+    entry!.abort?.abort();
+    if (entry!.item.previewUrl) this.options.revoke?.(entry!.item.previewUrl);
+    this.notify();
+  }
+  /** The uploaded references for a send; the chat's drafts are cleared (failed ones too). */
+  take(chatId: string): AttachmentRef[] {
+    const refs = this.ready(chatId);
+    for (const entry of this.chats.get(chatId) ?? []) { entry.abort?.abort(); if (entry.item.previewUrl) this.options.revoke?.(entry.item.previewUrl); }
+    this.chats.delete(chatId);
+    this.notify();
+    return refs;
+  }
+}
 /** What the state machine needs from HTTP; tests supply a fake server. */
 export type LedgerTransport = Pick<LedgerApi, "socketTicket" | "events" | "send" | "read" | "chats" | "redact">;
 /** Phase 4 commands (cards and control); a transport without them cannot answer, reset or purge. */

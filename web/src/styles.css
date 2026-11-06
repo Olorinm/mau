@@ -518,3 +518,51 @@ header .mau-room-avatar {
 .mau-pairing-code p { margin: 0; font-size: var(--fs-sm); }
 .mau-identity-settings .mau-connector-buttons { padding: 0 22px 17px; }
 .mau-identity-settings .mau-panel-note { padding: 17px 22px 0; }
+
+/* Ledger attachments (ADR 0005 16.5): inline images and download chips in bubbles. */
+.mau-dropzone {
+  display: contents;
+}
+.mau-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.mau-attachment-image {
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: none;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+.mau-attachment-image img {
+  display: block;
+  min-width: 48px;
+  min-height: 48px;
+  max-width: min(320px, 100%);
+  max-height: 240px;
+  object-fit: contain;
+}
+.mau-attachment-chip {
+  display: inline-flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  max-width: 100%;
+}
+.mau-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-attachment-meta {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs, var(--fs-sm));
+}
+.mau-attachment-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}

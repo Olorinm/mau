@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
@@ -15,14 +15,14 @@ import {
   type MessageView,
 } from "@olorinm/agent-frontend";
 import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState } from "@olorinm/agent-ui/app";
-import { ChatMarkdown } from "@olorinm/agent-ui";
+import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
 import { MauConversations } from "../api/conversations";
 import { ApiError } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
-  LedgerClient, cardAnswerBody, foldEvents, ledgerApi,
+  AttachmentDrafts, LedgerClient, attachmentKind, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
   type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerFeature, type LedgerSocket, type LedgerTurn,
   type PendingAnswer,
 } from "../api/ledger";
@@ -107,18 +107,67 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
-  const url = URL.createObjectURL(await api.downloadAttachment(ref.attachmentId));
+  const url = URL.createObjectURL(await api.downloadAttachment(ref));
   const link = document.createElement("a");
   link.href = url; link.download = ref.name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /**
+ * An inline image from its same-origin attachment URL. With an edge login (Cloudflare Access, no bearer token) the
+ * browser sends the Access cookie itself, so the URL is the `<img src>`. A bearer session needs the header, so the
+ * bytes are fetched and shown through an object URL. A click opens the shared image preview.
+ */
+function LedgerImage({ api, attachment, onError, direct }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; direct: boolean }) {
+  const { language } = useI18n(), zh = language === "zh-CN";
+  const [src, setSrc] = useState<string | undefined>(() => direct ? attachmentUrl(attachment) : undefined);
+  const [failed, setFailed] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+    if (direct) { setSrc(attachmentUrl(attachment)); return; }
+    const abort = new AbortController();
+    let made: string | undefined;
+    api.downloadAttachment(attachment, abort.signal).then((blob) => { made = URL.createObjectURL(blob); setSrc(made); })
+      .catch(() => { if (!abort.signal.aborted) setFailed(true); });
+    return () => { abort.abort(); if (made) URL.revokeObjectURL(made); setSrc(undefined); };
+  }, [api, attachment.attachmentId, direct]);
+  if (failed || !src) return <AttachmentChip api={api} attachment={attachment} onError={onError}
+    detail={failed ? (zh ? "图片无法显示" : "Image unavailable") : (zh ? "加载中…" : "Loading…")} />;
+  return <>
+    <button type="button" className="mau-attachment-image" title={attachment.name} onClick={() => setPreviewing(true)}>
+      <img src={src} alt={attachment.name} loading="lazy" {...(direct ? { onError: () => setFailed(true) } : {})} />
+    </button>
+    {previewing ? <ImagePreview image={{ src, alt: attachment.name }} onClose={() => setPreviewing(false)} /> : null}
+  </>;
+}
+/** A file as a download chip (name and size). */
+function AttachmentChip({ api, attachment, onError, detail }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; detail?: string }) {
+  const { language } = useI18n(), zh = language === "zh-CN";
+  const meta = detail ?? formatBytes(attachment.size);
+  const label = zh ? `下载 ${attachment.name}` : `Download ${attachment.name}`;
+  return <Button className="mau-attachment-chip" title={label} aria-label={meta ? `${label}，${meta}` : label}
+    onClick={() => void saveAttachment(api, attachment).catch(onError)}>
+    <span className="mau-attachment-name">{attachment.name}</span>{meta ? <span className="mau-attachment-meta">{meta}</span> : null}
+  </Button>;
+}
+/** Message attachments: images inline, other files as download chips. */
+function LedgerAttachments({ api, attachments, onError, direct }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void; direct: boolean }) {
+  return <div className="mau-attachments">
+    {attachments.map((ref) => attachmentKind(ref.contentType) === "image"
+      ? <LedgerImage key={ref.attachmentId} api={api} attachment={ref} onError={onError} direct={direct} />
+      : <AttachmentChip key={ref.attachmentId} api={api} attachment={ref} onError={onError} />)}
+  </div>;
+}
+
+/**
  * Messages served by Router's owner ledger (agent-router ADR 0005). Each console feature follows the
  * server-advertised phase flags; without `send`, DMs still send through Matrix and return on the socket.
  */
-export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features }: {
+export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits }: {
   session: Session; initialAgentId?: string | undefined; onStartHandled?(): void; features: ReadonlySet<LedgerFeature>;
+  /** `GET /me` attachment limits (ADR 0005 16.5). */
+  limits?: { bytes: number; perMessage: number } | undefined;
 }) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
@@ -126,6 +175,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const api = useMemo(() => ledgerApi(session.token), [session.token]);
   const client = useMemo(() => new LedgerClient(api, { socket: (url) => new WebSocket(url) as unknown as LedgerSocket }), [api]);
   useSyncExternalStore(client.subscribe, client.getVersion);
+  // Composer uploads (ADR 0005 16.5): each file is uploaded when it is picked, pasted or dropped.
+  const limitsRef = useRef(limits);
+  limitsRef.current = limits;
+  const uploads = useMemo(() => new AttachmentDrafts((file, name, options) => api.uploadAttachment(file, name, options), {
+    limits: () => limitsRef.current ?? { bytes: 25 * 1024 * 1024, perMessage: 10 },
+    preview: (file) => URL.createObjectURL(file), revoke: (url) => URL.revokeObjectURL(url),
+  }), [api]);
+  useSyncExternalStore(uploads.subscribe, uploads.getVersion);
+  const [dragging, setDragging] = useState(false);
   useEffect(() => { client.connect(); return () => client.disconnect(); }, [client]);
   const chats = useQuery({ queryKey: ["ledger-chats", session.token], queryFn: ({ signal }) => client.loadChats(signal), retry: false });
   const matrix = useMemo(() => new MauConversations(session, agents.data ?? []), [session.token, agents.data]);
@@ -147,8 +205,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     globalThis.addEventListener(beforeAccessReloadEvent, save);
     return () => globalThis.removeEventListener(beforeAccessReloadEvent, save);
   }, []);
-  const [files, setFiles] = useState<Record<string, AttachmentRef[]>>({});
-  const [uploading, setUploading] = useState(false);
   const [outgoing, setOutgoing] = useState<{ chatId: string; text: string; transaction: string }>();
   const [withdrawing, setWithdrawing] = useState<{ chatId: string; eventId: string }>();
   // Phase 4 control: "新对话" asks to stop a running turn first; purge needs the chat's name typed.
@@ -206,15 +262,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const pendingSends = view?.pending ?? [];
   useEffect(() => blockBuildReload(!!outgoing || pendingSends.length > 0 || Object.values(drafts).some((value) => !!value.trim())), [outgoing, pendingSends.length, drafts]);
 
-  const upload = async (chatId: string, picked: File[]) => {
-    setUploading(true);
-    try {
-      for (const file of picked.slice(0, 10 - (files[chatId]?.length ?? 0))) {
-        const ref = await api.uploadAttachment(file, file.name);
-        setFiles((values) => ({ ...values, [chatId]: [...(values[chatId] ?? []), ref] }));
-      }
-    } finally { setUploading(false); }
-  };
   const [uploadError, setUploadError] = useState<unknown>();
 
   const reset = useMutation({
@@ -262,11 +309,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const reaction of bubble.reactions) parts.push(`${reaction.key} ${reaction.senders.length}`);
     return parts.join(" · ");
   };
-  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? (
-    <div className="mau-attachments">
-      {refs.map((ref) => <Button key={ref.attachmentId} onClick={() => void saveAttachment(api, ref).catch(setUploadError)}>{ref.name}</Button>)}
-    </div>
-  ) : undefined;
+  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError} direct={!session.token} /> : undefined;
 
   const sendable = features.has("send");
   const cardsOn = sendable && features.has("cards"), controlOn = sendable && features.has("reset");
@@ -384,21 +427,30 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const base = draft.endsWith("@") ? draft.slice(0, -1) : draft;
     return { ...values, [chatId]: `${base}${base && !/\s$/.test(base) ? " " : ""}@${name} ` };
   });
+  // Uploading files show their progress, failed ones their error (with a retry where it can help).
+  const draftDetail = (item: ReturnType<typeof uploads.list>[number]) => item.state === "uploading"
+    ? `${zh ? "上传中" : "Uploading"} ${item.size ? Math.min(99, Math.floor(item.loaded / item.size * 100)) : 0}%`
+    : item.state === "failed" ? errorMessage(t, item.error ?? "request_failed") : formatBytes(item.size);
   // The composer type intersects ChatComposer's ReactNode slot; the room composer reads this list.
-  const composerFiles = (chatId: string) => (files[chatId] ?? []).map((ref) => ({ id: ref.attachmentId, name: ref.name,
-    kind: ref.contentType.startsWith("image/") ? "image" as const : ref.contentType.startsWith("text/") ? "text" as const : "file" as const,
-    onRemove: () => setFiles((values) => ({ ...values, [chatId]: (values[chatId] ?? []).filter((item) => item.attachmentId !== ref.attachmentId) })),
+  const composerFiles = (chatId: string) => uploads.list(chatId).map((item) => ({ id: item.id, name: item.name, kind: item.kind,
+    ...(item.previewUrl ? { previewUrl: item.previewUrl } : {}), detail: draftDetail(item),
+    onRemove: () => uploads.remove(chatId, item.id),
   })) as unknown as NonNullable<ConversationComposer["attachments"]>;
+  const attachable = features.has("attachments") && sendable && canSend;
+  const failedDrafts = current ? uploads.list(current.chatId).filter((item) => item.state === "failed") : [];
   const onSend = () => {
     if (!current) return;
-    const text = drafts[current.chatId] ?? "", attachments = files[current.chatId] ?? [];
-    if (!text.trim() && !attachments.length) return;
+    const text = drafts[current.chatId] ?? "", chatId = current.chatId;
+    // Wait for uploads; a send carries only uploaded files.
+    if (uploads.busy(chatId)) return;
+    const ready = uploads.ready(chatId);
+    if (!text.trim() && !ready.length) return;
     // Phase 3: Router stores the message (one key per intent, reused on retry); no Matrix room is touched.
     if (sendable) {
-      setDrafts((values) => ({ ...values, [current.chatId]: "" }));
-      setFiles((values) => ({ ...values, [current.chatId]: [] }));
+      const attachments = uploads.take(chatId);
+      setDrafts((values) => ({ ...values, [chatId]: "" }));
       // Groups: the client resolves mentions (ADR 0005 17.1); the addressed state is shown under the message.
-      void client.send(current.chatId, { text, attachments, ...(current.kind === "group" ? { mentions: room.mentions(text) } : {}) })
+      void client.send(chatId, { text, attachments, ...(current.kind === "group" ? { mentions: room.mentions(text) } : {}) })
         .then(room.record, () => undefined);
       return;
     }
@@ -437,6 +489,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <ListDetailLayout list={sidebar} detailOpen={!!current} onBack={() => setSelected(undefined)} backLabel={zh ? "消息" : "Messages"}
           empty={<EmptyState illustration="messages" title={zh ? "选择员工开始对话" : "Select an Agent to begin"} />}
           detail={current && view ? (
+            // Files dropped anywhere on the conversation are attached (the composer handles its button and paste).
+            <div className="mau-dropzone" data-dragging={dragging || undefined}
+              {...(attachable ? {
+                onDragOver: (event: DragEvent) => { if ([...event.dataTransfer.types].includes("Files")) { event.preventDefault(); setDragging(true); } },
+                onDragLeave: (event: DragEvent) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
+                onDrop: (event: DragEvent) => {
+                  const dropped = [...event.dataTransfer.files];
+                  setDragging(false);
+                  if (!dropped.length) return;
+                  event.preventDefault(); setUploadError(undefined); uploads.add(current.chatId, dropped);
+                },
+              } : {})}>
             <Conversation conversationId={current.chatId}
               header={<PageHeader avatar={avatar(current, 30)} title={current.title}
                 description={current.kind === "group" ? `${current.agentIds.length + 1} ${zh ? "位成员" : "participants"}` : undefined}
@@ -455,6 +519,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 </>} />}
               notice={<>
                 {failure}
+                {dragging ? <p className="mau-muted" role="status">{zh ? "松开以添加附件" : "Drop to attach"}</p> : null}
+                {uploads.busy(current.chatId) ? <p className="mau-muted" role="status">{zh ? "附件上传完成后才能发送。" : "Files are uploading; send when they are done."}</p> : null}
+                {failedDrafts.length ? <p role="alert" className="mau-error">
+                  {failedDrafts.map((item) => <span key={item.id} className="mau-attachment-error">
+                    {item.name}：{errorMessage(t, item.error ?? "request_failed")}
+                    {["too_many_attachments", "attachment_too_large"].includes(item.error ?? "") ? null
+                      : <Button onClick={() => uploads.retry(current.chatId, item.id)}>{t("common.retry")}</Button>}
+                    <Button onClick={() => uploads.remove(current.chatId, item.id)}>{zh ? "移除" : "Remove"}</Button>
+                  </span>)}
+                </p> : null}
                 {client.connection.state === "reconnecting" ? <p className="mau-muted">{zh ? "正在重新连接…" : "Reconnecting…"}</p> : null}
                 {view.hasOlder ? <Button onClick={() => void client.loadOlder(current.chatId).catch(setUploadError)}>{zh ? "加载更早的消息" : "Load earlier messages"}</Button> : null}
                 {matrixSend.isError && outgoing?.chatId === current.chatId ? <>
@@ -468,12 +542,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
               composer={{
                 value: drafts[current.chatId] ?? "",
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),
-                disabled: !canSend || matrixSend.isPending || !!outgoing || uploading,
+                disabled: !canSend || matrixSend.isPending || !!outgoing,
                 placeholder: !canSend ? (zh ? "此对话只读" : "This conversation is read-only")
                   : current.kind === "group" ? (zh ? "@员工 让他回答，@所有人 让大家都回答…" : "@an employee to ask them, @all to ask everyone…")
                   : (zh ? "发送消息…" : "Send a message…"),
-                ...(features.has("attachments") && features.has("send") && canSend ? {
-                  onFiles: (picked: File[]) => { setUploadError(undefined); void upload(current.chatId, picked).catch(setUploadError); },
+                ...(attachable ? {
+                  onFiles: (picked: File[]) => { setUploadError(undefined); uploads.add(current.chatId, picked); },
                   attachments: composerFiles(current.chatId),
                 } : {}),
                 ...(current.kind === "group" && canSend ? { mentions: [
@@ -485,6 +559,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 ] } : {}),
                 onSend,
               }} />
+            </div>
           ) : null} />
       )}
       {starting ? (
