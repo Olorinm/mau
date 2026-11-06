@@ -23,6 +23,15 @@ jobs:
           node-version: 24.22.2
       # Do not cache npm here: its file-package cache contains private Environment source.
       - run: npm install --global npm@11.16.0
+      - name: Install pinned GitHub CLI for component downloads
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/gh.tar.gz" \
+            https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  $RUNNER_TEMP/gh.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gh.tar.gz" -C "$RUNNER_TEMP" gh_2.103.3_linux_amd64/bin/gh
+          install "$RUNNER_TEMP/gh_2.103.3_linux_amd64/bin/gh" /usr/local/bin/gh
+          gh --version
       - id: pins
         run: |
           node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
