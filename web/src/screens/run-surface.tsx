@@ -26,28 +26,11 @@ function sameNativeAnswer(left: unknown, right: unknown): boolean {
 export interface RunControls {
   answer?(callId: string, request: HostRequest, answer: InteractionAnswer): Promise<unknown>;
   cancel?(): Promise<unknown>;
-  steer?(text: string): Promise<"accepted" | "unsupported">;
+  /** The conversation's send button stops the run, so the run surface shows no stop of its own. */
+  stopInComposer?: boolean;
 }
 const sendAnswer = (api: ReturnType<typeof runApi>, controls: RunControls | undefined, claimId: string, callId: string, request: HostRequest, answer: InteractionAnswer) =>
   controls?.answer ? controls.answer(callId, request, answer) : api.answer(claimId, callId, answerInteraction(request, answer));
-
-/** "补充" (steer): extra instructions for the running turn. Kernels that cannot take them say so. */
-function SteerControl({ steer }: { steer(text: string): Promise<"accepted" | "unsupported"> }) {
-  const { t, language } = useI18n(), zh = language === "zh-CN";
-  const [open, setOpen] = useState(false), [text, setText] = useState("");
-  const send = useMutation({ mutationFn: (value: string) => steer(value), onSuccess: (status) => { if (status === "accepted") { setText(""); setOpen(false); } } });
-  if (!open) return <div className="mau-run-controls"><Button onClick={() => { send.reset(); setOpen(true); }}>{zh ? "补充" : "Add instructions"}</Button></div>;
-  return <form className="mau-run-steer" onSubmit={(event) => { event.preventDefault(); if (text.trim()) send.mutate(text.trim()); }}>
-    <textarea aria-label={zh ? "补充说明" : "Additional instructions"} value={text} onChange={(event) => setText(event.target.value)} rows={2}
-      placeholder={zh ? "补充给正在执行的任务，例如：顺便把结论写成表格" : "Add to the running task, for example: also put the result in a table"} />
-    <div className="modal-actions">
-      <Button type="button" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
-      <Button type="submit" disabled={!text.trim() || send.isPending}>{zh ? "发送补充" : "Send"}</Button>
-    </div>
-    {send.data === "unsupported" ? <p className="mau-muted">{zh ? "当前执行内核不支持即时补充；请停止后继续对话。" : "This runtime cannot take instructions while running; stop it and continue the chat."}</p> : null}
-    {send.error ? <p role="alert">{errorMessage(t, send.error instanceof ApiError ? send.error.code : "request_failed")}</p> : null}
-  </form>;
-}
 
 function Interaction({ call, claimId, api, active, onAnswered, controls }: {
   call: RunDetail["calls"][number]; claimId: string; api: ReturnType<typeof runApi>; active: boolean; onAnswered(): Promise<unknown>; controls?: RunControls | undefined;
@@ -150,10 +133,9 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
       status={!data && !terminal ? query.error ? "failed" : "pending" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
       {...((!data && !terminal) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
       {...(active ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label}} : {})}
-      {...(active ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
+      {...(active && !controls?.stopInComposer ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
     {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
-    {active && controls?.steer ? <SteerControl steer={controls.steer} /> : null}
     {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p> : null}
     {interactions.filter(({request}) => request.kind !== "approval" && request.kind !== "questions").map(({call}) =>
       <Interaction key={call.id} call={call} claimId={claimId} api={api} active={active} onAnswered={() => query.refetch()} controls={controls} />)}
