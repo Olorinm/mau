@@ -54,7 +54,7 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 
 ## 渠道
 
-每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。飞书个人工具授权使用 Router 的状态、开始和完成接口。
+每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。飞书个人权限（以主人身份）在「飞书」入口通过 Agent Connectors 授权，见 [connector-accounts.md](connector-accounts.md)。
 
 ## 验证
 
@@ -67,9 +67,8 @@ npm run test:web
 ## 恢复已有飞书应用
 
 飞书连接失败后，点击「恢复连接」，填写开发者后台的原 App ID。控制台会保留已知的
-App ID、区域和个人工具选项，通过飞书官方页面重新授权；无需复制 App Secret。
+App ID 和区域，通过飞书官方页面重新授权；无需复制 App Secret。
 如果凭据已经保存，仅绑定失败，则直接复用凭据。失败任务在 Router 重启后仍可查看。
-自检分别显示机器人消息通道与个人工具授权状态。
 
 
 ## 公共前端与产品边界

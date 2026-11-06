@@ -6,7 +6,6 @@ import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { ConnectChannelDialog } from "./connect-channel";
-import { FeishuAuthorizationRow } from "./feishu-authorization";
 import { LinkCode } from "./link-code";
 
 /**
@@ -28,7 +27,7 @@ export function FeishuEntry(props: { session: Session; agents: AgentSummary[]; a
     {!props.agents.length && !props.loading && <p className="mau-panel-note">{zh ? "先在通讯录创建一个员工，再连接飞书。" : "Create an Agent in Contacts to connect Feishu."}</p>}
     <p className="mau-panel-note">{zh ? "聊天使用飞书机器人身份；个人权限以你的身份读取文档、日历、邮件等，修改前都需要你确认，并且只在你与员工的私聊中可用，群聊中不可用。"
       : "Chat uses the Feishu bot. Personal access acts as you (docs, calendar, mail); changes need your approval, and it works only in your private conversation with the Agent, never in groups."}</p>
-    {connecting && <ConnectChannelDialog session={props.session} summary={connecting} initialKind="feishu" messagingOnly={!!personal(connecting.agent.id)}
+    {connecting && <ConnectChannelDialog session={props.session} summary={connecting} initialKind="feishu"
       onClose={() => setConnecting(undefined)} onConnected={() => {
         props.agentsChanged();
         // The new chat app goes straight to the owner's Feishu connection; authorization is the next step.
@@ -107,6 +106,6 @@ function FeishuAgent(props: { session: Session; agent: AgentSummary; account: Co
         <Button disabled={complete.isPending} onClick={() => complete.mutate()}>{t("feishu.complete")}</Button>
       </div>}
       {error && <p className="mau-error" role="alert">{errorMessage(t, error instanceof ApiError ? error.code : "request_failed")}</p>}
-    </> : chat?.personalTools ? <FeishuAuthorizationRow session={props.session} agentId={agent.agent.id} /> : null}
+    </> : null}
   </div>;
 }

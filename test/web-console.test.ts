@@ -358,7 +358,6 @@ it.skipIf(!built)(
         action: "authorize_existing_app",
         appId: "cli_existing",
         domain: "lark",
-        personalTools: false,
       },
     };
     await page.route("**/connection-jobs", (route) =>
@@ -410,7 +409,6 @@ it.skipIf(!built)(
       kind: "feishu",
       appId: "cli_existing",
       domain: "lark",
-      personalTools: false,
     });
     expect(errors).toEqual([]);
   },
@@ -889,7 +887,7 @@ it.skipIf(!built)("one 飞书 entry: chat and personal access, expiry banner and
   const requests: Array<[string, unknown]> = [];
   await page.route("**/_mau/v1/agents", async route => {
     const response = await route.fetch(), body = await response.json();
-    body.data = body.data.map((a: any) => ({ ...a, connections: [...a.connections, { id: "feishu", kind: "feishu", personalTools: false }] }));
+    body.data = body.data.map((a: any) => ({ ...a, connections: [...a.connections, { id: "feishu", kind: "feishu" }] }));
     return route.fulfill({ response, json: body });
   });
   await page.route("**/_mau/v1/connector-accounts**", async route => {

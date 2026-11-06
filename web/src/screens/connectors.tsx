@@ -7,7 +7,6 @@ import type { Session } from "../api/session";
 import { ApiError, safeExternalUrl } from "../api/http";
 import { errorMessage, useI18n } from "../i18n";
 import { ConnectChannelDialog } from "./connect-channel";
-import { FeishuAuthorizationRow } from "./feishu-authorization";
 import { FeishuEntry } from "./feishu-entry";
 import { useMatrixAvailable } from "../api/features";
 
@@ -152,7 +151,6 @@ export function ConnectorsScreen({ session }: { session: Session }) {
             {activeAgents.map(agent => { const has = agent.connections.some(c => c.kind === chosen.channel); return <div className="mau-channel-entry" key={agent.agent.id}>
               <div className="mau-permission-row"><span className="mau-agent-access"><span className="mau-mini-avatar">{agent.agent.name.slice(0,1).toUpperCase()}</span><strong>{agent.agent.name}</strong></span><Button disabled={checks.isPending} onClick={() => has ? checks.mutate(agent.agent.id) : setConnecting({ agent, kind: chosen.channel! })}>{has ? zh ? "检查连接" : "Check connection" : zh ? "连接" : "Connect"}</Button></div>
               {has && <span className="mau-channel-connected">{zh ? "已连接" : "Connected"}</span>}
-              {has && chosen.channel === "feishu" && agent.connections.some(c => c.kind === "feishu" && c.personalTools) && <FeishuAuthorizationRow session={session} agentId={agent.agent.id} />}
               {checks.variables === agent.agent.id && checks.data && <p className="mau-panel-note" role="status">{checks.data.filter(c => c.kind === chosen.channel).map(c => c.detail).join(" · ") || (zh ? "检查完成" : "Check complete")}</p>}
               {checks.variables === agent.agent.id && checks.isError && <p role="alert">{zh ? "连接检查失败，请稍后重试。" : "Connection check failed. Try again later."}</p>}
             </div>; })}

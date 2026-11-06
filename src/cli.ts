@@ -24,10 +24,9 @@ const help = `Mau — your agent product
   mau ssh NAME [-- COMMAND...]
   mau channel-connect matrix|feishu|weixin|telegram|grove-mail
   mau channel-jobs | channel-job ID | channel-pair ID --pairing-code-file FILE
-  mau channel-auth CONNECTION [status|begin|complete]
 
 Options: --no-wait, --allow-http (loopback development only),
-  --bot-token-file FILE, --domain feishu|lark, --messaging-only,
+  --bot-token-file FILE, --domain feishu|lark,
   --app-id cli_... (authorize an existing Feishu/Lark app),
   --mail-service ID, --inbox ID, --owner-email EMAIL, --api-key-file FILE
 Edge login: run cloudflared access login URL first, or use an Access service token:
@@ -42,7 +41,7 @@ const options = {
   user: { type: "string" }, "password-file": { type: "string" }, "token-file": { type: "string" },
   environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
   workspace: { type: "string" },
-  "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, "messaging-only": { type: "boolean" }, yes: { type: "boolean" },
+  "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, yes: { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
   edge: { type: "boolean" }, "access-client-id-file": { type: "string" }, "access-client-secret-file": { type: "string" },
@@ -117,7 +116,7 @@ async function main() {
   if (values.help || !command) { process.stdout.write(help); return; }
   const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
     use: [1, 1], delete: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
-    destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1], "channel-auth": [1, 2] };
+    destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1] };
   arity["environment-replace"] = [1, 1]; arity["environment-rollback"] = [0, 0];
   arity.workspaces = [0, 0]; arity["workspace-create"] = [1, 1];
   const count = arity[command];
@@ -255,13 +254,12 @@ async function main() {
           if (typeof recovery.appId === "string" && /^cli_[a-zA-Z0-9_]{1,128}$/.test(recovery.appId)) command += " --app-id " + recovery.appId;
           else if (recovery.action === "authorize_existing_app") command += " --app-id APP_ID";
           if (recovery.domain === "lark") command += " --domain lark";
-          if (recovery.personalTools === false) command += " --messaging-only";
           process.stderr.write("Recover the selected Agent with: " + command + "\n");
         }
         fail(typeof job.error === "string" && /^[a-z][a-z0-9_]{0,100}$/.test(job.error) ? job.error : "connection_setup_failed");
       }
       if (job.state === "ready" || job.state === "pairing" || values["no-wait"]) return job;
-      if (!["starting", "waiting", "application", "authorization", "telegram_pairing", "binding"].includes(job.state)) fail("invalid_connection_job");
+      if (!["starting", "waiting", "application", "telegram_pairing", "binding"].includes(job.state)) fail("invalid_connection_job");
       if (!(Date.parse(job.expiresAt) > Date.now())) {
         output(job); process.stderr.write("Inspect channel-jobs for the final result and recovery instructions.\n");
         fail("connection_job_expired");
@@ -276,15 +274,10 @@ async function main() {
   if (command === "channel-pair") {
     output(await routing(path + "/connection-jobs/" + encodeURIComponent(args[0]!) + "/pairing", { code: secret(values["pairing-code-file"]) })); return;
   }
-  if (command === "channel-auth") {
-    const action = args[1] ?? "status";
-    if (!["status", "begin", "complete"].includes(action)) fail("invalid_authorization_action");
-    output(await routing(path + "/communication/connections/" + encodeURIComponent(args[0]!) + "/authorization" + (action === "status" ? "" : "/" + action), action === "status" ? undefined : {})); return;
-  }
   if (command === "channel-connect") {
     const kind = args[0];
     let body: Record<string, unknown> = { kind };
-    if (kind === "feishu") body = { kind, domain: values.domain ?? "feishu", personalTools: !values["messaging-only"], ...(values["app-id"] ? { appId: values["app-id"] } : {}) };
+    if (kind === "feishu") body = { kind, domain: values.domain ?? "feishu", ...(values["app-id"] ? { appId: values["app-id"] } : {}) };
     else if (kind === "telegram") body.token = secret(values["bot-token-file"]);
     else if (kind === "grove-mail") body = { kind, serviceId: values["mail-service"], inboxId: values.inbox,
       ownerEmail: values["owner-email"], apiKey: secret(values["api-key-file"]) };

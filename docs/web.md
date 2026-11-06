@@ -99,8 +99,9 @@ server or rate-limit errors. Errors show a retry button; missing or expired jobs
 stop polling. Router's `qr` field is a terminal
 drawing; the console renders its own QR code from the job's `https` link and
 offers the same link to open. Jobs live ten minutes in Router memory; an expired or
-unknown job asks the user to start again. Feishu personal-tool authorization uses
-Router's status, begin and complete routes.
+unknown job asks the user to start again. Feishu personal access (acting as the
+owner) is authorized in the 飞书 entry through Agent Connectors; see
+[connector-accounts.md](connector-accounts.md).
 
 ## Verify
 
@@ -119,11 +120,10 @@ acceptance.
 ## Recover an existing Feishu app
 
 On Feishu connection failures, choose **Recover connection** and enter the original
-App ID from the developer console. The console preserves known App ID, region and
-personal-tool choices. The official consent page restores access to that app;
+App ID from the developer console. The console preserves the known App ID and
+region. The official consent page restores access to that app;
 no App Secret is copied. Saved credentials are reused when only binding failed.
-Failed setup jobs remain available after a Router restart. Bot messaging and
-personal authorization are reported separately in checks.
+Failed setup jobs remain available after a Router restart.
 
 ## Message behavior
 

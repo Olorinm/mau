@@ -99,13 +99,13 @@ it("client paths encode agent and job IDs and send the documented bodies", async
   const mau = mauApi("t"), router = routerApi("t");
   await mau.environmentAction("a/b", "pause");
   await mau.createAgent("helper", "cloud");
-  await router.connect("a/b", { kind: "feishu", domain: "lark", personalTools: false });
+  await router.connect("a/b", { kind: "feishu", domain: "lark" });
   await router.pair("a/b", "job 1", "123456");
   await router.check("a/b");
   expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
     ["POST", "/_mau/v1/agents/a%2Fb/environment/pause", {}],
     ["POST", "/_mau/v1/agents", { name: "helper", profileId: "cloud" }],
-    ["POST", "/_agent-router/v1/agents/a%2Fb/connections", { kind: "feishu", domain: "lark", personalTools: false }],
+    ["POST", "/_agent-router/v1/agents/a%2Fb/connections", { kind: "feishu", domain: "lark" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/connection-jobs/job%201/pairing", { code: "123456" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/check", {}],
   ]);

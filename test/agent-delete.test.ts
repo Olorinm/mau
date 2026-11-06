@@ -141,7 +141,7 @@ it("deletes an employee whose sandbox is already missing without rebuilding its 
     domain: "feishu", ownerOpenId: "ou_owner" }), { mode: 0o600 });
   await connections.edit(alice, f.agent.id, (config) => {
     config.connections.push({ id: "feishu", kind: "feishu", credentialsFile: join(dir, "feishu.json"), domain: "feishu",
-      personalTools: true, ownerAddresses: [], peerAddresses: [], groupIds: [] });
+      ownerAddresses: [], peerAddresses: [], groupIds: [] });
   });
   expect(connections.summary(f.service.agent(f.agent.id)).connections.map((c) => c.kind)).toEqual(["matrix", "feishu"]);
   f.cloud.clear();

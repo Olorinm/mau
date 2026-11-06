@@ -107,8 +107,7 @@ Feishu is split by direction, on **one** Feishu app (like Feishu aily or Coze):
 The connectors page shows a single 飞书 card per Agent with both statuses (聊天已连接 / 个人权限 已授权 · 已过期 · 未授权):
 
 1. **Chat** uses Router's existing flow (`registerApp` QR, `credentials.json` with `appId`, `appSecretFile`, `ownerOpenId`).
-   When the owner has a connectors Feishu connection assigned to that Agent, the channel is created messaging-only
-   (`personalTools: false`); Router's own personal tools are not used.
+   The chat channel only carries messages; acting as the owner is the connector's job.
 2. **Personal access**: Mau reads the chat channel's saved app (`credentials.json` and `app-secret` in Router's Agent
    directory) and hands it to the connector (`POST /v1/connections/:id/application`). No second app or app QR. Then
    `connect` starts the official device flow; the card shows the consent QR/link and polls `complete` until the owner
@@ -147,7 +146,7 @@ link, which the Agent passes to the owner.
 
 ### Production configuration
 
-Requires an Agent Connectors release with the owner-tools change (pin bump in `components.json` after its release).
+Requires Agent Connectors 0.1.0-alpha.9 and Router 0.7.0-alpha.12 or later (the versions pinned in `components.json`).
 
 1. `connectors.json` (runtime): a Feishu connection per owner whose `owner` is the exact Router account and whose
    `directory` is inside the encrypted `secretFiles` bundle, e.g.
@@ -155,8 +154,7 @@ Requires an Agent Connectors release with the owner-tools change (pin bump in `c
    No app files are needed; Mau hands them over.
 2. Mau options: add the connection to the Agent's `connectedApps.assignments[].connections` (as for Gmail) and add
    `https://accounts.feishu.cn` (`https://accounts.larksuite.com` for Lark) to `connectorAccounts.consentOrigins`.
-3. Router: set the Agent's Feishu channel to `personalTools: false` (or apply Router's removal of personal tools), so
-   only the connector acts as the owner. Then open 飞书 → 个人权限 → 授权 once.
+   Then open 飞书 → 个人权限 → 授权 once.
 
 ## Connector catalog
 

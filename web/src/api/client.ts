@@ -18,7 +18,7 @@ export interface AgentSummary {
     /** Router phase 7: `none` (no Matrix account), `dormant` or `active`. */
     matrix?: { state: "active" | "dormant" | "none"; userId: string | null } };
   host: { runtimeId: string } | null;
-  connections: Array<{ id: string; kind: ChannelKind; personalTools?: boolean }>;
+  connections: Array<{ id: string; kind: ChannelKind }>;
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
@@ -41,14 +41,14 @@ export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 export interface ConnectionJob {
   id: string;
   kind: "feishu" | "weixin" | "telegram";
-  state: "starting" | "binding" | "waiting" | "application" | "authorization" | "telegram_pairing" | "pairing" | "ready" | "failed";
+  state: "starting" | "binding" | "waiting" | "application" | "telegram_pairing" | "pairing" | "ready" | "failed";
   expiresAt: string;
   url?: string;
   error?: string;
-  recovery?: { action: "retry" | "retry_binding" | "authorize_existing_app"; appId?: string; domain: "feishu" | "lark"; personalTools: boolean };
+  recovery?: { action: "retry" | "retry_binding" | "authorize_existing_app"; appId?: string; domain: "feishu" | "lark" };
 }
 export type ConnectionRequest =
-  | { kind: "feishu"; appId?: string; domain: "feishu" | "lark"; personalTools: boolean }
+  | { kind: "feishu"; appId?: string; domain: "feishu" | "lark" }
   | { kind: "weixin" }
   | { kind: "telegram"; token: string }
   | { kind: "matrix" }
@@ -61,7 +61,6 @@ export interface CheckResult {
   status: "verified" | "needs_action" | "not_verified" | "disabled";
   detail: string;
 }
-export interface FeishuAuthorization { authorized: boolean; verified: boolean; userName?: string; status?: string }
 
 const mau = "/_mau/v1", router = "/_agent-router/v1";
 const agent = (id: string) => `/agents/${encodeURIComponent(id)}`;
@@ -88,7 +87,6 @@ export function mauApi(token: string) {
 }
 
 export function routerApi(token: string) {
-  const feishu = (id: string) => router + agent(id) + "/communication/connections/feishu/authorization";
   return {
     connectionOptions: () => request<{ mailServices: Array<{ id: string; label: string }> }>(router + "/connection-options", { token }),
     connect: (id: string, body: ConnectionRequest) =>
@@ -99,10 +97,6 @@ export function routerApi(token: string) {
     pair: (id: string, jobId: string, code: string) =>
       request<null>(router + agent(id) + "/connection-jobs/" + encodeURIComponent(jobId) + "/pairing", { token, body: { code } }),
     check: (id: string) => request<{ checks: CheckResult[] }>(router + agent(id) + "/check", { token, body: {} }).then((r) => r.checks),
-    feishuAuthorization: (id: string) => request<FeishuAuthorization>(feishu(id), { token }),
-    beginFeishuAuthorization: (id: string) =>
-      request<{ verificationUrl: string; expiresAt: string }>(feishu(id) + "/begin", { token, body: {} }),
-    completeFeishuAuthorization: (id: string) => request<FeishuAuthorization>(feishu(id) + "/complete", { token, body: {} }),
   };
 }
 

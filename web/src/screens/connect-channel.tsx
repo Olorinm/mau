@@ -16,8 +16,6 @@ export function ConnectChannelDialog(props: {
   summary: AgentSummary;
   job?: ConnectionJob;
   initialKind?: ChannelKind;
-  /** Feishu personal tools come from the connector (unified 飞书 entry), so the chat channel is messaging only. */
-  messagingOnly?: boolean;
   onClose(): void;
   onConnected(): void;
 }) {
@@ -49,7 +47,7 @@ export function ConnectChannelDialog(props: {
           <JobProgress session={props.session} agentId={agentId} initial={job} onReady={() => done(job.kind)}
             onRecover={(next) => { setRecovery(next); setJob(null); connect.reset(); }} />
         ) : kind ? (
-          <ChannelForm recovery={recovery} kind={kind} summary={props.summary} session={props.session} pending={connect.isPending} messagingOnly={props.messagingOnly === true}
+          <ChannelForm recovery={recovery} kind={kind} summary={props.summary} session={props.session} pending={connect.isPending}
             onBack={props.job ? undefined : () => { connect.reset(); setKind(null); }}
             onSubmit={(body) => connect.mutate(body)}>
             {error ? <p className="mau-error" role="alert">{errorMessage(t, error)}</p> : null}
@@ -79,15 +77,12 @@ function ChannelForm(props: {
   session: Session;
   pending: boolean;
   recovery: ConnectionJob["recovery"];
-  messagingOnly: boolean;
   children: ReactNode;
   onBack: (() => void) | undefined;
   onSubmit(body: ConnectionRequest): void;
 }) {
   const { t } = useI18n();
   const [domain, setDomain] = useState<"feishu" | "lark">(props.recovery?.domain ?? "feishu");
-  const hostReady = !!props.summary.host;
-  const [personalTools, setPersonalTools] = useState(props.recovery?.personalTools ?? hostReady);
   const [appId, setAppId] = useState(props.recovery?.appId ?? "");
   const existingRequired = props.recovery?.action === "authorize_existing_app";
   const [token, setToken] = useState("");
@@ -104,7 +99,7 @@ function ChannelForm(props: {
       case "feishu": {
         const id = appId.trim();
         if (existingRequired && !id || id && !/^cli_[a-zA-Z0-9_]{1,128}$/.test(id)) return null;
-        return { kind: "feishu", domain, personalTools: !props.messagingOnly && hostReady && personalTools, ...(id ? { appId: id } : {}) };
+        return { kind: "feishu", domain, ...(id ? { appId: id } : {}) };
       }
       case "weixin": return { kind: "weixin" };
       case "matrix": return { kind: "matrix" };
@@ -138,11 +133,6 @@ function ChannelForm(props: {
               </label>
             ))}
           </fieldset>
-          {props.messagingOnly ? null : <label className="mau-check">
-            <input type="checkbox" checked={hostReady && personalTools} disabled={!hostReady}
-              onChange={(e) => setPersonalTools(e.target.checked)} />
-            <span>{t("connect.personalTools")}{hostReady ? null : <small>{t("connect.personalToolsNeedsHost")}</small>}</span>
-          </label>}
         </>
       ) : null}
       {props.kind === "telegram" ? (
@@ -222,7 +212,7 @@ function JobProgress(props: { session: Session; agentId: string; initial: Connec
         {current.error ? ` · ${errorMessage(t, current.error)}` : ""}</p>
       {current.kind === "feishu" ? <>
         <p>{t("connect.recoveryHint")}</p>
-        <Button onClick={() => props.onRecover(current.recovery ?? { action: "authorize_existing_app", domain: "feishu", personalTools: false })}>
+        <Button onClick={() => props.onRecover(current.recovery ?? { action: "authorize_existing_app", domain: "feishu" })}>
           {t("connect.recover")}
         </Button>
       </> : null}
