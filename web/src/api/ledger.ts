@@ -18,6 +18,8 @@ export type CardStatus = "pending" | "answered" | "approved" | "rejected" | "exp
 export interface Card {
   cardId: string; agentId: string; turnId: string; claimId: string; callId: string;
   kind: "question" | "approval" | "connector_approval" | "sensitive";
+  /** Phase 4: from the callId prefix; `router` marks Router's own cards (the unknown-turn "重新执行 / 不用了"). */
+  source?: "host" | "mau-approval" | "mau-handoff" | "router";
   text: string;
   choices: Array<{ choiceId: string; label: string; style?: "primary" | "danger" }>;
   freeText: boolean;
@@ -30,7 +32,9 @@ export type ChatEventBody =
       mentions?: { agentIds: string[]; all: boolean }; replyTo?: string; final?: boolean; possibleDuplicate?: boolean;
       deliveries?: DeliveryState[];
       /** Router phase 3: the stored target of a redaction (empty text), also when the `redaction` event is not loaded. */
-      redacted?: boolean }
+      redacted?: boolean;
+      /** Phase 4: steered into a running turn (rendered inside its run surface). */
+      steer?: boolean }
   | { kind: "notice"; text: string; level: "info" | "warning" }
   | { kind: "action"; targetCardId: string; label: string }
   | { kind: "card"; card: Card }
@@ -81,7 +85,13 @@ export interface TurnDetail {
   inputEventIds: string[]; finalEventId: string | null; cardIds: string[];
   runs: Array<{ claimId: string; runId: string | null; phase: "submitting" | "running" | "finished" | "unknown"; error: string | null }>;
 }
-export type AnswerRequest = { idempotencyKey: string } & ({ choiceId: string } | { text: string } | { result: unknown });
+export type AnswerBody = { choiceId: string } | { text: string } | { result: unknown };
+export type AnswerRequest = { idempotencyKey: string } & AnswerBody;
+export interface AnswerResponse { status: "accepted" | "duplicate" | "stale"; card: Card }
+export interface ResetResponse { window: number; event: ChatEvent }
+export interface PurgeResponse { generation: number; purgedEvents: number; window: number }
+export type CancelResponse = { status: "accepted" } | { status: "already_finished"; state: string };
+export type SteerResponse = { status: "accepted"; event: ChatEvent } | { status: "unsupported" };
 export interface LedgerMe {
   person: { id: string; name: string }; ownerId: string; identities: unknown[];
   /** `features` is a name → boolean map (ADR 0005 "Client contract" 1); a missing name is off. */
@@ -147,14 +157,23 @@ export function ledgerApi(token: string, base = ledgerBase) {
       if (!keyPattern.test(idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
       return request<RedactResponse>(chat(chatId) + "/events/" + encodeURIComponent(eventId) + "/redact", { token, body: { idempotencyKey } });
     },
-    reset: (chatId: string, idempotencyKey: string) => request<{ window: number; event: ChatEvent }>(chat(chatId) + "/reset", { token, body: { idempotencyKey } }),
+    /** "新对话": 409 `session_busy` while a turn runs, unless `cancelActive` (ADR 0005 16.3). */
+    reset: (chatId: string, idempotencyKey: string, cancelActive = false) =>
+      request<ResetResponse>(chat(chatId) + "/reset", { token, body: { idempotencyKey, ...(cancelActive ? { cancelActive: true } : {}) } }),
+    /** Permanent; `confirm` must equal the chat id (typed confirmation, ADR 0005 16.4). */
+    purge: (chatId: string, confirm: string, idempotencyKey: string, cancelActive = false) =>
+      request<PurgeResponse>(chat(chatId) + "/purge", { token, body: { idempotencyKey, confirm, ...(cancelActive ? { cancelActive: true } : {}) } }),
+    /** The live card: while a handoff card is pending its text carries the private link, which history never stores. */
+    card: (chatId: string, cardId: string, signal?: AbortSignal) => request<Card>(chat(chatId) + "/cards/" + encodeURIComponent(cardId), { token, ...signalOf(signal) }),
     read: (chatId: string, seq: number) => request<{ readSeq: number; unread: number }>(chat(chatId) + "/read", { token, body: { seq } }),
     turn: (chatId: string, turnId: string, signal?: AbortSignal) => request<TurnDetail>(chat(chatId) + "/turns/" + encodeURIComponent(turnId), { token, ...signalOf(signal) }),
-    cancelTurn: (chatId: string, turnId: string) => request<{ status: "accepted" }>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/cancel", { token, body: {} }),
+    cancelTurn: (chatId: string, turnId: string) => request<CancelResponse>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/cancel", { token, body: {} }),
     steer: (chatId: string, turnId: string, text: string, idempotencyKey = newIdempotencyKey()) =>
-      request<{ status: "accepted" | "unsupported" }>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/steer", { token, body: { idempotencyKey, text } }),
-    answerCard: (chatId: string, cardId: string, answer: AnswerRequest) =>
-      request<{ status: "accepted" | "duplicate" | "stale"; card: Card }>(chat(chatId) + "/cards/" + encodeURIComponent(cardId) + "/answer", { token, body: answer }),
+      request<SteerResponse>(chat(chatId) + "/turns/" + encodeURIComponent(turnId) + "/steer", { token, body: { idempotencyKey, text } }),
+    answerCard: (chatId: string, cardId: string, answer: AnswerRequest) => {
+      if (!keyPattern.test(answer.idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
+      return request<AnswerResponse>(chat(chatId) + "/cards/" + encodeURIComponent(cardId) + "/answer", { token, body: answer });
+    },
     createGroup: (title: string, agentIds: string[], idempotencyKey = newIdempotencyKey()) =>
       request<ChatSummary>(base + "/groups", { token, body: { idempotencyKey, title, agentIds } }),
     updateGroup: (roomId: string, patch: { title?: string; archived?: boolean }) =>
@@ -194,6 +213,8 @@ export function ledgerApi(token: string, base = ledgerBase) {
 export type LedgerApi = ReturnType<typeof ledgerApi>;
 /** What the state machine needs from HTTP; tests supply a fake server. */
 export type LedgerTransport = Pick<LedgerApi, "socketTicket" | "events" | "send" | "read" | "chats" | "redact">;
+/** Phase 4 commands (cards and control); a transport without them cannot answer, reset or purge. */
+export type LedgerCommands = Pick<LedgerApi, "answerCard" | "reset" | "purge" | "steer" | "cancelTurn">;
 
 // ---- Socket ----
 export interface LedgerSocket {
@@ -232,10 +253,15 @@ export interface PendingSend {
   retryAt?: number;
 }
 export interface PendingRedaction { chatId: string; eventId: string; idempotencyKey: string; state: "sending" | "failed" | "rejected"; error?: string }
+/**
+ * A card answer in flight. `stale`: another surface (chat, run view, another tab) answered first; the card's own
+ * `card.update` closes it. A network failure keeps the key, so a retry cannot answer twice.
+ */
+export interface PendingAnswer { chatId: string; cardId: string; idempotencyKey: string; body: AnswerBody; state: "sending" | "failed" | "rejected" | "stale"; error?: string }
 export interface LedgerChatView {
   chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
   events: readonly ChatEvent[]; hasOlder: boolean; inflight: readonly Inflight[];
-  pending: readonly PendingSend[]; redactions: readonly PendingRedaction[]; error?: string;
+  pending: readonly PendingSend[]; redactions: readonly PendingRedaction[]; answers: readonly PendingAnswer[]; error?: string;
 }
 interface ChatState {
   chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
@@ -275,6 +301,7 @@ export class LedgerClient {
   private readonly pending = new Map<string, PendingSend>();
   private readonly resend = new Map<string, unknown>();
   private readonly redactions = new Map<string, PendingRedaction>();
+  private readonly answers = new Map<string, PendingAnswer>();
   private readonly listeners = new Set<() => void>();
   private readonly requests = new Map<string, Request>();
   private readonly clock: LedgerClock;
@@ -287,7 +314,7 @@ export class LedgerClient {
   private version = 0;
   private stopped = true;
 
-  constructor(private readonly api: LedgerTransport, private readonly options: LedgerClientOptions) {
+  constructor(private readonly api: LedgerTransport & Partial<LedgerCommands>, private readonly options: LedgerClientOptions) {
     this.clock = options.clock ?? systemClock;
   }
 
@@ -309,6 +336,7 @@ export class LedgerClient {
       events: state.events, hasOlder: state.olderCursor !== null, inflight: [...state.inflight.values()],
       pending: [...this.pending.values()].filter((item) => item.chatId === chatId && (item.state === "rejected" || !shown.has(item.idempotencyKey))),
       redactions: [...this.redactions.values()].filter((item) => item.chatId === chatId),
+      answers: [...this.answers.values()].filter((item) => item.chatId === chatId),
       ...(state.error ? { error: state.error } : {}),
     };
   }
@@ -476,6 +504,11 @@ export class LedgerClient {
       this.cancelResend(event.idempotencyKey);
     }
     if (event.kind === "redaction") this.redactions.delete(event.chatId + "\n" + event.targetEventId);
+    // The card's own update is the final word, whichever surface answered.
+    if (event.kind === "card.update" && event.status !== "pending") {
+      const answer = this.answers.get(event.chatId + "\n" + event.cardId);
+      if (answer && answer.state !== "sending") this.answers.delete(event.chatId + "\n" + event.cardId);
+    }
   }
 
   // -- commands --
@@ -559,6 +592,69 @@ export class LedgerClient {
       this.notify();
       throw error;
     }
+  }
+  private command<K extends keyof LedgerCommands>(name: K): LedgerCommands[K] {
+    const command = this.api[name];
+    if (!command) throw new ApiError("feature_unavailable", 0);
+    return command.bind(this.api) as LedgerCommands[K];
+  }
+  /**
+   * Answer a card (ADR 0005 16.1). One key per card answer; a retry after a network failure reuses it, so the server
+   * returns `duplicate` instead of answering twice. A later answer than another surface's is `stale`.
+   */
+  async answerCard(chatId: string, cardId: string, body: AnswerBody) {
+    const id = chatId + "\n" + cardId, prior = this.answers.get(id);
+    if (prior?.state === "sending") return undefined;
+    const reuse = prior?.state === "failed" && JSON.stringify(prior.body) === JSON.stringify(body);
+    const item: PendingAnswer = { chatId, cardId, body, state: "sending",
+      idempotencyKey: reuse ? prior.idempotencyKey : (this.options.idempotencyKey ?? newIdempotencyKey)() };
+    this.answers.set(id, item);
+    this.notify();
+    try {
+      const response = await this.command("answerCard")(chatId, cardId, { idempotencyKey: item.idempotencyKey, ...body } as AnswerRequest);
+      // A stale answer stays visible ("已在其他地方回答") only while the card's own update has not arrived.
+      if (this.answers.get(id) === item) {
+        if (response.status === "stale" && !this.cardClosed(chatId, cardId)) item.state = "stale";
+        else this.answers.delete(id);
+      }
+      this.notify();
+      return response;
+    } catch (error) {
+      if (this.answers.get(id) !== item) return undefined;
+      item.state = retryable(error) ? "failed" : "rejected";
+      item.error = error instanceof ApiError ? error.code : "request_failed";
+      this.notify();
+      throw error;
+    }
+  }
+  private cardClosed(chatId: string, cardId: string) {
+    return this.state(chatId).events.some((event) => event.kind === "card.update" && event.cardId === cardId && event.status !== "pending");
+  }
+  dismissAnswer(chatId: string, cardId: string) {
+    if (this.answers.delete(chatId + "\n" + cardId)) this.notify();
+  }
+  /** "新对话". Rejects with `session_busy` (409) while a turn runs unless `cancelActive`; the window event is shown at once. */
+  async reset(chatId: string, cancelActive = false) {
+    const response = await this.command("reset")(chatId, (this.options.idempotencyKey ?? newIdempotencyKey)(), cancelActive);
+    if (this.ingest(response.event)) this.notify();
+    return response;
+  }
+  /** Permanent purge; the chat reloads in its new generation (the socket also sends `snapshot_required`). */
+  async purge(chatId: string, confirm: string, cancelActive = false) {
+    const response = await this.command("purge")(chatId, confirm, (this.options.idempotencyKey ?? newIdempotencyKey)(), cancelActive);
+    const state = this.state(chatId);
+    state.buffered.clear();
+    await this.snapshot(chatId);
+    return response;
+  }
+  async cancelTurn(chatId: string, turnId: string) {
+    return this.command("cancelTurn")(chatId, turnId);
+  }
+  /** Add text to a running turn. `unsupported` when the kernel cannot take it; the steered message arrives as an event. */
+  async steer(chatId: string, turnId: string, text: string) {
+    const response = await this.command("steer")(chatId, turnId, text, (this.options.idempotencyKey ?? newIdempotencyKey)());
+    if (response.status === "accepted" && this.ingest(response.event)) this.notify();
+    return response;
   }
   dismissRedaction(chatId: string, eventId: string) {
     if (this.redactions.delete(chatId + "\n" + eventId)) this.notify();
@@ -753,6 +849,8 @@ export interface LedgerBubble {
   redacted?: boolean;
   reactions: Array<{ key: string; senders: string[] }>; deliveries: DeliveryState[];
   level?: "info" | "warning"; card?: Card; idempotencyKey?: string;
+  /** Steered into a running turn (phase 4); shown with that turn's run surface. */
+  steer?: boolean;
 }
 export interface LedgerTurn { turnId: string; agentId: string; state: TurnState; inputEventIds: string[]; error?: string; seq: number }
 export interface LedgerFold { items: LedgerBubble[]; turns: Map<string, LedgerTurn>; cards: Map<string, Card> }
@@ -773,6 +871,7 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
         bubble = { ...base, kind: "message", role: event.role, text: event.text, attachments: event.attachments ?? [], deliveries: [...(event.deliveries ?? [])],
           ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
           ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}),
+          ...(event.steer ? { steer: true } : {}),
           ...(event.redacted ? { redacted: true, text: "", attachments: [] } : {}) };
         break;
       case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;
@@ -827,4 +926,35 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
     if (target && !target.redacted) target.reactions = [...keys].filter(([, senders]) => senders.size).map(([key, senders]) => ({ key, senders: [...senders] }));
   }
   return { items, turns, cards };
+}
+
+// ---- Card answers from the run surface (ADR 0005 16.7) ----
+/**
+ * Map an answer given in the run surface (built with `@olorinm/agent-host/interactions`) to the card answer Router
+ * accepts. Approvals answer by choice (Router's choice 0 allows, 1 denies; `session/request_permission` follows its
+ * options), Mau's synthetic handoff and Router's own cards by text, Host questions by their native result.
+ */
+export function cardAnswerBody(card: Pick<Card, "kind" | "source" | "native" | "choices">, native: unknown, allows: boolean | undefined): AnswerBody {
+  if (card.kind === "sensitive") throw new ApiError("sensitive_input_requires_native_entry", 422);
+  const value = native && typeof native === "object" ? native as Record<string, unknown> : {};
+  if (card.kind === "connector_approval") return { choiceId: value.choice === "once" ? "0" : "1" };
+  if (card.kind === "approval") {
+    if (card.native?.method === "session/request_permission") {
+      const options = (card.native.params as { options?: Array<{ optionId?: unknown }> } | null)?.options ?? [];
+      const index = options.findIndex((option) => option.optionId === (value.outcome as { optionId?: unknown } | undefined)?.optionId);
+      if (index >= 0) return { choiceId: String(index) };
+    }
+    if (allows === undefined) throw new ApiError("choice_not_found", 422);
+    return { choiceId: allows ? "0" : "1" };
+  }
+  if (card.source === "mau-handoff" || card.source === "router") {
+    const answers = value.answers && typeof value.answers === "object" ? Object.values(value.answers as Record<string, unknown>) : [];
+    const first = answers.map((item) => Array.isArray((item as { answers?: unknown })?.answers) ? (item as { answers: unknown[] }).answers[0] : item)
+      .find((item): item is string => typeof item === "string" && !!item.trim());
+    const text = first ?? (typeof value.answer === "string" ? value.answer : undefined);
+    if (!text) throw new ApiError("choice_or_text_required", 422);
+    const choice = card.choices.find((item) => item.label === text);
+    return choice ? { choiceId: choice.choiceId } : { text };
+  }
+  return { result: native };
 }

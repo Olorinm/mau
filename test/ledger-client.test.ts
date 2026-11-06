@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../web/src/api/http";
+import { readFileSync } from "node:fs";
 import {
-  LedgerClient, chatSourcePreference, foldEvents, ledgerApi, ledgerFeatures,
-  type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery, type LedgerSocket,
-  type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse,
+  LedgerClient, cardAnswerBody, chatSourcePreference, foldEvents, ledgerApi, ledgerFeatures,
+  type AnswerRequest, type AnswerResponse, type Card, type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery,
+  type LedgerCommands, type LedgerSocket, type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse,
 } from "../web/src/api/ledger";
 
 // A fake Router web channel implementing the ADR 0005 §8 shapes: history paging, socket replay and idempotent send.
@@ -535,4 +536,152 @@ it("keeps the origin channel of merged owner messages for badges", () => {
     ({ chatId, seq, generation: 1, eventId: "ev_" + seq, at: "", sender: owner, ...(channel ? { channel } : {}), ...say("hi " + seq, "user") }) as ChatEvent;
   const fold = foldEvents([event(1, { kind: "feishu" }), event(2, { kind: "grove-mail", label: "work mail" }), event(3, { kind: "web" }), event(4, undefined)]);
   expect(fold.items.map((item) => item.channel)).toEqual([{ kind: "feishu" }, { kind: "grove-mail", label: "work mail" }, { kind: "web" }, undefined]);
+});
+
+// ---- Phase 4: cards and control (ADR 0005 section 16) ----
+const card = (patch: Partial<Card> = {}): Card => ({ cardId: "cd_1", agentId: "agent-1", turnId: "t1", claimId: "c1", callId: "q1", kind: "question",
+  source: "host", text: "继续吗？", choices: [], freeText: true, deadlineAt: null, status: "pending", ...patch });
+/** Router's card and control routes over the fake: first answer wins, idempotency keys, reset windows, purge generations. */
+class ControlLedger extends FakeLedger implements LedgerCommands {
+  answers: AnswerRequest[] = [];
+  failAnswers = 0;
+  busy = false;
+  window = 1;
+  steers: Array<{ turnId: string; text: string; idempotencyKey: string }> = [];
+  steerSupported = true;
+  private readonly answerKeys = new Map<string, AnswerResponse>();
+  private answeredBy: string | undefined;
+  async answerCard(id: string, cardId: string, answer: AnswerRequest): Promise<AnswerResponse> {
+    this.answers.push(answer);
+    if (this.failAnswers > 0) { this.failAnswers--; throw new ApiError("network_error", 0); }
+    const known = this.answerKeys.get(answer.idempotencyKey);
+    if (known) return { ...known, status: "duplicate" };
+    if (this.answeredBy) return { status: "stale", card: card({ cardId, status: "answered" }) };
+    this.answeredBy = answer.idempotencyKey;
+    this.append({ kind: "card.update", cardId, status: "answered", summary: "继续" }, { chatId: id, sender: { type: "system", id: "router", name: "Router" } });
+    const response: AnswerResponse = { status: "accepted", card: card({ cardId, status: "answered" }) };
+    this.answerKeys.set(answer.idempotencyKey, response);
+    return response;
+  }
+  async reset(id: string, _key: string, cancelActive = false) {
+    if (this.busy && !cancelActive) throw new ApiError("session_busy", 409);
+    this.busy = false;
+    const event = this.append({ kind: "window", window: ++this.window, reason: "reset" }, { chatId: id, sender: { type: "system", id: "router", name: "Router" } });
+    return { window: this.window, event };
+  }
+  async purge(id: string, confirm: string) {
+    if (confirm !== id) throw new ApiError("purge_confirmation_required", 422);
+    const purgedEvents = this.chat(id).lastSeq;
+    this.rewrite([]);
+    this.append({ kind: "window", window: ++this.window, reason: "reset" }, { chatId: id, sender: { type: "system", id: "router", name: "Router" } }, false);
+    return { generation: this.chat(id).generation, purgedEvents, window: this.window };
+  }
+  async steer(id: string, turnId: string, text: string, idempotencyKey: string) {
+    this.steers.push({ turnId, text, idempotencyKey });
+    if (!this.steerSupported) return { status: "unsupported" as const };
+    const event = this.append({ kind: "message", role: "user", text, steer: true }, { chatId: id, sender: owner, turnId, idempotencyKey });
+    return { status: "accepted" as const, event };
+  }
+  async cancelTurn() { return { status: "accepted" as const }; }
+}
+
+it("answers a card once: a network retry reuses the key, a later answer from another surface is stale", async () => {
+  const server = new ControlLedger(), { client } = setup(server);
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  server.failAnswers = 1;
+  await expect(client.answerCard(chatId, "cd_1", { choiceId: "0" })).rejects.toMatchObject({ code: "network_error" });
+  expect(client.view(chatId).answers).toMatchObject([{ cardId: "cd_1", state: "failed" }]);
+  expect((await client.answerCard(chatId, "cd_1", { choiceId: "0" }))?.status).toBe("accepted");
+  expect(server.answers.map((item) => item.idempotencyKey)).toEqual([server.answers[0]!.idempotencyKey, server.answers[0]!.idempotencyKey]);
+  expect(client.view(chatId).answers).toEqual([]);
+  // The card.update folds into the card.
+  const fold = foldEvents([{ chatId, seq: 0, generation: 1, eventId: "ev_card", at: "", sender: agent, turnId: "t1", kind: "card", card: card() } as ChatEvent,
+    ...client.view(chatId).events]);
+  expect(fold.cards.get("cd_1")?.status).toBe("answered");
+  // A second answer (another tab, chat or run view answered first) is stale and not retried.
+  expect((await client.answerCard(chatId, "cd_1", { text: "也许" }))?.status).toBe("stale");
+  expect(client.view(chatId).answers).toEqual([]);
+  expect(server.answers).toHaveLength(3);
+});
+
+it("resets with a window event, asks first while a turn runs, and reloads a purged chat in its new generation", async () => {
+  const server = new ControlLedger(), { client } = setup(server);
+  server.append(say("旧消息"), {}, false);
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  server.busy = true;
+  await expect(client.reset(chatId)).rejects.toMatchObject({ status: 409, code: "session_busy" });
+  expect((await client.reset(chatId, true)).window).toBe(2);
+  expect(client.view(chatId).events.at(-1)).toMatchObject({ kind: "window", window: 2, reason: "reset" });
+  expect(client.view(chatId).events.filter((event) => event.kind === "window")).toHaveLength(1);
+  await expect(client.purge(chatId, "dm:other")).rejects.toMatchObject({ code: "purge_confirmation_required" });
+  expect(await client.purge(chatId, chatId)).toMatchObject({ generation: 2, window: 3 });
+  expect(client.view(chatId)).toMatchObject({ generation: 2, lastSeq: 1 });
+  expect(client.view(chatId).events.map((event) => event.kind)).toEqual(["window"]);
+});
+
+it("steers a running turn into its run surface, and reports unsupported kernels", async () => {
+  const server = new ControlLedger(), { client } = setup(server);
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  expect((await client.steer(chatId, "t1", "顺便写成表格")).status).toBe("accepted");
+  const fold = foldEvents(client.view(chatId).events);
+  expect(fold.items).toMatchObject([{ kind: "message", role: "user", text: "顺便写成表格", steer: true, turnId: "t1" }]);
+  server.steerSupported = false;
+  expect(await client.steer(chatId, "t1", "再补充")).toEqual({ status: "unsupported" });
+  expect(client.view(chatId).events).toHaveLength(1);
+  expect(new Set(server.steers.map((item) => item.idempotencyKey)).size).toBe(2);
+  expect(await client.cancelTurn(chatId, "t1")).toEqual({ status: "accepted" });
+  // A transport without the phase 4 commands refuses instead of falling back to another API.
+  const { client: bare } = setup(new FakeLedger());
+  await expect(bare.reset(chatId)).rejects.toMatchObject({ code: "feature_unavailable" });
+});
+
+it("maps run-surface answers to card answers: approvals by choice, handoff and Router cards by text, questions by native result", () => {
+  expect(cardAnswerBody(card({ kind: "connector_approval", source: "mau-approval" }), { choice: "once" }, true)).toEqual({ choiceId: "0" });
+  expect(cardAnswerBody(card({ kind: "connector_approval", source: "mau-approval" }), { choice: "deny" }, false)).toEqual({ choiceId: "1" });
+  expect(cardAnswerBody(card({ kind: "approval" }), { decision: "accept" }, true)).toEqual({ choiceId: "0" });
+  expect(cardAnswerBody(card({ kind: "approval" }), { decision: "decline" }, false)).toEqual({ choiceId: "1" });
+  const permission = card({ kind: "approval", native: { method: "session/request_permission", params: { options: [{ optionId: "ok" }, { optionId: "always" }, { optionId: "no" }] } } });
+  expect(cardAnswerBody(permission, { outcome: { outcome: "selected", optionId: "no" } }, false)).toEqual({ choiceId: "2" });
+  const handoff = card({ source: "mau-handoff", choices: [{ choiceId: "0", label: "取消接管" }] });
+  expect(cardAnswerBody(handoff, { answers: { handoff: { answers: ["取消接管"] } } }, undefined)).toEqual({ choiceId: "0" });
+  expect(cardAnswerBody(handoff, { answers: { handoff: { answers: ["登录好了"] } } }, undefined)).toEqual({ text: "登录好了" });
+  expect(cardAnswerBody(card(), { answers: { env: { answers: ["staging"] } } }, undefined)).toEqual({ result: { answers: { env: { answers: ["staging"] } } } });
+  expect(() => cardAnswerBody(card({ kind: "sensitive" }), {}, undefined)).toThrow("sensitive_input_requires_native_entry");
+});
+
+it("calls the phase 4 routes with encoded ids, idempotency keys and typed confirmations", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return new Response(JSON.stringify({ status: "accepted", card: card(), window: 2, event: {}, generation: 2, purgedEvents: 3 }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }));
+  const api = ledgerApi("token");
+  await api.answerCard("dm:a", "cd_1", { idempotencyKey: "k".repeat(16), choiceId: "0" });
+  await api.card("dm:a", "cd_1");
+  await api.reset("dm:a", "r".repeat(16), true);
+  await api.purge("dm:a", "dm:a", "p".repeat(16));
+  await api.steer("dm:a", "t/1", "补充", "s".repeat(16));
+  await api.cancelTurn("dm:a", "t/1");
+  expect(calls).toEqual([
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/cards/cd_1/answer", body: { idempotencyKey: "k".repeat(16), choiceId: "0" } },
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/cards/cd_1", body: undefined },
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/reset", body: { idempotencyKey: "r".repeat(16), cancelActive: true } },
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/purge", body: { idempotencyKey: "p".repeat(16), confirm: "dm:a" } },
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/turns/t%2F1/steer", body: { idempotencyKey: "s".repeat(16), text: "补充" } },
+    { url: "/_agent-router/v1/web/chats/dm%3Aa/turns/t%2F1/cancel", body: {} },
+  ]);
+  expect(() => api.answerCard("dm:a", "cd_1", { idempotencyKey: "short", choiceId: "0" })).toThrow("invalid_idempotency_key");
+});
+
+it("never answers through runApi() in the ledger console: run surfaces get card and turn controls", () => {
+  const screen = readFileSync(new URL("../web/src/screens/ledger-messages.tsx", import.meta.url), "utf8");
+  const surface = readFileSync(new URL("../web/src/screens/run-surface.tsx", import.meta.url), "utf8");
+  expect(screen).not.toMatch(/runApi\s*\(/);
+  expect(screen).toMatch(/controls=\{controlsFor\(turn\)\}/);
+  // The run API answer is only the fallback when no card control is supplied (Matrix mode).
+  expect(surface.match(/api\.answer\(/g)).toHaveLength(1);
+  expect(surface).toMatch(/controls\?\.answer \? controls\.answer\(callId, request, answer\) : api\.answer\(/);
 });
