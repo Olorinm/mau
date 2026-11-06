@@ -65,6 +65,13 @@ The optional Host adapter shows native approvals without renaming IDs or adding 
 
 See the [guide](docs/guide.md) and Agent Host's [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor). Verify with `npm test`, `npm run test:browser` and `npm run test:package`.
 
+Linux browser checks run in the official Playwright container pinned in
+`.github/workflows/ci.yml`; native unit checks still run on Linux, macOS, and
+Windows. When upgrading Playwright in either this package or `frontend`, update
+both lockfiles and the container version and digest together. CI checks the
+image's driver version and browser executable before running the existing
+browser and independent package tests.
+
 This package's own code, including its extracted OpenGrove implementation, is licensed under the [MIT License](LICENSE). The chat presentation components came from OpenGrove revision `d8c7a7c`; application primitives and design tokens came from revision `8b365ed`. Those revisions were distributed under Apache-2.0 at extraction. Source attribution and the original third-party license terms are retained in [NOTICE](NOTICE); third-party components and dependencies keep their own licenses and are not relicensed by this package. OpenGrove is a consumer of this package; its business models and services are not dependencies.
 
 `PortalProvider` from `@olorinm/agent-ui/app` optionally places dialogs, tooltips

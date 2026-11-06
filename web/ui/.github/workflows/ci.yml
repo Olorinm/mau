@@ -12,8 +12,13 @@ jobs:
   frontend:
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    # Keep this image in sync with both Playwright package-lock.json entries.
+    container: &playwright-container
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     defaults:
       run:
+        shell: bash
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +28,20 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --ignore-scripts
+      - &verify-playwright
+        name: Verify preinstalled Playwright browser
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const assert = require('node:assert/strict');
+          const { accessSync, constants, readFileSync } = require('node:fs');
+          const image = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
+          const version = require('@playwright/test/package.json').version;
+          assert.equal(image.driverVersion, version, 'Update the Playwright image and package together');
+          accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
+          console.log(`Using preinstalled Playwright ${version}`);
+          NODE
       - run: npm run build
       - run: npm test
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run test:restored
       - run: npm run test:comparison
@@ -45,10 +61,21 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm test
-      - if: runner.os == 'Linux'
-        run: npx playwright install --with-deps chromium
-      - if: runner.os == 'Linux'
-        run: npm run test:browser
-      - if: runner.os == 'Linux'
-        run: npm run test:package
+  browser:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    container: *playwright-container
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - *verify-playwright
+      - run: npm run test:browser
+      - run: npm run test:package
         timeout-minutes: 8
