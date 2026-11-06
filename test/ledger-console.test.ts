@@ -335,3 +335,105 @@ it.skipIf(!built)("while a reply runs, the send button stops it and text sent go
   await see(page.getByRole("button", { name: "发送消息", exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 }, 60_000);
+
+it.skipIf(!built)("a running reply keeps one working line below its content and never blanks when it finishes", async (context) => {
+  let run: Record<string, unknown> | undefined;
+  const events: Array<{ sequence: number; event: Record<string, unknown> }> = [];
+  const emit = (event: Record<string, unknown>) => events.push({ sequence: events.length + 1, event: { runId: "run-1", ...event } });
+  const note = (method: string, params: Record<string, unknown>) =>
+    emit({ type: "native.notification", threadId: "th", notification: { method, params: { threadId: "th", ...params } } });
+  const host = (url: URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET", path = url.pathname;
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body));
+      run = { id: "run-1", sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "" };
+      return Response.json(run);
+    }
+    if (path.endsWith("/runs/by-request")) return Response.json({ run: null });
+    if (path.endsWith("/events")) {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      return Response.json({ events: events.filter((item) => item.sequence > after), cursor: events.length, hasMore: false, historyTruncated: false });
+    }
+    if (path.endsWith("/calls")) return Response.json({ calls: [] });
+    if (/\/runs\/run-1$/.test(path)) return Response.json(run);
+    return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+  };
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+    { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  if (!me.limits?.features?.send) return context.skip();
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+
+  const instance = await chromium.launch({ headless: true });
+  cleanup.push(() => instance.close());
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(f.base);
+  await page.evaluate(() => {
+    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
+    localStorage.setItem("mau.chatSource", "ledger");
+  });
+  await page.reload();
+  page.setDefaultTimeout(10_000);
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
+  await page.getByLabel("选择员工").selectOption(f.agent.id);
+  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // Every change to the reply, as (working line position, text) states.
+  await page.evaluate(() => {
+    const w = window as unknown as { states: string[] }; w.states = [];
+    new MutationObserver(() => {
+      const reply = [...document.querySelectorAll(".room-chat-message.from-agent")].at(-1);
+      if (!reply) return;
+      const stack = reply.querySelector(".room-chat-agent-stack"), last = stack?.lastElementChild;
+      const state = `${reply.textContent?.includes("正在执行") ? last?.classList.contains("room-chat-thinking-row") ? "working-last" : "working-elsewhere" : "idle"}|${reply.querySelector(".room-chat-bubble")?.textContent ?? ""}|${reply.textContent}`;
+      if (w.states.at(-1) !== state) w.states.push(state);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  await page.getByPlaceholder("发送消息…").fill("看看我连了哪些应用");
+  await page.getByPlaceholder("发送消息…").press("Enter");
+  await see.poll(() => !!run).toBe(true);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 1300));
+  note("item/started", { item: { type: "agentMessage", id: "m1", phase: "commentary", text: "" } });
+  note("item/completed", { item: { type: "agentMessage", id: "m1", phase: "commentary", text: "我先查一下。" } });
+  const tool = { type: "dynamicToolCall", id: "exec-1", namespace: null, tool: "connected_apps", arguments: { action: "tools" } };
+  emit({ type: "native.tool", callId: "exec-1", tool: "connected_apps", phase: "started", native: { ...tool, status: "inProgress" } });
+  await settle();
+  // Mid-run with a process row: the working line is still the last thing in the reply, not the process summary.
+  const working = page.locator(".room-chat-message.from-agent").last().locator(".room-chat-agent-stack > :last-child");
+  await see(working).toHaveClass(/room-chat-thinking-row/);
+  await see(working).toHaveText("正在执行");
+  emit({ type: "native.tool", callId: "exec-1", tool: "connected_apps", phase: "finished",
+    native: { ...tool, status: "completed", contentItems: [{ type: "inputText", text: JSON.stringify({ status: "completed", tools: [{ name: "gmail" }] }) }] } });
+  note("item/started", { item: { type: "agentMessage", id: "m2", phase: "final_answer", text: "" } });
+  note("item/agentMessage/delta", { itemId: "m2", delta: "你连了 Gmail。" });
+  emit({ type: "assistant.delta", text: "你连了 Gmail。", transient: true });
+  await settle();
+  run!.status = "completed"; run!.answer = "你连了 Gmail。";
+  note("item/completed", { item: { type: "agentMessage", id: "m2", phase: "final_answer", text: "你连了 Gmail。" } });
+  note("turn/completed", { turn: { id: "t", status: "completed" } });
+  const reply = page.locator(".room-chat-message.from-agent").last();
+  await see(reply.locator(".room-chat-bubble")).toHaveText("你连了 Gmail。");
+  await see(reply.getByText("正在执行")).toHaveCount(0);
+  await settle();
+
+  const states = await page.evaluate(() => (window as unknown as { states: string[] }).states);
+  // The working line was always the last thing in the reply, with or without process and text.
+  expect(states.filter((state) => state.startsWith("working-elsewhere"))).toEqual([]);
+  // No separate loading texts, and once the answer showed it never went away.
+  expect(states.filter((state) => /等待执行|正在读取执行过程|正在启动/.test(state))).toEqual([]);
+  const first = states.findIndex((state) => state.split("|")[1] === "你连了 Gmail。");
+  expect(first).toBeGreaterThanOrEqual(0);
+  expect(states.slice(first).filter((state) => state.split("|")[1] !== "你连了 Gmail。")).toEqual([]);
+
+  // The tool row: a one-line summary, full input and output in the code block.
+  await reply.locator(".og-disclosure-toggle").click();
+  const row = reply.locator(".thread-activity-row-toggle", { hasText: "已调用 connected_apps" });
+  await see(row.locator(".thread-activity-row-detail")).toHaveText("action: tools");
+  await row.click();
+  const code = JSON.parse(await reply.locator("pre.thread-activity-row-full-detail").textContent() ?? "{}");
+  expect(code).toEqual({ input: { action: "tools" }, output: { status: "completed", tools: [{ name: "gmail" }] } });
+  expect(errors).toEqual([]);
+}, 60_000);

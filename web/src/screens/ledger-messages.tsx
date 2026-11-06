@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
   Conversation,
@@ -28,7 +28,7 @@ import {
 } from "../api/ledger";
 import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
-import { TaskSurface, type RunControls, type TaskLike } from "./run-surface";
+import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
@@ -85,18 +85,19 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
   controls?: RunControls | undefined;
 }) {
-  const { language } = useI18n(), zh = language === "zh-CN";
   const terminal = terminalTurn.includes(turn.state);
   const detail = useQuery({
     queryKey: ["ledger-turn", token, chatId, turn.turnId, turn.state],
     queryFn: ({ signal }) => api.turn(chatId, turn.turnId, signal),
     retry: false,
+    // A state change (running → completed) refetches; keep the run on screen meanwhile instead of remounting it.
+    placeholderData: keepPreviousData,
     ...(terminal ? { staleTime: Infinity } : {}),
     refetchInterval: (query) => query.state.error || terminal ? false : 3000,
   });
   if (!detail.data) return detail.error || terminal
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
-    : <p role="status">{zh ? "等待执行…" : "Queued…"}</p>;
+    : <WorkingSurface fallback={fallback} />;
   const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
   return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />;
 }
@@ -344,6 +345,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   if (current && view && fold) {
     const shown = new Set(fold.items.map((item) => item.eventId));
     const finals = new Map(fold.items.flatMap((item) => item.kind === "message" && item.turnId && item.role === "assistant" ? [[item.turnId, item.text] as const] : []));
+    // Text Router already streamed for a turn stays on screen while its run loads (no blank between the two).
+    for (const item of view.inflight) if (!finals.has(item.turnId) && item.text) finals.set(item.turnId, item.text);
     const turnsByInput = new Map<string, LedgerTurn[]>();
     const placed = new Set<string>();
     for (const turn of fold.turns.values()) {
