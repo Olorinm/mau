@@ -12,6 +12,17 @@ const json = (value: unknown) => value as JsonValue | undefined;
  * Parts keep event order: text spoken between tool calls stays in the process as
  * commentary, and only the final answer becomes answer text (OpenGrove room order).
  */
+/** Codex dynamic tool results: text items, with JSON text read as the value it encodes. */
+function contentItems(value: unknown): unknown {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const items = value.map((item) => {
+    const entry = record(item), body = typeof entry.text === "string" ? entry.text : undefined;
+    if (body === undefined) return item;
+    try { return JSON.parse(body) as unknown; } catch { return body; }
+  });
+  return items.length === 1 ? items[0] : items;
+}
+
 export function projectHostMessage(events: readonly HostEvent[], options: { active?: boolean; answer?: string; detailsLabel?: string } = {}): MessagePart[] {
   const parts = new Map<string, MessagePart>();
   const phases = new Map<string, string>();
@@ -105,7 +116,7 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     const input = row.input ?? (
       ["commandExecution", "fileChange", "webSearch"].includes(text(native.type)) ? native :
       native.arguments ?? native.input ?? native.rawInput ?? native.args ?? previous?.input ?? row.native);
-    const output = row.result ?? native.result ?? native.output ?? native.rawOutput ?? native.content ?? (finished ? row.native : undefined);
+    const output = row.result ?? native.result ?? native.output ?? native.rawOutput ?? native.content ?? contentItems(native.contentItems) ?? (finished ? row.native : undefined);
     const base: ToolPart = {
       id: `${key}:call`, type: "tool", phase: "call", toolId, callId: key,
       title: toolId, input: json(input), status: "running", error: "", approvalId: "", approvalStatus: "",

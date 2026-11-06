@@ -1,5 +1,6 @@
 import { ActivityRow, InteractionActions, EditDiff, QuestionForm, type QuestionAnswers } from "@olorinm/agent-ui";
 import { SharedChatProvider } from "./shared-chat-provider";
+import { summarize } from "./format";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Disclosure, useDisclosure } from "@olorinm/agent-ui";
 import clsx from "clsx";
@@ -450,14 +451,19 @@ function ActivityItemRow(props: {
   const status = activityItemStatus(props.item);
   const kind = activityItemKind(props.item);
   const choiceForm = choiceFormFromItem(props.item);
+  const callerDetail = props.item.type === "tool" ? props.item.result?.detail ?? props.item.call?.detail : undefined;
+  // With the caller's full input and output in the expandable code block, the row keeps a one-line summary.
+  const callerSummary = callerDetail && props.item.type === "tool" && !collapsesInlineDetail(kind) && kind !== "edit"
+    ? inputSummary(props.item.call?.input ?? props.item.result?.input) : undefined;
   const detail = choiceForm
     ? null
-    : activityItemDetailDisplay(props.item, {
-        full: props.detailMode === "full" && !collapsesInlineDetail(kind),
-      });
+    : callerSummary !== undefined
+      ? callerSummary ? { label: callerSummary } : null
+      : activityItemDetailDisplay(props.item, {
+          full: props.detailMode === "full" && !collapsesInlineDetail(kind),
+        });
   const title = activityItemTitle(props.item);
   const titleTooltip = choiceForm ? "" : activityItemTitleTooltip(props.item);
-  const callerDetail = props.item.type === "tool" ? props.item.result?.detail ?? props.item.call?.detail : undefined;
   const fullDetail = callerDetail?.text ?? (
     props.detailMode === "full" && !choiceForm ? collapsibleFullDetail(kind, titleTooltip, detail?.title) : "");
   const artifactCards = props.showArtifactCards === false ? [] : artifactCardsFromItem(props.item);
@@ -636,6 +642,15 @@ function ActivityItemRow(props: {
   );
 }
 
+
+/** "action: tools · limit: 5": a tool's arguments on one line. */
+function inputSummary(input: unknown): string {
+  let value = input;
+  if (typeof value === "string") { const text = value; try { value = JSON.parse(text); } catch { return summarize(text, 120); } }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value === undefined || value === null ? "" : summarize(JSON.stringify(value), 120);
+  return summarize(Object.entries(value as Record<string, unknown>)
+    .map(([key, entry]) => `${key}: ${typeof entry === "string" ? entry : JSON.stringify(entry)}`).join(" · "), 120);
+}
 
 function collapsesInlineDetail(kind: string): boolean {
   return ["command", "monitor", "search", "read", "browser"].includes(kind);

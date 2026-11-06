@@ -84,3 +84,15 @@ test("finished Codex runs show reasoning from completed items once their deltas 
   {type: "reasoning.delta", runId: "run", text: "Next"}], {active: true});
  assert.equal(live.find(p => p.type === "reasoning").text, "Plan the search\n\nNext");
 });
+test("Codex dynamic tool results come from contentItems, with JSON text read as its value", () => {
+ const item = {type: "dynamicToolCall", id: "exec-1", namespace: null, tool: "connected_apps", arguments: {action: "tools"}};
+ const done = {...item, status: "completed", contentItems: [{type: "inputText", text: JSON.stringify({status: "completed", tools: [{name: "gmail"}]})}]};
+ const parts = projectHostMessage([{type: "native.tool", runId: "run", callId: "exec-1", tool: "connected_apps", phase: "started", native: item},
+  {type: "native.tool", runId: "run", callId: "exec-1", tool: "connected_apps", phase: "finished", native: done}]);
+ const detail = JSON.parse(parts.find(p => p.id === "exec-1:call").detail.text);
+ assert.deepEqual(detail, {input: {action: "tools"}, output: {status: "completed", tools: [{name: "gmail"}]}});
+ // Plain text stays text; several items stay a list.
+ const text = projectHostMessage([{type: "native.tool", runId: "run", callId: "x", tool: "t", phase: "finished",
+  native: {...item, id: "x", contentItems: [{type: "inputText", text: "ok"}, {type: "inputImage", imageUrl: "u"}]}}]);
+ assert.deepEqual(JSON.parse(text.find(p => p.id === "x:result").detail.text).output, ["ok", {type: "inputImage", imageUrl: "u"}]);
+});
