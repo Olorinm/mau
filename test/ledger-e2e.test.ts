@@ -43,7 +43,7 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true });
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -115,6 +115,21 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     const history = await api.events(chatId, { limit: 200 });
     expect(history.events.find((event) => event.eventId === response!.event.eventId)).toMatchObject({ kind: "message", text: "", redacted: true });
     expect(foldEvents(history.events).items.find((item) => item.eventId === response!.event.eventId)).toMatchObject({ redacted: true, text: "" });
+  }
+  if (sendable && ledgerFeatures(me).has("reset")) {
+    // Phase 4 control through Mau's server: "新对话" opens a new window for every owner channel; purge needs the chat id.
+    expect(ledgerFeatures(me).has("cards")).toBe(true);
+    const reset = await client.reset(chatId, true);
+    expect(reset.event).toMatchObject({ kind: "window", reason: "reset", window: reset.window });
+    await until(() => client.view(chatId).events.some((event) => event.eventId === reset.event.eventId), "window event");
+    await expect(api.purge(chatId, "dm:someone-else", "purge-confirm-000001")).rejects.toMatchObject({ status: 422, code: "purge_confirmation_required" });
+    const generation = client.view(chatId).generation;
+    const purged = await client.purge(chatId, chatId, true);
+    expect(purged).toMatchObject({ generation: generation + 1, window: reset.window + 1 });
+    expect(purged.purgedEvents).toBeGreaterThan(0);
+    await until(() => client.view(chatId).generation === purged.generation, "purged generation");
+    expect(client.view(chatId).events.filter((event) => event.kind === "message")).toEqual([]);
+    expect((await api.events(chatId)).events.map((event) => event.kind)).toEqual(["window"]);
   }
   // Unknown upgrade paths are still answered by Mau's SSH handler, not left hanging.
   const rejected = await new Promise<string>((resolve) => {

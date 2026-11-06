@@ -476,3 +476,12 @@ header .mau-room-avatar {
 .mau-redacted {
   font-style: italic;
 }
+
+/* Ledger cards and run controls (phase 4). */
+.mau-ledger-card { display: grid; gap: var(--sp-2); min-width: 0; }
+.mau-card-actions, .mau-run-controls { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.mau-card-reply { display: flex; gap: var(--sp-2); }
+.mau-card-reply input { flex: 1; min-width: 0; }
+.mau-run-steer { display: grid; gap: var(--sp-2); }
+.mau-run-steer textarea { width: 100%; resize: vertical; font: inherit; }
+.mau-run-steers { margin: 0; padding-left: var(--sp-4); display: grid; gap: var(--sp-1); }

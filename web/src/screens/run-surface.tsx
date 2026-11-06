@@ -5,7 +5,7 @@ import { RunMessage } from "@olorinm/agent-frontend/conversation";
 import { Button } from "@olorinm/agent-ui/app";
 import { Disclosure } from "@olorinm/agent-ui";
 import { mauApi } from "../api/client";
-import { answerInteraction, describeInteraction, type InteractionAnswer, type NativeRequest } from "@olorinm/agent-host/interactions";
+import { answerInteraction, describeInteraction, type Interaction as HostRequest, type InteractionAnswer, type NativeRequest } from "@olorinm/agent-host/interactions";
 import { blockBuildReload } from "../build-version";
 import { ApiError } from "../api/http";
 import { runApi, RunReader, type RunDetail } from "../api/runs";
@@ -19,8 +19,38 @@ function sameNativeAnswer(left: unknown, right: unknown): boolean {
   return Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && sameNativeAnswer(a[key], b[key]));
 }
 
-function Interaction({ call, claimId, api, active, onAnswered }: {
-  call: RunDetail["calls"][number]; claimId: string; api: ReturnType<typeof runApi>; active: boolean; onAnswered(): Promise<unknown>;
+/**
+ * Optional owner controls of a run surface. The ledger console (ADR 0005 16.7) answers through the card endpoint and
+ * cancels and steers through the turn endpoints; without them the run API is used, as in Matrix mode.
+ */
+export interface RunControls {
+  answer?(callId: string, request: HostRequest, answer: InteractionAnswer): Promise<unknown>;
+  cancel?(): Promise<unknown>;
+  steer?(text: string): Promise<"accepted" | "unsupported">;
+}
+const sendAnswer = (api: ReturnType<typeof runApi>, controls: RunControls | undefined, claimId: string, callId: string, request: HostRequest, answer: InteractionAnswer) =>
+  controls?.answer ? controls.answer(callId, request, answer) : api.answer(claimId, callId, answerInteraction(request, answer));
+
+/** "补充" (steer): extra instructions for the running turn. Kernels that cannot take them say so. */
+function SteerControl({ steer }: { steer(text: string): Promise<"accepted" | "unsupported"> }) {
+  const { t, language } = useI18n(), zh = language === "zh-CN";
+  const [open, setOpen] = useState(false), [text, setText] = useState("");
+  const send = useMutation({ mutationFn: (value: string) => steer(value), onSuccess: (status) => { if (status === "accepted") { setText(""); setOpen(false); } } });
+  if (!open) return <div className="mau-run-controls"><Button onClick={() => { send.reset(); setOpen(true); }}>{zh ? "补充" : "Add instructions"}</Button></div>;
+  return <form className="mau-run-steer" onSubmit={(event) => { event.preventDefault(); if (text.trim()) send.mutate(text.trim()); }}>
+    <textarea aria-label={zh ? "补充说明" : "Additional instructions"} value={text} onChange={(event) => setText(event.target.value)} rows={2}
+      placeholder={zh ? "补充给正在执行的任务，例如：顺便把结论写成表格" : "Add to the running task, for example: also put the result in a table"} />
+    <div className="modal-actions">
+      <Button type="button" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
+      <Button type="submit" disabled={!text.trim() || send.isPending}>{zh ? "发送补充" : "Send"}</Button>
+    </div>
+    {send.data === "unsupported" ? <p className="mau-muted">{zh ? "当前执行内核不支持即时补充；请停止后继续对话。" : "This runtime cannot take instructions while running; stop it and continue the chat."}</p> : null}
+    {send.error ? <p role="alert">{errorMessage(t, send.error instanceof ApiError ? send.error.code : "request_failed")}</p> : null}
+  </form>;
+}
+
+function Interaction({ call, claimId, api, active, onAnswered, controls }: {
+  call: RunDetail["calls"][number]; claimId: string; api: ReturnType<typeof runApi>; active: boolean; onAnswered(): Promise<unknown>; controls?: RunControls | undefined;
 }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   const request = describeInteraction({ method: call.name, params: call.input } as NativeRequest);
@@ -29,7 +59,7 @@ function Interaction({ call, claimId, api, active, onAnswered }: {
     <AgentInteraction requestId={call.id} request={request} disabled={!pending}
       {...(zh ? { labels: { expired: "请求已结束", details: "请求详情", schema: "表单结构", native: "原生请求", json: "JSON 回答", completed: "已完成此步骤", submit: "提交回答", decline: "拒绝", cancel: "取消请求", objectRequired: "请填写 JSON 对象" } } : {})}
       onReply={async (answer: HostInteractionAnswer) => {
-        try { await api.answer(claimId, call.id, answerInteraction(request, answer as InteractionAnswer)); }
+        try { await sendAnswer(api, controls, claimId, call.id, request, answer as InteractionAnswer); }
         finally { await onAnswered(); }
       }} />
     {!pending ? <p className="mau-muted">{call.status === "completed" ? zh ? "已处理" : "Answered" : zh ? "请求已结束或过期" : "Request closed or expired"}</p> : null}
@@ -42,7 +72,7 @@ export interface TaskLike {
   runs: ReadonlyArray<{ claimId: string; runId: string | null; phase: string }>;
 }
 
-function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
+function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, controls }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const queries = useQueryClient();
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
@@ -60,7 +90,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
     },
     ...(terminal ? { staleTime: Infinity, gcTime: 30 * 60_000 } : {}),
     refetchInterval: (query) => query.state.error ? false : query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
-  const cancel = useMutation({ mutationFn: () => api.cancel(task.id),
+  const cancel = useMutation({ mutationFn: () => controls?.cancel ? controls.cancel() : api.cancel(task.id),
     onSuccess: () => queries.invalidateQueries({ queryKey: ["run-tasks", token, agentId] }) });
   const data = query.data, active = data?.detail.run.status === "running";
   const calls = data?.detail.calls.filter((call) => call.kind === "interaction") ?? [];
@@ -105,7 +135,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
     const entry = interactions.find(entry => entry.call.id === id);
     if (!entry) throw new Error(zh ? "请求不存在" : "Request unavailable");
     const answer = action === "answer" || action === "approve" ? response as InteractionAnswer : {action: action === "reject" ? "decline" : action} as InteractionAnswer;
-    try { await api.answer(claimId, id, answerInteraction(entry.request, answer)); }
+    try { await sendAnswer(api, controls, claimId, id, entry.request, answer); }
     finally { await query.refetch(); }
   };
   return <section className="mau-run" data-run-id={claimId} aria-label={label}>
@@ -123,15 +153,16 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt }:
       {...(active ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
     {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
+    {active && controls?.steer ? <SteerControl steer={controls.steer} /> : null}
     {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p> : null}
     {interactions.filter(({request}) => request.kind !== "approval" && request.kind !== "questions").map(({call}) =>
-      <Interaction key={call.id} call={call} claimId={claimId} api={api} active={active} onAnswered={() => query.refetch()} />)}
+      <Interaction key={call.id} call={call} claimId={claimId} api={api} active={active} onAnswered={() => query.refetch()} controls={controls} />)}
   </section>;
 }
 
-export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void }) {
+export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   if (!task.runs.length) return <p role="status">{task.status === "canceled" ? zh ? "已取消" : "Cancelled" : zh ? "等待执行…" : "Queued…"}</p>;
-  return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} />
+  return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />
     : <p role="status" key={run.claimId}>{run.phase === "unknown" ? zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically." : zh ? "正在启动…" : "Starting…"}</p>)}</>;
 }
