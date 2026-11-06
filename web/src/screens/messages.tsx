@@ -30,7 +30,7 @@ import { MauConversations, type ConversationMentions, type ConversationView } fr
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { useI18n, errorMessage } from "../i18n";
-import { chatSourcePreference, ledgerApi, ledgerFeatures } from "../api/ledger";
+import { attachmentLimits, chatSourcePreference, ledgerApi, ledgerFeatures } from "../api/ledger";
 import { LedgerMessagesScreen } from "./ledger-messages";
 
 /** Everyone mentioned in a group draft, from the "@name" text the composer inserted. */
@@ -71,7 +71,7 @@ export function MessagesScreen(props: MessagesProps) {
   if (me.isPending) return <LoadingSurface label={t("common.loading")} />;
   const features = ledgerFeatures(me.data);
   // A Router without the ledger web API (or with history off) keeps the Matrix console.
-  return features.has("history") ? <LedgerMessagesScreen {...props} features={features} />
+  return features.has("history") ? <LedgerMessagesScreen {...props} features={features} limits={attachmentLimits(me.data)} />
     : <MatrixMessagesScreen {...props} matrixGroups={!features.has("groups")} />;
 }
 

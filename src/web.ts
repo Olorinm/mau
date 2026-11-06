@@ -9,7 +9,8 @@ export function webConsole(root: string, homeserver: string): express.RequestHan
   const policy = [
     "default-src 'self'",
     `connect-src 'self' ${homeserver}`,
-    "img-src 'self' data:",
+    // blob: shows ledger attachment images, which are fetched with the bearer header (agent-router ADR 0005 16.5).
+    "img-src 'self' data: blob:",
     // React and the shared UI set dynamic sizes through style attributes.
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",

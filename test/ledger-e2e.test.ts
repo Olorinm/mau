@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LedgerClient, foldEvents, ledgerApi, ledgerFeatures, type LedgerSocket } from "../web/src/api/ledger";
+import { LedgerClient, attachmentLimits, foldEvents, ledgerApi, ledgerFeatures, type LedgerSocket } from "../web/src/api/ledger";
 import { alice, mauFixture } from "./fixtures/mau.js";
 
 // Mau embedding a Router with AGENT_LEDGER_READ: a Matrix-ingested owner message is served by the ledger
@@ -29,11 +29,13 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   // `ledgerSend` is ignored by Routers before phase 3; the send part below is keyed on the advertised feature.
   // A fake Host (with run idempotency, which Mau requires) that completes every run, so a web send runs a whole turn.
   const runs = new Map<string, Record<string, unknown>>(), inputs: string[] = [];
+  const media: Array<Array<{ name: string; mediaType: string; data: string }>> = [];
   const host = (url: URL, init?: RequestInit) => {
     const method = init?.method ?? "GET", path = url.pathname;
     if (path.endsWith("/runs") && method === "POST") {
       const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
       inputs.push(String(body.input));
+      media.push(Array.isArray(body.attachments) ? body.attachments : []);
       const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: `answer-${runs.size + 1}` };
       runs.set(id, run); return Response.json(run);
     }
@@ -43,7 +45,7 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerAttachments: true });
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -115,6 +117,35 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     const history = await api.events(chatId, { limit: 200 });
     expect(history.events.find((event) => event.eventId === response!.event.eventId)).toMatchObject({ kind: "message", text: "", redacted: true });
     expect(foldEvents(history.events).items.find((item) => item.eventId === response!.event.eventId)).toMatchObject({ redacted: true, text: "" });
+
+    if (ledgerFeatures(me).has("attachments")) {
+      // Phase 4: a raw-body upload, a send that carries it, the Host receiving the bytes, and a same-origin download.
+      const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from("pixels")]);
+      const limits = attachmentLimits(me);
+      expect(limits).toMatchObject({ bytes: 25 * 1024 * 1024, perMessage: 10 });
+      const uploaded = await api.uploadAttachment(new Blob([new Uint8Array(png)], { type: "image/png" }), "截图.png", { maxBytes: limits.bytes });
+      expect(uploaded).toMatchObject({ name: "截图.png", contentType: "image/png", size: png.length, url: `/_agent-router/v1/web/attachments/${uploaded.attachmentId}` });
+      const notes = await api.uploadAttachment(new Blob(["notes"], { type: "text/plain" }), "notes.txt");
+      const runsBefore = inputs.length;
+      const sent = await client.send(chatId, { text: "看看附件", attachments: [uploaded, notes] });
+      expect(sent!.event).toMatchObject({ kind: "message", text: "看看附件", attachments: [
+        { attachmentId: uploaded.attachmentId, name: "截图.png", contentType: "image/png", size: png.length, url: uploaded.url },
+        { attachmentId: notes.attachmentId, name: "notes.txt", contentType: "text/plain", size: 5 }] });
+      await until(() => inputs.length > runsBefore && inputs.at(-1)!.includes("看看附件"), "attachment run");
+      expect(inputs.at(-1)).toContain("附件：截图.png (image/png)");
+      expect(media.at(-1)!.map((item) => [item.name, item.mediaType, Buffer.from(item.data, "base64").toString("hex")]))
+        .toEqual([["截图.png", "image/png", png.toString("hex")], ["notes.txt", "text/plain", Buffer.from("notes").toString("hex")]]);
+      const bytes = Buffer.from(await (await api.downloadAttachment(uploaded)).arrayBuffer());
+      expect(bytes.equals(png)).toBe(true);
+      const raw = await fetch(f.base + uploaded.url, { headers: { authorization: "Bearer alice" } });
+      expect([raw.status, raw.headers.get("content-type"), raw.headers.get("x-content-type-options")]).toEqual([200, "image/png", "nosniff"]);
+      expect((await fetch(f.base + uploaded.url, { headers: { authorization: "Bearer bob" } })).status).toBe(404);
+      // A bound upload cannot be sent again, and the client surfaces the server code.
+      await expect(api.send(chatId, { idempotencyKey: "0123456789abcdef0001", text: "again", attachments: [uploaded.attachmentId] }))
+        .rejects.toMatchObject({ status: 422, code: "attachment_not_found" });
+      const folded = foldEvents((await api.events(chatId, { limit: 200 })).events).items.find((item) => item.eventId === sent!.event.eventId);
+      expect(folded!.attachments.map((item) => item.name)).toEqual(["截图.png", "notes.txt"]);
+    }
   }
   if (sendable && ledgerFeatures(me).has("reset")) {
     // Phase 4 control through Mau's server: "新对话" opens a new window for every owner channel; purge needs the chat id.
