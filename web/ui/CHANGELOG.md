@@ -5,6 +5,13 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.10] - 2026-11-06
+
+- Codex dynamic tool results are read from `contentItems`, with JSON text parsed, instead of
+  showing the whole native item.
+
+PR: [#11](https://github.com/Olorinm/agent-ui/pull/11)
+
 ## [0.1.0-alpha.9] - 2026-11-05
 
 - Reasoning comes from completed Codex items. Finished runs keep their reasoning now that Agent Host
