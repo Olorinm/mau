@@ -109,7 +109,8 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     await until(() => client.view(chatId).events.find((event) => event.kind === "turn" && event.turnId === reply.turnId && event.state === "completed"), "turn completed");
     // Withdraw (撤回): the stored redaction comes back, and history renders the target as redacted.
     const withdrawn = await client.redact(chatId, response!.event.eventId);
-    expect(withdrawn).toMatchObject({ status: "accepted", event: { kind: "redaction", targetEventId: response!.event.eventId } });
+    // The turn already took the input, so it is hidden, not dropped (ADR 15.2.9).
+    expect(withdrawn).toMatchObject({ status: "accepted", dropped: false, event: { kind: "redaction", targetEventId: response!.event.eventId } });
     expect(client.view(chatId).redactions).toEqual([]);
     const history = await api.events(chatId, { limit: 200 });
     expect(history.events.find((event) => event.eventId === response!.event.eventId)).toMatchObject({ kind: "message", text: "", redacted: true });

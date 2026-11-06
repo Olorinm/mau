@@ -409,7 +409,7 @@ it("calls the web API with encoded chat ids, cursors, idempotency keys and raw a
     ["GET", "/_agent-router/v1/web/chats/room%3Arm%2F1/events?after=4&generation=2&limit=10"],
     ["GET", "/_agent-router/v1/web/chats/dm%3Aagent-1/events"],
     ["POST", "/_agent-router/v1/web/chats/dm%3Aagent-1/messages"],
-    ["POST", "/_agent-router/v1/web/chats/dm%3Aagent-1/messages/ev_1%3Ax/redact"],
+    ["POST", "/_agent-router/v1/web/chats/dm%3Aagent-1/events/ev_1%3Ax/redact"],
     ["PATCH", "/_agent-router/v1/web/groups/rm_1"],
     ["POST", "/_agent-router/v1/web/attachments"],
   ]);

@@ -71,11 +71,11 @@ export interface SendResponse {
   addressed: Array<{ agentId: string; state: "queued" | "control" | "not_addressed" }>;
 }
 /**
- * Owner redaction (撤回) of an own web message. Not in ADR 0005 §8.3 yet (open question 6 was "neither");
- * the console uses `POST /chats/:chatId/messages/:eventId/redact` with an idempotency key, answered with the
- * stored `redaction` event, the same way a send is answered with its stored message.
+ * Owner redaction (撤回) of an own web message, ADR 0005 §16.4 (decision 4e; Router serves it from phase 3 with `send`):
+ * `POST /chats/:chatId/events/:eventId/redact` with an idempotency key, answered with the stored `redaction` event,
+ * the same way a send is answered with its stored message. `dropped`: the input had not started yet.
  */
-export interface RedactResponse { status: "accepted" | "duplicate"; event: ChatEvent }
+export interface RedactResponse { status: "accepted" | "duplicate"; event: ChatEvent; dropped?: boolean }
 export interface TurnDetail {
   turnId: string; chatId: string; agentId: string; state: string; admission: string;
   inputEventIds: string[]; finalEventId: string | null; cardIds: string[];
@@ -145,7 +145,7 @@ export function ledgerApi(token: string, base = ledgerBase) {
     },
     redact: (chatId: string, eventId: string, idempotencyKey: string) => {
       if (!keyPattern.test(idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
-      return request<RedactResponse>(chat(chatId) + "/messages/" + encodeURIComponent(eventId) + "/redact", { token, body: { idempotencyKey } });
+      return request<RedactResponse>(chat(chatId) + "/events/" + encodeURIComponent(eventId) + "/redact", { token, body: { idempotencyKey } });
     },
     reset: (chatId: string, idempotencyKey: string) => request<{ window: number; event: ChatEvent }>(chat(chatId) + "/reset", { token, body: { idempotencyKey } }),
     read: (chatId: string, seq: number) => request<{ readSeq: number; unread: number }>(chat(chatId) + "/read", { token, body: { seq } }),
