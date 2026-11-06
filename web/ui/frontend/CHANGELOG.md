@@ -26,25 +26,13 @@ PR: [#4](https://github.com/Olorinm/agent-ui/pull/4)
 
 ## [0.1.0-alpha.5] - 2026-10-16
 
-- Complete extraction of the OpenGrove frontend, after an audit of all 115 original component
-  files (`docs/` holds the inventory). Restored, with the original presentation:
-  - **Run process.** Grouping, summaries, commentary, reasoning, tool detail and run controls.
-    The public `RunMessage` composes them, and the compact `AgentProcess` stays only for
-    compatibility.
-  - **Conversations.** The original room approval and question cards, Markdown and resource
-    renderers, and previews.
-  - **Employees, contacts and groups.** Employee editor, avatar picker, group settings, contact
-    detail and remote connection views.
-  - **Files.** The Vidstack player, preview and editor routing, flow rendering, and draft and
-    conflict notices.
-  - **App workbench.** Dashboard, developer, chat and MCP views; catalog and publishing; extension
-    deployment dialogs.
-  - **Settings and auth.** Settings subviews, the full auth and startup flows, and titlebar
-    controls.
-- A build version check, plus a lifecycle for reloading stale tabs. Active runs, pending
-  interactions, drafts and outgoing sends block automatic refresh.
-- Product data, auth, persistence, network calls and operations come only from caller inputs and
-  callbacks.
+- Restores the remaining original components with their full presentation: run process
+  (`RunMessage`), approval and question cards, Markdown and resource previews, employee, contact and
+  group views, files and editors, app workbench, settings and auth flows. The compact
+  `AgentProcess` stays only for compatibility.
+- A build version check that reloads stale tabs, unless a run, interaction, draft or send is in
+  progress.
+- Data, auth, persistence and network calls come only from caller inputs and callbacks.
 
 ## [0.1.0-alpha.4] - 2026-10-15
 
@@ -64,8 +52,8 @@ PR: [#4](https://github.com/Olorinm/agent-ui/pull/4)
 
 ## [0.1.0-alpha.2] - 2026-10-15
 
-- Extracted the original OpenGrove presentation components and styles: navigation, auth layout,
-  conversations, profiles, app forms and icons, extension workspace, settings and files.
+- Presentation components and styles: navigation, auth layout, conversations, profiles, app forms
+  and icons, extension workspace, settings and files.
 - The original interactions are kept, including IME-safe input, menus, resizing and compact
   navigation.
 - Service calls, authentication, storage and business decisions stay in the product that embeds
