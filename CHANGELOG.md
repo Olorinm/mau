@@ -4,6 +4,22 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.24] - 2026-11-06
+
+- Web console on the Router owner ledger (Router 0.7.0-alpha.11), each part behind Router's flags:
+  sending and withdrawing messages with channel badges in the merged owner chat; cards, 新对话,
+  cancel and steer, and chat purge; attachments by button, paste or drop with inline images; native
+  groups with members and mentions; and a 身份与配对 settings page for linked identities and pairing
+  codes.
+- Edge login: with an `edgeIdentity` configured, the console has no login page and requests carry no
+  token; an unmapped account sees a full-page notice, and an expired session keeps unsent text.
+  `/_mau/v1` and SSH use the same check, with an Origin check on unsafe requests.
+- Matrix optional: with Router's Matrix off, the console loads no Matrix code and agents are
+  created and deleted without Matrix; Mau refuses to start without an edge identity and the ledger.
+  `mau login --edge` authenticates through Cloudflare Access service tokens.
+
+PRs: [#28](https://github.com/Olorinm/mau/pull/28), [#29](https://github.com/Olorinm/mau/pull/29), [#30](https://github.com/Olorinm/mau/pull/30), [#31](https://github.com/Olorinm/mau/pull/31), [#32](https://github.com/Olorinm/mau/pull/32), [#34](https://github.com/Olorinm/mau/pull/34)
+
 ## [0.1.0-alpha.23] - 2026-11-05
 
 - Owner ledger, phases 1–2 (Router 0.7.0-alpha.10). Every channel is also written to a ledger that

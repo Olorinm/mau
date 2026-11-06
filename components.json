@@ -1,14 +1,14 @@
 {
   "router": {
     "repository": "Olorinm/agent-router",
-    "version": "0.7.0-alpha.10",
-    "integrity": "sha512-utm1uXzVGqE84EDsrAe9xa7ZYGDTe+swsYaAmA0Aa4M7xX8DLvAaRaYO7nZeeCAwBm7Zi4xCbMGJrmhIJik+ZA==",
+    "version": "0.7.0-alpha.11",
+    "integrity": "sha512-JpzR9wTZgvSzp+fUMQt32k00OPNsJ87BvOeIRcqkldTk9V3LBvV6qxRRLtAO6bzmRaM6ZltIY7NFblsw1H/mmQ==",
     "distribution": "github-release",
-    "revision": "f9b353c53d05e4af3ef4ef87dc572920dcbc43d5",
+    "revision": "b4070f75b67a0dbbe278e8cc853ca870b264da15",
     "archive": {
       "repository": "Olorinm/agent-router",
-      "tag": "v0.7.0-alpha.10",
-      "asset": "agent-router-server-0.7.0-alpha.10.tgz"
+      "tag": "v0.7.0-alpha.11",
+      "asset": "agent-router-server-0.7.0-alpha.11.tgz"
     }
   },
   "environment": {
