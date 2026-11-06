@@ -5,6 +5,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { chromium, expect as see } from "@playwright/test";
 import { alice, mauFixture } from "./fixtures/mau.js";
 import { accessIssuer } from "./fixtures/access.js";
+import { ManagedService } from "@agent-router/server";
 
 // Browser acceptance of the ledger console's phase 4 features (agent-router ADR 0005 section 16) against the built
 // console and the local Router build: controls ("新对话", a Router card answered by its button, purge with a typed
@@ -191,7 +192,9 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
   expect(violations).toEqual([]);
 }, 60_000);
 
-it.skipIf(!built)("with an edge login uploads without a bearer and shows inline images from their same-origin URL", async (context) => {
+// Edge login needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2); the pinned release skips.
+const edgeRouter = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
+it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer and shows inline images from their same-origin URL", async (context) => {
   const runs = new Map<string, Record<string, unknown>>();
   const host = (url: URL, init?: RequestInit) => {
     const method = init?.method ?? "GET", path = url.pathname;
