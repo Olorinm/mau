@@ -20,6 +20,8 @@ import {
 } from "@olorinm/agent-frontend";
 import { Button, ProductIcon } from "@olorinm/agent-ui/app";
 import { useI18n } from "../i18n";
+import type { Session } from "../api/session";
+import { IdentitySettings } from "./identity-settings";
 
 function Unconnected({ name }: { name: string }) {
   const { language } = useI18n();
@@ -127,7 +129,7 @@ export function ExtensionsScreen() {
     />
   );
 }
-export function SettingsScreen() {
+export function SettingsScreen({ session }: { session?: Session } = {}) {
   const { language, setLanguage } = useI18n();
   const zh = language === "zh-CN";
   const [selected, setSelected] = useState("appearance");
@@ -143,6 +145,7 @@ export function SettingsScreen() {
     ["providers", zh ? "模型提供方" : "Model providers", "provider"],
     ["apps", "Apps", "store"],
     ["voice", zh ? "语音" : "Voice", "voice"],
+    ...(session ? [["identity", zh ? "身份与配对" : "Identities and pairing", "contacts"] as const] : []),
   ] as const;
   const { t } = usePresentationLabels();
   const noop = () => {};
@@ -276,9 +279,15 @@ export function SettingsScreen() {
             ? zh
               ? "主题和界面语言。"
               : "Theme and interface language."
-            : undefined,
+            : id === "identity"
+              ? zh
+                ? "已关联的渠道账号和关联码。"
+                : "Linked channel accounts and pairing codes."
+              : undefined,
         content:
-          id === "appearance" ? (
+          id === "identity" && session ? (
+            <IdentitySettings session={session} />
+          ) : id === "appearance" ? (
             <SettingsAppearancePanel
               t={t}
               themePreference={theme}
