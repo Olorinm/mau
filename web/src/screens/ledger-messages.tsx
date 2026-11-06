@@ -95,6 +95,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [files, setFiles] = useState<Record<string, AttachmentRef[]>>({});
   const [uploading, setUploading] = useState(false);
   const [outgoing, setOutgoing] = useState<{ chatId: string; text: string; transaction: string }>();
+  const [withdrawing, setWithdrawing] = useState<{ chatId: string; eventId: string }>();
 
   useEffect(() => {
     if (!selected) return;
@@ -178,10 +179,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
 
   const insertPrompt = (value: string) => { if (selected) setDrafts((values) => ({ ...values, [selected]: value })); };
   const actorAvatar = (bubble: LedgerBubble) => <EmployeeAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} />;
+  // The DM merges the owner's messages from every channel; non-web origins carry a small badge.
+  const badge = (bubble: LedgerBubble) => bubble.channel && bubble.channel.kind !== "web" && bubble.channel.kind !== "room" ? (
+    <span className="mau-channel-badge" data-channel={bubble.channel.kind}>
+      {bubble.channel.label ?? channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind}
+    </span>
+  ) : null;
   const describe = (bubble: LedgerBubble) => {
     const parts: string[] = [];
-    if (bubble.channel && bubble.channel.kind !== "web" && bubble.channel.kind !== "room")
-      parts.push(bubble.channel.label ?? channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind);
+    if (bubble.redacted) return "";
     if (bubble.edited) parts.push(zh ? "已编辑" : "edited");
     if (bubble.possibleDuplicate) parts.push(zh ? "可能重复执行" : "may be a duplicate run");
     for (const delivery of bubble.deliveries)
@@ -195,6 +201,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     </div>
   ) : undefined;
 
+  const sendable = features.has("send");
+  // Only the owner's own web messages can be withdrawn (no edit); the key is present only on those (§8.2).
+  const canRedact = (item: LedgerBubble) => sendable && item.kind === "message" && item.role === "user" && !item.redacted
+    && !!item.idempotencyKey && (item.channel?.kind ?? "web") === "web";
+  const redactions = new Map(view?.redactions.map((item) => [item.eventId, item]) ?? []);
   const messages: MessageView[] = [];
   if (current && view && fold) {
     const shown = new Set(fold.items.map((item) => item.eventId));
@@ -226,13 +237,27 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       }
       const system = item.kind === "notice" || item.kind === "window" || item.kind === "member" || item.kind === "action";
       const text = item.kind === "window" ? (zh ? "—— 新的会话窗口 ——" : "—— New session window ——") : item.text;
-      const subtitle = describe(item);
+      const details = describe(item), channel = badge(item);
+      const withdrawal = redactions.get(item.eventId);
       messages.push({
-        id: item.eventId, role: item.role === "user" ? "user" : "assistant", copyText: text,
+        id: item.eventId, role: item.role === "user" ? "user" : "assistant",
+        ...(item.redacted ? {} : { copyText: text }),
         title: system ? "Mau" : item.sender.name,
         ...(system ? {} : { avatar: actorAvatar(item) }),
-        ...(subtitle ? { subtitle } : {}),
-        content: system ? <p className="mau-muted">{text}</p> : <ChatMarkdown markdown={text} />,
+        ...(channel || details ? { subtitle: <>{channel}{channel && details ? " " : null}{details}</> } : {}),
+        content: system ? <p className="mau-muted">{text}</p>
+          : item.redacted ? <p className="mau-muted mau-redacted">{item.sender.type === "person" ? (zh ? "消息已撤回" : "Message withdrawn") : (zh ? "消息已删除" : "Message deleted")}</p>
+          : <ChatMarkdown markdown={text} />,
+        ...(canRedact(item) && !withdrawal ? { menuActions: [{ id: "redact", label: zh ? "撤回" : "Withdraw",
+          onSelect: () => setWithdrawing({ chatId: current.chatId, eventId: item.eventId }) }] } : {}),
+        ...(withdrawal ? {
+          state: withdrawal.state === "sending" ? "pending" : "failed",
+          status: withdrawal.state === "sending" ? (zh ? "撤回中…" : "Withdrawing…") : errorMessage(t, withdrawal.error ?? "request_failed"),
+          ...(withdrawal.state !== "sending" ? { actions: <>
+            {withdrawal.state === "failed" ? <Button onClick={() => void client.redact(current.chatId, item.eventId).catch(() => undefined)}>{t("common.retry")}</Button> : null}
+            <Button onClick={() => client.dismissRedaction(current.chatId, item.eventId)}>{zh ? "放弃" : "Dismiss"}</Button>
+          </> } : {}),
+        } : {}),
         ...(item.attachments.length ? { attachments: attachmentsOf(item.attachments) } : {}),
         ...(item.kind === "card" && item.card && features.has("cards") && item.card.status === "pending" && item.card.kind !== "sensitive" ? {
           actions: <>{item.card.choices.map((choice) => <Button key={choice.choiceId}
@@ -254,7 +279,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       id: "pending:" + item.idempotencyKey, role: "user", title: session.owner, copyText: item.text,
       content: <ChatMarkdown markdown={item.text} />,
       ...(item.attachments.length ? { attachments: attachmentsOf(item.attachments) } : {}),
+      state: item.state === "accepted" ? "sent" : item.state === "sending" ? "pending" : "failed",
       status: item.state === "sending" ? (zh ? "发送中…" : "Sending…") : item.state === "accepted" ? (zh ? "已发送" : "Sent")
+        : item.retryAt !== undefined ? (zh ? "发送失败，正在重试…" : "Not sent, retrying…")
         : errorMessage(t, item.error ?? "request_failed"),
       ...(item.state === "failed" || item.state === "rejected" ? { actions: <>
         {item.state === "failed" ? <Button onClick={() => void client.retry(item.idempotencyKey).catch(() => undefined)}>{t("common.retry")}</Button> : null}
@@ -283,7 +310,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (!current) return;
     const text = drafts[current.chatId] ?? "", attachments = files[current.chatId] ?? [];
     if (!text.trim() && !attachments.length) return;
-    if (features.has("send")) {
+    // Phase 3: Router stores the message (one key per intent, reused on retry); no Matrix room is touched.
+    if (sendable) {
       setDrafts((values) => ({ ...values, [current.chatId]: "" }));
       setFiles((values) => ({ ...values, [current.chatId]: [] }));
       void client.send(current.chatId, { text, attachments, ...(current.kind === "group" ? { mentions: draftMentions(current, text) } : {}) }).catch(() => undefined);
@@ -376,6 +404,19 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
             {failure}
             <div className="modal-actions">
               <Button disabled={!target || start.isPending} onClick={() => start.mutate(target)}>{zh ? "打开对话" : "Open conversation"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+      {withdrawing ? (
+        <Dialog open onOpenChange={(value) => { if (!value) setWithdrawing(undefined); }}>
+          <DialogContent aria-describedby={undefined}>
+            <DialogTitle>{zh ? "撤回这条消息？" : "Withdraw this message?"}</DialogTitle>
+            <p className="mau-muted">{zh ? "撤回后，对话里只显示“消息已撤回”。" : "The chat will show “Message withdrawn” in its place."}</p>
+            <div className="modal-actions">
+              <Button onClick={() => setWithdrawing(undefined)}>{t("common.cancel")}</Button>
+              <Button onClick={() => { const target = withdrawing; setWithdrawing(undefined);
+                void client.redact(target.chatId, target.eventId).catch(() => undefined); }}>{zh ? "撤回" : "Withdraw"}</Button>
             </div>
           </DialogContent>
         </Dialog>

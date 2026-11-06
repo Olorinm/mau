@@ -460,3 +460,19 @@ header .mau-room-avatar {
   width: 30px;
   height: 30px;
 }
+
+/* Origin of an owner message merged into the web DM (Feishu, mail, Matrix …). */
+.mau-channel-badge {
+  display: inline-block;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs, var(--fs-sm));
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.mau-redacted {
+  font-style: italic;
+}

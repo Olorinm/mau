@@ -3,7 +3,7 @@ import { ApiError } from "../web/src/api/http";
 import {
   LedgerClient, chatSourcePreference, foldEvents, ledgerApi, ledgerFeatures,
   type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery, type LedgerSocket,
-  type LedgerTransport, type SendRequest, type SendResponse,
+  type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse,
 } from "../web/src/api/ledger";
 
 // A fake Router web channel implementing the ADR 0005 §8 shapes: history paging, socket replay and idempotent send.
@@ -62,11 +62,15 @@ class FakeLedger implements LedgerTransport {
   sockets: FakeSocket[] = [];
   history: HistoryQuery[] = [];
   sends: SendRequest[] = [];
+  redacts: Array<{ eventId: string; idempotencyKey: string }> = [];
+  /** Fail the next N sends before the server stores anything (connection refused). */
+  failSends = 0;
   reads: number[] = [];
   /** Store the message, then fail the response, as a dropped connection would. */
   loseNextSendResponse = false;
   private readonly store = new Map<string, { generation: number; lastSeq: number; events: ChatEvent[]; readSeq: number }>();
   private readonly keys = new Map<string, { text: string; event: ChatEvent }>();
+  private readonly redactKeys = new Map<string, { target: string; event: ChatEvent }>();
   chat(id: string) {
     let chat = this.store.get(id);
     if (!chat) { chat = { generation: 1, lastSeq: 0, events: [], readSeq: 0 }; this.store.set(id, chat); }
@@ -115,6 +119,7 @@ class FakeLedger implements LedgerTransport {
   }
   async send(id: string, body: SendRequest): Promise<SendResponse> {
     this.sends.push(body);
+    if (this.failSends > 0) { this.failSends--; throw new ApiError("network_error", 0); }
     const known = this.keys.get(body.idempotencyKey);
     if (known) {
       if (known.text !== body.text) throw new ApiError("idempotency_key_reused", 409);
@@ -124,6 +129,22 @@ class FakeLedger implements LedgerTransport {
     this.keys.set(body.idempotencyKey, { text: body.text, event });
     if (this.loseNextSendResponse) { this.loseNextSendResponse = false; throw new ApiError("network_error", 0); }
     return { status: "accepted", event, addressed: [{ agentId: "agent-1", state: "queued" }] };
+  }
+  /** Owners withdraw only their own web messages; the stored redaction event is the answer. */
+  async redact(id: string, eventId: string, idempotencyKey: string): Promise<RedactResponse> {
+    this.redacts.push({ eventId, idempotencyKey });
+    if (this.failSends > 0) { this.failSends--; throw new ApiError("network_error", 0); }
+    const known = this.redactKeys.get(idempotencyKey);
+    if (known) {
+      if (known.target !== eventId) throw new ApiError("idempotency_key_reused", 409);
+      return { status: "duplicate", event: known.event };
+    }
+    const target = this.chat(id).events.find((event) => event.eventId === eventId);
+    if (!target) throw new ApiError("event_not_found", 404);
+    if (target.sender.id !== owner.id || !target.idempotencyKey) throw new ApiError("redaction_not_allowed", 403);
+    const event = this.append({ kind: "redaction", targetEventId: eventId }, { chatId: id, sender: owner });
+    this.redactKeys.set(idempotencyKey, { target: eventId, event });
+    return { status: "accepted", event };
   }
   async read(id: string, seq: number) {
     this.reads.push(seq);
@@ -347,7 +368,8 @@ it("folds edits, redactions, reactions, card updates, deliveries and turns into 
     event(12, { kind: "redaction", targetEventId: "ev_11" }),
     event(13, { kind: "turn", agentId: "agent-1", state: "completed", inputEventIds: [] }, { turnId: "t1" }),
   ]);
-  expect(fold.items.map((item) => [item.kind, item.text])).toEqual([["message", "hi"], ["card", "Allow?"], ["message", "edited"]]);
+  // A redacted message stays as a placeholder (rendered as 撤回), with its text cleared.
+  expect(fold.items.map((item) => [item.kind, item.text, !!item.redacted])).toEqual([["message", "hi", false], ["card", "Allow?", false], ["message", "edited", false], ["message", "", true]]);
   expect(fold.items[2]).toMatchObject({ edited: true, reactions: [{ key: "👍", senders: ["prs_owner"] }], deliveries: [{ deliveryId: "d1", status: "sent" }] });
   expect(fold.cards.get("cd_1")?.status).toBe("approved");
   expect(fold.turns.get("t1")).toMatchObject({ state: "completed", inputEventIds: ["ev_1"], seq: 2 });
@@ -377,18 +399,22 @@ it("calls the web API with encoded chat ids, cursors, idempotency keys and raw a
   await api.events(chatId);
   await api.send(chatId, { idempotencyKey: "0123456789abcdef", text: "hi" });
   expect(() => api.send(chatId, { idempotencyKey: "short", text: "hi" })).toThrow("invalid_idempotency_key");
+  await api.redact(chatId, "ev_1:x", "0123456789abcdef");
+  expect(() => api.redact(chatId, "ev_1", "bad key")).toThrow("invalid_idempotency_key");
   await api.updateGroup("rm_1", { title: "t" });
   await api.uploadAttachment(new Blob(["abc"], { type: "text/plain" }), "笔记 1.txt");
   expect(calls.map(({ url, init }) => [init.method, url])).toEqual([
     ["GET", "/_agent-router/v1/web/chats/room%3Arm%2F1/events?after=4&generation=2&limit=10"],
     ["GET", "/_agent-router/v1/web/chats/dm%3Aagent-1/events"],
     ["POST", "/_agent-router/v1/web/chats/dm%3Aagent-1/messages"],
+    ["POST", "/_agent-router/v1/web/chats/dm%3Aagent-1/messages/ev_1%3Ax/redact"],
     ["PATCH", "/_agent-router/v1/web/groups/rm_1"],
     ["POST", "/_agent-router/v1/web/attachments"],
   ]);
   expect(JSON.parse(calls[2]!.init.body as string)).toEqual({ idempotencyKey: "0123456789abcdef", text: "hi" });
-  expect(calls.map(({ init }) => init.credentials)).toEqual(["same-origin", "same-origin", "same-origin", "same-origin", "same-origin"]);
-  expect(calls[4]!.init.headers).toMatchObject({
+  expect(JSON.parse(calls[3]!.init.body as string)).toEqual({ idempotencyKey: "0123456789abcdef" });
+  expect(calls.map(({ init }) => init.credentials)).toEqual(["same-origin", "same-origin", "same-origin", "same-origin", "same-origin", "same-origin"]);
+  expect(calls[5]!.init.headers).toMatchObject({
     Authorization: "Bearer token", "Content-Type": "text/plain", "X-File-Name": "UTF-8''%E7%AC%94%E8%AE%B0%201.txt",
     "X-Sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   });
@@ -423,4 +449,88 @@ it("marks only the chats a subscribe reports in errors, and reloads a reset chat
   await tick(2000);
   expect(texts(client)).toEqual(["new"]);
   expect(server.history.filter((query) => query.after === undefined && query.before === undefined).length - loads).toBe(1);
+});
+
+it("resends automatically after network failures with the same key, then waits for a manual retry", async () => {
+  const { server, client } = setup();
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  server.failSends = 2;
+  await expect(client.send(chatId, { text: "flaky" })).rejects.toMatchObject({ code: "network_error" });
+  expect(client.view(chatId).pending).toMatchObject([{ text: "flaky", state: "failed", attempts: 1, retryAt: expect.any(Number) }]);
+  await tick(1000);                 // second attempt fails too; the next waits 2 s
+  expect(client.view(chatId).pending).toMatchObject([{ state: "failed", attempts: 2 }]);
+  await tick(1999);
+  expect(server.sends).toHaveLength(2);
+  await tick(1);                    // third attempt is stored and echoed once
+  expect(client.view(chatId).pending).toEqual([]);
+  expect(texts(client)).toEqual(["flaky"]);
+  expect(new Set(server.sends.map((body) => body.idempotencyKey)).size).toBe(1);
+
+  // Retries are bounded; afterwards the bubble stays failed with a manual retry and no timer.
+  server.failSends = 10;
+  await expect(client.send(chatId, { text: "offline" })).rejects.toMatchObject({ code: "network_error" });
+  await tick(1000); await tick(2000); await tick(4000);
+  const [stuck] = client.view(chatId).pending;
+  expect(stuck).toMatchObject({ state: "failed", attempts: 4 });
+  expect(stuck!.retryAt).toBeUndefined();
+  await tick(60_000);
+  expect(server.sends.filter((body) => body.text === "offline")).toHaveLength(4);
+  server.failSends = 0;
+  expect((await client.retry(stuck!.idempotencyKey))?.status).toBe("accepted");
+  expect(texts(client)).toEqual(["flaky", "offline"]);
+  // A dismissed bubble cancels its scheduled resend.
+  server.failSends = 1;
+  await expect(client.send(chatId, { text: "dropped" })).rejects.toBeInstanceOf(ApiError);
+  client.discard(client.view(chatId).pending[0]!.idempotencyKey);
+  await tick(5000);
+  expect(server.sends.filter((body) => body.text === "dropped")).toHaveLength(1);
+});
+
+it("rejects an idempotency conflict (409) without retrying", async () => {
+  const { server, client } = setup();
+  await client.openChat(chatId);
+  await client.send(chatId, { text: "first" });
+  // A second intent that reuses the key with a different body (for example a restored draft) is a conflict.
+  const reused = server.sends[0]!.idempotencyKey;
+  const conflicting = new LedgerClient(server, { socket: server.socket, idempotencyKey: () => reused,
+    clock: { now: () => Date.now(), random: () => 0, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (handle) => clearTimeout(handle as never) } });
+  await conflicting.openChat(chatId);
+  await expect(conflicting.send(chatId, { text: "different" })).rejects.toMatchObject({ status: 409, code: "idempotency_key_reused" });
+  expect(conflicting.view(chatId).pending).toMatchObject([{ state: "rejected", error: "idempotency_key_reused" }]);
+  expect(conflicting.view(chatId).pending[0]!.retryAt).toBeUndefined();
+  await tick(10_000);
+  expect(server.sends).toHaveLength(2);
+  expect(texts(conflicting)).toEqual(["first"]);
+});
+
+it("redacts an own web message once, retrying with the same key, and folds it into a placeholder", async () => {
+  const { server, client } = setup();
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  await client.send(chatId, { text: "take this back" });
+  const target = client.view(chatId).events.find((event) => event.kind === "message")!;
+  server.failSends = 1;
+  await expect(client.redact(chatId, target.eventId)).rejects.toMatchObject({ code: "network_error" });
+  expect(client.view(chatId).redactions).toMatchObject([{ eventId: target.eventId, state: "failed" }]);
+  expect((await client.redact(chatId, target.eventId))?.status).toBe("accepted");
+  expect(client.view(chatId).redactions).toEqual([]);
+  expect(server.redacts.map((item) => item.idempotencyKey)).toEqual([server.redacts[0]!.idempotencyKey, server.redacts[0]!.idempotencyKey]);
+  // The socket echo of the redaction is applied once.
+  expect(client.view(chatId).events.filter((event) => event.kind === "redaction")).toHaveLength(1);
+  const fold = foldEvents(client.view(chatId).events);
+  expect(fold.items).toMatchObject([{ eventId: target.eventId, redacted: true, text: "" }]);
+  // Agent messages and other channels cannot be withdrawn: the server refuses and nothing is retried.
+  const reply = server.append(say("agent reply"));
+  await expect(client.redact(chatId, reply.eventId)).rejects.toMatchObject({ status: 403 });
+  expect(client.view(chatId).redactions).toMatchObject([{ eventId: reply.eventId, state: "rejected", error: "redaction_not_allowed" }]);
+  client.dismissRedaction(chatId, reply.eventId);
+  expect(client.view(chatId).redactions).toEqual([]);
+});
+
+it("keeps the origin channel of merged owner messages for badges", () => {
+  const event = (seq: number, channel: ChatEvent["channel"]) =>
+    ({ chatId, seq, generation: 1, eventId: "ev_" + seq, at: "", sender: owner, ...(channel ? { channel } : {}), ...say("hi " + seq, "user") }) as ChatEvent;
+  const fold = foldEvents([event(1, { kind: "feishu" }), event(2, { kind: "grove-mail", label: "work mail" }), event(3, { kind: "web" }), event(4, undefined)]);
+  expect(fold.items.map((item) => item.channel)).toEqual([{ kind: "feishu" }, { kind: "grove-mail", label: "work mail" }, { kind: "web" }, undefined]);
 });

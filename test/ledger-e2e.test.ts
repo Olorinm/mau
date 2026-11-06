@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LedgerClient, ledgerApi, type LedgerSocket } from "../web/src/api/ledger";
+import { LedgerClient, ledgerApi, ledgerFeatures, type LedgerSocket } from "../web/src/api/ledger";
 import { alice, mauFixture } from "./fixtures/mau.js";
 
 // Mau embedding a Router with AGENT_LEDGER_READ: a Matrix-ingested owner message is served by the ledger
@@ -26,7 +26,8 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   const webRoot = mkdtempSync(join(tmpdir(), "mau-ledger-web-"));
   cleanup.push(() => rmSync(webRoot, { recursive: true, force: true }));
   writeFileSync(join(webRoot, "index.html"), "<!doctype html><title>console</title>");
-  const f = await mauFixture(cleanup, { webRoot }, undefined, {}, { ledgerRead: true });
+  // `ledgerSend` is ignored by Routers before phase 3; the send part below is keyed on the advertised feature.
+  const f = await mauFixture(cleanup, { webRoot }, undefined, {}, { ledgerRead: true, ledgerSend: true });
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -41,7 +42,8 @@ it("serves a Matrix-ingested message through /web history and the event socket t
 
   const api = ledgerApi("alice", f.base + "/_agent-router/v1/web");
   const me = await api.me();
-  expect(me.limits?.features).toMatchObject({ history: true, send: false });
+  expect(me.limits?.features).toMatchObject({ history: true });
+  const sendable = ledgerFeatures(me).has("send");
   expect(await api.openDm(f.agent.id)).toMatchObject({ chatId, kind: "dm" });
   const page = await until(async () => {
     const result = await api.events(chatId);
@@ -70,6 +72,19 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   expect(client.view(chatId).events.map((event) => event.seq)).toEqual(
     Array.from({ length: client.view(chatId).events.length }, (_, index) => client.view(chatId).events[0]!.seq + index));
   expect(client.chats.get(chatId)?.lastSeq).toBeGreaterThanOrEqual(live.seq);
+  if (sendable) {
+    // Phase 3: the console sends through Router; the stored web message comes back once, keyed by its idempotencyKey.
+    const response = await client.send(chatId, { text: "sent from the web" });
+    expect(response).toMatchObject({ status: "accepted", event: { kind: "message", role: "user", text: "sent from the web", sender: { type: "person" } } });
+    expect(response!.event.channel?.kind ?? "web").toBe("web");
+    const key = response!.event.idempotencyKey!;
+    expect(key).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+    expect(await api.send(chatId, { idempotencyKey: key, text: "sent from the web" })).toMatchObject({ status: "duplicate", event: { eventId: response!.event.eventId } });
+    await expect(api.send(chatId, { idempotencyKey: key, text: "a different body" })).rejects.toMatchObject({ status: 409, code: "idempotency_key_reused" });
+    await until(() => client.view(chatId).events.some((event) => event.eventId === response!.event.eventId), "send echo");
+    expect(client.view(chatId).events.filter((event) => event.idempotencyKey === key)).toHaveLength(1);
+    expect(client.view(chatId).pending).toEqual([]);
+  }
   // Unknown upgrade paths are still answered by Mau's SSH handler, not left hanging.
   const rejected = await new Promise<string>((resolve) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/_agent-router/v1/web/socket?ticket=tk_unknown`);
