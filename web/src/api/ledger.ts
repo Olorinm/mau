@@ -307,6 +307,7 @@ export class LedgerClient {
   private readonly clock: LedgerClock;
   private socket: LedgerSocket | undefined;
   private reconnectTimer: unknown;
+  private reauthorizedAt = -Infinity;
   private heartbeat: unknown;
   private heartbeatMs = 30_000;
   private lastFrameAt = 0;
@@ -701,7 +702,7 @@ export class LedgerClient {
       // Tickets are single-use and short-lived, so every dial asks for a new one.
       ticket = (await this.api.socketTicket()).ticket;
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return this.stop(error.code);
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.code === "access_session_expired")) return this.stop(error.code);
       return this.schedule();
     }
     if (this.stopped) return;
@@ -734,7 +735,14 @@ export class LedgerClient {
     this.requests.clear();
     for (const state of this.states.values()) state.inflight.clear();
     if (this.stopped) return;
-    if (code === 4401) return this.stop("unauthorized");
+    // 4401 (revoked session, or an edge JWT at its `exp`): ask for a new ticket once a minute at most. The ticket request
+    // then decides: a renewed Access session continues, an expired one stops with access_session_expired.
+    if (code === 4401) {
+      const now = this.clock.now();
+      if (now - this.reauthorizedAt < 60_000) return this.stop("unauthorized");
+      this.reauthorizedAt = now;
+      return void this.dial();
+    }
     if (code === 4403) return this.stop("forbidden");
     // 4408 backpressure and 1012 restart reconnect and catch up through subscribe replay.
     this.schedule(code === 4429 ? 30_000 : 0);

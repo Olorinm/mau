@@ -42,8 +42,15 @@ const optionsSchema = z.object({
   }).strict().prefault({}),
   connectionsFile: z.string().min(1).optional(),
   publicHomeserver: z.url().optional(),
+  /** Router's edge identity (agent-router ADR 0005 18.2), validated by Router. Same shape as AGENT_EDGE_IDENTITY_FILE's `edgeIdentity`. */
+  edgeIdentity: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 export const apiRoot = "/_mau/v1";
+/** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
+interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number }
+type EdgeIdentityConfig = ServiceConfig extends { edgeIdentity?: infer T } ? T : never;
+interface EdgeRouterService { authenticateRequest?(request: { headers: IncomingMessage["headers"] }): Promise<OwnerPrincipal> }
+const bearer = (req: { headers: IncomingMessage["headers"] }) => req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "";
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
 /** Product records keyed or tagged by a deleted employee: business scopes (`agentId:operation`), JSON keys
@@ -82,7 +89,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
-  const router = createRouter({ ...config, stateDir: join(config.stateDir, "router") }, {
+  const edgeIdentity = options.edgeIdentity ?? (config as { edgeIdentity?: unknown }).edgeIdentity;
+  if (options.edgeIdentity && (config as { edgeIdentity?: unknown }).edgeIdentity) throw new Error("edge_identity_configured_twice");
+  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), ...(edgeIdentity ? { edgeIdentity: edgeIdentity as EdgeIdentityConfig } : {}) };
+  const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
       // Deleting an employee: stop its schedules and destroy its environments while Router still has the Agent,
@@ -109,6 +119,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       http: (id, binding) => environments.http(id, binding),
     },
   });
+  const owners = router.service as typeof router.service & EdgeRouterService;
+  // A Router without request authentication would silently ignore the edge config.
+  if (edgeIdentity && typeof owners.authenticateRequest !== "function") throw new Error("router_edge_identity_unsupported");
+  /** Every owner route and the SSH upgrade: the Access JWT when edge identity is on, otherwise the bearer token. */
+  const authenticateRequest = async (req: { headers: IncomingMessage["headers"] }): Promise<OwnerPrincipal> =>
+    owners.authenticateRequest ? owners.authenticateRequest({ headers: req.headers })
+      : { ownerId: await router.service.authenticate(bearer(req)), via: "bearer" };
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments, dependencies.workspaces);
   business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
@@ -214,12 +231,18 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.use(express.json({ limit: "16kb" }));
   product.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   // Login needs the public account endpoint, never the internal Matrix service address.
-  product.get("/info", (_req, res) => res.json({ homeserver: publicHomeserver.origin }));
+  product.get("/info", (_req, res) => res.json(edgeIdentity ? { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false }
+    : { login: "matrix", homeserver: publicHomeserver.origin, matrix: true }));
   product.use(async (req, res, next) => {
-    res.locals.owner = await router.service.authenticate(req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "");
+    const principal = await authenticateRequest(req);
+    res.locals.principal = principal; res.locals.owner = principal.ownerId;
     next();
   });
-  product.get("/account", (_req, res) => res.json({ owner: res.locals.owner }));
+  product.get("/account", (_req, res) => {
+    const { ownerId, personId, via, email, expiresAt } = res.locals.principal as OwnerPrincipal;
+    res.json({ owner: ownerId, ...(personId ? { person: { id: personId, name: router.service.persons.person(personId)?.displayName ?? ownerId } } : {}),
+      via: via ?? "bearer", ...(email ? { email } : {}), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}) });
+  });
   product.get("/proactive", (_req, res) => res.json({ data: proactive.list(res.locals.owner) }));
   product.post("/proactive", async (req, res) => res.status(201).json(await proactive.save(res.locals.owner, req.body)));
   product.put("/proactive/:id", async (req, res) => {
@@ -375,13 +398,15 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
         : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed",
         ...(error instanceof RouterError && error.nativeError !== undefined ? { nativeError: error.nativeError } : {}),
+        // Router's identity errors carry display fields (e.g. `email` for owner_not_configured).
+        ...(error instanceof RouterError && "details" in error && error.details && typeof error.details === "object" ? error.details : {}),
         ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
   return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
     // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`, only with AGENT_LEDGER_READ)
     // first, then SSH, which answers 404 for every other path. Older Routers have no `upgrade`.
-    attach: (server: Server) => { sshServers.add(attachSsh(server, token => router.service.authenticate(token),
+    attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId),
       (req, socket, head) => (router as { upgrade?: (req: IncomingMessage, socket: Duplex, head: Buffer) => boolean }).upgrade?.(req, socket, head) ?? false)); },
     close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };

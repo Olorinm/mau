@@ -19,8 +19,8 @@ it("SSH tunnels preserve binary streams and release access when either end disco
   });
   upstream.listen(0, "127.0.0.1"); await once(upstream, "listening");
   const gateway = createServer(); let releases = 0, accesses = 0;
-  const close = attachSsh(gateway, async token => {
-    if (token !== "owner") throw new RouterError("account_session_invalid", 401);
+  const close = attachSsh(gateway, async req => {
+    if (req.headers.authorization !== "Bearer owner") throw new RouterError("account_session_invalid", 401);
     return "alice";
   }, async (owner, agent, key) => {
     expect(owner).toBe("alice"); expect(agent).toBe("agent"); expect(key).toBe("a".repeat(64)); accesses++;

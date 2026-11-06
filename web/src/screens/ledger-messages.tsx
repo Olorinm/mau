@@ -26,7 +26,7 @@ import {
   type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerFeature, type LedgerSocket, type LedgerTurn,
   type PendingAnswer,
 } from "../api/ledger";
-import type { Session } from "../api/session";
+import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { TaskSurface, type RunControls, type TaskLike } from "./run-surface";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
@@ -137,7 +137,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [target, setTarget] = useState("");
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // Text kept across an Access re-login reload ("重新登录") is restored once.
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => reloadDrafts());
+  const latestDrafts = useRef(drafts);
+  latestDrafts.current = drafts;
+  useEffect(() => {
+    reloadDrafts(sessionStorage, true);
+    const save = () => saveReloadDrafts(latestDrafts.current);
+    globalThis.addEventListener(beforeAccessReloadEvent, save);
+    return () => globalThis.removeEventListener(beforeAccessReloadEvent, save);
+  }, []);
   const [files, setFiles] = useState<Record<string, AttachmentRef[]>>({});
   const [uploading, setUploading] = useState(false);
   const [outgoing, setOutgoing] = useState<{ chatId: string; text: string; transaction: string }>();

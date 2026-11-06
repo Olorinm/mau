@@ -48,7 +48,7 @@ export async function prepareSsh(provider: EnvironmentProvider, id: string, remo
 export interface SshConnection { url: URL; headers: Record<string, string>; release: () => void }
 
 /** Upgrade is authenticated separately because Express does not handle it. */
-export function attachSsh(server: Server, authenticate: (token: string) => Promise<string>,
+export function attachSsh(server: Server, authenticate: (req: IncomingMessage) => Promise<string>,
   connect: (owner: string, agentId: string, keyId: string) => Promise<SshConnection>,
   /** Other upgrade handlers on the same server (Router's event socket); true when one took the request. */
   delegate: (req: IncomingMessage, socket: Duplex, head: Buffer) => boolean = () => false) {
@@ -66,7 +66,8 @@ export function attachSsh(server: Server, authenticate: (token: string) => Promi
       const match = /^\/_mau\/v1\/agents\/([a-zA-Z0-9-]+)\/ssh\/([a-f0-9]{64})$/.exec(req.url ?? "");
       if (closing || !match || req.method !== "GET" || req.headers.upgrade?.toLowerCase() !== sshUpgrade || req.headers.origin)
         throw new RouterError("not_found", 404);
-      const owner = await authenticate(req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "");
+      // The upgrade carries the same credentials as any owner request (bearer or the Access JWT).
+      const owner = await authenticate(req);
       if (socket.destroyed) return;
       connection = await connect(owner, match[1]!, match[2]!);
       if (socket.destroyed || closing) { connection.release(); return; }

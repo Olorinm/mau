@@ -16,7 +16,9 @@ export const alice = "@alice:example.test",
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
   hostCapabilities?: { runIdempotency?: boolean } } = {}, workspaceBackend?: WorkspaceBackend, extraOptions: Record<string, unknown> = {},
   /** Extra Router service settings, for example `{ ledgerRead: true }`. */
-  routerConfig: Record<string, unknown> = {}) {
+  routerConfig: Record<string, unknown> = {},
+  /** Extra Router dependencies, for example `{ edgeIdentityCerts }`. */
+  routerDependencies: Record<string, unknown> = {}) {
   const directory = mkdtempSync(join(tmpdir(), "router-cloud-"));
   cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
   const cloud = new Map<
@@ -155,6 +157,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       return provider;
     } }),
       ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
+      ...routerDependencies,
       provision: async () => {},
       deprovision: async () => {},
       authenticate: async (token) => {

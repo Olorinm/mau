@@ -292,11 +292,26 @@ it("reconnects with jittered backoff, a fresh ticket and replay after the last s
   server.append(say("after backpressure"), {}, false);
   await tick(500); await tick(1);
   expect(texts(client)).toEqual(["before", "while away", "after backpressure"]);
-  // An expired login is final: no more dialing.
+  // 4401 asks for a new ticket once (an edge JWT renewed by Access continues); a second 4401 within a minute is final.
+  server.live.serverClose(4401);
+  await tick(1); await tick(1);
+  expect(server.sockets).toHaveLength(4);
+  expect(client.connection.state).toBe("open");
   server.live.serverClose(4401);
   await tick(120_000);
   expect(client.connection).toMatchObject({ state: "closed", error: "unauthorized" });
-  expect(server.sockets).toHaveLength(3);
+  expect(server.sockets).toHaveLength(4);
+});
+
+it("stops with access_session_expired when the re-ticket after 4401 meets an expired Access session", async () => {
+  const { server, client } = setup();
+  await client.openChat(chatId);
+  client.connect(); await tick();
+  server.socketTicket = async () => { throw new ApiError("access_session_expired", 0); };
+  server.live.serverClose(4401);
+  await tick(1); await tick(120_000);
+  expect(client.connection).toMatchObject({ state: "closed", error: "access_session_expired" });
+  expect(server.sockets).toHaveLength(1);
 });
 
 it("backs off exponentially while the socket cannot be opened", async () => {

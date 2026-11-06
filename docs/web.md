@@ -64,6 +64,22 @@ allow browser CORS on its client API, which Synapse does by default.
 - The token is kept in the browser's `localStorage` (`mau.session`). Any `401`
   returns to sign-in.
 
+### Edge login (Cloudflare Access)
+
+With `edgeIdentity` in `mau.json` (the shape of agent-router's `edgeIdentity`, ADR 0005 section 18.2), Router
+verifies the `Cf-Access-Jwt-Assertion` JWT on every `/_mau/v1` and `/_agent-router/v1` owner request and on the
+SSH upgrade, and maps its email (or a configured service token) to an owner. The plain email header and the
+`CF_Authorization` cookie are never trusted. `GET /_mau/v1/info` then returns `{ "login": "edge", "logoutUrl":
+"/cdn-cgi/access/logout", "matrix": false }`.
+
+- There is no login page and no stored token. Boot removes any `mau.session` and reads `GET /_mau/v1/account`
+  with the same-origin Access cookie; Cloudflare adds the JWT.
+- An account that is not mapped gets a full page naming its email, with "Switch account" (Access logout).
+- An expired Access session (an API redirect, a `401`, or a socket re-ticket that fails) shows a banner.
+  "Sign in again" keeps unsent composer text in `sessionStorage` and reloads the page.
+- Messages always use Router's ledger. "Sign out" goes to the Access logout.
+- Bearer callers (the CLIs, automation) keep working unless Router's `bearer` is `"deny"`.
+
 ## Channels
 
 Router setup jobs are polled every two seconds, including after temporary network,

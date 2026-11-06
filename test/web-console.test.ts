@@ -2,7 +2,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
-import { mauFixture } from "./fixtures/mau.js";
+import { alice, mauFixture } from "./fixtures/mau.js";
+import { accessIssuer } from "./fixtures/access.js";
+import { ManagedService } from "@agent-router/server";
 
 // Browser acceptance for the built console (`npm run build:web`). CI sets MAU_WEB_E2E=1 so a missing build fails.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -842,3 +844,40 @@ it.skipIf(!built)("redirects from app details to consent, returns to catalog and
   expect(mutations).toEqual(["connect", "check", "disconnect", "check", "disconnect"]);
   expect(errors).toEqual([]);
 });
+
+// Edge login needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2).
+const edgeRouter = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
+it.skipIf(!built || !edgeRouter)(
+  "edge login: no login form, the expiry banner reloads, and an unmapped account gets the no-access page",
+  async () => {
+    const access = await accessIssuer(cleanup);
+    const f = await mauFixture(cleanup, { webRoot }, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) },
+      { ledgerRead: true }, { edgeIdentityCerts: access.certsUrl });
+    const instance = await chromium.launch({ headless: true });
+    cleanup.push(() => instance.close());
+    const open = async (email: string) => {
+      // Cloudflare adds the JWT to every request behind Access; the console itself sends no token.
+      const context = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+        extraHTTPHeaders: { "cf-access-jwt-assertion": access.jwt({ email }) } });
+      const page = await context.newPage(), authorization: string[] = [];
+      page.on("request", (request) => { const value = request.headers()["authorization"]; if (value) authorization.push(value); });
+      await page.goto(f.base);
+      return { page, authorization };
+    };
+    const { page, authorization } = await open("alice@example.test");
+    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByLabel("密码")).toHaveCount(0);
+    // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
+    await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
+    await page.getByRole("button", { name: "通讯录" }).click();
+    await see(page.getByText("登录已过期")).toBeVisible();
+    await page.unroute("**/_mau/v1/agents");
+    await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
+    await see(page.getByText("登录已过期")).toHaveCount(0);
+    expect(authorization).toEqual([]);
+    const stranger = await open("stranger@example.test");
+    await see(stranger.page.getByText("此账号未开通 Mau（stranger@example.test）")).toBeVisible();
+    await see(stranger.page.getByRole("button", { name: "切换账号" })).toBeVisible();
+  },
+  60_000,
+);

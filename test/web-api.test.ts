@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, request, safeExternalUrl } from "../web/src/api/http.js";
-import { clearSession, loadSession, loginWithPassword, loginWithToken, logout, saveSession } from "../web/src/api/session.js";
+import { ApiError, accessExpiredEvent, request, safeExternalUrl } from "../web/src/api/http.js";
+import { bootSession, clearSession, loadSession, loginWithPassword, loginWithToken, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
 import { mauApi, routerApi } from "../web/src/api/client.js";
 
 class MemoryStorage {
@@ -108,4 +108,38 @@ it("client paths encode agent and job IDs and send the documented bodies", async
     ["POST", "/_agent-router/v1/agents/a%2Fb/connection-jobs/job%201/pairing", { code: "123456" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/check", {}],
   ]);
+});
+
+it("edge login boots without a login page or token; Matrix login stays for login:\"matrix\"", async () => {
+  const storage = new MemoryStorage() as unknown as Storage;
+  saveSession({ token: "stale", owner: "@alice:agents.example" }, storage);
+  const seen: Array<{ url: string; authorization: string | null; credentials: RequestCredentials | undefined }> = [];
+  let account: () => Response = () => Response.json({ owner: "@alice:agents.example", via: "edge", email: "alice@example.test", expiresAt: "2026-11-06T10:00:00.000Z" });
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+    seen.push({ url, authorization: new Headers(init.headers).get("authorization"), credentials: init.credentials });
+    return url === "/_mau/v1/info" ? Response.json({ login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false }) : account();
+  });
+  expect(await bootSession(storage)).toEqual({ mode: "edge", session: { token: "", owner: "@alice:agents.example",
+    edge: { logoutUrl: "/cdn-cgi/access/logout", email: "alice@example.test", expiresAt: "2026-11-06T10:00:00.000Z" } } });
+  expect(loadSession(storage)).toBeNull();
+  expect(seen).toEqual([{ url: "/_mau/v1/info", authorization: null, credentials: "same-origin" },
+    { url: "/_mau/v1/account", authorization: null, credentials: "same-origin" }]);
+  account = () => Response.json({ error: "owner_not_configured", email: "stranger@example.test" }, { status: 403 });
+  expect(await bootSession(storage)).toEqual({ mode: "edge-denied", email: "stranger@example.test", logoutUrl: "/cdn-cgi/access/logout" });
+  account = () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } });
+  const events: string[] = [];
+  vi.stubGlobal("dispatchEvent", (event: Event) => { events.push(event.type); return true; });
+  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "access_session_expired" });
+  expect(events).toEqual([accessExpiredEvent]);
+  saveSession({ token: "kept", owner: "@alice:agents.example" }, storage);
+  vi.stubGlobal("fetch", async () => Response.json({ login: "matrix", homeserver: "https://matrix.example", matrix: true }));
+  expect(await bootSession(storage)).toEqual({ mode: "matrix", session: { token: "kept", owner: "@alice:agents.example" } });
+});
+
+it("keeps unsent composer text across the Access re-login reload", () => {
+  const storage = new MemoryStorage() as unknown as Storage;
+  saveReloadDrafts({ "dm:a": "half a thought", "dm:b": "  " }, storage);
+  expect(reloadDrafts(storage)).toEqual({ "dm:a": "half a thought" });
+  expect(reloadDrafts(storage, true)).toEqual({ "dm:a": "half a thought" });
+  expect(reloadDrafts(storage)).toEqual({});
 });

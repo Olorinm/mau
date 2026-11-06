@@ -1,9 +1,11 @@
 /** A stable error code from Mau, Router or Matrix. Messages are never shown raw. */
 export class ApiError extends Error {
-  constructor(readonly code: string, readonly status: number) {
+  constructor(readonly code: string, readonly status: number, readonly details: { email?: string } = {}) {
     super(code);
   }
 }
+/** Fired on `globalThis` whenever an edge access session (Cloudflare Access) turns out to be expired. */
+export const accessExpiredEvent = "mau:access-session-expired";
 
 const code = /^[A-Za-z0-9_]+$/;
 
@@ -35,8 +37,10 @@ export async function request<T>(url: string, options: {
       signal,
     });
     // APIs never redirect; a redirect means the edge access session expired and the page must sign in again.
-    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400))
+    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+      globalThis.dispatchEvent?.(new Event(accessExpiredEvent));
       throw new ApiError("access_session_expired", 0);
+    }
     if (response.status === 204) return null as T;
     // Rate limiters and proxies may answer with text rather than JSON.
     const data = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
@@ -47,6 +51,8 @@ export async function request<T>(url: string, options: {
         typeof reported === "string" && code.test(reported) ? reported
           : response.status === 429 ? "rate_limited" : "request_failed",
         response.status,
+        // owner_not_configured names the signed-in email so the console can show it.
+        typeof data?.email === "string" ? { email: data.email } : {},
       );
     }
     if (data === undefined) throw new ApiError("invalid_response", response.status);
