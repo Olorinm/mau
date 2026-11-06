@@ -197,7 +197,6 @@ function RoomAgentMessageBody(props: {
           groups={visibleProcessGroups}
           status={props.status}
           duration={props.duration}
-          cancel={props.cancel}
           activeChoiceFormKey={props.activeChoiceFormKey}
           pendingQuestionIds={props.pendingQuestionIds}
           onResolveApproval={props.onResolveApproval}
@@ -208,6 +207,7 @@ function RoomAgentMessageBody(props: {
           onOpenResource={props.onOpenResource}
           resourceContext={props.resourceContext}
           agentPresentation={props.agentPresentation}
+          live={false}
         />
       ) : null}
       {props.answerGroups.map((group) =>
@@ -252,7 +252,8 @@ function RoomAgentMessageBody(props: {
           resourceContext={props.resourceContext}
         />
       ) : null}
-      {props.status === "running" && !visibleProcessGroups.length ? (
+      {/* One place for "working": below everything the run has shown so far, process or text. */}
+      {props.status === "running" ? (
         <div className="room-chat-thinking-row">
           <RoomRunLeadingControl presentation={props.agentPresentation} cancel={props.cancel} />
           <div

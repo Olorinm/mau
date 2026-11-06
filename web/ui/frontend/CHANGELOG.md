@@ -4,6 +4,15 @@ Notable changes to `@olorinm/agent-frontend`, newest first. Each version has a G
 (`frontend-v*` tags) with the same notes and the package archive. When releasing, add the new
 section here in the version-bump commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.10] - 2026-11-06
+
+- Tool rows with full input and output in the expandable code block show their arguments on one
+  line.
+- A running reply has one working line, always below what it has shown so far; the process summary
+  is static, and the stop control is only on the working line.
+
+PR: [#11](https://github.com/Olorinm/agent-ui/pull/11)
+
 ## [0.1.0-alpha.9] - 2026-11-06
 
 - Slash commands in the conversation composer (`ConversationComposer.commands`).
