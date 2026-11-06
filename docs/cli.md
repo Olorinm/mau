@@ -3,7 +3,7 @@
 Install Node.js 24 or later, then install the public client archive directly:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.24/olorinm-mau-cli-0.1.0-alpha.24.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.25/olorinm-mau-cli-0.1.0-alpha.25.tgz
 mau --version
 ```
 
