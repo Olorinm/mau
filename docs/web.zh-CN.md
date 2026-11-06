@@ -41,6 +41,17 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 - 令牌登录只校验已有访问令牌。退出时只在浏览器里忘记它，不吊销。
 - 令牌保存在浏览器 `localStorage`（`mau.session`）。任何 `401` 都会回到登录页。
 
+### 边缘登录（Cloudflare Access）
+
+`mau.json` 配置 `edgeIdentity`（与 agent-router `edgeIdentity` 同形，见 ADR 0005 第 18.2 节）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout", "matrix": false }`。
+
+- 没有登录页，也不保存令牌：启动时删除 `mau.session`，凭同域 Access cookie 读取 `GET /_mau/v1/account`，由 Cloudflare 附加 JWT。
+- 未开通的账号显示整页“此账号未开通 Mau（邮箱）”和“切换账号”（Access 退出）。
+- Access 会话过期（接口被重定向、`401` 或套接字重新取票失败）时显示“登录已过期”横幅；“重新登录”把未发送的输入按对话存入 `sessionStorage` 后刷新页面。
+- 对话始终使用 Router 账本；“退出登录”跳转 Access 退出。
+- 命令行和自动化的 bearer 调用继续可用，除非 Router 设置 `bearer: "deny"`。
+- Cloudflare 对跨站请求同样附加 JWT，因此边缘身份的非 GET 请求必须带控制台的 `Origin`（`edgeIdentity.origins`，默认取公开地址的源，或与请求自身 Host 相同），且请求体类型不能是表单可发送的类型。Access 之后的非浏览器调用方需带 bearer 令牌或显式 `Origin`。
+
 ## 渠道
 
 每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。飞书个人工具授权使用 Router 的状态、开始和完成接口。

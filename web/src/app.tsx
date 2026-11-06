@@ -3,12 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, EmployeeAvatar, useToast } from "@olorinm/agent-ui/app";
 import {
+  bootSession,
   clearSession,
-  loadSession,
   logout,
+  reloadForAccess,
   saveSession,
+  type Boot,
   type Session,
 } from "./api/session";
+import { accessExpiredEvent } from "./api/http";
 import { errorMessage, useI18n } from "./i18n";
 import { LoginScreen } from "./screens/login";
 import { AgentsScreen } from "./screens/agents";
@@ -36,7 +39,19 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const [theme] = useThemePreference();
   const { toast } = useToast();
   const queries = useQueryClient();
-  const [session, setSession] = useState<Session | null>(() => loadSession());
+  const [boot, setBoot] = useState<Boot>();
+  const [session, setSession] = useState<Session | null>(null);
+  // Edge login (Cloudflare Access): no login page; an expired Access session shows a banner instead.
+  const [accessExpired, setAccessExpired] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void bootSession().then((result) => {
+      if (!active) return;
+      setBoot(result);
+      if (result.mode === "matrix" || result.mode === "edge") setSession(result.session);
+    });
+    return () => { active = false; };
+  }, []);
   const [view, setView] = useState(() =>
     new URLSearchParams(location.search).get("view") === "connectors" ? "connectors" : new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
@@ -56,10 +71,16 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const [conversationTarget, setConversationTarget] = useState<string>();
   const current = useRef(session);
   current.current = session;
+  useEffect(() => {
+    const expired = () => { if (current.current?.edge) setAccessExpired(true); };
+    globalThis.addEventListener(accessExpiredEvent, expired);
+    return () => globalThis.removeEventListener(accessExpiredEvent, expired);
+  }, []);
   useEffect(
     () =>
       onExpired(() => {
         if (!current.current) return;
+        if (current.current.edge) { setAccessExpired(true); return; }
         toast({
           kind: "error",
           title: errorMessage(t, "account_session_invalid"),
@@ -82,10 +103,22 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const toggleLanguage = () =>
     setLanguage(language === "zh-CN" ? "en" : "zh-CN");
 
-  if (!session)
+  if (!boot) return null;
+  if (boot.mode === "edge-denied" || boot.mode === "edge-failed")
     return (
-      <LoginScreen onSignedIn={signIn} onToggleLanguage={toggleLanguage} />
+      <main className="mau-access-page" role="alert">
+        <SaplingPlaceholder />
+        <h1>{boot.mode === "edge-denied" ? t("access.notConfigured", { email: boot.email ?? "" }) : t("access.failed")}</h1>
+        <p className="mau-muted">{boot.mode === "edge-denied" ? t("access.notConfiguredHint") : errorMessage(t, boot.code)}</p>
+        {boot.mode === "edge-denied"
+          ? <Button variant="primary" onClick={() => location.assign(boot.logoutUrl)}>{t("access.switchAccount")}</Button>
+          : <Button variant="primary" onClick={() => location.reload()}>{t("common.retry")}</Button>}
+      </main>
     );
+  if (!session)
+    return boot.mode === "matrix" ? (
+      <LoginScreen onSignedIn={signIn} onToggleLanguage={toggleLanguage} />
+    ) : null;
   const zh = language === "zh-CN";
   const labels: Partial<Record<FrontendLabelKey, string>> = {
     navigation: "主导航",
@@ -189,7 +222,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
               id === "create-app" ? setCreateOpen(true) : setView(id)
             }
             account={{
-              name: session.owner,
+              name: session.edge?.email ?? session.owner,
               avatar: (
                 <EmployeeAvatar
                   seed={session.owner}
@@ -214,6 +247,12 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           />
         }
       >
+        {accessExpired ? (
+          <div className="mau-access-banner" role="alert">
+            <span>{t("access.expired")}</span>
+            <Button variant="primary" onClick={reloadForAccess}>{t("access.relogin")}</Button>
+          </div>
+        ) : null}
         {view === "agents" ? (
           <AgentsScreen
             session={session}

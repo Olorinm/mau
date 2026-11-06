@@ -55,10 +55,11 @@ type MessagesProps = {
 /**
  * Matrix stays the chat source unless this browser opted in (`localStorage["mau.chatSource"] = "ledger"`)
  * and Router advertises the `history` feature (agent-router ADR 0005, phase 2). Otherwise nothing changes.
+ * An edge login has no Matrix token, so it always uses the ledger.
  */
 export function MessagesScreen(props: MessagesProps) {
   const { t } = useI18n();
-  const ledger = chatSourcePreference() === "ledger";
+  const ledger = !!props.session.edge || chatSourcePreference() === "ledger";
   const me = useQuery({
     queryKey: ["ledger-me", props.session.token],
     queryFn: ({ signal }) => ledgerApi(props.session.token).me(signal),
