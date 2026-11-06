@@ -62,6 +62,16 @@
   font-size: var(--fs-sm);
 }
 
+/* A continued message keeps the avatar column and sits closer to the one before. */
+.room-chat-avatar-gap {
+  flex: 0 0 auto;
+  width: var(--room-chat-avatar-size, 28px);
+}
+
+.room-chat-message[data-continued="true"] {
+  margin-top: -10px;
+}
+
 .room-chat-avatar-button {
   display: grid;
   flex: 0 0 auto;
@@ -304,6 +314,17 @@
 
 .room-chat-agent-stack > .room-chat-bubble + .room-chat-bubble {
   margin-top: 6px;
+}
+
+/* The process summary ("已探索 1 个文件") is a plain line above the reply, with room before the bubble. */
+.room-chat-agent-stack > .og-disclosure--room-run > .og-disclosure-row {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.room-chat-agent-stack > .og-disclosure + .room-chat-bubble,
+.room-chat-agent-stack > .og-disclosure + * {
+  margin-top: 8px;
 }
 
 .room-chat-message.from-user .room-chat-bubble {
@@ -707,6 +728,57 @@
   height: 88px;
   overflow: hidden;
   padding: 0;
+}
+
+/* A file in a message: type icon, name and kind, in the bubble's own colours. */
+.room-message-file {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: center;
+  width: min(280px, 100%);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--room-stream-attachment-bg);
+  color: var(--rooms-text, var(--c-text));
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 14px 10px 10px;
+  text-align: left;
+}
+
+.room-message-file:hover,
+.room-message-file:focus-visible {
+  background: var(--c-surface-hover);
+  outline: none;
+}
+
+.room-message-file-icon {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--c-accent-soft, var(--c-line-06));
+  color: var(--c-accent);
+}
+
+.room-message-file-name {
+  overflow: hidden;
+  font-size: var(--fs-base);
+  line-height: var(--lh-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-message-file-meta {
+  overflow: hidden;
+  color: var(--rooms-muted, var(--c-text-3));
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .room-message-attachment.image img {

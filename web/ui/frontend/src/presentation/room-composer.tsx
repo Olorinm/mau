@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, Square } from "lucide-react";
 import type { AttachmentView } from "./view-model";
 import { useI18n } from "./i18n";
 import {
@@ -33,6 +33,12 @@ export type MentionOption =
       label: string;
       avatar?: ReactNode;
     };
+
+export interface CommandOption {
+  id: string;
+  name: string;
+  description?: string;
+}
 
 export function RoomComposer(props: {
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -62,6 +68,16 @@ export function RoomComposer(props: {
   onMentionOpenChange(open: boolean): void;
   onSelectMention(option: MentionOption): void;
   onHoverMention(index: number): void;
+  /** Slash commands: listed while the draft is "/" plus part of a name. */
+  commandOpen?: boolean;
+  commandOptions?: CommandOption[];
+  activeCommandIndex?: number;
+  onSelectCommand?(id: string): void;
+  onHoverCommand?(index: number): void;
+  onCommandOpenChange?(open: boolean): void;
+  /** While a reply runs, an empty draft turns the send button into stop. */
+  running?: boolean;
+  onStop?(): void;
   onSend(): void;
 }) {
   const { t } = useI18n();
@@ -119,6 +135,35 @@ export function RoomComposer(props: {
             activeIndex={props.activeMentionIndex}
             onSelect={props.onSelectMention}
             onHover={props.onHoverMention}
+          />
+        </MotionPopover>
+        <MotionPopover
+          open={!!props.commandOpen}
+          onOpenChange={(open) => props.onCommandOpenChange?.(open)}
+          anchorRef={composerRef}
+          side="top"
+          sideOffset={4}
+          align="start"
+          className="rooms-mention-menu rooms-command-menu"
+          role="listbox"
+          ariaLabel={t("chat.slashCommands")}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onFocusOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => {
+            const target = event.target;
+            if (
+              target instanceof Node &&
+              composerRef.current?.contains(target)
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <CommandMenuContent
+            options={props.commandOptions ?? []}
+            activeIndex={props.activeCommandIndex ?? 0}
+            onSelect={(id) => props.onSelectCommand?.(id)}
+            onHover={(index) => props.onHoverCommand?.(index)}
           />
         </MotionPopover>
         {props.replyPreview ? (
@@ -207,17 +252,32 @@ export function RoomComposer(props: {
             </Tooltip>
           </div>
           <div className="opengrove-composer-footer-right">
-            <Tooltip content={t("composer.send")}>
-              <button
-                className="opengrove-action opengrove-primary opengrove-send"
-                type="button"
-                onClick={props.onSend}
-                disabled={!props.canSend}
-                aria-label={t("composer.send")}
-              >
-                <ProductIcon name="send" size={17} />
-              </button>
-            </Tooltip>
+            {props.running && !props.canSend ? (
+              <Tooltip content={t("composer.stop")}>
+                <button
+                  className="opengrove-action opengrove-primary opengrove-send"
+                  type="button"
+                  data-running="true"
+                  onClick={props.onStop}
+                  disabled={!props.onStop}
+                  aria-label={t("composer.stop")}
+                >
+                  <Square size={13} fill="currentColor" strokeWidth={0} />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip content={t("composer.send")}>
+                <button
+                  className="opengrove-action opengrove-primary opengrove-send"
+                  type="button"
+                  onClick={props.onSend}
+                  disabled={!props.canSend}
+                  aria-label={t("composer.send")}
+                >
+                  <ProductIcon name="send" size={17} />
+                </button>
+              </Tooltip>
+            )}
           </div>
         </div>
       </div>
@@ -270,7 +330,7 @@ function RoomAttachmentBar(props: {
                     name: attachment.name,
                   })}
                 >
-                  <ProductIcon name="close" size={13} />
+                  <ProductIcon name="close" size={12} />
                 </button>
               </Tooltip>
             </div>
@@ -283,27 +343,71 @@ function RoomAttachmentBar(props: {
             data-kind={attachment.kind}
           >
             <span className="opengrove-attachment-icon" aria-hidden="true">
-              <Icon size={14} />
+              <Icon size={22} />
             </span>
-            <span className="opengrove-attachment-name">
+            <span className="opengrove-attachment-name" title={attachment.name}>
               {attachment.name}
-              <span className="opengrove-attachment-meta">
-                {formatAttachmentMeta(attachment)}
-              </span>
             </span>
-            <button
-              className="opengrove-action opengrove-icon opengrove-attachment-remove"
-              type="button"
-              onClick={() => props.onRemoveAttachment(attachment.id)}
-              aria-label={t("composer.removeAttachment", {
+            <span className="opengrove-attachment-meta">
+              {formatAttachmentMeta(attachment)}
+            </span>
+            <Tooltip
+              content={t("composer.removeAttachment", {
                 name: attachment.name,
               })}
             >
-              <ProductIcon name="close" size={13} />
-            </button>
+              <button
+                className="opengrove-action opengrove-icon opengrove-attachment-remove"
+                type="button"
+                onClick={() => props.onRemoveAttachment(attachment.id)}
+                aria-label={t("composer.removeAttachment", {
+                  name: attachment.name,
+                })}
+              >
+                <ProductIcon name="close" size={12} />
+              </button>
+            </Tooltip>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function CommandMenuContent(props: {
+  options: CommandOption[];
+  activeIndex: number;
+  onSelect(id: string): void;
+  onHover(index: number): void;
+}) {
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  useLayoutEffect(() => {
+    optionRefs.current[props.activeIndex]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [props.activeIndex, props.options.length]);
+  return (
+    <div className="rooms-mention-list">
+      {props.options.map((option, index) => (
+        <button
+          key={option.id}
+          ref={(element) => {
+            optionRefs.current[index] = element;
+          }}
+          className="rooms-command-option"
+          data-active={props.activeIndex === index ? "true" : "false"}
+          type="button"
+          role="option"
+          aria-selected={props.activeIndex === index}
+          onMouseEnter={() => props.onHover(index)}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => props.onSelect(option.id)}
+        >
+          <strong>/{option.name}</strong>
+          {option.description ? <small>{option.description}</small> : null}
+        </button>
+      ))}
     </div>
   );
 }

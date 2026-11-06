@@ -4,6 +4,17 @@ Notable changes to `@olorinm/agent-frontend`, newest first. Each version has a G
 (`frontend-v*` tags) with the same notes and the package archive. When releasing, add the new
 section here in the version-bump commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.9] - 2026-11-06
+
+- Slash commands in the conversation composer (`ConversationComposer.commands`).
+- While a reply runs, the composer's send button stops it when the draft is empty.
+- Draft attachments are cards with the remove button on the corner.
+- `MessageFileCard` for files in sent messages; the sender's attachments sit above their text.
+- `MessageView.continued` hides the repeated avatar and author line.
+- The run process summary has no underline and leaves space before the reply.
+
+PR: [#9](https://github.com/Olorinm/agent-ui/pull/9)
+
 ## [0.1.0-alpha.8] - 2026-10-30
 
 - Subagent activity rows.

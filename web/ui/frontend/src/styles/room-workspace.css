@@ -230,6 +230,125 @@
   opacity: 1;
 }
 
+.room-composer .opengrove-primary.opengrove-send[data-running="true"] svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Draft attachments: cards with the remove button on the corner, shown on hover or focus. */
+.room-composer .room-attachment-bar {
+  gap: 12px;
+  padding: 6px 0 10px;
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  width: 112px;
+  max-width: 112px;
+  height: 92px;
+  min-height: 92px;
+  overflow: visible;
+  border: 1px solid var(--c-line-06);
+  border-radius: var(--r-lg);
+  background: var(--c-line-04);
+  padding: 10px 10px 8px;
+  color: var(--c-text-3);
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment[data-kind="image"] {
+  padding: 0;
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment-thumb,
+.room-composer .room-attachment-bar .opengrove-attachment-image-fallback {
+  border-radius: inherit;
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment-name {
+  max-width: 100%;
+  font-size: var(--fs-sm);
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment-meta {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment-remove,
+.room-composer .room-attachment-bar .opengrove-attachment[data-kind="image"] .opengrove-attachment-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--c-line-08);
+  border-radius: var(--r-pill);
+  background: var(--c-surface-raised);
+  box-shadow: var(--shadow-sm);
+  color: var(--c-text);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment:hover .opengrove-attachment-remove,
+.room-composer .room-attachment-bar .opengrove-attachment:focus-within .opengrove-attachment-remove {
+  opacity: 1;
+}
+
+.room-composer .room-attachment-bar .opengrove-attachment-remove:hover,
+.room-composer .room-attachment-bar .opengrove-attachment[data-kind="image"] .opengrove-attachment-remove:hover {
+  background: var(--c-surface-hover);
+}
+
+@media (hover: none) {
+  .room-composer .room-attachment-bar .opengrove-attachment-remove {
+    opacity: 1;
+  }
+}
+
+/* Slash commands share the mention menu's popover. */
+.rooms-command-option {
+  display: grid;
+  gap: 1px;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--rooms-text);
+  cursor: pointer;
+  font: inherit;
+  padding: 5px 9px;
+  text-align: left;
+}
+
+.rooms-command-option:hover,
+.rooms-command-option:focus-visible,
+.rooms-command-option[data-active="true"] {
+  background: var(--rooms-member-mention-option-hover-bg);
+  outline: none;
+}
+
+.rooms-command-option strong {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+
+.rooms-command-option small {
+  color: var(--rooms-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+}
+
 .room-header-tools {
   position: static;
   display: flex;
