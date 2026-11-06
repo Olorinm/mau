@@ -28,7 +28,9 @@ export type TurnState = "queued" | "running" | "waiting" | "completed" | "failed
 export type ChatEventBody =
   | { kind: "message"; role: "user" | "assistant"; text: string; html?: string; attachments?: AttachmentRef[];
       mentions?: { agentIds: string[]; all: boolean }; replyTo?: string; final?: boolean; possibleDuplicate?: boolean;
-      deliveries?: DeliveryState[] }
+      deliveries?: DeliveryState[];
+      /** Router phase 3: the stored target of a redaction (empty text), also when the `redaction` event is not loaded. */
+      redacted?: boolean }
   | { kind: "notice"; text: string; level: "info" | "warning" }
   | { kind: "action"; targetCardId: string; label: string }
   | { kind: "card"; card: Card }
@@ -68,6 +70,12 @@ export interface SendResponse {
   status: "accepted" | "duplicate"; event: ChatEvent;
   addressed: Array<{ agentId: string; state: "queued" | "control" | "not_addressed" }>;
 }
+/**
+ * Owner redaction (撤回) of an own web message, ADR 0005 §16.4 (decision 4e; Router serves it from phase 3 with `send`):
+ * `POST /chats/:chatId/events/:eventId/redact` with an idempotency key, answered with the stored `redaction` event,
+ * the same way a send is answered with its stored message. `dropped`: the input had not started yet.
+ */
+export interface RedactResponse { status: "accepted" | "duplicate"; event: ChatEvent; dropped?: boolean }
 export interface TurnDetail {
   turnId: string; chatId: string; agentId: string; state: string; admission: string;
   inputEventIds: string[]; finalEventId: string | null; cardIds: string[];
@@ -135,6 +143,10 @@ export function ledgerApi(token: string, base = ledgerBase) {
       if (!keyPattern.test(body.idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
       return request<SendResponse>(chat(chatId) + "/messages", { token, body });
     },
+    redact: (chatId: string, eventId: string, idempotencyKey: string) => {
+      if (!keyPattern.test(idempotencyKey)) throw new ApiError("invalid_idempotency_key", 0);
+      return request<RedactResponse>(chat(chatId) + "/events/" + encodeURIComponent(eventId) + "/redact", { token, body: { idempotencyKey } });
+    },
     reset: (chatId: string, idempotencyKey: string) => request<{ window: number; event: ChatEvent }>(chat(chatId) + "/reset", { token, body: { idempotencyKey } }),
     read: (chatId: string, seq: number) => request<{ readSeq: number; unread: number }>(chat(chatId) + "/read", { token, body: { seq } }),
     turn: (chatId: string, turnId: string, signal?: AbortSignal) => request<TurnDetail>(chat(chatId) + "/turns/" + encodeURIComponent(turnId), { token, ...signalOf(signal) }),
@@ -181,7 +193,7 @@ export function ledgerApi(token: string, base = ledgerBase) {
 }
 export type LedgerApi = ReturnType<typeof ledgerApi>;
 /** What the state machine needs from HTTP; tests supply a fake server. */
-export type LedgerTransport = Pick<LedgerApi, "socketTicket" | "events" | "send" | "read" | "chats">;
+export type LedgerTransport = Pick<LedgerApi, "socketTicket" | "events" | "send" | "read" | "chats" | "redact">;
 
 // ---- Socket ----
 export interface LedgerSocket {
@@ -214,11 +226,16 @@ export interface PendingSend {
   idempotencyKey: string; chatId: string; text: string; attachments: AttachmentRef[];
   mentions?: { agentIds: string[]; all?: boolean }; replyTo?: string;
   state: "sending" | "accepted" | "failed" | "rejected"; error?: string; createdAt: number;
+  /** Transmissions so far; network failures are retried automatically with the same key. */
+  attempts: number;
+  /** Set while an automatic retry is scheduled (epoch ms). */
+  retryAt?: number;
 }
+export interface PendingRedaction { chatId: string; eventId: string; idempotencyKey: string; state: "sending" | "failed" | "rejected"; error?: string }
 export interface LedgerChatView {
   chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
   events: readonly ChatEvent[]; hasOlder: boolean; inflight: readonly Inflight[];
-  pending: readonly PendingSend[]; error?: string;
+  pending: readonly PendingSend[]; redactions: readonly PendingRedaction[]; error?: string;
 }
 interface ChatState {
   chatId: string; loaded: boolean; generation: number; lastSeq: number; readSeq: number;
@@ -241,6 +258,8 @@ export interface LedgerClientOptions {
   idempotencyKey?: () => string;
   /** Maximum reconnect delay; the base doubles from 1 s. */
   maxBackoffMs?: number;
+  /** Automatic resends after a network failure (1 s, 2 s, 4 s …); then the bubble waits for a manual retry. */
+  sendRetries?: number;
 }
 
 /**
@@ -254,6 +273,8 @@ export class LedgerClient {
   /** Chats the UI has open; they are (re)subscribed on every socket. */
   private readonly open = new Set<string>();
   private readonly pending = new Map<string, PendingSend>();
+  private readonly resend = new Map<string, unknown>();
+  private readonly redactions = new Map<string, PendingRedaction>();
   private readonly listeners = new Set<() => void>();
   private readonly requests = new Map<string, Request>();
   private readonly clock: LedgerClock;
@@ -286,7 +307,8 @@ export class LedgerClient {
     return state.view = {
       chatId, loaded: state.loaded, generation: state.generation, lastSeq: state.lastSeq, readSeq: state.readSeq,
       events: state.events, hasOlder: state.olderCursor !== null, inflight: [...state.inflight.values()],
-      pending: [...this.pending.values()].filter((item) => item.chatId === chatId && !shown.has(item.idempotencyKey)),
+      pending: [...this.pending.values()].filter((item) => item.chatId === chatId && (item.state === "rejected" || !shown.has(item.idempotencyKey))),
+      redactions: [...this.redactions.values()].filter((item) => item.chatId === chatId),
       ...(state.error ? { error: state.error } : {}),
     };
   }
@@ -449,14 +471,17 @@ export class LedgerClient {
   }
   /** A stored event with the sender's key replaces the optimistic bubble. */
   private settle(event: ChatEvent) {
-    if (event.idempotencyKey && this.pending.get(event.idempotencyKey)?.chatId === event.chatId)
+    if (event.idempotencyKey && this.pending.get(event.idempotencyKey)?.chatId === event.chatId) {
       this.pending.delete(event.idempotencyKey);
+      this.cancelResend(event.idempotencyKey);
+    }
+    if (event.kind === "redaction") this.redactions.delete(event.chatId + "\n" + event.targetEventId);
   }
 
   // -- commands --
   async send(chatId: string, input: { text: string; attachments?: AttachmentRef[]; mentions?: { agentIds: string[]; all?: boolean }; replyTo?: string }) {
     const key = (this.options.idempotencyKey ?? newIdempotencyKey)();
-    const item: PendingSend = { idempotencyKey: key, chatId, text: input.text, attachments: input.attachments ?? [], state: "sending", createdAt: this.clock.now(),
+    const item: PendingSend = { idempotencyKey: key, chatId, text: input.text, attachments: input.attachments ?? [], state: "sending", createdAt: this.clock.now(), attempts: 0,
       ...(input.mentions ? { mentions: input.mentions } : {}), ...(input.replyTo ? { replyTo: input.replyTo } : {}) };
     this.pending.set(key, item);
     this.notify();
@@ -466,13 +491,22 @@ export class LedgerClient {
   retry(idempotencyKey: string) {
     const item = this.pending.get(idempotencyKey);
     if (!item || item.state === "sending" || item.state === "accepted") return Promise.resolve(undefined);
+    this.cancelResend(idempotencyKey);
     return this.transmit(item);
   }
   discard(idempotencyKey: string) {
+    this.cancelResend(idempotencyKey);
     if (this.pending.delete(idempotencyKey)) this.notify();
   }
+  private cancelResend(idempotencyKey: string) {
+    if (!this.resend.has(idempotencyKey)) return;
+    this.clock.clearTimeout(this.resend.get(idempotencyKey));
+    this.resend.delete(idempotencyKey);
+    const item = this.pending.get(idempotencyKey);
+    if (item) delete item.retryAt;
+  }
   private async transmit(item: PendingSend): Promise<SendResponse | undefined> {
-    item.state = "sending"; delete item.error; this.notify();
+    item.state = "sending"; item.attempts++; delete item.error; delete item.retryAt; this.notify();
     try {
       const response = await this.api.send(item.chatId, {
         idempotencyKey: item.idempotencyKey, text: item.text,
@@ -488,10 +522,48 @@ export class LedgerClient {
       if (!this.pending.has(item.idempotencyKey)) return undefined;
       item.state = retryable(error) ? "failed" : "rejected";
       item.error = error instanceof ApiError ? error.code : "request_failed";
+      // Network failures resend with the same key: the server answers `duplicate` if the first attempt was stored.
+      if (item.state === "failed" && item.attempts <= (this.options.sendRetries ?? 3)) {
+        const delay = 1000 * 2 ** (item.attempts - 1);
+        item.retryAt = this.clock.now() + delay;
+        this.resend.set(item.idempotencyKey, this.clock.setTimeout(() => {
+          this.resend.delete(item.idempotencyKey);
+          if (this.pending.get(item.idempotencyKey) === item && item.state === "failed") void this.transmit(item).catch(() => undefined);
+        }, delay));
+      }
       this.notify();
       throw error;
     }
   }
+  /**
+   * Redact (撤回) an own message. One key per target, so a retry after a network failure reuses it.
+   * The target disappears when the stored `redaction` event is in order (response or socket).
+   */
+  async redact(chatId: string, eventId: string) {
+    const id = chatId + "\n" + eventId;
+    const item = this.redactions.get(id) ?? { chatId, eventId, idempotencyKey: (this.options.idempotencyKey ?? newIdempotencyKey)(), state: "sending" as const };
+    if (this.redactions.get(id)?.state === "sending") return undefined;
+    item.state = "sending"; delete item.error;
+    this.redactions.set(id, item);
+    this.notify();
+    try {
+      const response = await this.api.redact(chatId, eventId, item.idempotencyKey);
+      this.redactions.delete(id);
+      this.ingest(response.event);
+      this.notify();
+      return response;
+    } catch (error) {
+      if (this.redactions.get(id) !== item) return undefined;
+      item.state = retryable(error) ? "failed" : "rejected";
+      item.error = error instanceof ApiError ? error.code : "request_failed";
+      this.notify();
+      throw error;
+    }
+  }
+  dismissRedaction(chatId: string, eventId: string) {
+    if (this.redactions.delete(chatId + "\n" + eventId)) this.notify();
+  }
+
   /** Read markers are monotonic on the server; lower values are not sent. */
   async markRead(chatId: string, seq: number) {
     const state = this.state(chatId);
@@ -515,6 +587,7 @@ export class LedgerClient {
   }
   disconnect() {
     this.stopped = true;
+    for (const key of [...this.resend.keys()]) this.cancelResend(key);
     this.clock.clearTimeout(this.reconnectTimer);
     this.clock.clearTimeout(this.heartbeat);
     const socket = this.socket;
@@ -676,6 +749,8 @@ export interface LedgerBubble {
   kind: "message" | "notice" | "action" | "card" | "window" | "member";
   role: "user" | "assistant" | "system"; text: string; html?: string;
   attachments: AttachmentRef[]; replyTo?: string; final?: boolean; possibleDuplicate?: boolean; edited?: boolean;
+  /** Redacted (撤回): the bubble stays as a placeholder; text, html and attachments are cleared. */
+  redacted?: boolean;
   reactions: Array<{ key: string; senders: string[] }>; deliveries: DeliveryState[];
   level?: "info" | "warning"; card?: Card; idempotencyKey?: string;
 }
@@ -697,7 +772,8 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
       case "message":
         bubble = { ...base, kind: "message", role: event.role, text: event.text, attachments: event.attachments ?? [], deliveries: [...(event.deliveries ?? [])],
           ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
-          ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}) };
+          ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}),
+          ...(event.redacted ? { redacted: true, text: "", attachments: [] } : {}) };
         break;
       case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;
       case "action": bubble = { ...base, kind: "action", role: "user", text: event.label }; break;
@@ -718,16 +794,17 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
       }
       case "edit": {
         const target = byId.get(event.targetEventId);
-        if (target && target.sender.id === event.sender.id) { target.text = event.text; target.edited = true; delete target.html; }
+        if (target && !target.redacted && target.sender.id === event.sender.id) { target.text = event.text; target.edited = true; delete target.html; }
         break;
       }
       case "redaction": {
         const target = byId.get(event.targetEventId);
-        if (target) { byId.delete(event.targetEventId); items.splice(items.indexOf(target), 1); }
+        // Kept in place so the chat shows that a message was withdrawn; turns placed after it stay put.
+        if (target) { target.redacted = true; target.text = ""; target.attachments = []; target.reactions = []; delete target.html; delete target.edited; }
         break;
       }
       case "reaction": {
-        if (!byId.has(event.targetEventId)) break;
+        if (!byId.has(event.targetEventId) || byId.get(event.targetEventId)!.redacted) break;
         const keys = reactions.get(event.targetEventId) ?? new Map<string, Set<string>>();
         const senders = keys.get(event.key) ?? new Set<string>();
         if (event.removed) senders.delete(event.sender.id); else senders.add(event.sender.id);
@@ -747,7 +824,7 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
   }
   for (const [eventId, keys] of reactions) {
     const target = byId.get(eventId);
-    if (target) target.reactions = [...keys].filter(([, senders]) => senders.size).map(([key, senders]) => ({ key, senders: [...senders] }));
+    if (target && !target.redacted) target.reactions = [...keys].filter(([, senders]) => senders.size).map(([key, senders]) => ({ key, senders: [...senders] }));
   }
   return { items, turns, cards };
 }

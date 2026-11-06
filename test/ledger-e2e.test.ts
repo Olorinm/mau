@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LedgerClient, ledgerApi, type LedgerSocket } from "../web/src/api/ledger";
+import { LedgerClient, foldEvents, ledgerApi, ledgerFeatures, type LedgerSocket } from "../web/src/api/ledger";
 import { alice, mauFixture } from "./fixtures/mau.js";
 
 // Mau embedding a Router with AGENT_LEDGER_READ: a Matrix-ingested owner message is served by the ledger
@@ -26,7 +26,24 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   const webRoot = mkdtempSync(join(tmpdir(), "mau-ledger-web-"));
   cleanup.push(() => rmSync(webRoot, { recursive: true, force: true }));
   writeFileSync(join(webRoot, "index.html"), "<!doctype html><title>console</title>");
-  const f = await mauFixture(cleanup, { webRoot }, undefined, {}, { ledgerRead: true });
+  // `ledgerSend` is ignored by Routers before phase 3; the send part below is keyed on the advertised feature.
+  // A fake Host (with run idempotency, which Mau requires) that completes every run, so a web send runs a whole turn.
+  const runs = new Map<string, Record<string, unknown>>(), inputs: string[] = [];
+  const host = (url: URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET", path = url.pathname;
+    if (path.endsWith("/runs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
+      inputs.push(String(body.input));
+      const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: `answer-${runs.size + 1}` };
+      runs.set(id, run); return Response.json(run);
+    }
+    if (path.endsWith("/events")) return Response.json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+    if (path.endsWith("/calls")) return Response.json({ calls: [] });
+    const run = /\/runs\/(run-\d+)$/.exec(path)?.[1];
+    if (run && runs.has(run)) return Response.json(runs.get(run));
+    return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+  };
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true });
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -41,7 +58,8 @@ it("serves a Matrix-ingested message through /web history and the event socket t
 
   const api = ledgerApi("alice", f.base + "/_agent-router/v1/web");
   const me = await api.me();
-  expect(me.limits?.features).toMatchObject({ history: true, send: false });
+  expect(me.limits?.features).toMatchObject({ history: true });
+  const sendable = ledgerFeatures(me).has("send");
   expect(await api.openDm(f.agent.id)).toMatchObject({ chatId, kind: "dm" });
   const page = await until(async () => {
     const result = await api.events(chatId);
@@ -69,7 +87,35 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   expect(live.seq).toBeGreaterThan(before);
   expect(client.view(chatId).events.map((event) => event.seq)).toEqual(
     Array.from({ length: client.view(chatId).events.length }, (_, index) => client.view(chatId).events[0]!.seq + index));
-  expect(client.chats.get(chatId)?.lastSeq).toBeGreaterThanOrEqual(live.seq);
+  // The chat index frame may trail the event frame under load.
+  await until(() => (client.chats.get(chatId)?.lastSeq ?? 0) >= live.seq, "index");
+  if (sendable) {
+    // Phase 3: the console sends through Router; the stored web message comes back once, keyed by its idempotencyKey.
+    const response = await client.send(chatId, { text: "sent from the web" });
+    expect(response).toMatchObject({ status: "accepted", event: { kind: "message", role: "user", text: "sent from the web", sender: { type: "person" } } });
+    expect(response!.event.channel?.kind ?? "web").toBe("web");
+    const key = response!.event.idempotencyKey!;
+    expect(key).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+    expect(await api.send(chatId, { idempotencyKey: key, text: "sent from the web" })).toMatchObject({ status: "duplicate", event: { eventId: response!.event.eventId } });
+    await expect(api.send(chatId, { idempotencyKey: key, text: "a different body" })).rejects.toMatchObject({ status: 409, code: "idempotency_key_reused" });
+    await until(() => client.view(chatId).events.some((event) => event.eventId === response!.event.eventId), "send echo");
+    expect(client.view(chatId).events.filter((event) => event.idempotencyKey === key)).toHaveLength(1);
+    expect(client.view(chatId).pending).toEqual([]);
+    // web → Router → Host → reply over the socket: the turn runs in the shared owner-main session and its answer is
+    // recorded for the web, not sent to Matrix.
+    const reply = await until(() => client.view(chatId).events.find((event) => event.kind === "message" && event.role === "assistant"
+      && event.turnId !== undefined && inputs.some((input) => input.includes("sent from the web")) && event.channel?.kind === "web"), "web reply");
+    expect(reply).toMatchObject({ final: true, sender: { type: "agent", id: f.agent.id } });
+    await until(() => client.view(chatId).events.find((event) => event.kind === "turn" && event.turnId === reply.turnId && event.state === "completed"), "turn completed");
+    // Withdraw (撤回): the stored redaction comes back, and history renders the target as redacted.
+    const withdrawn = await client.redact(chatId, response!.event.eventId);
+    // The turn already took the input, so it is hidden, not dropped (ADR 15.2.9).
+    expect(withdrawn).toMatchObject({ status: "accepted", dropped: false, event: { kind: "redaction", targetEventId: response!.event.eventId } });
+    expect(client.view(chatId).redactions).toEqual([]);
+    const history = await api.events(chatId, { limit: 200 });
+    expect(history.events.find((event) => event.eventId === response!.event.eventId)).toMatchObject({ kind: "message", text: "", redacted: true });
+    expect(foldEvents(history.events).items.find((item) => item.eventId === response!.event.eventId)).toMatchObject({ redacted: true, text: "" });
+  }
   // Unknown upgrade paths are still answered by Mau's SSH handler, not left hanging.
   const rejected = await new Promise<string>((resolve) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/_agent-router/v1/web/socket?ticket=tk_unknown`);
