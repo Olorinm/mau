@@ -83,6 +83,15 @@ SSH upgrade, and maps its email (or a configured service token) to an owner. The
   an `Origin` of the console (`edgeIdentity.origins`, default the public URL's origin, or the request's own host)
   and a JSON-like body type. Non-browser callers behind Access send a bearer token or an explicit `Origin`.
 
+### Without Matrix (`AGENT_MATRIX=off`)
+
+With Router's Matrix switch off (agent-router ADR 0005 section 19), Mau requires `edgeIdentity` (start fails with
+`matrix_off_requires_edge_identity`), serves no homeserver in the console's `connect-src`, and adds no Matrix
+connection when an environment becomes ready. The console reads `features.matrix` from `GET /web/me`: when it is
+`false`, chats always come from the ledger, the Matrix chat source, Matrix login and `MauConversations` are never
+loaded (they are separate chunks behind dynamic imports), Matrix is not offered as a channel or connector, and Matrix
+history in a DM is badged "Matrix (disabled)".
+
 ## Channels
 
 Router setup jobs are polled every two seconds, including after temporary network,

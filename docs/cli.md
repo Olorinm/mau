@@ -24,6 +24,19 @@ mau check
 mau status
 ```
 
+Behind Cloudflare Access (and always when the service runs without Matrix), log in at the edge instead:
+
+```sh
+cloudflared access login https://mau.example
+mau login --url https://mau.example --edge
+# automation: an Access service token mapped by the operator
+mau login --url https://mau.example --access-client-id-file /private/id --access-client-secret-file /private/secret
+```
+
+`--edge` is the default when `GET /_mau/v1/info` reports `login: "edge"`. Access credentials are read on every call
+(`--access-client-id-file`/`--access-client-secret-file`, `CF_ACCESS_CLIENT_ID[_FILE]`/`CF_ACCESS_CLIENT_SECRET[_FILE]`,
+`--access-token-file`/`CF_ACCESS_TOKEN[_FILE]`, or `cloudflared access token`) and are never saved.
+
 Follow the links or QR codes to connect your own channel. To select an Agent that
 already exists, use `mau agents` and `mau use NAME` instead of `setup`.
 One account can own several Agents. Each cloud Agent gets its own environment;

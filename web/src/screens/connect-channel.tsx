@@ -6,6 +6,7 @@ import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { LinkCode } from "./link-code";
+import { useMatrixAvailable } from "../api/features";
 
 const kinds: ChannelKind[] = ["feishu", "weixin", "telegram", "matrix", "grove-mail"];
 const terminal = (job: ConnectionJob) => job.state === "ready" || job.state === "failed";
@@ -23,6 +24,8 @@ export function ConnectChannelDialog(props: {
   const router = routerApi(props.session.token);
   const agentId = props.summary.agent.id;
   const connected = new Set(props.summary.connections.map((c) => c.kind));
+  // Without Matrix (agent-router ADR 0005 19.3) the Matrix channel is not offered.
+  const matrix = useMatrixAvailable(props.session);
   const [kind, setKind] = useState<ChannelKind | null>(props.job?.kind ?? props.initialKind ?? null);
   const [job, setJob] = useState<ConnectionJob | null>(props.job ?? null);
   const [recovery, setRecovery] = useState<ConnectionJob["recovery"]>();
@@ -53,7 +56,7 @@ export function ConnectChannelDialog(props: {
           <div className="mau-form">
             <p className="mau-muted">{t("connect.choose")}</p>
             <div className="mau-channel-grid">
-              {kinds.map((k) => (
+              {kinds.filter((k) => k !== "matrix" || matrix).map((k) => (
                 <button key={k} type="button" className="mau-channel-choice" disabled={connected.has(k)} onClick={() => setKind(k)}>
                   <strong>{t(`channel.${k}`)}</strong>
                   {connected.has(k) ? <ProductStatus compact tone="success" label={t("job.ready")} /> : null}

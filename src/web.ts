@@ -3,12 +3,13 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /** Same-origin web console. API, Router and Matrix paths never fall back to the page. */
-export function webConsole(root: string, homeserver: string): express.RequestHandler {
+/** `homeserver` is the public Matrix origin the console may call; none when Matrix is off (agent-router ADR 0005 19.3). */
+export function webConsole(root: string, homeserver?: string): express.RequestHandler {
   const directory = resolve(root);
   if (!existsSync(join(directory, "index.html"))) throw new Error("web_console_index_missing");
   const policy = [
     "default-src 'self'",
-    `connect-src 'self' ${homeserver}`,
+    homeserver ? `connect-src 'self' ${homeserver}` : "connect-src 'self'",
     // blob: shows ledger attachment images, which are fetched with the bearer header (agent-router ADR 0005 16.5).
     "img-src 'self' data: blob:",
     // React and the shared UI set dynamic sizes through style attributes.

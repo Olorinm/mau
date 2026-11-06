@@ -1,5 +1,5 @@
 import { useThemePreference } from "./theme";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, EmployeeAvatar, useToast } from "@olorinm/agent-ui/app";
 import {
@@ -13,7 +13,6 @@ import {
 } from "./api/session";
 import { accessExpiredEvent } from "./api/http";
 import { errorMessage, useI18n } from "./i18n";
-import { LoginScreen } from "./screens/login";
 import { AgentsScreen } from "./screens/agents";
 import { MessagesScreen } from "./screens/messages";
 import { ConnectorsScreen } from "./screens/connectors";
@@ -33,6 +32,9 @@ import {
   type FrontendLabelKey,
 } from "@olorinm/agent-frontend";
 import { ProductIcon } from "@olorinm/agent-ui/app";
+
+// The Matrix login form loads only for `login:"matrix"` (agent-router ADR 0005 19.3).
+const LoginScreen = lazy(() => import("./screens/login").then((module) => ({ default: module.LoginScreen })));
 
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const { t, language, setLanguage } = useI18n();
@@ -117,7 +119,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     );
   if (!session)
     return boot.mode === "matrix" ? (
-      <LoginScreen onSignedIn={signIn} onToggleLanguage={toggleLanguage} />
+      <Suspense fallback={null}><LoginScreen onSignedIn={signIn} onToggleLanguage={toggleLanguage} /></Suspense>
     ) : null;
   const zh = language === "zh-CN";
   const labels: Partial<Record<FrontendLabelKey, string>> = {

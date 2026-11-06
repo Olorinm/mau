@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError, accessExpiredEvent, request, safeExternalUrl } from "../web/src/api/http.js";
-import { bootSession, clearSession, loadSession, loginWithPassword, loginWithToken, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
+import { bootSession, clearSession, loadSession, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
+import { loginWithPassword, loginWithToken } from "../web/src/api/matrix-login.js";
 import { mauApi, routerApi } from "../web/src/api/client.js";
 
 class MemoryStorage {

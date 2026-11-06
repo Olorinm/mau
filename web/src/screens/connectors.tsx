@@ -8,9 +8,10 @@ import { ApiError, safeExternalUrl } from "../api/http";
 import { errorMessage, useI18n } from "../i18n";
 import { ConnectChannelDialog } from "./connect-channel";
 import { FeishuAuthorizationRow } from "./feishu-authorization";
+import { useMatrixAvailable } from "../api/features";
 
 type Product = { id: string; name: string; en?: string; description: string; descriptionEn: string; group: "work" | "knowledge" | "channels"; channel?: ChannelKind };
-const catalog: Product[] = [
+const products: Product[] = [
   { id: "gmail", name: "Gmail", description: "查找邮件、阅读往来，把重要信息带进对话。", descriptionEn: "Find emails and bring important conversations into your work.", group: "work" },
   { id: "calendar", name: "Google 日历", en: "Google Calendar", description: "把日程、会议与待办安排在一起。", descriptionEn: "Bring your events and meeting schedule together.", group: "work" },
   { id: "drive", name: "Google 云端硬盘", en: "Google Drive", description: "查找文件，获取工作所需的资料。", descriptionEn: "Find files and the information you need.", group: "knowledge" },
@@ -92,6 +93,9 @@ export function ConnectorsScreen({ session }: { session: Session }) {
   const [selected, setSelected] = useState<string>(), [connecting, setConnecting] = useState<{ agent: AgentSummary; kind: ChannelKind }>();
   const heading = useRef<HTMLHeadingElement>(null), content = useRef<HTMLDivElement>(null), queryClient = useQueryClient();
   const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: mauApi(session.token).agents });
+  // Without Matrix (agent-router ADR 0005 19.3) the Matrix connector is not listed.
+  const matrix = useMatrixAvailable(session);
+  const catalog = products.filter((p) => p.id !== "matrix" || matrix);
   const accountsKey = ["connector-accounts", session.owner];
   const accounts = useQuery({ queryKey: accountsKey, queryFn: mauApi(session.token).connectorAccounts, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const checks = useMutation({ mutationFn: (id: string) => routerApi(session.token).check(id) });

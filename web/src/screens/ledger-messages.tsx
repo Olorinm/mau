@@ -18,7 +18,6 @@ import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState 
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
-import { MauConversations } from "../api/conversations";
 import { ApiError } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
@@ -164,8 +163,10 @@ function LedgerAttachments({ api, attachments, onError, direct }: { api: LedgerA
  * Messages served by Router's owner ledger (agent-router ADR 0005). Each console feature follows the
  * server-advertised phase flags; without `send`, DMs still send through Matrix and return on the socket.
  */
-export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits }: {
+export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits, matrix: matrixOn = true }: {
   session: Session; initialAgentId?: string | undefined; onStartHandled?(): void; features: ReadonlySet<LedgerFeature>;
+  /** Router has Matrix on (ADR 0005 19.3); off: Matrix history shows as disabled and nothing calls Matrix. */
+  matrix?: boolean | undefined;
   /** `GET /me` attachment limits (ADR 0005 16.5). */
   limits?: { bytes: number; perMessage: number } | undefined;
 }) {
@@ -186,7 +187,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [dragging, setDragging] = useState(false);
   useEffect(() => { client.connect(); return () => client.disconnect(); }, [client]);
   const chats = useQuery({ queryKey: ["ledger-chats", session.token], queryFn: ({ signal }) => client.loadChats(signal), retry: false });
-  const matrix = useMemo(() => new MauConversations(session, agents.data ?? []), [session.token, agents.data]);
   const names = new Map(agents.data?.map(({ agent }) => [agent.id, agent.name]) ?? []);
 
   const [search, setSearch] = useState("");
@@ -252,6 +252,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     mutationFn: async (message: { chatId: string; text: string; transaction: string }) => {
       const agentId = client.chats.get(message.chatId)?.agentIds[0];
       if (!agentId) throw new ApiError("conversation_not_found", 404);
+      if (!matrixOn) throw new ApiError("matrix_disabled", 409);
+      // Only a Router without `send` (phase 2) needs Matrix here; the Matrix client loads on first use (19.3).
+      const { MauConversations } = await import("../api/conversations");
+      const matrix = new MauConversations(session, agents.data ?? []);
       await matrix.send(await matrix.start(agentId), message.text, message.transaction);
     },
     onSuccess: (_, message) => {
@@ -296,7 +300,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   // The DM merges the owner's messages from every channel; non-web origins carry a small badge.
   const badge = (bubble: LedgerBubble) => bubble.channel && bubble.channel.kind !== "web" && bubble.channel.kind !== "room" ? (
     <span className="mau-channel-badge" data-channel={bubble.channel.kind}>
-      {bubble.channel.label ?? channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind}
+      {bubble.channel.label ?? (bubble.channel.kind === "matrix" && !matrixOn ? (zh ? "Matrix（已停用）" : "Matrix (disabled)")
+        : channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind)}
     </span>
   ) : null;
   const describe = (bubble: LedgerBubble) => {

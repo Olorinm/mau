@@ -14,7 +14,9 @@ export interface EnvironmentView {
 }
 export type ChannelKind = "feishu" | "weixin" | "telegram" | "matrix" | "grove-mail";
 export interface AgentSummary {
-  agent: { id: string; owner: string; name: string; address: string; matrixId: string; createdAt: string; status: "provisioning" | "active" };
+  agent: { id: string; owner: string; name: string; address: string; matrixId: string; createdAt: string; status: "provisioning" | "active";
+    /** Router phase 7: `none` (no Matrix account), `dormant` or `active`. */
+    matrix?: { state: "active" | "dormant" | "none"; userId: string | null } };
   host: { runtimeId: string } | null;
   connections: Array<{ id: string; kind: ChannelKind; personalTools?: boolean }>;
   environment: EnvironmentView | null;
@@ -49,7 +51,8 @@ export interface CheckResult {
   agentId: string;
   connectionId?: string;
   kind: string;
-  status: "verified" | "needs_action" | "not_verified";
+  /** `disabled`: a Matrix connection kept while Matrix is off (agent-router ADR 0005 19.2). */
+  status: "verified" | "needs_action" | "not_verified" | "disabled";
   detail: string;
 }
 export interface FeishuAuthorization { authorized: boolean; verified: boolean; userName?: string; status?: string }

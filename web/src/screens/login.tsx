@@ -10,11 +10,8 @@ import {
   ConstellationPlaceholder,
 } from "@olorinm/agent-frontend";
 import { ApiError } from "../api/http";
-import {
-  loginWithPassword,
-  loginWithToken,
-  type Session,
-} from "../api/session";
+import { loginWithPassword, loginWithToken } from "../api/matrix-login";
+import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 
 export function LoginScreen(props: {
