@@ -45,6 +45,11 @@ type MessagesProps = {
   session: Session;
   initialAgentId?: string | undefined;
   onStartHandled?(): void;
+  /**
+   * Matrix groups (`createRoom` with `ai.mau.room`) can be created. Off when Router advertises native
+   * groups (ADR 0005 17.7): new groups are then Router rooms only.
+   */
+  matrixGroups?: boolean;
 };
 
 /**
@@ -65,13 +70,15 @@ export function MessagesScreen(props: MessagesProps) {
   if (me.isPending) return <LoadingSurface label={t("common.loading")} />;
   const features = ledgerFeatures(me.data);
   // A Router without the ledger web API (or with history off) keeps the Matrix console.
-  return features.has("history") ? <LedgerMessagesScreen {...props} features={features} /> : <MatrixMessagesScreen {...props} />;
+  return features.has("history") ? <LedgerMessagesScreen {...props} features={features} />
+    : <MatrixMessagesScreen {...props} matrixGroups={!features.has("groups")} />;
 }
 
 function MatrixMessagesScreen({
   session,
   initialAgentId,
   onStartHandled,
+  matrixGroups = true,
 }: MessagesProps) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
@@ -234,11 +241,11 @@ function MatrixMessagesScreen({
             label: zh ? "发起单聊" : "New chat",
             onSelect: () => setStarting(true),
           },
-          {
+          ...(matrixGroups ? [{
             id: "group",
             label: zh ? "发起群聊" : "New group",
             onSelect: () => setGrouping(true),
-          },
+          }] : []),
         ]}
       />
       <SearchField
@@ -279,7 +286,7 @@ function MatrixMessagesScreen({
               variant: "primary",
               onClick: () => setStarting(true),
             },
-            { label: zh ? "发起群聊" : "New group", onClick: () => setGrouping(true) },
+            ...(matrixGroups ? [{ label: zh ? "发起群聊" : "New group", onClick: () => setGrouping(true) }] : []),
           ]}
           notice={failure}
         />
@@ -453,7 +460,7 @@ function MatrixMessagesScreen({
           </DialogContent>
         </Dialog>
       ) : null}
-      <CreateGroupDialog
+      {matrixGroups ? <CreateGroupDialog
         open={grouping}
         title={groupTitle}
         busy={createGroup.isPending}
@@ -463,7 +470,7 @@ function MatrixMessagesScreen({
         onTitleChange={setGroupTitle}
         onToggleMember={(id) => setGroupMembers((ids) => ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id])}
         onCreate={() => createGroup.mutate()}
-      />
+      /> : null}
     </>
   );
 }

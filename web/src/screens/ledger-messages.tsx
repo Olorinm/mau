@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
   Conversation,
-  CreateGroupDialog,
   ItemList,
   ListDetailLayout,
   LoadingSurface,
@@ -30,6 +29,7 @@ import {
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { TaskSurface, type RunControls, type TaskLike } from "./run-surface";
+import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
 const channelNames: Record<string, [string, string]> = {
@@ -136,8 +136,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [starting, setStarting] = useState(false);
   const [target, setTarget] = useState("");
   const [grouping, setGrouping] = useState(false);
-  const [groupTitle, setGroupTitle] = useState("");
-  const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, AttachmentRef[]>>({});
   const [uploading, setUploading] = useState(false);
@@ -160,6 +159,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const current: ChatSummary | undefined = selected ? client.chats.get(selected) : undefined;
   const view = selected ? client.view(selected) : undefined;
   const fold = useMemo(() => view ? foldEvents(view.events) : undefined, [view?.events, view?.lastSeq]);
+  const room = useLedgerGroup({ token: session.token, chat: current, view, agents: agents.data ?? [] });
+  const agentName = (agentId: string) => room.group ? room.nameOf(agentId) : names.get(agentId) ?? current?.title ?? agentId;
 
   // Read up to the newest event while the chat is on screen.
   useEffect(() => {
@@ -171,10 +172,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const start = useMutation({
     mutationFn: (agentId: string) => api.openDm(agentId),
     onSuccess: (summary) => { onStartHandled?.(); setStarting(false); open(summary); },
-  });
-  const createGroup = useMutation({
-    mutationFn: () => api.createGroup(groupTitle.trim(), groupMembers),
-    onSuccess: (summary) => { setGrouping(false); setGroupTitle(""); setGroupMembers([]); open(summary); },
   });
   const requested = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -223,7 +220,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   });
   const quiet = (failed: unknown) => failed instanceof ApiError && failed.code === "session_busy" ? null : failed;
   const connectionError = client.connection.state === "closed" && client.connection.error;
-  const error = agents.error ?? chats.error ?? start.error ?? createGroup.error ?? matrixSend.error ?? uploadError ?? quiet(reset.error)
+  const error = agents.error ?? chats.error ?? start.error ?? matrixSend.error ?? uploadError ?? quiet(reset.error)
     ?? (connectionError ? new ApiError(connectionError, 401) : null) ?? (view?.error ? new ApiError(view.error, 0) : null);
   const failure = error ? (
     <p role="alert" className="mau-error">
@@ -299,7 +296,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         steer: async (text: string) => (await client.steer(chatId, turn.turnId, text)).status } : {}),
     };
     const turnView = (turn: LedgerTurn): MessageView => {
-      const name = names.get(turn.agentId) ?? current.title;
+      const name = agentName(turn.agentId);
       return {
         id: "turn:" + turn.turnId, role: "assistant", title: name,
         avatar: <EmployeeAvatar seed={turn.agentId} fallbackName={name} size={28} />,
@@ -317,8 +314,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         continue;
       }
       const system = item.kind === "notice" || item.kind === "window" || item.kind === "member" || item.kind === "action";
-      const text = item.kind === "window" ? (zh ? "—— 新的会话窗口 ——" : "—— New session window ——") : item.text;
-      const details = describe(item), channel = badge(item);
+      const text = item.kind === "window" ? (zh ? "—— 新的会话窗口 ——" : "—— New session window ——")
+        : item.kind === "member" ? room.memberText(item.eventId) ?? item.text : item.text;
+      const details = describe(item), channel = badge(item), addressed = item.redacted ? "" : room.addressedLine(item.eventId);
       const withdrawal = redactions.get(item.eventId);
       messages.push({
         id: item.eventId, role: item.role === "user" ? "user" : "assistant",
@@ -332,6 +330,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           : <ChatMarkdown markdown={text} />,
         ...(canRedact(item) && !withdrawal ? { menuActions: [{ id: "redact", label: zh ? "撤回" : "Withdraw",
           onSelect: () => setWithdrawing({ chatId: current.chatId, eventId: item.eventId }) }] } : {}),
+        // A state keeps the line visible; a stateless status is a hover-only timestamp.
+        ...(addressed && !withdrawal ? { state: "addressed", status: <span className="mau-addressed">{addressed}</span> } : {}),
         ...(withdrawal ? {
           state: withdrawal.state === "sending" ? "pending" : "failed",
           status: withdrawal.state === "sending" ? (zh ? "撤回中…" : "Withdrawing…") : errorMessage(t, withdrawal.error ?? "request_failed"),
@@ -349,7 +349,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const turn of fold.turns.values()) if (!placed.has(turn.turnId) && !terminalTurn.includes(turn.state)) messages.push(turnView(turn));
     // Streams of turns not yet in the loaded page (accumulated text; durable events replace it).
     for (const item of view.inflight) if (!fold.turns.has(item.turnId)) {
-      const name = names.get(item.agentId) ?? current.title;
+      const name = agentName(item.agentId);
       messages.push({ id: "inflight:" + item.turnId, role: "assistant", title: name, state: "streaming",
         avatar: <EmployeeAvatar seed={item.agentId} fallbackName={name} size={28} />, content: <ChatMarkdown markdown={item.text} /> });
     }
@@ -368,12 +368,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     });
   }
 
-  const groupWritable = features.has("groups");
+  const groupWritable = features.has("groups") && features.has("send");
   const canSend = !!current && !current.readOnly && (current.kind === "dm" || (current.kind === "group" && groupWritable));
-  const draftMentions = (chat: ChatSummary, text: string) => ({
-    all: /(^|\s)@(所有人|all|全部)(?=\s|$)/i.test(text),
-    agentIds: chat.agentIds.filter((id) => names.has(id) && text.includes("@" + names.get(id)!)),
-  });
   const insertMention = (chatId: string, name: string) => setDrafts((values) => {
     const draft = values[chatId] ?? "";
     const base = draft.endsWith("@") ? draft.slice(0, -1) : draft;
@@ -392,7 +388,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (sendable) {
       setDrafts((values) => ({ ...values, [current.chatId]: "" }));
       setFiles((values) => ({ ...values, [current.chatId]: [] }));
-      void client.send(current.chatId, { text, attachments, ...(current.kind === "group" ? { mentions: draftMentions(current, text) } : {}) }).catch(() => undefined);
+      // Groups: the client resolves mentions (ADR 0005 17.1); the addressed state is shown under the message.
+      void client.send(current.chatId, { text, attachments, ...(current.kind === "group" ? { mentions: room.mentions(text) } : {}) })
+        .then(room.record, () => undefined);
       return;
     }
     const message = { chatId: current.chatId, text, transaction: crypto.randomUUID() };
@@ -404,7 +402,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     <>
       <SidebarHeader title={zh ? "对话" : "Conversations"} actions={[
         { id: "conversation", label: zh ? "发起单聊" : "New chat", onSelect: () => setStarting(true) },
-        ...(groupWritable ? [{ id: "group", label: zh ? "发起群聊" : "New group", onSelect: () => setGrouping(true) }] : []),
+        ...(groupWritable ? [{ id: "group", label: zh ? "新建群聊" : "New group", onSelect: () => setGrouping(true) }] : []),
       ]} />
       <SearchField value={search} onChange={setSearch} placeholder={zh ? "搜索对话" : "Search conversations"} />
       {failure}
@@ -423,7 +421,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <CollectionEmptyState label={zh ? "消息" : "Messages"} loading={!failure && chats.isPending} illustration="messages"
           title={zh ? "还没有员工会话" : "No conversations yet"}
           description={zh ? "创建员工后，它会出现在通讯录；打开私聊或群聊后，这里显示对话。" : "Agents appear in Contacts. Open a conversation to see messages here."}
-          actions={[{ label: zh ? "发起单聊" : "Start a chat", variant: "primary", onClick: () => setStarting(true) }]}
+          actions={[{ label: zh ? "发起单聊" : "Start a chat", variant: "primary", onClick: () => setStarting(true) },
+            ...(groupWritable ? [{ label: zh ? "新建群聊" : "New group", onClick: () => setGrouping(true) }] : [])]}
           notice={failure} />
       ) : (
         <ListDetailLayout list={sidebar} detailOpen={!!current} onBack={() => setSelected(undefined)} backLabel={zh ? "消息" : "Messages"}
@@ -439,7 +438,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   </> : null}
                   <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
                   messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
-                  onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })} />
+                  onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
+                  {...(room.group && groupWritable ? {
+                    onRename: (title: string) => void room.rename(title, (summary) => client.updateSummary(summary)).catch(setUploadError),
+                    onOpenSettings: () => setMembersOpen(true),
+                  } : {})} />
                 </>} />}
               notice={<>
                 {failure}
@@ -452,6 +455,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
               </>}
               {...(!view.loaded ? { empty: <LoadingSurface label={t("common.loading")} /> } : {})}
               messages={messages}
+              {...(canSend && room.hint(drafts[current.chatId] ?? "") ? { trailing: <p role="status" className="mau-mention-hint">{room.hint(drafts[current.chatId] ?? "")}</p> } : {})}
               composer={{
                 value: drafts[current.chatId] ?? "",
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),
@@ -464,9 +468,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   attachments: composerFiles(current.chatId),
                 } : {}),
                 ...(current.kind === "group" && canSend ? { mentions: [
-                  ...current.agentIds.map((agentId) => ({ id: agentId, label: names.get(agentId) ?? agentId,
-                    avatar: <EmployeeAvatar seed={agentId} fallbackName={names.get(agentId) ?? agentId} size={20} />,
-                    onSelect: () => insertMention(current.chatId, names.get(agentId) ?? agentId) })),
+                  ...room.candidates.map(({ id, name }) => ({ id, label: name,
+                    avatar: <EmployeeAvatar seed={id} fallbackName={name} size={20} />,
+                    onSelect: () => insertMention(current.chatId, name) })),
                   { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的员工都回答" : "Every employee in the group answers",
                     onSelect: () => insertMention(current.chatId, zh ? "所有人" : "all") },
                 ] } : {}),
@@ -541,12 +545,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           </DialogContent>
         </Dialog>
       ) : null}
-      {groupWritable ? <CreateGroupDialog open={grouping} title={groupTitle} busy={createGroup.isPending} selectedMemberIds={groupMembers}
-        contactMembers={agents.data?.map(({ agent }) => ({ id: agent.id, name: agent.name, avatarSeed: agent.id })) ?? []}
-        onOpenChange={(value) => { setGrouping(value); if (!value) createGroup.reset(); }}
-        onTitleChange={setGroupTitle}
-        onToggleMember={(id) => setGroupMembers((ids) => ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id])}
-        onCreate={() => createGroup.mutate()} /> : null}
+      {groupWritable ? <LedgerCreateGroupDialog token={session.token} open={grouping} agents={agents.data ?? []}
+        onOpenChange={setGrouping} onCreated={(summary) => { setGrouping(false); open(summary); }} /> : null}
+      {groupWritable && room.group && membersOpen ? <LedgerGroupMembersDialog token={session.token} open chat={room.group}
+        members={room.members} agents={agents.data ?? []} onOpenChange={setMembersOpen}
+        onChanged={(change) => room.applyChange(change, (summary) => client.updateSummary(summary))} /> : null}
     </>
   );
 }

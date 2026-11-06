@@ -1,0 +1,58 @@
+/* Router-native group rooms (ledger console, agent-router ADR 0005 section 17.7). */
+.mau-group-members {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mau-group-rename,
+.mau-group-add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+.mau-group-rename .mau-field,
+.mau-group-add .mau-field {
+  flex: 1;
+  min-width: 0;
+}
+.mau-group-rename input {
+  box-sizing: border-box;
+}
+.mau-group-rename > button,
+.mau-group-add > button {
+  flex: none;
+}
+.mau-group-member-list {
+  display: grid;
+  gap: var(--sp-2);
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.mau-group-member-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mau-group-member-list li > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "未 @ 任何 Agent，消息只记录": shown at the end of the stream, right above the composer. */
+.mau-mention-hint {
+  position: sticky;
+  bottom: 0;
+  margin: auto 0 0;
+  padding: var(--sp-1) 0;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.mau-addressed {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs, var(--fs-sm));
+}
