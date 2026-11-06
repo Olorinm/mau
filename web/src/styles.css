@@ -479,12 +479,18 @@ header .mau-room-avatar {
 
 /* Ledger cards and run controls (phase 4). */
 .mau-ledger-card { display: grid; gap: var(--sp-2); min-width: 0; }
-.mau-card-actions, .mau-run-controls { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.mau-card-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .mau-card-reply { display: flex; gap: var(--sp-2); }
 .mau-card-reply input { flex: 1; min-width: 0; }
-.mau-run-steer { display: grid; gap: var(--sp-2); }
-.mau-run-steer textarea { width: 100%; resize: vertical; font: inherit; }
-.mau-run-steers { margin: 0; padding-left: var(--sp-4); display: grid; gap: var(--sp-1); }
+/* New-chat, notice and member lines: a centred grey line like the time separator, no bubble. */
+.room-chat-system:has(> .mau-chat-divider) {
+  background: none;
+  padding: var(--sp-1) 0;
+}
+.mau-chat-divider {
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+}
 
 /* Edge login (Cloudflare Access): expiry banner and the no-access page. */
 .mau-access-banner {
@@ -519,7 +525,7 @@ header .mau-room-avatar {
 .mau-identity-settings .mau-connector-buttons { padding: 0 22px 17px; }
 .mau-identity-settings .mau-panel-note { padding: 17px 22px 0; }
 
-/* Ledger attachments (ADR 0005 16.5): inline images and download chips in bubbles. */
+/* Ledger attachments (ADR 0005 16.5): inline images and file cards; the owner's sit above their text. */
 .mau-dropzone {
   display: contents;
 }
@@ -527,7 +533,9 @@ header .mau-room-avatar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin-top: var(--sp-1);
+}
+.room-chat-message.from-user .mau-attachments {
+  justify-content: flex-end;
 }
 .mau-attachment-image {
   padding: 0;
@@ -544,21 +552,6 @@ header .mau-room-avatar {
   max-width: min(320px, 100%);
   max-height: 240px;
   object-fit: contain;
-}
-.mau-attachment-chip {
-  display: inline-flex;
-  gap: var(--sp-2);
-  align-items: baseline;
-  max-width: 100%;
-}
-.mau-attachment-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mau-attachment-meta {
-  color: var(--c-text-2);
-  font-size: var(--fs-xs, var(--fs-sm));
 }
 .mau-attachment-error {
   display: flex;

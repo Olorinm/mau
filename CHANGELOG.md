@@ -4,7 +4,7 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
-## [0.1.0-alpha.25] - 2026-11-06
+## [0.1.0-alpha.26] - 2026-11-06
 
 - Pins Router 0.7.0-alpha.12 and Agent Connectors 0.1.0-alpha.9.
 - One 飞书 entry on the connectors page: 聊天 (Router's chat channel, bot identity) and 个人权限 (Agent Connectors as the
@@ -19,6 +19,21 @@ copied from it.
   Router authorization row, and the `feishu_personal` check label. Feishu personal access is only the connector's.
 
 PRs: [#36](https://github.com/Olorinm/mau/pull/36)
+
+## [0.1.0-alpha.25] - 2026-11-06
+
+- Chat controls live in the composer: in a DM, `/new` starts a new chat and `/clear` clears the
+  history after a typed-name confirmation; the header has no control buttons.
+- While a reply runs, the send button stops it, and text sent joins the running reply (or becomes
+  the next message when the runtime cannot take it). Added text shows as an ordinary message.
+- New-chat and notice lines are a centred grey line. Files in messages are cards with their kind,
+  above the text; draft attachments are cards with a corner remove button.
+- Replies following one from the same Agent drop the repeated avatar and name; the process summary
+  has space before the reply.
+- Chats named by a raw session key read as the channel; an Agent's work sessions are not listed.
+- Pins Agent Frontend 0.1.0-alpha.9.
+
+PR: [#37](https://github.com/Olorinm/mau/pull/37)
 
 ## [0.1.0-alpha.24] - 2026-11-06
 
