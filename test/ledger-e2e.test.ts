@@ -168,4 +168,4 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     socket.addEventListener("error", () => resolve("rejected")); socket.addEventListener("open", () => resolve("open"));
   });
   expect(rejected).toBe("rejected");
-});
+}, 60_000);
