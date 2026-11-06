@@ -97,12 +97,20 @@ export interface LedgerMe {
   /** `features` is a name → boolean map (ADR 0005 "Client contract" 1); a missing name is off. */
   limits?: { features?: Partial<Record<LedgerFeature, boolean>> } & Record<string, unknown>;
 }
+/** A verified `(provider, namespace, subject)` of the owner (ADR 0005 phase 6 implementation notes). */
+export interface PersonIdentity {
+  identityId: string; personId: string; provider: string; namespace: string; subject: string;
+  verifiedBy: "login" | "config" | "pairing" | "admin" | string; createdAt: string; lastSeenAt: string | null;
+  removable: boolean; fixed?: "identity_from_config" | "identity_in_use";
+}
+export interface PairingCode { id: string; code: string; expiresAt: string; instructions: string }
+export interface PendingPairingCode { id: string; createdAt: string; expiresAt: string }
 export interface HistoryQuery { before?: number; after?: number; generation?: number; limit?: number; strict?: boolean }
 
 // ---- Flags ----
 /** Console features Router advertises per migration phase (ADR 0005 §11). */
-export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups";
-const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups"];
+export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups" | "identity";
+const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups", "identity"];
 export const chatSourceKey = "mau.chatSource";
 
 /** The console reads chats from Router only when the browser opted in; Matrix stays the default. */
@@ -182,6 +190,11 @@ export function ledgerApi(token: string, base = ledgerBase) {
       request<{ members: Actor[] }>(base + "/groups/" + encodeURIComponent(roomId) + "/members", { token, body: { agentId } }),
     removeMember: (roomId: string, agentId: string) =>
       request<{ members: Actor[] }>(base + "/groups/" + encodeURIComponent(roomId) + "/members/" + encodeURIComponent(agentId), { token, method: "DELETE" }),
+    identities: (signal?: AbortSignal) => request<{ data: PersonIdentity[] }>(base + "/identities", { token, ...signalOf(signal) }),
+    revokeIdentity: (identityId: string) => request<null>(base + "/identities/" + encodeURIComponent(identityId), { token, method: "DELETE" }),
+    pairingCodes: (signal?: AbortSignal) => request<{ data: PendingPairingCode[] }>(base + "/identities/pairing-codes", { token, ...signalOf(signal) }),
+    createPairingCode: () => request<PairingCode>(base + "/identities/pairing-codes", { token, body: {} }),
+    cancelPairingCode: (id: string) => request<null>(base + "/identities/pairing-codes/" + encodeURIComponent(id), { token, method: "DELETE" }),
     /** Raw-body upload (§8.3). Browsers set Content-Length themselves; it cannot be assigned by script. */
     async uploadAttachment(file: Blob, name: string, signal?: AbortSignal): Promise<AttachmentRef> {
       const bytes = await file.arrayBuffer();

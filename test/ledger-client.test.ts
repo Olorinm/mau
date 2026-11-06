@@ -438,6 +438,33 @@ it("calls the web API with encoded chat ids, cursors, idempotency keys and raw a
   });
 });
 
+it("calls the identity routes (ADR 0005 phase 6) and reads the identity feature", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    if (init.method === "DELETE") return new Response(null, { status: 204 });
+    if (url.endsWith("/pairing-codes") && init.method === "POST") return Response.json({ error: "pairing_codes_pending_limit" }, { status: 429 });
+    return Response.json({ data: [] });
+  });
+  const api = ledgerApi("token");
+  await api.identities();
+  await expect(api.revokeIdentity("idn_1/x")).resolves.toBeNull();
+  await api.pairingCodes();
+  await expect(api.createPairingCode()).rejects.toMatchObject({ code: "pairing_codes_pending_limit", status: 429 });
+  await api.cancelPairingCode("pc_1");
+  expect(calls.map(({ url, init }) => [init.method, url])).toEqual([
+    ["GET", "/_agent-router/v1/web/identities"],
+    ["DELETE", "/_agent-router/v1/web/identities/idn_1%2Fx"],
+    ["GET", "/_agent-router/v1/web/identities/pairing-codes"],
+    ["POST", "/_agent-router/v1/web/identities/pairing-codes"],
+    ["DELETE", "/_agent-router/v1/web/identities/pairing-codes/pc_1"],
+  ]);
+  expect(JSON.parse(calls[3]!.init.body as string)).toEqual({});
+  const me = (features: unknown) => ({ person: { id: "p", name: "n" }, ownerId: "o", identities: [], limits: { features } }) as never;
+  expect(ledgerFeatures(me({ history: true, identity: true })).has("identity")).toBe(true);
+  expect(ledgerFeatures(me({ history: true })).has("identity")).toBe(false);
+});
+
 it("retries a send whose response was lost with the same key and shows one message", async () => {
   const { server, client } = setup();
   await client.openChat(chatId);           // no socket: nothing echoes the stored event

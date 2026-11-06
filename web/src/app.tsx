@@ -274,7 +274,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         ) : view === "connectors" ? (
           <ConnectorsScreen session={session} />
         ) : view === "settings" ? (
-          <SettingsScreen />
+          <SettingsScreen session={session} />
         ) : (
           <AppsScreen />
         )}
