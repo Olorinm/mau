@@ -372,6 +372,8 @@ it("folds edits, redactions, reactions, card updates, deliveries and turns into 
   expect(fold.items.map((item) => [item.kind, item.text, !!item.redacted])).toEqual([["message", "hi", false], ["card", "Allow?", false], ["message", "edited", false], ["message", "", true]]);
   expect(fold.items[2]).toMatchObject({ edited: true, reactions: [{ key: "👍", senders: ["prs_owner"] }], deliveries: [{ deliveryId: "d1", status: "sent" }] });
   expect(fold.cards.get("cd_1")?.status).toBe("approved");
+  // Router stores the redacted target as `redacted: true`: a page without the redaction event folds it the same way.
+  expect(foldEvents([event(20, { ...say("gone", "user"), text: "", redacted: true }, { sender: owner })]).items[0]).toMatchObject({ redacted: true, text: "" });
   expect(fold.turns.get("t1")).toMatchObject({ state: "completed", inputEventIds: ["ev_1"], seq: 2 });
 });
 

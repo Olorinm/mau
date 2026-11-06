@@ -28,7 +28,9 @@ export type TurnState = "queued" | "running" | "waiting" | "completed" | "failed
 export type ChatEventBody =
   | { kind: "message"; role: "user" | "assistant"; text: string; html?: string; attachments?: AttachmentRef[];
       mentions?: { agentIds: string[]; all: boolean }; replyTo?: string; final?: boolean; possibleDuplicate?: boolean;
-      deliveries?: DeliveryState[] }
+      deliveries?: DeliveryState[];
+      /** Router phase 3: the stored target of a redaction (empty text), also when the `redaction` event is not loaded. */
+      redacted?: boolean }
   | { kind: "notice"; text: string; level: "info" | "warning" }
   | { kind: "action"; targetCardId: string; label: string }
   | { kind: "card"; card: Card }
@@ -770,7 +772,8 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
       case "message":
         bubble = { ...base, kind: "message", role: event.role, text: event.text, attachments: event.attachments ?? [], deliveries: [...(event.deliveries ?? [])],
           ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
-          ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}) };
+          ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}),
+          ...(event.redacted ? { redacted: true, text: "", attachments: [] } : {}) };
         break;
       case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;
       case "action": bubble = { ...base, kind: "action", role: "user", text: event.label }; break;
