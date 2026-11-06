@@ -1,8 +1,10 @@
 import { lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LoadingSurface } from "@olorinm/agent-frontend";
+import { Button } from "@olorinm/agent-ui/app";
+import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
-import { useI18n } from "../i18n";
+import { errorMessage, useI18n } from "../i18n";
 import { attachmentLimits, chatSourcePreference, ledgerApi, ledgerFeatures, matrixEnabled } from "../api/ledger";
 import { LedgerMessagesScreen } from "./ledger-messages";
 
@@ -30,6 +32,13 @@ export function MessagesScreen(props: MessagesProps) {
   });
   const preferLedger = !!props.session.edge || chatSourcePreference() === "ledger";
   if (me.isPending) return <LoadingSurface label={t("common.loading")} />;
+  // An edge login has no Matrix account: a failed request is retried, never answered with the Matrix console.
+  if (me.isError && props.session.edge) return (
+    <div className="mau-error" role="alert">
+      {errorMessage(t, me.error instanceof ApiError ? me.error.code : "request_failed")}
+      <Button disabled={me.isFetching} onClick={() => void me.refetch()}>{t("common.retry")}</Button>
+    </div>
+  );
   const features = ledgerFeatures(me.data);
   const matrix = (groups: boolean) => (
     <Suspense fallback={<LoadingSurface label={t("common.loading")} />}><MatrixMessagesScreen {...props} matrixGroups={groups} /></Suspense>

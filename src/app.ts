@@ -97,6 +97,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // no Matrix login, so owners must sign in through the edge identity.
   const matrix = (config as { matrix?: { enabled?: boolean } }).matrix?.enabled !== false;
   if (!matrix && !edgeIdentity) throw new Error("matrix_off_requires_edge_identity");
+  // Without Matrix the console's only chat source is the ledger (Router refuses `ledgerRead` without `ledgerSend`).
+  if (!matrix && !(config as { ledgerRead?: boolean }).ledgerRead) throw new Error("matrix_off_requires_ledger_read");
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,

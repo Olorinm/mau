@@ -32,6 +32,12 @@ it.skipIf(!supported)("refuses to start with Matrix off and no edge identity", a
   await expect(mauFixture(cleanup, {}, undefined, {}, off)).rejects.toThrow("matrix_off_requires_edge_identity");
 });
 
+it.skipIf(!supported)("refuses to start with Matrix off and no ledger: the console would have no chat source", async () => {
+  const access = await accessIssuer(cleanup);
+  await expect(mauFixture(cleanup, {}, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) }, { matrix: { enabled: false } },
+    { edgeIdentityCerts: access.certsUrl })).rejects.toThrow("matrix_off_requires_ledger_read");
+});
+
 it.skipIf(!supported)("creates, configures and deletes employees without Matrix and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();
@@ -119,6 +125,25 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   await page.getByRole("button", { name: "连接器", exact: true }).click();
   await see(page.getByRole("button", { name: "飞书 连接", exact: true })).toBeVisible();
   await see(page.getByRole("button", { name: /^Matrix/ })).toHaveCount(0);
+  expect(matrixRequests).toEqual([]);
+  // Feature detection fails (Router restarting, network): a retry, never the Matrix console or Matrix login.
+  const detection = await browser.newPage();
+  let down = true;
+  detection.on("request", (request) => { if (request.resourceType() === "script") scripts.push(new URL(request.url()).pathname); });
+  await detection.route(/\/web\/me$/, (route) => down ? route.abort() : route.continue());
+  await detection.goto(f.base);
+  await detection.getByRole("button", { name: "对话", exact: true }).click();
+  const retry = detection.getByRole("alert").getByRole("button", { name: "重试", exact: true });
+  await see(retry).toBeVisible();
+  down = false;
+  await retry.click();
+  await see(detection.locator(".thread-md-p", { hasText: "收到-1" })).toBeVisible();
+  // `/_mau/v1/info` itself fails: the console offers a retry, not the Matrix login form.
+  const boot = await browser.newPage();
+  boot.on("request", (request) => { if (request.resourceType() === "script") scripts.push(new URL(request.url()).pathname); });
+  await boot.route(/\/_mau\/v1\/info$/, (route) => route.abort());
+  await boot.goto(f.base);
+  await see(boot.getByRole("alert").getByRole("button", { name: "重试", exact: true })).toBeVisible();
   expect(matrixRequests).toEqual([]);
   expect(scripts.filter((path) => /\/(conversations|matrix-messages|matrix-login|login)-[^/]*\.js$/.test(path))).toEqual([]);
   expect(errors).toEqual([]);

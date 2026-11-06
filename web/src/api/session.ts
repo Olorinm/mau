@@ -42,8 +42,11 @@ const logoutPath = (value: unknown) => typeof value === "string" && /^\/[^/\\]/.
  * read with the same-origin Access cookie only; otherwise the stored Matrix session (or the login page) is used.
  */
 export async function bootSession(storage: Storage = localStorage): Promise<Boot> {
-  const info = await request<MauInfo>("/_mau/v1/info").catch(() => undefined);
-  if (info?.login !== "edge") return { mode: "matrix", session: loadSession(storage) };
+  // No answer says nothing about the login: the Matrix form or a stored token would be a dead end on an edge deployment.
+  let info: MauInfo;
+  try { info = await request<MauInfo>("/_mau/v1/info"); }
+  catch (error) { return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" }; }
+  if (info.login !== "edge") return { mode: "matrix", session: loadSession(storage) };
   clearSession(storage);
   const logoutUrl = logoutPath(info.logoutUrl);
   try {

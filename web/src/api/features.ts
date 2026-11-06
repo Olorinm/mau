@@ -4,7 +4,8 @@ import type { Session } from "./session";
 
 /**
  * Whether Router has Matrix on (agent-router ADR 0005 19.1, `features.matrix`). A Router without the ledger web API is
- * an older Router with Matrix. While the answer is pending, Matrix entries stay hidden.
+ * an older Router with Matrix. While the answer is pending, Matrix entries stay hidden; an edge login never has a Matrix
+ * account to fall back to, so a failed request hides them too.
  */
 export function useMatrixAvailable(session: Session): boolean {
   const me = useQuery({
@@ -13,5 +14,5 @@ export function useMatrixAvailable(session: Session): boolean {
     retry: false,
     staleTime: 5 * 60_000,
   });
-  return me.isError || (me.data !== undefined && matrixEnabled(me.data));
+  return me.isError ? !session.edge : me.data !== undefined && matrixEnabled(me.data);
 }
