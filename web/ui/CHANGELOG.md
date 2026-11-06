@@ -48,8 +48,7 @@ PR: [#4](https://github.com/Olorinm/agent-ui/pull/4)
 ## [0.1.0-alpha.4] - 2026-10-15
 
 - The shared scoped portal API used by Agent Frontend 0.1.0-alpha.4.
-- Project code is licensed under MIT. The original OpenGrove attribution and third-party notices
-  remain.
+- Project code is licensed under MIT; attribution and third-party notices are in `NOTICE`.
 
 ## [0.1.0-alpha.3] - 2026-10-15
 
@@ -63,6 +62,6 @@ PR: [#4](https://github.com/Olorinm/agent-ui/pull/4)
 - `@olorinm/agent-ui`: chat messages, Markdown, composer, process details, approvals, questions and
   resource cards. An optional `@olorinm/agent-ui/agent-host` interaction adapter.
 - `@olorinm/agent-ui/app`: buttons, dialogs, confirmation, toasts, empty states, avatars, settings
-  rows, status pills, tooltips and state indicators, extracted from OpenGrove. Design tokens for
-  light and dark themes, and a base reset, are in `@olorinm/agent-ui/app.css`.
+  rows, status pills, tooltips and state indicators. Design tokens for light and dark themes, and
+  a base reset, are in `@olorinm/agent-ui/app.css`.
 - React 19 is a peer dependency.
