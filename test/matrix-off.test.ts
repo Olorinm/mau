@@ -122,9 +122,10 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.locator(".thread-md-p", { hasText: "收到-1" })).toBeVisible();
   // Matrix wording is hidden: no Matrix connector, no Matrix channel to connect.
-  await page.getByRole("button", { name: "连接器", exact: true }).click();
-  await see(page.getByRole("button", { name: "飞书 连接", exact: true })).toBeVisible();
-  await see(page.getByRole("button", { name: /^Matrix/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置" }).getByRole("button", { name: "消息渠道", exact: true }).click();
+  await see(page.getByRole("button", { name: "连接飞书", exact: true })).toBeVisible();
+  await see(page.getByText("Matrix", { exact: true })).toHaveCount(0);
   expect(matrixRequests).toEqual([]);
   // Feature detection fails (Router restarting, network): a retry, never the Matrix console or Matrix login.
   const detection = await browser.newPage();

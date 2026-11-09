@@ -41,26 +41,26 @@
   },
   "ui": {
     "repository": "Olorinm/agent-ui",
-    "version": "0.1.0-alpha.10",
-    "integrity": "sha512-c/WbfnvyjA/nF2zmybQYPWFlFB1JMdpSR/ELvXTqlNBiSIxntmv4ByQPmBjvnnwbuRtax6Z9BAZYDLCPQZXbEw==",
+    "version": "0.1.0-alpha.11",
+    "integrity": "sha512-LZaVrvJrYb2QjcQ+TyMuL/TRzTlzf1aw9R7bkY62V1lfsgMIKs/eJtQPrJdGkOwGQX4Ye9WCMaGdt7vLsLmVAQ==",
     "distribution": "github-release",
-    "revision": "ce97525b28c132de3314672c7a5f8f9bb4dba58c",
+    "revision": "71606b87381072524c1f88c9ef0c3662264a7ca1",
     "archive": {
       "repository": "Olorinm/agent-ui",
-      "tag": "v0.1.0-alpha.10",
-      "asset": "olorinm-agent-ui-0.1.0-alpha.10.tgz"
+      "tag": "v0.1.0-alpha.11",
+      "asset": "olorinm-agent-ui-0.1.0-alpha.11.tgz"
     }
   },
   "frontend": {
     "repository": "Olorinm/agent-ui",
-    "version": "0.1.0-alpha.10",
-    "integrity": "sha512-OGMFbK+7uU6JYiLQRCljQq+1g7t0r8qCWF6wUO5FPn64nxHqHCtD0ob0A11pZB9KC1r+mHaDm3vrQ+1SN8EMWQ==",
+    "version": "0.1.0-alpha.11",
+    "integrity": "sha512-0IRfe/AWm8kb03oVLeAOhUAGeyCFvQnyo0W8je5ps1Q+m5qbf+nGJX2Om/GZ9lKTowhhQuSl3i2+7ZtGMl9F7A==",
     "distribution": "github-release",
-    "revision": "ce97525b28c132de3314672c7a5f8f9bb4dba58c",
+    "revision": "71606b87381072524c1f88c9ef0c3662264a7ca1",
     "archive": {
       "repository": "Olorinm/agent-ui",
-      "tag": "frontend-v0.1.0-alpha.10",
-      "asset": "olorinm-agent-frontend-0.1.0-alpha.10.tgz"
+      "tag": "frontend-v0.1.0-alpha.11",
+      "asset": "olorinm-agent-frontend-0.1.0-alpha.11.tgz"
     }
   },
   "connectors": {

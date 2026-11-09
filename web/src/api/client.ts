@@ -35,7 +35,22 @@ export interface ConnectorAccountState {
 }
 export interface ConnectorAccount extends ConnectorAccountState { id: string; kind: string; label: string; assignedAgents?: string[]; permission?: "read-only";
   /** Acts as the owner; usable only in the owner's private conversation. */
-  usage?: "owner_private" }
+  usage?: "owner_private";
+  /** The authorized provider account, when the connector reports it. */
+  account?: { email?: string; name?: string } }
+export type PolicySetting = "allow" | "ask" | "deny";
+export interface PolicyOperation {
+  id: string; label: string; labelZh: string;
+  risk: "read" | "write" | "destructive";
+  setting: PolicySetting; default: PolicySetting;
+  available: boolean;
+  unavailableReason?: "scope_required" | "not_supported";
+  /** Whether connecting again with this operation's scope can make it available (添加). */
+  grantable?: boolean;
+}
+export interface PolicyGroup { id: string; label: string; labelZh: string; operations: PolicyOperation[] }
+/** Per-operation permissions of one connector account. */
+export interface ConnectorPolicy { groups: PolicyGroup[]; background?: PolicyOperation[] }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -72,6 +87,11 @@ export function mauApi(token: string) {
     /** Unified 飞书 entry: give the Agent's Feishu chat app to the owner's Feishu connection (no second app or QR). */
     feishuApplication: (id: string, agentId: string) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/feishu-application", { token, body: { agentId }, timeoutMs: 150_000 }),
     connectorAccountAction: (id: string, action: "check" | "connect" | "complete" | "disconnect") => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/" + action, { token, body: {}, credentials: "same-origin", timeoutMs: 150_000 }),
+    /** Connect again asking for the scopes of these grantable operations (添加). Older servers refuse the body. */
+    connectWithOperations: (id: string, operations: string[]) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/connect", { token, body: { operations }, credentials: "same-origin", timeoutMs: 150_000 }),
+    connectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token }),
+    updateConnectorPolicy: (id: string, settings: Record<string, PolicySetting>) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token, method: "PUT", body: { settings } }),
+    resetConnectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy/reset", { token, body: {} }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),

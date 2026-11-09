@@ -14,6 +14,19 @@ use the public Matrix client API and Router's existing delivery path. There is n
 withdrawal feature. Apps, extensions and settings keep visible product-owned
 entries with explicit “not connected yet” content where no integration exists.
 
+## Settings
+
+The main navigation has one **设置** entry. It opens a modal over the app with a left navigation: 通用 (language,
+theme), 连接器, 消息渠道, 身份与配对, 扩展, 数据控制 (clear a chat's history through Router's ledger purge), 帮助与法律
+and 退出 (the edge login's logout). Agent settings such as model and instructions stay on the Agent's page.
+
+Pages are deep-linkable: `#/settings/<section>[/<item>]`, for example `#/settings/connectors/gmail`. Before an OAuth
+redirect the console remembers the page; the callback's `/?view=connectors&oauth=…` reopens it. Below 640 px the modal
+fills the screen, the navigation is its first page and each page has a back button.
+
+Surfaces, type scale, spacing and components come from `@olorinm/agent-ui/app` (standard density for settings, compact
+for run details and approval cards).
+
 The original navigation, conversation input/search, profile, appearance settings,
 app forms and extension workspace are reused. Extension navigation retains Skills,
 MCP, kernel plugins, Hooks, Tools and CLI. Unavailable operations are disabled.
@@ -99,8 +112,9 @@ server or rate-limit errors. Errors show a retry button; missing or expired jobs
 stop polling. Router's `qr` field is a terminal
 drawing; the console renders its own QR code from the job's `https` link and
 offers the same link to open. Jobs live ten minutes in Router memory; an expired or
-unknown job asks the user to start again. Feishu personal access (acting as the
-owner) is authorized in the 飞书 entry through Agent Connectors; see
+unknown job asks the user to start again. Channels are connected per Agent in
+设置 → 消息渠道, inside the modal. Feishu personal access (acting as the owner) is
+authorized in 设置 → 连接器 → 飞书 through Agent Connectors; see
 [connector-accounts.md](connector-accounts.md).
 
 ## Verify

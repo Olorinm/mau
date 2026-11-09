@@ -4,7 +4,7 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
-## [Unreleased]
+## [0.1.0-alpha.31] - 2026-11-09
 
 - Connector operation permissions: `GET|PUT /_mau/v1/connector-accounts/:id/policy` and
   `POST /_mau/v1/connector-accounts/:id/policy/reset` let the owner set each operation of a connection to allow, ask or
@@ -17,6 +17,25 @@ copied from it.
   `expiresAt` while consent is pending, so a reloaded page shows the Feishu QR again. The `permission: "read-only"`
   field of assigned accounts is removed.
 - Pin Agent Connectors 0.1.0-alpha.11 (operation policy API).
+- Web console settings: the main navigation's configuration entries become one Settings modal with General
+  (language, theme), Connectors, Channels, Identity and pairing, Extensions, Data controls, Help and legal, and
+  sign-out. Deep links `#/settings/<section>[/<item>]` survive a reload, an OAuth return reopens the page it started
+  from, and on narrow screens the modal is full screen with the navigation as its first page.
+- Connectors settings: search and Available/Connected filters over the configured applications (applications without
+  an account are hidden); every connection starts with a consent dialog. An application page checks the connection on
+  open and shows disconnect (an unknown outcome requires a new check), the authorized account, the Agents using it and
+  per-operation permissions (allow, ask, deny) with confirmation before allowing a write, adding grantable operations
+  and reset to defaults. A server without the policy API shows the current behaviour read-only.
+- Channels settings list each Agent's chat channels and run Router's connect flows inside the modal; Feishu chat and
+  Feishu personal access link to each other.
+- The Feishu personal-access QR is drawn from the account's pending `authorizationUrl`, survives a reload and falls
+  back to the authorize button after `expiresAt`.
+- Data controls clear a chat's history through the existing ledger purge.
+- The console uses the Agent UI design system (`@olorinm/agent-ui/app.css`); chat cards and run details use the compact
+  density. The old connectors, Feishu entry and extensions screens are removed.
+- Pin Agent UI 0.1.0-alpha.11 and Agent Frontend 0.1.0-alpha.11.
+
+PRs: [#44](https://github.com/Olorinm/mau/pull/44), [#45](https://github.com/Olorinm/mau/pull/45)
 
 ## [0.1.0-alpha.30] - 2026-11-09
 

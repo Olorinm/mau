@@ -15,7 +15,7 @@ import {
   type ConversationComposer,
   type MessageView,
 } from "@olorinm/agent-frontend";
-import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState, TextButton } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
@@ -61,11 +61,12 @@ function LedgerCardView({ client, api, chatId, card, answer, answerable }: {
   const [draft, setDraft] = useState("");
   const busy = answer?.state === "sending";
   const send = (body: { choiceId: string } | { text: string }) => void client.answerCard(chatId, card.cardId, body).catch(() => undefined);
-  return <div className="mau-ledger-card" data-card-id={card.cardId} data-card-status={card.status}>
+  return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status}>
     <ChatMarkdown markdown={live.data?.text ?? card.text} />
     {pending && card.kind === "sensitive" ? <p className="mau-muted">{zh ? "请在执行内核的原生入口完成敏感输入，不要在聊天中发送密码或令牌。" : "Complete sensitive input in the runtime's native prompt; never send secrets in chat."}</p> : null}
     {pending && card.kind !== "sensitive" && card.choices.length ? <div className="mau-card-actions">
-      {card.choices.map((choice) => <Button key={choice.choiceId} disabled={busy} onClick={() => send({ choiceId: choice.choiceId })}>{choice.label}</Button>)}
+      {card.choices.map((choice) => <TextButton key={choice.choiceId} tone={choice.style === "danger" ? "danger" : "primary"} disabled={busy}
+        onClick={() => send({ choiceId: choice.choiceId })}>{choice.label}</TextButton>)}
     </div> : null}
     {pending && card.kind !== "sensitive" && card.freeText ? <form className="mau-card-reply" onSubmit={(event) => {
       event.preventDefault(); if (draft.trim()) { send({ text: draft.trim() }); setDraft(""); } }}>
