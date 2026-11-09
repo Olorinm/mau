@@ -4,6 +4,13 @@ Notable changes to `@olorinm/agent-frontend`, newest first. Each version has a G
 (`frontend-v*` tags) with the same notes and the package archive. When releasing, add the new
 section here in the version-bump commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.11] - 2026-11-09
+
+- Shell and chat follow the shared design system: page surface with hairline columns, grey
+  selection and bubbles, floating composer; no blank lines between markdown blocks in bubbles.
+
+PR: [#12](https://github.com/Olorinm/agent-ui/pull/12)
+
 ## [0.1.0-alpha.10] - 2026-11-06
 
 - Tool rows with full input and output in the expandable code block show their arguments on one

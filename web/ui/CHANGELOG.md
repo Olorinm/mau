@@ -5,6 +5,16 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.11] - 2026-11-09
+
+- Design-system tokens (type scale, spacing, radii, page and panel surfaces, compact density) and
+  settings components: settings modal, modal and consent dialog, section/panel/row, text button,
+  select menu, segmented control, search field, featured card, app icon, detail header and circular
+  buttons.
+- Semantic icons `apps`, `data`, `expand`, `eye`, `help`, `identity`, `key`, `logout`, `previous`.
+
+PR: [#12](https://github.com/Olorinm/agent-ui/pull/12)
+
 ## [0.1.0-alpha.10] - 2026-11-06
 
 - Codex dynamic tool results are read from `contentItems`, with JSON text parsed, instead of
