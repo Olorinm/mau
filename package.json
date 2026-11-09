@@ -68,6 +68,7 @@
     "@olorinm/agent-environment": "0.2.0-alpha.3"
   },
   "allowScripts": {
-    "@larksuite/cli@1.0.97": true
+    "@larksuite/cli@1.0.97": true,
+    "agent-browser@0.41.2": false
   }
 }

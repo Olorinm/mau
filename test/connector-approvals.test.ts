@@ -33,14 +33,21 @@ async function fixture(options: { deadlineMs?: number; files?: boolean } = {}) {
   const fake: Connector = { kind: "browser-fake", tools: [
     { name: "click", description: "Click", risk: "write", input: z.object({ site: z.string(), ref: z.string() }).strict(),
       summarize: input => `Click ${input.ref} on ${input.site}`, execute: async (_ctx, input) => { executed.push({ tool: "click", input }); return { clicked: true }; } },
-    { name: "upload", description: "Upload", risk: "write", input: z.object({ site: z.string(), ref: z.string(), file: z.object({ name: z.string(), mediaType: z.string(), contentBase64: z.string() }).strict() }).strict(),
-      execute: async (_ctx, input) => { executed.push({ tool: "upload", input }); return { uploaded: true }; } },
-    { name: "download", description: "Download", risk: "read", input: z.object({ site: z.string(), ref: z.string() }).strict(),
-      execute: async () => ({ name: "../../report.pdf", mediaType: "application/pdf", size: 5, contentBase64: Buffer.from("%PDF!").toString("base64"), url: "https://site.example/r.pdf?sig=secret" }) },
-    { name: "screenshot", description: "Screenshot", risk: "read", input: z.object({ site: z.string() }).strict(),
-      execute: async () => ({ mediaType: "image/png", contentBase64: Buffer.from("png-bytes").toString("base64") }) },
-    { name: "handoff_start", description: "Handoff", risk: "read", input: z.object({ site: z.string() }).strict(),
-      execute: async () => ({ handoffId: "h-1", liveViewUrl: "https://live.example/view/secret-token", expiresAt: new Date(Date.now() + 600_000).toISOString() }) },
+    { name: "agent_browser_read", description: "Run agent-browser", risk: "read", input: z.object({ args: z.array(z.string()) }).strict(),
+      execute: async (_ctx, input) => {
+        executed.push({ tool: "agent_browser_read", input });
+        const file = (name: string, mediaType: string, text: string) => ({ name, mediaType, size: text.length, contentBase64: Buffer.from(text).toString("base64") });
+        if (input.args[0] === "get") return { exitCode: 0, output: "https://upload.example/form?x=1\n" };
+        if (input.args[0] === "screenshot") return { exitCode: 0, output: "✓ Screenshot saved to screenshot.png", files: [file("screenshot.png", "image/png", "png-bytes")] };
+        if (input.args[0] === "download") return { exitCode: 0, output: "✓ Downloaded", files: [file("../../report.pdf", "application/pdf", "%PDF!")] };
+        return { exitCode: 0, output: "✓ Done" };
+      } },
+    { name: "agent_browser_write", description: "Upload", risk: "write", input: z.object({ args: z.array(z.string()), site: z.string(),
+      files: z.array(z.object({ name: z.string(), mediaType: z.string(), contentBase64: z.string() }).strict()) }).strict(),
+      summarize: input => `Upload ${input.files.map(f => f.name).join(", ")} to ${input.site}`,
+      execute: async (_ctx, input) => { executed.push({ tool: "agent_browser_write", input }); return { exitCode: 0, output: "✓ Uploaded" }; } },
+    { name: "handoff_start", description: "Handoff", risk: "read", input: z.object({ instructions: z.string() }).strict(),
+      execute: async (_ctx, input) => ({ handoffId: "h-1", liveViewUrl: "https://live.example/view/secret-token", expiresAt: new Date(Date.now() + 600_000).toISOString(), instructions: input.instructions }) },
     { name: "handoff_cancel", description: "Cancel handoff", risk: "write", input: z.object({ handoffId: z.string() }).strict(),
       execute: async (_ctx, input) => { executed.push({ tool: "handoff_cancel", input }); return { cancelled: true }; } },
   ] };
@@ -209,79 +216,89 @@ it("keeps schedule and delegation runs read-only: no write token, no card", asyn
   }
 });
 
-it("uploads only regular files inside the working directory, by path, up to 10 MB", async () => {
+it("uploads only regular files inside the working directory, by path, up to 10 MB, to the site the browser is on", async () => {
   const f = await fixture(); await f.start();
   writeFileSync(join(f.workspace, "cv.pdf"), "%PDF-cv");
   writeFileSync(join(f.sandbox, "secret.txt"), "outside");
   symlinkSync(join(f.sandbox, "secret.txt"), join(f.workspace, "link.txt"));
   symlinkSync(f.sandbox, join(f.workspace, "escape"));
   writeFileSync(join(f.workspace, "big.bin"), Buffer.alloc(MAX_RELAY_BYTES + 1));
-  const cases: Array<[unknown, string]> = [
-    ["../secret.txt", "browser_upload_path_invalid"], ["/etc/passwd", "browser_upload_path_invalid"], ["a/./b", "browser_upload_path_invalid"],
-    ["link.txt", "browser_upload_path_outside_workspace"], ["escape/secret.txt", "browser_upload_path_outside_workspace"],
-    ["big.bin", "browser_upload_too_large"], ["missing.pdf", "browser_upload_file_not_found"], [".", "browser_upload_path_invalid"],
+  const upload = (path: string, extra: Record<string, unknown> = {}) => ({ args: ["upload", "@e3", path], ...extra });
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [upload("../secret.txt"), "browser_upload_path_invalid"], [upload("/etc/passwd"), "browser_upload_path_outside_workspace"],
+    [upload("a/./b"), "browser_upload_path_invalid"], [upload("../../secret.txt", { cwd: join(f.workspace, "sub") }), "browser_upload_path_outside_workspace"],
+    [upload("secret.txt", { cwd: f.sandbox }), "browser_upload_path_outside_workspace"], [upload("cv.pdf", { cwd: "relative" }), "browser_upload_path_invalid"],
+    [upload("link.txt"), "browser_upload_path_outside_workspace"], [upload("escape/secret.txt"), "browser_upload_path_outside_workspace"],
+    [upload("big.bin"), "browser_upload_too_large"], [upload("missing.pdf"), "browser_upload_file_not_found"], [upload("."), "browser_upload_path_invalid"],
+    [{ args: ["upload", "@e3", "cv.pdf", "cv.pdf"] }, "browser_upload_duplicate_name"], [{ args: ["upload", "@e3"] }, "browser_upload_path_required"],
+    [{ args: ["click", "@e3"] }, "browser_upload_path_required"],
+    [{ args: ["upload", "@e3", "x"], site: "https://evil.example", files: [{ name: "x", mediaType: "text/plain", contentBase64: "eA==" }] }, "browser_upload_path_required"],
   ];
-  for (const [index, [path, error]] of cases.entries()) {
-    f.call("browser__upload", { site: "s", ref: "r", path }, `bad-${index}`); await f.host.calls("run");
-    expect(f.text(`bad-${index}`), String(path)).toMatchObject({ status: "failed", error });
+  for (const [index, [args, error]] of cases.entries()) {
+    f.call("browser__agent_browser_write", args, `bad-${index}`); await f.host.calls("run");
+    expect(f.text(`bad-${index}`), JSON.stringify(args)).toMatchObject({ status: "failed", error });
   }
-  f.call("browser__upload", { site: "s", ref: "r", file: { name: "x", mediaType: "text/plain", contentBase64: "eA==" } }, "bytes");
-  await f.host.calls("run"); expect(f.text("bytes")).toMatchObject({ error: "browser_upload_path_required" });
   expect(f.readerCalls.filter(c => c.input.action === "call")).toEqual([]); // Nothing left Mau for refused paths.
-  f.call("browser__upload", { site: "s", ref: "r", path: "cv.pdf" }, "good");
+  mkdirSync(join(f.workspace, "docs")); writeFileSync(join(f.workspace, "docs", "notes.txt"), "hello");
+  f.call("browser__agent_browser_write", { args: ["--json", "upload", "input[type=file]", "../cv.pdf", "notes.txt"], cwd: join(f.workspace, "docs") }, "good");
   const [card] = (await f.host.calls("run")).filter(c => c.kind === "interaction");
   expect(JSON.stringify(card!.input)).not.toContain(Buffer.from("%PDF-cv").toString("base64"));
+  expect(JSON.stringify(card!.input)).toContain("Upload cv.pdf, notes.txt to https://upload.example");
   await f.host.resolve("run", card!.id, { choice: "once" }); await f.host.settled("run");
-  expect(f.executed).toEqual([{ tool: "upload", input: { site: "s", ref: "r", file: { name: "cv.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("%PDF-cv").toString("base64") } } }]);
-  // Text files resolve to "text/plain; charset=utf-8"; browser file inputs take the bare MIME type.
-  writeFileSync(join(f.workspace, "notes.txt"), "hello");
-  f.call("browser__upload", { site: "s", ref: "r", path: "notes.txt" }, "text");
-  const [textCard] = (await f.host.calls("run")).filter(c => c.kind === "interaction");
-  await f.host.resolve("run", textCard!.id, { choice: "once" }); await f.host.settled("run");
-  expect(f.executed.at(-1)).toEqual({ tool: "upload", input: { site: "s", ref: "r", file: { name: "notes.txt", mediaType: "text/plain", contentBase64: Buffer.from("hello").toString("base64") } } });
+  // The site is the browser's current origin; text files resolve to "text/plain; charset=utf-8" and are passed bare.
+  expect(f.executed).toEqual([{ tool: "agent_browser_read", input: { args: ["get", "url"] } }, { tool: "agent_browser_write", input: {
+    args: ["--json", "upload", "input[type=file]", "cv.pdf", "notes.txt"], site: "https://upload.example", files: [
+      { name: "cv.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("%PDF-cv").toString("base64") },
+      { name: "notes.txt", mediaType: "text/plain", contentBase64: Buffer.from("hello").toString("base64") }] } }]);
 });
 
-it("relays downloads into browser_downloads/, screenshots as images, and keeps live views from the model", async () => {
+it("relays command files into browser_downloads/, screenshots as images, and keeps live views from the model", async () => {
   const f = await fixture(); await f.start();
-  f.call("browser__download", { site: "s", ref: "r" }, "dl"); await f.host.calls("run");
+  f.call("browser__agent_browser_read", { args: ["download", "@e5", "report.pdf"], cwd: "/anywhere" }, "dl"); await f.host.calls("run");
+  expect(f.executed).toEqual([{ tool: "agent_browser_read", input: { args: ["download", "@e5", "report.pdf"] } }]);
   const download = f.text("dl");
-  expect(download.result).toEqual({ path: expect.stringMatching(/^browser_downloads\/[0-9a-f]{8}-report\.pdf$/), name: "report.pdf", mediaType: "application/pdf", size: 5 });
-  expect(JSON.stringify(download)).not.toContain("contentBase64"); expect(JSON.stringify(download)).not.toContain("sig=secret");
-  expect(readFileSync(join(f.workspace, download.result.path), "utf8")).toBe("%PDF!");
+  const folder = join(realpathSync(f.workspace), "browser_downloads");
+  expect(download.result.files).toEqual([{ path: expect.stringMatching(new RegExp(`^${folder}/[0-9a-f]{8}-report\\.pdf$`)), name: "report.pdf", mediaType: "application/pdf", size: 5 }]);
+  expect(JSON.stringify(download)).not.toContain("contentBase64");
+  expect(readFileSync(download.result.files[0].path, "utf8")).toBe("%PDF!");
+  expect(f.resolved.get("dl").contentItems).toHaveLength(1);
   // A browser_downloads symlink out of the workspace is refused, not followed.
   rmSync(join(f.workspace, "browser_downloads"), { recursive: true }); symlinkSync(f.sandbox, join(f.workspace, "browser_downloads"));
-  f.call("browser__download", { site: "s", ref: "r" }, "dl2"); await f.host.calls("run");
+  f.call("browser__agent_browser_read", { args: ["download", "@e5", "report.pdf"] }, "dl2"); await f.host.calls("run");
   expect(f.text("dl2")).toMatchObject({ status: "failed" });
   expect(readdirSync(f.sandbox).filter(name => name.endsWith("report.pdf"))).toEqual([]);
+  rmSync(join(f.workspace, "browser_downloads"));
 
-  f.call("browser__screenshot", { site: "s" }, "shot"); await f.host.calls("run");
+  f.call("browser__agent_browser_read", { args: ["screenshot"] }, "shot"); await f.host.calls("run");
   const shot = f.resolved.get("shot");
   expect(shot.contentItems[1]).toEqual({ type: "inputImage", imageUrl: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}` });
   expect(shot.contentItems[0].text).not.toContain(Buffer.from("png-bytes").toString("base64"));
+  expect(JSON.parse(shot.contentItems[0].text).result.files[0].name).toBe("screenshot.png");
 
-  f.call("browser__handoff_start", { site: "s" }, "handoff");
+  f.call("browser__handoff_start", { instructions: "Please sign in" }, "handoff");
   const listed = await f.host.calls("run");
   expect(f.text("handoff").result).toMatchObject({ handoffId: "h-1" });
   expect(f.resolved.get("handoff").contentItems[0].text).not.toContain("live.example");
   const card = listed.find(c => c.id === "mau-handoff:handoff")!;
   expect(card).toMatchObject({ kind: "interaction", name: "item/tool/requestUserInput", input: { questions: [{ id: "handoff", options: [{ label: "取消接管" }] }] } });
   expect(JSON.stringify(card.input)).toContain("https://live.example/view/secret-token");
+  expect(JSON.stringify(card.input)).toContain("Agent 的说明：Please sign in");
   await f.host.resolve("run", card.id, { answers: { handoff: { answers: ["取消接管"] } } });
   expect(f.resolved.has(card.id)).toBe(false);
-  expect(f.executed).toEqual([{ tool: "handoff_cancel", input: { handoffId: "h-1" } }]);
+  expect(f.executed.filter(e => e.tool === "handoff_cancel")).toEqual([{ tool: "handoff_cancel", input: { handoffId: "h-1" } }]);
   expect((await f.host.calls("run")).some(c => c.id === card.id)).toBe(false);
-  // The catalog the model sees asks for a workspace path, not bytes.
-  f.call("unused", {}, "noop"); f.pending().pop();
+  // The catalog the model sees asks for agent-browser arguments with workspace paths, not bytes or a site.
   const pendingTools = { id: "tools", runId: "run", kind: "tool", name: "connected_apps", status: "pending", input: { action: "tools" }, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
   f.pending().push(pendingTools); await f.host.calls("run");
-  const upload = f.text("tools").tools.find((t: any) => t.name === "browser__upload");
-  expect(upload.inputSchema.properties.path).toBeDefined(); expect(upload.inputSchema.properties.file).toBeUndefined();
-  expect(upload.inputSchema.required).toEqual(["site", "ref", "path"]);
+  const tools = f.text("tools").tools;
+  const write = tools.find((t: any) => t.name === "browser__agent_browser_write");
+  expect(write.inputSchema).toEqual({ type: "object", properties: { args: expect.objectContaining({ type: "array" }) }, required: ["args"], additionalProperties: false });
+  expect(tools.find((t: any) => t.name === "browser__agent_browser_read").description).toContain("browser_downloads/");
 });
 
 it("refuses the workspace relay when the sandbox is unavailable", async () => {
   const f = await fixture({ files: false }); await f.start();
-  f.call("browser__upload", { site: "s", ref: "r", path: "cv.pdf" }); await f.host.calls("run");
+  f.call("browser__agent_browser_write", { args: ["upload", "@e3", "cv.pdf"] }); await f.host.calls("run");
   expect(f.text()).toMatchObject({ status: "failed", error: "browser_workspace_unavailable" });
 });
 
@@ -319,7 +336,7 @@ it("renders Mau's cards in Router chat and maps each button to the answer Mau re
   const { interaction } = await import("../node_modules/@agent-router/server/dist/communication/interaction.js" as string) as { interaction(call: unknown): { text: string; choices: Array<{ label: string; result: unknown }> } };
   const f = await fixture(); await f.start();
   f.call("browser__click", { site: "https://shop.example", ref: "buy" });
-  f.call("browser__handoff_start", { site: "s" }, "handoff");
+  f.call("browser__handoff_start", { instructions: "Log in" }, "handoff");
   const cards = (await f.host.calls("run")).filter(c => c.kind === "interaction");
   const approval = interaction(cards.find(c => c.name === "approval"));
   expect(approval.text).toContain("Click buy on https://shop.example"); expect(approval.text).toContain("browser__click");
@@ -332,7 +349,7 @@ it.skipIf(!existsSync(webInteractions))("renders Mau's cards in the web console 
   const web = await import(webInteractions.href) as { describeInteraction(native: unknown): any; answerInteraction(request: unknown, answer: unknown): unknown };
   const f = await fixture(); await f.start();
   f.call("browser__click", { site: "https://shop.example", ref: "buy" });
-  f.call("browser__handoff_start", { site: "s" }, "handoff");
+  f.call("browser__handoff_start", { instructions: "Log in" }, "handoff");
   const cards = (await f.host.calls("run")).filter(c => c.kind === "interaction");
   const approval = web.describeInteraction({ method: "approval", params: cards.find(c => c.name === "approval")!.input });
   expect(approval).toMatchObject({ kind: "approval", title: "Click buy on https://shop.example" });

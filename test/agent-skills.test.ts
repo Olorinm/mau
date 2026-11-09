@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as skills from "../src/agent-skills.js";
@@ -77,4 +78,60 @@ it("leaves commands out when the environment's Agent Host has no relay client", 
   const result = await new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "binding", async () => box.files);
   expect(result).toMatchObject({ skills: ["google-gmail"], commands: [], relay: "relay_client_missing" });
   expect(existsSync(join(box.bin, "gws"))).toBe(false);
+});
+
+/** The browser guide ships with Agent Connectors' agent-browser connector; a stand-in keeps this test independent of the pinned release. */
+const browserGuide = (kind: string) => kind === "browser" ? { name: "agent-browser", description: "The owner's remote browser through the official agent-browser CLI, for tests.",
+  command: "agent-browser", connector: "browser", body: "# Browser\n\nRun `agent-browser skills get core`.\n" } : undefined;
+
+it("installs the agent-browser guide and Mau's browser client for an assigned browser connection", async () => {
+  expect(skills.planSkills(connections, ["coco-browser"], ["coco_browser__agent_browser_read"], browserGuide))
+    .toMatchObject({ skills: [{ name: "agent-browser" }], commands: ["agent-browser"] });
+  expect(skills.planSkills(connections, ["coco-browser"], ["coco_browser__handoff_start"], browserGuide).commands).toEqual([]);
+  let tools = ["coco_browser__agent_browser_read", "coco_browser__agent_browser_write"];
+  const apps = { reader: () => async () => ({ status: "completed", tools: tools.map(name => ({ name })) }), connections: () => ["coco-browser"] } as unknown as ConnectedApps;
+  const box = sandbox(true);
+  const result = await new skills.AgentSkills(apps, () => connections, browserGuide).sync("agent", "owner", "binding", async () => box.files);
+  expect(result).toMatchObject({ skills: ["agent-browser"], commands: ["agent-browser"] });
+  expect(readFileSync(join(box.bin, "agent-browser"), "utf8")).toBe(skills.BROWSER_CLIENT);
+  expect(statSync(join(box.bin, "agent-browser")).mode & 0o777).toBe(0o755);
+  expect(readFileSync(join(box.codex, "skills/agent-browser/SKILL.md"), "utf8")).toContain("Installed by Mau");
+  // Unassigned later: the managed command and guide are removed.
+  tools = [];
+  const later = await new skills.AgentSkills(apps, () => connections, browserGuide).sync("agent", "owner", "binding", async () => box.files);
+  expect(later).toMatchObject({ removed: ["agent-browser", "agent-browser"] });
+  expect(existsSync(join(box.bin, "agent-browser"))).toBe(false);
+});
+
+it("the browser client forwards the shell's arguments and directory, retries uploads on the write tool and prints saved files", async () => {
+  const root = mkdtempSync(join(tmpdir(), "mau-browser-client-")); roots.push(root);
+  const client = join(root, "agent-browser"); writeFileSync(client, skills.BROWSER_CLIENT, { mode: 0o755 });
+  const received: any[] = [];
+  const server = createServer((req, res) => {
+    let body = ""; req.on("data", chunk => body += chunk); req.on("end", () => {
+      const request = JSON.parse(body); received.push(request);
+      const input = request.input, reply = (value: unknown) => res.end(JSON.stringify({ result: { success: true, contentItems: [{ type: "inputText", text: JSON.stringify(value) }] } }));
+      if (input.action === "tools") return reply({ status: "completed", tools: [{ name: "coco_browser__agent_browser_read" }, { name: "coco_browser__agent_browser_write" }, { name: "google_gmail__gws_read" }] });
+      const [command] = input.arguments.args;
+      if (input.name.endsWith("_read") && command === "upload") return reply({ status: "failed", error: "agent_browser_command_requires_write_tool" });
+      if (command === "upload") return reply({ status: "completed", result: { exitCode: 0, output: "✓ Uploaded cv.pdf" } });
+      if (command === "click") return reply({ status: "failed", error: "agent_browser_failed", detail: { exitCode: 1, output: "✗ Element not found: #x" } });
+      return reply({ status: "completed", result: { exitCode: 0, output: "✓ Screenshot saved to page.png", files: [{ path: "/workspace/browser_downloads/1234abcd-page.png", name: "page.png" }] } });
+    });
+  });
+  await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
+  try {
+    const port = (server.address() as { port: number }).port;
+    const run = (args: string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>(done => {
+      execFile(process.execPath, [client, ...args], { cwd: root, env: { PATH: process.env.PATH, AGENT_HOST_RELAY_URL: `http://127.0.0.1:${port}`, CODEX_THREAD_ID: "thread", CODEX_TOOL_CALL_ID: "call" } },
+        (error, stdout, stderr) => done({ code: error ? (error as any).code ?? 1 : 0, stdout, stderr }));
+    });
+    expect(await run(["screenshot", "page.png"])).toEqual({ code: 0, stdout: "✓ Screenshot saved to page.png\nsaved: /workspace/browser_downloads/1234abcd-page.png\n", stderr: "" });
+    expect(received[1]).toEqual({ threadId: "thread", callId: "call", tool: "connected_apps",
+      input: { action: "call", name: "coco_browser__agent_browser_read", arguments: { args: ["screenshot", "page.png"], cwd: realpathSync(root) } } });
+    received.length = 0;
+    expect(await run(["upload", "@e3", "cv.pdf"])).toMatchObject({ code: 0, stdout: "✓ Uploaded cv.pdf\n" });
+    expect(received.map(r => r.input.name)).toEqual([undefined, "coco_browser__agent_browser_read", "coco_browser__agent_browser_write"]);
+    expect(await run(["click", "#x"])).toEqual({ code: 1, stdout: "", stderr: "✗ Element not found: #x\n" });
+  } finally { server.close(); }
 });

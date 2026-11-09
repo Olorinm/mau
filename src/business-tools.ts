@@ -8,7 +8,7 @@ import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-conne
 import { DurableStore } from "./store.js";
 import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
 import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalPort } from "./connector-approvals.js";
-import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, readUpload, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
+import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, prepareBrowser, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
 import { ownerPrivateRefusal, OWNER_PRIVATE_ONLY, type OwnerPrivatePolicy } from "./owner-private.js";
 
@@ -355,9 +355,14 @@ export class BusinessHost extends HttpAgentHost {
     if (refused) return ownerPrivateRefusal(refused);
     const found = input.name ? browserTool(input.name, browser) : undefined;
     let args = input.arguments ?? {};
-    if (found?.tool === "upload") {
-      if (!apps?.files) return { status: "failed", error: "browser_workspace_unavailable" };
-      try { args = await readUpload(await apps.files(), args); }
+    if (found) {
+      // An upload names the current site for the owner's approval; it is read from the browser, not from the model.
+      const currentUrl = async () => {
+        const page = await read({ action: "call", name: browserToolName(found.connection, "agent_browser_read"), arguments: { args: ["get", "url"] } });
+        const output = z.object({ status: z.literal("completed"), result: z.object({ output: z.string() }) }).safeParse(page);
+        return output.success ? output.data.result.output.trim() : undefined;
+      };
+      try { args = await prepareBrowser(found.tool, args, apps?.files, currentUrl); }
       catch (error) { if (error instanceof RelayError) return { status: "failed", error: error.message }; throw error; }
     }
     const outcome = await read({ ...input, arguments: args });
@@ -388,7 +393,7 @@ export class BusinessHost extends HttpAgentHost {
       if (!id.startsWith(prefix)) continue;
       if (Date.parse(value.expiresAt) <= Date.now()) { this.store.set("browser_handoffs", id, { ...value, status: "closed" }); continue; }
       cards.push({ id: HANDOFF_PREFIX + value.callId, runId, kind: "interaction", name: handoffMethod, status: "pending", deadlineAt: value.expiresAt,
-        input: { questions: [{ id: "handoff", question: `浏览器已交给你接管（${value.expiresAt} 前有效）。请在此私密链接中操作，不要转发：\n${value.liveViewUrl}\n完成后直接回到对话告诉 Agent。`,
+        input: { questions: [{ id: "handoff", question: `浏览器已交给你接管（${value.expiresAt} 前有效）。${value.instructions ? `Agent 的说明：${value.instructions}\n` : ""}请在此私密链接中操作，不要转发：\n${value.liveViewUrl}\n完成后直接回到对话告诉 Agent。`,
           options: [{ label: handoffCancel }] }] } });
     }
     return cards;

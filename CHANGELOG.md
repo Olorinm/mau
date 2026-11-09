@@ -4,6 +4,16 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [Unreleased]
+
+- Browser connections use the official agent-browser CLI: Mau installs an `agent-browser` command and the connector's
+  guide as a skill for Agents with a browser connection. The command relays through Agent Host like `gws` and
+  `lark-cli`, passes its directory for upload paths, and retries `upload` on the approval-bound write tool.
+- The browser relay follows the connector's new tools: upload files are read from the workspace by path (relative to
+  the shell's directory) and the approved site is the browser's current origin; files from `screenshot`, `pdf` and
+  `download` are saved under `browser_downloads/` with absolute paths in the result; screenshots are also attached as
+  images. The handoff card shows the Agent's instructions.
+
 ## [0.1.0-alpha.28] - 2026-11-06
 
 - Pins Router 0.7.0-alpha.13: ordinary Feishu replies keep their conversation, and explicit group

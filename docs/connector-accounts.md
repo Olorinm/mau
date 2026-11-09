@@ -56,19 +56,26 @@ When `runtimeConfigFile` is set, Mau brings each Agent's connectors into its env
 minutes per environment):
 
 - For every assigned connection whose connector ships a guide (`@olorinm/agent-connectors/guides`) and currently offers
-  the guide's CLI tools (`<connection>__gws_read`, `<connection>__cli_read`), the guide is written as a Codex skill
+  the guide's CLI tools (`<connection>__gws_read`, `<connection>__cli_read`, `<connection>__agent_browser_read`), the guide is written as a Codex skill
   under `/home/user/.codex/skills/<name>/SKILL.md`. Codex lists installed skills with their one-line description, so the
   Agent knows the connector from the first turn.
 - The guide's command (`gws`, `lark-cli`) is installed in `/usr/local/bin` as a two-line script that runs Agent Host's
   `agent-host-relay`. The Agent types the official CLI's commands; Agent Host relays them, bound to the running shell
   command, through the run's `connected_apps` tool. Credentials stay in ConnectorService, writes keep their approval
   cards, and scheduled or delegated runs stay read-only.
+- For a browser connection the command is `agent-browser`: a small Node client Mau installs in `/usr/local/bin` that
+  talks to the same Agent Host relay. It passes the agent-browser arguments and the shell's directory, retries
+  `upload` on `agent_browser_write` (the owner approves the files and the current site), and prints the paths of saved
+  files. Mau reads upload files from the workspace (below the working directory, at most 10 MB in total) and asks the
+  browser for the current origin; screenshots, PDFs and downloads are saved under `browser_downloads/` in the working
+  directory. Handoff stays a `connected_apps` operation (`handoff_start`), whose live view only the owner receives.
 - Files Mau installs carry an `Installed by Mau` marker; unassigned ones are removed. Files without the marker (an
   owner's own skill or CLI) are never overwritten. Environments whose Agent Host predates the relay client get guides
   but no commands.
 
 The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
-ConnectorService runs for `gws_read`/`gws_write`.
+ConnectorService runs for `gws_read`/`gws_write`. The browser connector's agent-browser CLI comes with Agent Connectors'
+npm dependencies; its install script is denied in `allowScripts` and is not needed.
 
 ## Product API
 
