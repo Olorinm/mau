@@ -45,6 +45,15 @@ import {
   X,
   XCircle,
   PlugZap,
+  ChevronDown,
+  ChevronLeft,
+  CircleHelp,
+  Database,
+  Eye,
+  IdCard,
+  KeyRound,
+  LayoutGrid,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -93,6 +102,15 @@ import {
   WrenchIcon,
   XCircleIcon,
   XIcon,
+  CaretDownIcon,
+  CaretLeftIcon,
+  DatabaseIcon,
+  EyeIcon,
+  IdentificationCardIcon,
+  KeyIcon,
+  QuestionIcon,
+  SignOutIcon,
+  SquaresFourIcon,
   type IconProps as PhosphorIconProps,
 } from "@phosphor-icons/react";
 
@@ -103,6 +121,15 @@ export const DEFAULT_PRODUCT_ICON_SYSTEM: ProductIconSystem = "phosphor";
 
 export type ProductIconName =
   | "add"
+  | "apps"
+  | "data"
+  | "expand"
+  | "eye"
+  | "help"
+  | "identity"
+  | "key"
+  | "logout"
+  | "previous"
   | "appearance"
   | "archive"
   | "attach"
@@ -152,6 +179,15 @@ export type ProductIconName =
 
 const PHOSPHOR_PRODUCT_ICONS = {
   add: PlusIcon,
+  apps: SquaresFourIcon,
+  data: DatabaseIcon,
+  expand: CaretDownIcon,
+  eye: EyeIcon,
+  help: QuestionIcon,
+  identity: IdentificationCardIcon,
+  key: KeyIcon,
+  logout: SignOutIcon,
+  previous: CaretLeftIcon,
   appearance: PaletteIcon,
   archive: FileArchiveIcon,
   attach: PaperclipIcon,
@@ -202,6 +238,15 @@ const PHOSPHOR_PRODUCT_ICONS = {
 
 const LUCIDE_PRODUCT_ICONS = {
   add: Plus,
+  apps: LayoutGrid,
+  data: Database,
+  expand: ChevronDown,
+  eye: Eye,
+  help: CircleHelp,
+  identity: IdCard,
+  key: KeyRound,
+  logout: LogOut,
+  previous: ChevronLeft,
   appearance: Palette,
   archive: FileArchive,
   attach: Paperclip,

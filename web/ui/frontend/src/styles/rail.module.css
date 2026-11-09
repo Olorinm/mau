@@ -329,9 +329,9 @@
 }
 
 .button[data-active="true"] {
-  background: var(--c-surface);
+  background: var(--c-panel);
   color: var(--og-text);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   --pixel-icon-accent: currentColor;
 }
 
@@ -1021,9 +1021,9 @@
 
 .rail[data-expanded="true"] .button[data-active="true"] {
   border: 0;
-  background: var(--c-surface);
+  background: var(--c-panel);
   color: var(--og-text);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 
 .rail[data-expanded="true"] .button[data-active="true"]::before {

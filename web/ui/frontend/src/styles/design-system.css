@@ -1,0 +1,130 @@
+/* Design system shared with @olorinm/agent-ui/app (type scale, spacing, radii, surfaces): a near-white page,
+   solid grey panels without borders, hairline column dividers, grey rounded bubbles and a floating composer.
+   Brand colors (accent, success, error) are unchanged. */
+:root {
+  --c-bg: oklch(99.107% 0 0);
+  --c-muted: oklch(45.238% 0.0055 258.34);
+  --c-page: var(--c-bg);
+  --c-panel: oklch(95.213% 0 0);
+  --c-panel-hover: oklch(92.797% 0 0);
+  --c-panel-line: oklch(92.191% 0 0);
+  --c-panel-raised: oklch(100% 0 0);
+  --c-text-secondary: var(--c-muted);
+  --c-action: var(--c-accent-solid);
+  --shadow-float: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 14px oklch(0% 0 0 / 0.08);
+  --fs-page-title: 21px;
+  --r-panel: 16px;
+  --r-nav-item: 10px;
+  --r-bubble: 20px;
+
+  --og-paper-board: var(--c-bg);
+  --og-paper-sheet: var(--c-bg);
+  --og-section-title: var(--c-text-secondary);
+  --og-section-muted: var(--c-text-secondary);
+  --app-rail-button-active-bg: var(--c-panel);
+  --room-stream-bubble-bg: var(--c-panel);
+  --room-stream-user-bubble-bg: var(--c-panel-hover);
+  --room-stream-system-bg: transparent;
+  --room-stream-attachment-bg: var(--c-panel);
+  --room-workspace-composer-surface-bg: var(--c-panel-raised);
+  --room-workspace-composer-surface-shadow: var(--shadow-float);
+  --room-workspace-composer-focus-border: transparent;
+  --room-workspace-composer-focus-shadow: var(--shadow-float);
+  --room-workspace-title-font-size: var(--fs-emphasis, 15px);
+}
+
+:root[data-resolved-theme="dark"] {
+  --c-panel: oklch(28.019% 0.0036 106.63);
+  --c-panel-hover: oklch(31.708% 0.0054 91.55);
+  --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
+  --c-panel-raised: oklch(33.640% 0.0070 95.27);
+  --c-action: var(--c-link);
+  --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"]:not([data-resolved-theme]),
+  :root:not([data-theme]):not([data-resolved-theme]) {
+    --c-panel: oklch(28.019% 0.0036 106.63);
+    --c-panel-hover: oklch(31.708% 0.0054 91.55);
+    --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
+    --c-panel-raised: oklch(33.640% 0.0070 95.27);
+  }
+}
+
+/* Columns sit on the page and are divided by hairlines instead of floating cards. */
+.rooms-view {
+  gap: 0;
+  padding: 0;
+}
+.rooms-list-panel,
+.room-main-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.rooms-list-panel {
+  border-right: 1px solid var(--c-panel-line);
+  border-left: 1px solid var(--c-panel-line);
+  padding: 14px 12px 16px;
+}
+.room-main-panel,
+.room-header,
+.room-message-stream {
+  background: transparent;
+}
+.room-header {
+  border-bottom-color: transparent;
+}
+
+/* Lists: 36 px rows, a light-grey rounded selection. */
+.rooms-list-item {
+  min-height: 40px;
+  border-radius: var(--r-nav-item);
+}
+.rooms-list-item[data-active="true"] {
+  background: var(--c-panel);
+  font-weight: var(--fw-normal);
+}
+.rooms-search {
+  min-height: 36px;
+  border-radius: var(--r-pill);
+  background: var(--c-panel);
+  padding: 0 14px;
+}
+.rooms-search:focus-within {
+  background: var(--c-panel);
+  box-shadow: 0 0 0 2px var(--c-focus-ring);
+}
+
+/* Bubbles: grey, generously rounded, 15 px body text. Markdown blocks keep their own spacing. */
+.room-chat-bubble {
+  border-radius: var(--r-bubble);
+  font-size: 15px;
+  line-height: var(--lh-relaxed);
+  padding: 10px 16px;
+}
+.room-chat-bubble:has(> :is(.thread-md-p, .thread-md-list, .thread-md-heading, .thread-code-block, blockquote, table, hr)) {
+  display: grid;
+  gap: 8px;
+  white-space: normal;
+}
+.room-chat-bubble > .thread-md-p {
+  white-space: pre-line;
+}
+.room-chat-bubble > blockquote {
+  margin: 0;
+  border-left: 2px solid var(--c-panel-line);
+  padding-left: 12px;
+  color: var(--c-text-secondary);
+}
+.room-chat-bubble ol,
+.room-chat-bubble ul {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+/* Composer: a white floating pill. */
+.room-composer-og.opengrove-composer {
+  border-radius: 24px;
+}

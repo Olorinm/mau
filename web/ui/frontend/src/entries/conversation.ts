@@ -13,6 +13,7 @@ import "../styles/section-sidebar.css";
 import "../styles/composer.css";
 import "../styles/attachments.css";
 import "../integration.css";
+import "../styles/design-system.css";
 export * from "../provider";
 export * from "../scope";
 export * from "../conversation";

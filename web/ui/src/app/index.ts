@@ -26,3 +26,32 @@ export { AgentStateIndicator, type AgentStatePresentation } from "./agent-state-
 export { Tooltip, TooltipProvider } from "./tooltip.js";
 export { useCompactLayout, COMPACT_LAYOUT_QUERY } from "./compact-layout.js";
 export { PortalProvider, usePortalContainer } from "./portal.js";
+export {
+  AppIcon,
+  CircleBackButton,
+  CircleButton,
+  ConsentDialog,
+  DensityScope,
+  DetailHero,
+  FeaturedCard,
+  FeaturedGrid,
+  GroupPanel,
+  InitialAvatar,
+  ListRow,
+  Modal,
+  ModalActions,
+  SearchField,
+  SegmentedControl,
+  SelectMenu,
+  SettingsDialog,
+  SettingsPage,
+  SettingsSection,
+  TextButton,
+  useSettingsPageLayout,
+  SETTINGS_PAGE_QUERY,
+  type ConsentItem,
+  type Density,
+  type SegmentedOption,
+  type SelectMenuOption,
+  type SettingsNavItem,
+} from "./surfaces.js";
