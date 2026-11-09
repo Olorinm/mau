@@ -77,7 +77,7 @@ it("reports expiry with its reason, owner-private usage, and finishes the device
   const waiting = await u.client.action(alice, "alice-feishu", "complete");
   expect(waiting).toMatchObject({ state: "authorization_pending", authorizationUrl: u.consent });
   u.state.confirmed = true;
-  expect(await u.client.action(alice, "alice-feishu", "complete")).toEqual({ state: "connected", verification: "provider", scopes: ["mail:read"], name: "Alice" });
+  expect(await u.client.action(alice, "alice-feishu", "complete")).toEqual({ state: "connected", verification: "provider", scopes: ["mail:read"], name: "Alice", account: { name: "Alice" } });
   await expect(u.client.action(alice, "alice-gmail", "complete")).rejects.toThrow("connector_action_not_supported");
   await expect(u.client.action(bob, "alice-feishu", "complete")).rejects.toThrow("connector_account_not_found");
 });

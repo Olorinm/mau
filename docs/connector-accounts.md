@@ -36,7 +36,7 @@ Add the following optional block to Mau's private options file (all values are e
 
 - `url` is the fixed service origin. HTTPS is required except for literal loopback addresses. Redirects, URL credentials, query strings and path prefixes are refused.
 - `issuer` and `audience` must match the ConnectorService trust configuration. Use the authority private JWK generated through the component's public issuer API/CLI, with a `kid`, in a private file (0600); install only its public key in ConnectorService. Never use the caller key or mount this key in an Agent environment.
-- `consentOrigins` must contain the exact HTTPS origins used by the configured providers. Approve these from provider configuration, not from an arbitrary model-supplied URL. Mau only returns a consent link from an explicit connect action; it never exposes it in the inventory.
+- `consentOrigins` must contain the exact HTTPS origins used by the configured providers. Approve these from provider configuration, not from an arbitrary model-supplied URL. Mau returns a consent link from a connect action, and in the inventory only while that account's consent is pending (so a reloaded page shows the same Feishu QR); a link outside these origins is left out.
 - Configure each connection's `owner` as the exact authenticated Router account ID. Mau filters the service-wide inventory and checks ownership again before every management action. Coordinate ownership/configuration changes between services; do not reassign connection IDs while an operation is in flight.
 - With `runtimeConfigFile`, the service must listen on `127.0.0.1` at the configured port. Set its `oauthRedirectUrl` to the public Mau origin plus `/oauth/callback`. Mau binds the single-use provider state to an HttpOnly, SameSite=Lax browser cookie, accepts the callback through the public component API, then redirects to its Connectors page. Never log callback queries. `/mcp` and management routes remain loopback-only. A separately hosted service must supply its own browser binding and return flow.
 - The browser sends its owner bearer token when starting consent. It saves only the scoped browser-binding cookie and its existing Mau session; OAuth credentials remain in the connector service.
@@ -86,20 +86,45 @@ Done and Failed; `handoff_status` reports when the owner pressed one.
 
 ## Product API
 
-The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
+The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body; connect names operations, and the scopes come from the connector's own policy view. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| GET | `/_mau/v1/connector-accounts` | `configured` and sanitized accounts for this owner |
-| POST | `/_mau/v1/connector-accounts/:id/connect` | Provider consent link or current status |
+| GET | `/_mau/v1/connector-accounts` | `configured` and sanitized accounts for this owner; `account: { email?, name? }` when connected; `authorizationUrl` and `expiresAt` while consent is pending |
+| POST | `/_mau/v1/connector-accounts/:id/connect` | Provider consent link or current status. Optional body `{ "operations": [...] }` adds the scopes those `grantable` operations need (incremental consent) |
+| GET | `/_mau/v1/connector-accounts/:id/policy` | The owner's operation settings, grouped (see below) |
+| PUT | `/_mau/v1/connector-accounts/:id/policy` | Body `{ "settings": { "<operation>": "allow" \| "ask" \| "deny" } }` (partial); returns the policy |
+| POST | `/_mau/v1/connector-accounts/:id/policy/reset` | Restores the defaults; returns the policy |
 | POST | `/_mau/v1/connector-accounts/:id/check` | Current authorization status |
 | POST | `/_mau/v1/connector-accounts/:id/disconnect` | Disconnect result |
 | POST | `/_mau/v1/connector-accounts/:id/complete` | Feishu: finish the device-flow authorization; returns the consent link while it waits |
 | POST | `/_mau/v1/connector-accounts/:id/feishu-application` | Feishu: body `{ "agentId" }`; hands that Agent's chat app to this connection (see below) |
 
-POST bodies must be `{}`, except `feishu-application`. An unknown account and another owner's account both return 404. Responses use a small status vocabulary and allow-listed fields; raw upstream errors, credentials, arbitrary metadata and private keys are never forwarded. Management requests use fresh two-minute service tokens and do not retry automatically. The upstream response has a time and size bound.
+POST bodies must be `{}`, except `feishu-application` and `connect`. An unknown account and another owner's account both return 404. Responses use a small status vocabulary and allow-listed fields; raw upstream errors, credentials, arbitrary metadata and private keys are never forwarded. Management requests use fresh two-minute service tokens and do not retry automatically. The upstream response has a time and size bound.
 
 A failed mutation can have already changed authorization or invalidated pending writes. Mau reports `connector_action_unknown`, leaves the outcome unresolved, and the UI requires a status check before another mutation. Checking state is not a retry. Disconnect clears local authorization and denies pending writes in ConnectorService; the provider grant may still need to be revoked in provider settings. Already dispatched writes are not cancelled by disconnect.
+
+## Operation permissions
+
+Every operation of a connection is set by its owner to **允许** `allow` (runs directly, writes included), **请求**
+`ask` (an approval card each time, reads included) or **不允许** `deny` (not in the Agent's catalog, refused with
+`connector_operation_denied`). Defaults: reads allow, writes and destructive operations ask. The connector service
+stores and enforces the settings on every call; Mau only proxies them for the owner, with the same ownership check as
+the account routes.
+
+The policy is `{ groups: [{ id, label, labelZh, operations: [...] }], background?: [...] }`; each operation is
+`{ id, label, labelZh, risk: "read" | "write" | "destructive", setting, default, available, unavailableReason?:
+"scope_required" | "not_supported", grantable? }`. `scope_required` means the authorization lacks the operation's
+scope; when `grantable`, connect with `{ "operations": [id] }` requests it while the current authorization keeps
+working. `not_supported` operations are listed but cannot be set.
+
+- Owner conversations get write-capable tokens: `allow` runs, `ask` shows the existing approval card (for reads too),
+  `deny` is refused.
+- Scheduled and delegated work keeps read-only tokens: it never writes, even when allowed, and an operation set to
+  `ask` returns `owner_approval_unavailable_here`, saying the owner cannot approve there.
+- The owner-private rule (Feishu personal access only in the owner's private conversation) is checked first.
+- Changes apply to the next call. `connected_apps`' tool definition does not change, only what `action: "tools"` lists,
+  so no session rotation is needed. Disconnect and reconnect keep the settings; reset restores the defaults.
 
 ## Verification and remaining live acceptance
 
