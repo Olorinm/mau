@@ -611,13 +611,15 @@ it.skipIf(!built)(
     );
     await page.reload();
     await page.getByRole("button", { name: "设置", exact: true }).click();
-    await page.getByRole("button", { name: "跟随系统", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "设置" });
+    await see(settings.getByRole("heading", { name: "通用" })).toBeVisible();
+    await settings.getByRole("combobox", { name: "外观" }).click();
     await page.getByRole("option", { name: "深色", exact: true }).click();
     await see(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(await page.evaluate(() => localStorage.getItem("mau.theme"))).toBe(
       "dark",
     );
-    await page.getByRole("button", { name: "深色", exact: true }).click();
+    await settings.getByRole("combobox", { name: "外观" }).click();
     const menu = page.getByRole("listbox");
     await see(menu).toBeVisible();
     expect(
@@ -626,6 +628,8 @@ it.skipIf(!built)(
       ),
     ).toBe("dark");
     await page.keyboard.press("Escape");
+    await settings.getByRole("button", { name: "关闭设置" }).click();
+    await see(settings).toBeHidden();
     await page.getByRole("button", { name: "新建应用", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "新建应用", exact: true });
     await see(dialog).toBeVisible();
@@ -644,12 +648,10 @@ it.skipIf(!built)(
     await page.setViewportSize({ width: 390, height: 844 });
     for (const language of ["zh-CN", "en"]) {
       if (language === "en") {
-        await page
-          .getByRole("button", { name: "简体中文", exact: true })
-          .click();
-        await page
-          .getByRole("option", { name: "English", exact: true })
-          .click();
+        await page.evaluate(() => { location.hash = "#/settings/general"; });
+        await page.getByRole("combobox", { name: "语言" }).click();
+        await page.getByRole("option", { name: "English", exact: true }).click();
+        await page.getByRole("button", { name: "Close settings" }).click();
       }
       await page.locator(".app-titlebar-control").click();
       await page
@@ -715,7 +717,7 @@ it.skipIf(!built)(
     await see(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(errors).toEqual([]);
   },
-  30_000,
+  90_000,
 );
 
 it.skipIf(!built)(
@@ -762,41 +764,83 @@ it.skipIf(!built)(
   30_000,
 );
 
-it.skipIf(!built)("browses app categories, searches unavailable apps and opens real channel management", async () => {
+it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channels and connectors", async () => {
   const f = await mauFixture(cleanup, {webRoot});
   const {page, errors} = await browser(f.base);
   await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token:"alice", owner:"@alice:example.test"})));
   await page.reload();
-  await page.getByRole("button", {name:"连接器", exact:true}).click();
-  await see(page.getByRole("button", {name:"Gmail 即将开放", exact:true})).toBeVisible();
-  await see(page.getByRole("heading", {name:"helper", exact:true})).toHaveCount(0);
-  await page.getByRole("textbox", {name:"搜索连接器", exact:true}).fill("Gmail");
-  await see(page.getByRole("button", {name:"飞书 连接", exact:true})).toHaveCount(0);
-  await page.getByRole("button", {name:"Gmail 即将开放", exact:true}).click();
-  await see(page.getByRole("heading", {name:"Gmail", exact:true})).toBeVisible();
-  await see(page.getByRole("heading", {name:"即将开放", exact:true})).toBeVisible();
-  await see(page.getByRole("button", {name:"连接 Gmail", exact:true})).toHaveCount(0);
-  await page.getByRole("button", {name:"所有连接器", exact:true}).click();
-  await page.getByRole("textbox", {name:"搜索连接器", exact:true}).fill("");
-  await page.getByRole("button", {name:"飞书 连接", exact:true}).click();
-  await see(page.getByText("helper", {exact:true})).toBeVisible();
-  await page.getByRole("button", {name:"连接", exact:true}).click();
-  await see(page.getByRole("dialog")).toBeVisible();
-  await see(page.getByRole("dialog").getByRole("heading", {name:"飞书", exact:true})).toBeVisible();
+  // One 设置 entry replaces 连接器 / 扩展 / 设置 in the main navigation.
+  for (const name of ["连接器", "扩展"]) await see(page.getByRole("button", {name, exact:true})).toHaveCount(0);
+  await page.getByRole("button", {name:"设置", exact:true}).click();
+  const settings = page.getByRole("dialog", {name:"设置"});
+  await see(settings.getByRole("heading", {name:"通用"})).toBeVisible();
+  await see(page).toHaveURL(/#\/settings\/general$/);
+  await settings.getByRole("button", {name:"连接器", exact:true}).click();
+  await see(page).toHaveURL(/#\/settings\/connectors$/);
+  // Without a connector service nothing is offered and there is no fake consent button.
+  await see(settings.getByText("连接器服务尚未配置")).toBeVisible();
+  await see(settings.getByRole("button", {name:"连接", exact:true})).toHaveCount(0);
+  await settings.getByRole("button", {name:"消息渠道", exact:true}).click();
+  await see(settings.getByRole("heading", {name:"helper", exact:true})).toBeVisible();
+  await settings.getByRole("button", {name:"连接飞书", exact:true}).click();
+  await see(settings.getByRole("heading", {name:"连接飞书"})).toBeVisible();
+  await see(settings.getByLabel("已有应用 App ID")).toBeVisible();
+  await settings.getByRole("button", {name:"消息渠道", exact:true}).last().click();
+  await see(settings.getByRole("heading", {name:"消息渠道"})).toBeVisible();
+  for (const [name, heading] of [["身份与配对", "身份与配对"], ["扩展", "扩展"], ["数据控制", "数据控制"], ["帮助与法律", "帮助与法律"]]) {
+    await settings.getByRole("button", {name, exact:true}).click();
+    await see(settings.getByRole("heading", {name:heading, exact:true})).toBeVisible();
+  }
+  await see(settings.getByRole("link", {name:/查看/})).toHaveAttribute("href", "https://www.openmau.com/privacy.html");
+  // A reload keeps the page; closing removes it from the URL.
+  await page.evaluate(() => { location.hash = "#/settings/channels"; });
+  await page.reload();
+  await see(page.getByRole("dialog", {name:"设置"}).getByRole("heading", {name:"消息渠道"})).toBeVisible();
+  await page.getByRole("button", {name:"关闭设置"}).click();
+  await see(page.getByRole("dialog")).toHaveCount(0);
+  await see(page).toHaveURL(f.base + "/");
+  // Mobile: full screen, the navigation is the first page and each page has a back button.
+  await page.setViewportSize({width:390, height:844});
+  await page.locator(".app-titlebar-control").click();
+  await page.getByRole("button", {name:"设置", exact:true}).click();
+  const mobile = page.getByRole("dialog", {name:"设置"});
+  await see(mobile.getByRole("navigation", {name:"设置"})).toBeVisible();
+  await expect.poll(() => mobile.boundingBox()).toEqual({x:0, y:0, width:390, height:844});
+  await mobile.getByRole("button", {name:"通用", exact:true}).click();
+  await see(mobile.getByRole("heading", {name:"通用"})).toBeVisible();
+  await mobile.getByRole("button", {name:"返回"}).click();
+  await see(mobile.getByRole("navigation", {name:"设置"})).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
-});
+}, 90_000);
 
-it.skipIf(!built)("redirects from app details to consent, returns to catalog and gates uncertain disconnects", async () => {
+it.skipIf(!built)("connects Gmail after consent, returns to its page, edits permissions and gates uncertain disconnects", async () => {
   const f = await mauFixture(cleanup, { webRoot });
   const { page, errors } = await browser(f.base);
-  let state = "authorization_required", failed = false;
-  const mutations: string[] = [];
-  await page.route("https://accounts.google.com/**", route => route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors&oauth=connected" } }));
+  let state = "authorization_required", failed = false, legacy = true;
+  const mutations: Array<[string, unknown]> = [];
+  const operation = (id: string, labelZh: string, risk: string, setting: string, extra = {}) =>
+    ({ id, label: id, labelZh, risk, setting, default: setting, available: true, ...extra });
+  let send = "ask";
+  const policy = () => ({ groups: [
+    { id: "read", label: "Read", labelZh: "读取权限", operations: [operation("gmail.read", "阅读邮件", "read", "allow")] },
+    { id: "write", label: "Write", labelZh: "写入和删除权限", operations: [operation("gmail.send", "发邮件", "write", send),
+      operation("gmail.labels.write", "管理标签", "write", "ask", { available: false, unavailableReason: "scope_required", grantable: true })] },
+  ], background: [operation("gmail.sync", "后台同步", "read", "deny", { available: false, unavailableReason: "not_supported", grantable: false })] });
+  // The provider callback completes the authorization before it lands back on the console.
+  await page.route("https://accounts.google.com/**", route => { state = "connected"; return route.fulfill({ status: 302, headers: { location: f.base + "/?view=connectors&oauth=connected" } }); });
   await page.route("**/_mau/v1/connector-accounts**", async route => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only" }] } });
-    expect(route.request().postDataJSON()).toEqual({});
-    const action = path.split("/").at(-1)!; mutations.push(action);
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [
+      { id: "work-gmail", kind: "google", label: "Gmail", state, verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only",
+        ...(state === "connected" ? { account: { email: "alice@example.test" } } : {}) },
+      { id: "work-calendar", kind: "google", label: "Google 日历", state: "needs_setup", verification: "none", scopes: [] }] } });
+    if (path.endsWith("/policy") && request.method() === "GET") return legacy ? route.fulfill({ status: 404, json: { error: "not_found" } }) : route.fulfill({ json: policy() });
+    const action = path.endsWith("/policy") ? "policy" : path.endsWith("/policy/reset") ? "reset" : path.split("/").at(-1)!;
+    mutations.push([action, request.postDataJSON()]);
+    if (action === "policy") { send = request.postDataJSON().settings["gmail.send"]; return route.fulfill({ json: policy() }); }
+    if (action === "reset") { send = "ask"; return route.fulfill({ json: policy() }); }
+    if (action === "connect" && request.postDataJSON().scopes) return route.fulfill({ status: 400, json: { error: "invalid_request" } });
     if (action === "connect") return route.fulfill({ json: { state, verification: "none", scopes: [], authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=fixture" } });
     if (action === "disconnect" && !failed) { failed = true; return route.fulfill({ status: 409, json: { error: "connector_action_unknown" } }); }
     state = action === "disconnect" ? "disconnected" : "connected";
@@ -804,44 +848,70 @@ it.skipIf(!built)("redirects from app details to consent, returns to catalog and
   });
   await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
   await page.reload();
-  await page.getByRole("button", { name: "连接器", exact: true }).click();
-  await see(page.getByRole("button", { name: "Gmail 连接", exact: true })).toBeVisible();
-  await page.screenshot({path:"/tmp/mau-connectors-redesign-desktop.png",fullPage:true});
-  await page.setViewportSize({width:390,height:844});
-  await see(page.getByRole("button", { name: "Gmail 连接", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({path:"/tmp/mau-connectors-redesign-mobile.png",fullPage:true});
-  await page.setViewportSize({width:1200,height:900});
-  await page.getByRole("button", { name: "Gmail 连接", exact: true }).click();
-  await see(page.getByRole("button", { name: "断开连接", exact: true })).toHaveCount(0);
-  await page.screenshot({path:"/tmp/mau-connectors-redesign-gmail.png",fullPage:true});
-  await page.getByRole("button", { name: "连接 Gmail", exact: true }).click();
-  // The callback's landing parameters are consumed once, so a reload opens the default view.
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await settings.getByRole("button", { name: "连接器", exact: true }).click();
+  // Coming-soon apps are hidden; featured cards and rows show only available apps.
+  await see(settings.getByRole("button", { name: "Google 日历", exact: true })).toHaveCount(0);
+  await see(settings.getByRole("heading", { name: "精选" })).toBeVisible();
+  // A server without the policy API shows what it enforces, read-only.
+  await settings.getByRole("button", { name: "Gmail", exact: true }).click();
+  await see(settings.getByRole("heading", { name: "Gmail" })).toBeVisible();
+  await see(page).toHaveURL(/#\/settings\/connectors\/gmail$/);
+  await see(settings.getByText("搜索邮件")).toBeVisible();
+  await see(settings.getByRole("combobox")).toHaveCount(0);
+  await see(settings.getByRole("button", { name: "重置为默认" })).toHaveCount(0);
+  await settings.getByRole("button", { name: "所有连接器" }).click();
+  legacy = false;
+  await settings.getByRole("button", { name: "连接", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "Gmail" });
+  await see(consent).toContainText("授权凭据保存在 Mau，不会进入员工的沙箱。");
+  await see(consent).toContainText("写入操作按你的设置请求批准");
+  await see(consent.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "https://www.openmau.com/privacy.html");
+  await page.screenshot({ path: "/tmp/mau-consent.png" });
+  await consent.getByRole("button", { name: "取消", exact: true }).click();
+  expect(mutations).toEqual([]);
+  await settings.getByRole("button", { name: "连接", exact: true }).click();
+  await page.getByRole("dialog", { name: "Gmail" }).getByRole("button", { name: "继续", exact: true }).click();
+  // The OAuth callback lands on /?view=connectors&oauth=connected and reopens the page the owner started from.
   await see(page.getByText("授权完成，连接器已连接", { exact: true })).toBeVisible();
-  await see(page).toHaveURL(f.base + "/");
-  await page.getByRole("button", { name: "Gmail 连接", exact: true }).click();
-  await page.getByRole("button", { name: "检查连接", exact: true }).click();
-  await see(page.getByText("你的 Google 账号已授权给 Mau。", { exact: true })).toBeVisible();
-  await see(page.getByText("允许", {exact:true})).toHaveCount(4);
-  await see(page.getByRole("link", { name: "继续前往 Google 授权" })).toHaveCount(0);
-  await page.getByRole("button", { name: "所有连接器", exact: true }).click();
-  await page.getByRole("group", {name:"连接器分类"}).getByRole("button", {name:/^已连接/}).click();
-  await see(page.getByRole("button", {name:"Gmail 已连接",exact:true})).toBeVisible();
-  await see(page.getByRole("button", {name:"Google 日历 即将开放",exact:true})).toHaveCount(0);
-  await page.getByRole("button", {name:"Gmail 已连接",exact:true}).click();
-  await page.getByRole("button", { name: "断开连接", exact: true }).click();
-  await see(page.getByText(/将清除此连接保存的授权/)).toBeVisible();
-  expect(mutations).toEqual(["connect", "check"]);
-  await page.getByRole("button", { name: "确认断开", exact: true }).click();
-  await see(page.getByRole("alert")).toContainText("不会自动重试");
-  await see(page.getByRole("button", { name: "断开连接", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "检查连接", exact: true }).click();
-  await page.getByRole("button", { name: "断开连接", exact: true }).click();
-  await page.getByRole("button", { name: "确认断开", exact: true }).click();
-  await see(page.getByText("已断开", { exact: true })).toBeVisible();
-  expect(mutations).toEqual(["connect", "check", "disconnect", "check", "disconnect"]);
+  await see(page).toHaveURL(f.base + "/#/settings/connectors/gmail");
+  const detail = page.getByRole("dialog", { name: "设置" });
+  // Checked automatically on open; no "check connection" button.
+  await see(detail.getByText("alice@example.test")).toBeVisible();
+  await see(detail.getByRole("button", { name: "检查连接" })).toHaveCount(0);
+  expect(mutations.map(([action]) => action)).toEqual(["connect", "check"]);
+  await see(detail.getByRole("combobox", { name: "发邮件" })).toHaveText(/请求/);
+  await see(detail.getByText("在定时任务和委派工作中，设为「请求」的操作会被拒绝。")).toBeVisible();
+  await see(detail.getByText("后台同步")).toBeVisible();
+  await page.screenshot({ path: "/tmp/mau-gmail-detail.png" });
+  await detail.getByRole("combobox", { name: "发邮件" }).click();
+  await page.getByRole("option", { name: "允许", exact: true }).click();
+  const allow = page.getByRole("dialog", { name: "允许「发邮件」？" });
+  await see(allow).toContainText("以后员工执行此操作不会再询问你。");
+  await allow.getByRole("button", { name: "允许", exact: true }).click();
+  await see(detail.getByRole("combobox", { name: "发邮件" })).toHaveText(/允许/);
+  expect(mutations.at(-1)).toEqual(["policy", { settings: { "gmail.send": "allow" } }]);
+  await detail.getByRole("button", { name: "添加", exact: true }).click();
+  await see(page.getByText("暂时无法添加这项权限。")).toBeVisible();
+  expect(mutations.at(-1)).toEqual(["connect", { scopes: ["gmail.labels.write"] }]);
+  await detail.getByRole("button", { name: "重置为默认" }).click();
+  await page.getByRole("dialog", { name: "重置为默认权限？" }).getByRole("button", { name: "重置", exact: true }).click();
+  await see(detail.getByRole("combobox", { name: "发邮件" })).toHaveText(/请求/);
+  // An unconfirmed disconnect must be checked before anything else; nothing is retried automatically.
+  await detail.getByRole("button", { name: "断开", exact: true }).click();
+  await page.getByRole("dialog", { name: "断开Gmail？" }).getByRole("button", { name: "断开", exact: true }).click();
+  await see(detail.getByText("无法确认连接状态")).toBeVisible();
+  await see(detail.getByRole("button", { name: "断开", exact: true })).toHaveCount(0);
+  await detail.getByRole("button", { name: "重新检查" }).click();
+  await detail.getByRole("button", { name: "断开", exact: true }).click();
+  await page.getByRole("dialog", { name: "断开Gmail？" }).getByRole("button", { name: "断开", exact: true }).click();
+  await see(detail.getByRole("button", { name: "连接Gmail" })).toBeVisible();
+  expect(mutations.map(([action]) => action)).toEqual(["connect", "check", "policy", "connect", "reset", "disconnect", "check", "disconnect"]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
-});
+}, 90_000);
 
 // Edge login needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2).
 const edgeRouter = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
@@ -880,11 +950,12 @@ it.skipIf(!built || !edgeRouter)(
   60_000,
 );
 
-it.skipIf(!built)("one 飞书 entry: chat and personal access, expiry banner and re-authorization on the same app", async () => {
+it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with a QR from the account, expiry and re-authorization", async () => {
   const f = await mauFixture(cleanup, { webRoot });
   const { page, errors } = await browser(f.base);
   let state: Record<string, unknown> = { state: "expired", reason: "refresh_token_expired" }, confirmed = false;
   const requests: Array<[string, unknown]> = [];
+  const link = "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE";
   await page.route("**/_mau/v1/agents", async route => {
     const response = await route.fetch(), body = await response.json();
     body.data = body.data.map((a: any) => ({ ...a, connections: [...a.connections, { id: "feishu", kind: "feishu" }] }));
@@ -894,29 +965,42 @@ it.skipIf(!built)("one 飞书 entry: chat and personal access, expiry banner and
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [
       { id: "alice-feishu", kind: "feishu", label: "飞书", usage: "owner_private", verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only", ...state }] } });
+    if (path.endsWith("/policy")) return route.fulfill({ status: 404, json: { error: "not_found" } });
     const action = path.split("/").at(-1)!; requests.push([action, route.request().postDataJSON()]);
+    if (action === "check") return route.fulfill({ json: { verification: "none", scopes: [], ...state } });
     if (action === "feishu-application") return route.fulfill({ json: { ...state, verification: "none", scopes: [] } });
-    if (action === "connect") return route.fulfill({ json: { state: "authorization_required", verification: "none", scopes: [], authorizationUrl: "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE" } });
-    state = confirmed ? { state: "connected", name: "Alice" } : { state: "authorization_pending", authorizationUrl: "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE" };
+    // The list API reports a pending authorization with its link; the QR comes from the account.
+    if (action === "connect") { state = { state: "authorization_pending", authorizationUrl: link, expiresAt: new Date(Date.now() + 600_000).toISOString() };
+      return route.fulfill({ json: { verification: "none", scopes: [], ...state } }); }
+    if (confirmed) state = { state: "connected", name: "Alice", account: { name: "Alice" } };
     return route.fulfill({ json: { verification: confirmed ? "provider" : "none", scopes: [], ...state } });
   });
   await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
   await page.reload();
-  await page.getByRole("button", { name: "连接器", exact: true }).click();
-  await see(page.getByRole("alert").filter({ hasText: "飞书的授权已过期" })).toContainText("需要重新授权");
-  await see(page.getByRole("button", { name: "飞书 需要重新授权", exact: true })).toBeVisible();
-  await page.getByRole("alert").getByRole("button", { name: "重新授权", exact: true }).click();
-  await see(page.getByText("聊天已连接", { exact: true })).toBeVisible();
-  await see(page.getByText("已过期", { exact: true })).toBeVisible();
-  await see(page.getByText(/授权已到期。员工暂时无法使用你的飞书文档/)).toBeVisible();
-  await see(page.getByText(/只在你与员工的私聊中可用，群聊中不可用/)).toBeVisible();
-  await page.screenshot({ path: "/tmp/mau-feishu-entry-expired.png", fullPage: true });
-  await page.locator('[data-step="personal"]').getByRole("button", { name: "重新授权", exact: true }).click();
-  await see(page.getByRole("link", { name: "在浏览器中打开" })).toHaveAttribute("href", "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE");
-  expect(requests.slice(0, 2)).toEqual([["feishu-application", { agentId: f.agent.id }], ["connect", {}]]);
+  await page.evaluate(() => { location.hash = "#/settings/connectors"; });
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await see(settings.getByText("飞书的授权已过期")).toBeVisible();
+  await settings.getByRole("button", { name: "重新授权", exact: true }).click();
+  await see(settings.getByRole("heading", { name: "飞书" })).toBeVisible();
+  await see(settings.getByText(/授权已到期。员工暂时无法使用，请重新授权。/)).toBeVisible();
+  await see(settings.getByText("仅私聊")).toBeVisible();
+  await settings.getByRole("button", { name: "重新授权", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "飞书" });
+  await see(consent).toContainText("只在你和员工的私聊中可用，群聊中不可用");
+  await consent.getByRole("button", { name: "继续", exact: true }).click();
+  await see(settings.getByRole("link", { name: "在浏览器中打开" })).toHaveAttribute("href", link);
+  expect(requests.filter(([action]) => action !== "check" && action !== "complete").slice(0, 2)).toEqual([["feishu-application", { agentId: f.agent.id }], ["connect", {}]]);
+  // A reload keeps the QR: it is rendered from the account's authorizationUrl, and completion keeps polling.
+  await page.reload();
+  await see(page.getByRole("dialog", { name: "设置" }).getByRole("link", { name: "在浏览器中打开" })).toHaveAttribute("href", link);
   confirmed = true;
-  await see(page.getByText("已授权 · Alice", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await see(page.getByRole("dialog", { name: "设置" }).getByText("Alice", { exact: true })).toBeVisible({ timeout: 10_000 });
   await see(page.getByRole("link", { name: "在浏览器中打开" })).toHaveCount(0);
-  await page.screenshot({ path: "/tmp/mau-feishu-entry-connected.png", fullPage: true });
+  // 消息渠道 shows the chat and links to personal access.
+  await page.getByRole("dialog", { name: "设置" }).getByRole("button", { name: "消息渠道", exact: true }).click();
+  await see(settings.getByText("个人权限已授权")).toBeVisible();
+  await see(settings.getByRole("button", { name: "检查飞书" })).toBeVisible();
+  await settings.getByRole("button", { name: "个人权限", exact: true }).click();
+  await see(settings.getByRole("heading", { name: "飞书" })).toBeVisible();
   expect(errors).toEqual([]);
 }, 60_000);

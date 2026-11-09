@@ -12,6 +12,16 @@ Mau 复用从 OpenGrove 原源码提取的页面结构、样式和交互，提�
 外观设置、消息输入与搜索、资料页、移动端导航使用提取包中的原组件。
 图形化扩展保留 Skills、MCP、内核插件、Hooks、Tools 和 CLI 六类入口。
 
+## 设置
+
+主导航只有一个「设置」入口，打开覆盖在应用上的弹窗，左侧导航：通用（语言、外观）、连接器、消息渠道、身份与配对、扩展、
+数据控制（通过 Router 账本清空某个对话的聊天记录）、帮助与法律、退出（边缘登录的登出）。员工的模型、指令等设置仍在员工页面。
+
+页面可直接链接：`#/settings/<分区>[/<项目>]`，例如 `#/settings/connectors/gmail`。跳转 OAuth 授权前控制台记住当前页面，
+回调的 `/?view=connectors&oauth=…` 会重新打开它。宽度小于 640 px 时弹窗全屏，导航是第一页，各页面带返回按钮。
+
+界面、字号、间距和组件来自 `@olorinm/agent-ui/app`（设置页用标准密度，执行过程和审批卡片用紧凑密度）。
+
 ## 开发
 
 ```sh
@@ -54,7 +64,7 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 
 ## 渠道
 
-每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。飞书个人权限（以主人身份）在「飞书」入口通过 Agent Connectors 授权，见 [connector-accounts.md](connector-accounts.md)。
+每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。渠道在「设置 → 消息渠道」中按员工连接，流程在弹窗内完成。飞书个人权限（以主人身份）在「设置 → 连接器 → 飞书」通过 Agent Connectors 授权，见 [connector-accounts.md](connector-accounts.md)。
 
 ## 验证
 

@@ -285,7 +285,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
   // The collapsed process row only ever reads as a placeholder or the complete summary.
   expect(await page.evaluate(() => (window as unknown as { seen: unknown }).seen)).toEqual({ plainReply: false, loading: false, summaries: ["执行过程", "已运行 2 条命令"] });
   // Leaving and returning reuses the finished run instead of reading it again.
-  await page.getByRole("button", { name: "连接器", exact: true }).click();
+  await page.getByRole("button", { name: "通讯录", exact: true }).click();
   await page.getByRole("button", { name: "对话", exact: true }).click();
   await see(surface).toContainText("分页的历史回复");
   await page.waitForTimeout(1500);

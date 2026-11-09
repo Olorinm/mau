@@ -24,6 +24,8 @@ import {
 import { ConfirmProvider, ToastProvider } from "@olorinm/agent-ui/app";
 import { FrontendProvider } from "@olorinm/agent-frontend";
 import "@olorinm/agent-frontend/style.css";
+// The design-system tokens and components; after the frontend bundle so the shared surfaces use this version.
+import "@olorinm/agent-ui/app.css";
 import "./styles.css";
 import { ApiError } from "./api/http";
 import { App } from "./app";

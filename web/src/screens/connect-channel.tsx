@@ -11,14 +11,27 @@ import { useMatrixAvailable } from "../api/features";
 const kinds: ChannelKind[] = ["feishu", "weixin", "telegram", "matrix", "grove-mail"];
 const terminal = (job: ConnectionJob) => job.state === "ready" || job.state === "failed";
 
-export function ConnectChannelDialog(props: {
+type ConnectProps = {
   session: Session;
   summary: AgentSummary;
   job?: ConnectionJob;
   initialKind?: ChannelKind;
   onClose(): void;
   onConnected(): void;
-}) {
+};
+
+export function ConnectChannelDialog(props: ConnectProps) {
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) props.onClose(); }}>
+      <DialogContent className="mau-dialog" aria-describedby={undefined}>
+        <ConnectChannelFlow {...props} title={(text) => <DialogTitle>{text}</DialogTitle>} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The channel connection flow (choice, form, QR or pairing progress); the settings modal shows it as a page. */
+export function ConnectChannelFlow(props: ConnectProps & { title(text: string): ReactNode }) {
   const { t } = useI18n();
   const { toast } = useToast();
   const router = routerApi(props.session.token);
@@ -40,9 +53,8 @@ export function ConnectChannelDialog(props: {
   });
   const error = connect.error instanceof ApiError ? connect.error.code : connect.error ? "request_failed" : null;
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) props.onClose(); }}>
-      <DialogContent className="mau-dialog" aria-describedby={undefined}>
-        <DialogTitle>{kind ? t(`channel.${kind}`) : t("connect.title")}</DialogTitle>
+      <>
+        {props.title(kind ? t(`channel.${kind}`) : t("connect.title"))}
         {job ? (
           <JobProgress session={props.session} agentId={agentId} initial={job} onReady={() => done(job.kind)}
             onRecover={(next) => { setRecovery(next); setJob(null); connect.reset(); }} />
@@ -66,8 +78,7 @@ export function ConnectChannelDialog(props: {
             <div className="modal-actions"><Button onClick={props.onClose}>{t("common.close")}</Button></div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </>
   );
 }
 

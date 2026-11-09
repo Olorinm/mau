@@ -121,7 +121,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
     try { await sendAnswer(api, controls, claimId, id, entry.request, answer); }
     finally { await query.refetch(); }
   };
-  return <section className="mau-run" data-run-id={claimId} aria-label={label}>
+  return <section className="mau-run" data-density="compact" data-run-id={claimId} aria-label={label}>
     {placeholder ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
       onToggle={(open) => { setOpened(open); if (open && sleeping && !wake.isPending) wake.mutate(); }}
       summary={wake.isPending ? zh ? "正在唤醒员工…" : "Waking the employee…" : zh ? "执行过程" : "Process"}>

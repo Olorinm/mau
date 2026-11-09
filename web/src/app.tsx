@@ -15,14 +15,13 @@ import { accessExpiredEvent } from "./api/http";
 import { errorMessage, useI18n } from "./i18n";
 import { AgentsScreen } from "./screens/agents";
 import { MessagesScreen } from "./screens/messages";
-import { ConnectorsScreen } from "./screens/connectors";
 import {
   AppsScreen,
   CreateAppScreen,
-  ExtensionsScreen,
   FilesScreen,
-  SettingsScreen,
 } from "./screens/product-pages";
+import { SettingsModal } from "./settings/settings-modal";
+import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/route";
 import {
   AppShell,
   Navigation,
@@ -55,16 +54,19 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     return () => { active = false; };
   }, []);
   const [view, setView] = useState(() =>
-    new URLSearchParams(location.search).get("view") === "connectors" ? "connectors" : new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
+    new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
   );
-  // Landing parameters (the OAuth callback's ?view=connectors&oauth=…) apply once;
-  // leaving them in the URL would reopen Connectors on every reload.
+  const settingsRoute = useSettingsRoute();
+  // Landing parameters (the OAuth callback's ?view=connectors&oauth=…) apply once: they reopen the settings page the
+  // owner started from, and are removed so a reload does not repeat them.
   useEffect(() => {
     const url = new URL(location.href), oauth = url.searchParams.get("oauth");
     if (!url.searchParams.has("view") && !oauth) return;
+    const connectors = url.searchParams.get("view") === "connectors" || !!oauth;
     url.searchParams.delete("view");
     url.searchParams.delete("oauth");
     history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+    if (connectors) openSettings(takeSettingsReturn(), { replace: true });
     if (oauth === "connected") toast({ kind: "success", title: t("connectors.oauthConnected") });
     else if (oauth === "failed") toast({ kind: "error", title: t("connectors.oauthFailed") });
     else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
@@ -188,15 +190,8 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       ],
     },
     {
-      id: "configuration",
-      label: zh ? "配置" : "Configuration",
+      id: "settings",
       items: [
-        { id: "connectors", label: zh ? "连接器" : "Connectors", icon: <ProductIcon name="network" /> },
-        {
-          id: "extensions",
-          label: zh ? "扩展" : "Extensions",
-          icon: <ProductIcon name="extensions" />,
-        },
         {
           id: "settings",
           label: zh ? "设置" : "Settings",
@@ -221,7 +216,9 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             groups={groups}
             selectedId={view}
             onSelect={(id) =>
-              id === "create-app" ? setCreateOpen(true) : setView(id)
+              id === "create-app" ? setCreateOpen(true)
+                : id === "settings" ? openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" })
+                : setView(id)
             }
             account={{
               name: session.edge?.email ?? session.owner,
@@ -271,15 +268,10 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           />
         ) : view === "files" ? (
           <FilesScreen />
-        ) : view === "extensions" ? (
-          <ExtensionsScreen />
-        ) : view === "connectors" ? (
-          <ConnectorsScreen session={session} />
-        ) : view === "settings" ? (
-          <SettingsScreen session={session} />
         ) : (
           <AppsScreen />
         )}
+        {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={() => void signOut()} /> : null}
         <CreateAppScreen
           open={createOpen}
           onCancel={() => setCreateOpen(false)}

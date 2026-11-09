@@ -1,6 +1,6 @@
 # Connector account management in Mau
 
-Mau's **Connectors** page composes the public Agent Connectors account-management API. It supports listing the current owner's configured accounts, starting provider consent, checking authorization, and disconnecting. The existing business read tools and communication channel controls remain available independently.
+Mau's **Connectors** page (设置 → 连接器) composes the public Agent Connectors account-management API. It supports listing the current owner's configured accounts, starting provider consent, checking authorization, and disconnecting. The existing business read tools and communication channel controls remain available independently.
 
 Optional per-Agent assignments also expose a stable `connected_apps` read tool through Host's native tool protocol. The page shows assigned Agents before consent. Assignment alone does not authorize a provider account; provider consent and matching owner/Agent/connection assignment are both required. Writes and proactive execution are not enabled by this integration. An OAuth check is not proof that every product API works.
 
@@ -118,14 +118,15 @@ Feishu is split by direction, on **one** Feishu app (like Feishu aily or Coze):
 | 1 · 聊天 | Router chat channel | the app's bot | receive and send messages, cards |
 | 2 · 个人权限 | Agent Connectors (`kind: "feishu"`, official `lark-cli`) | the owner (user authorization on the same app) | docs, calendar, drive, mail…; writes need the owner's approval |
 
-The connectors page shows a single 飞书 card per Agent with both statuses (聊天已连接 / 个人权限 已授权 · 已过期 · 未授权):
+设置 → 消息渠道 connects the chat; 设置 → 连接器 → 飞书 authorizes personal access. Each page shows the other's state and links to it:
 
 1. **Chat** uses Router's existing flow (`registerApp` QR, `credentials.json` with `appId`, `appSecretFile`, `ownerOpenId`).
    The chat channel only carries messages; acting as the owner is the connector's job.
 2. **Personal access**: Mau reads the chat channel's saved app (`credentials.json` and `app-secret` in Router's Agent
    directory) and hands it to the connector (`POST /v1/connections/:id/application`). No second app or app QR. Then
-   `connect` starts the official device flow; the card shows the consent QR/link and polls `complete` until the owner
-   confirms. Handing over the same app again keeps the authorization, so 重新授权 always hands over and reconnects.
+   `connect` starts the official device flow; the page shows the consent QR/link and polls `complete` until the owner
+   confirms. The QR comes from the account's `authorizationUrl` (the list includes it while authorization is pending),
+   so it survives a reload; once `expiresAt` passes, the 授权 button returns. Handing over the same app again keeps the authorization, so 重新授权 always hands over and reconnects.
    The CLI refreshes tokens itself. The hand-over runs automatically right after the chat channel connects.
 
 The hand-over requires the owner's Agent, a connection owned by that owner, and an assignment of that connection to
@@ -168,10 +169,22 @@ Requires Agent Connectors 0.1.0-alpha.9 and Router 0.7.0-alpha.12 or later (the 
    No app files are needed; Mau hands them over.
 2. Mau options: add the connection to the Agent's `connectedApps.assignments[].connections` (as for Gmail) and add
    `https://accounts.feishu.cn` (`https://accounts.larksuite.com` for Lark) to `connectorAccounts.consentOrigins`.
-   Then open 飞书 → 个人权限 → 授权 once.
+   Then open 设置 → 连接器 → 飞书 → 授权个人权限 once.
 
 ## Connector catalog
 
-The web console groups applications by everyday work, files/knowledge and messaging. Search and Available/Connected filters operate on applications, not Agent records. An application detail shows the real connection state, its connect/check/disconnect actions and the Agents using it. Messaging details reuse Router's channel setup flow with the selected channel; deleted environments are omitted from the choices without modifying their records.
+设置 → 连接器 groups the configured applications by everyday work, files/knowledge and tools; applications without an
+available account ("coming soon") are not listed. Search and the 可用/已连接 control operate on applications, not Agent
+records. Connecting first shows a consent dialog (what the app can read; credentials stay in Mau and never enter the
+Agent's sandbox; writes follow your settings and you can disconnect at any time; Feishu adds that it works only in your
+private chats), then starts the connector's existing flow.
+
+An application page checks the connection when it opens (重新检查 appears only on an error) and shows 断开, the
+authorized account, the Agents using the connection and per-operation permissions (读取权限 / 写入和删除权限 / 后台操作,
+each 允许 / 请求 / 不允许) from `GET /_mau/v1/connector-accounts/:id/policy`; changes use `PUT …/policy` and
+`POST …/policy/reset`. Allowing a write asks for confirmation. Operations that need more access offer 添加 when they are
+grantable (`POST …/connect` with `{ "scopes": [...] }`). In scheduled or delegated work, operations set to 请求 are
+refused. A server without the policy API shows what it enforces, read-only. Messaging channels live in 设置 → 消息渠道,
+which reuses Router's channel setup flow; deleted environments are omitted without modifying their records.
 
 Gmail's first release displays read access, unavailable write actions and disabled background sync as status rows. These are not editable permission switches. Unconfigured applications are marked Coming soon and have no authorization button. Account connection status is distinct from successful business API execution. The catalog does not synthesize connected accounts, email addresses or background permissions.

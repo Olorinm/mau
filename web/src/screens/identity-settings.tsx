@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { InlineNotice } from "@olorinm/agent-frontend";
-import { Button, ProductIcon } from "@olorinm/agent-ui/app";
+import { ListRow, SettingsPage, SettingsSection, TextButton } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
 import { ledgerApi, ledgerFeatures, type PairingCode, type PersonIdentity } from "../api/ledger";
 import type { Session } from "../api/session";
@@ -20,9 +19,6 @@ const pick = (table: Record<string, [string, string]>, value: string, zh: boolea
 export function remaining(expiresAt: string, now: number): string {
   const seconds = Math.max(0, Math.floor((Date.parse(expiresAt) - now) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="mau-connector-section"><h2>{title}</h2><div className="mau-connector-panel">{children}</div></section>;
 }
 
 /**
@@ -54,51 +50,47 @@ export function IdentitySettings({ session }: { session: Session }) {
     onSuccess: (_data, id) => { if (issued?.id === id) setIssued(null); refresh(); }, onError: (cause) => { failed(cause); refresh(); } });
   const revoke = useMutation({ mutationFn: (id: string) => api.revokeIdentity(id), onMutate: () => setError(null),
     onSuccess: () => { setConfirm(null); refresh(); }, onError: (cause) => { setConfirm(null); failed(cause); refresh(); } });
+  const loading = <ListRow muted title={zh ? "正在读取…" : "Loading…"} />;
+  const failure = (cause: unknown) => <ListRow muted title={errorMessage(t, cause instanceof ApiError ? cause.code : "request_failed")} />;
 
-  if (me.isPending) return <p className="mau-panel-note">{zh ? "正在读取…" : "Loading…"}</p>;
-  if (!enabled) return <InlineNotice title={zh ? "尚未开启" : "Not enabled"}>
-    {zh ? "这个 Router 尚未开启身份与配对（limits.features.identity）。" : "This Router has not enabled identities and pairing (limits.features.identity)."}
-  </InlineNotice>;
+  if (me.isPending) return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"}><SettingsSection>{loading}</SettingsSection></SettingsPage>;
+  if (!enabled) return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"}>
+    <SettingsSection><ListRow muted title={zh ? "尚未开启" : "Not enabled"}
+      subtitle={zh ? "这个 Router 尚未开启身份与配对（limits.features.identity）。" : "This Router has not enabled identities and pairing (limits.features.identity)."} /></SettingsSection>
+  </SettingsPage>;
   const expired = issued && Date.parse(issued.expiresAt) <= now;
-  return <div className="mau-identity-settings">
-    {error && <p className="mau-error" role="alert">{error}</p>}
-    <Section title={zh ? "已关联的身份" : "Linked identities"}>
-      {identities.isPending ? <p className="mau-panel-note">{zh ? "正在读取…" : "Loading…"}</p>
-        : identities.isError ? <p className="mau-error" role="alert">{errorMessage(t, identities.error instanceof ApiError ? identities.error.code : "request_failed")}</p>
-        : identities.data.data.length === 0 ? <p className="mau-panel-note">{zh ? "暂无关联的身份。" : "No linked identities."}</p>
-        : identities.data.data.map((item: PersonIdentity) => <div className="mau-permission-row" key={item.identityId} data-identity={item.identityId}>
-          <span><strong>{pick(providers, item.provider, zh)}</strong> <span className="mau-muted">{item.subject}</span><br />
-            <span className="mau-muted">{pick(verified, item.verifiedBy, zh)}{item.lastSeenAt ? ` · ${zh ? "最近使用" : "Last used"} ${new Date(item.lastSeenAt).toLocaleString(language)}` : ""}</span></span>
-          {item.removable ? confirm === item.identityId
-            ? <span className="mau-connector-buttons">
-                <Button variant="primary" disabled={revoke.isPending} onClick={() => revoke.mutate(item.identityId)}>{zh ? "确认解除" : "Confirm"}</Button>
-                <Button onClick={() => setConfirm(null)}>{zh ? "取消" : "Cancel"}</Button>
-              </span>
-            : <Button onClick={() => setConfirm(item.identityId)}>{zh ? "解除关联" : "Unlink"}</Button>
-          : <span className="mau-muted">{item.fixed === "identity_in_use" ? zh ? "当前登录" : "Signed in" : zh ? "由配置固定" : "Fixed by configuration"}</span>}
-        </div>)}
-    </Section>
-    <Section title={zh ? "关联新渠道" : "Link a channel"}>
-      <p className="mau-panel-note">{zh ? "生成关联码后，在要关联的渠道里私聊你的任一 Agent 发送 /link 关联码。关联码 1 小时内有效，只能使用一次。邮件默认不支持关联。"
-        : "Generate a code, then send /link <code> to any of your Agents in a direct chat on the channel to link. Codes are valid for one hour and work once. Mail does not support pairing by default."}</p>
-      {issued && !expired && <div className="mau-pairing-code" aria-live="polite">
+  return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"} className="mau-identity-settings">
+    {error ? <p className="mau-error" role="alert">{error}</p> : null}
+    <SettingsSection title={zh ? "已关联的身份" : "Linked identities"}>
+      {identities.isPending ? loading : identities.isError ? failure(identities.error)
+        : identities.data.data.length === 0 ? <ListRow muted title={zh ? "暂无关联的身份。" : "No linked identities."} />
+        : identities.data.data.map((item: PersonIdentity) => <ListRow key={item.identityId}
+          title={<>{pick(providers, item.provider, zh)} <span className="mau-muted">{item.subject}</span></>}
+          subtitle={`${pick(verified, item.verifiedBy, zh)}${item.lastSeenAt ? ` · ${zh ? "最近使用" : "Last used"} ${new Date(item.lastSeenAt).toLocaleString(language)}` : ""}`}
+          trailing={item.removable ? confirm === item.identityId
+            ? <><TextButton tone="danger" disabled={revoke.isPending} onClick={() => revoke.mutate(item.identityId)}>{zh ? "确认解除" : "Confirm"}</TextButton>
+                <TextButton tone="neutral" onClick={() => setConfirm(null)}>{zh ? "取消" : "Cancel"}</TextButton></>
+            : <TextButton onClick={() => setConfirm(item.identityId)}>{zh ? "解除关联" : "Unlink"}</TextButton>
+            : <span>{item.fixed === "identity_in_use" ? zh ? "当前登录" : "Signed in" : zh ? "由配置固定" : "Fixed by configuration"}</span>} />)}
+    </SettingsSection>
+    <SettingsSection title={zh ? "关联新渠道" : "Link a channel"}
+      note={zh ? "生成关联码后，在要关联的渠道里私聊你的任一 Agent 发送 /link 关联码。关联码 1 小时内有效，只能使用一次。邮件默认不支持关联。"
+        : "Generate a code, then send /link <code> to any of your Agents in a direct chat on the channel to link. Codes are valid for one hour and work once. Mail does not support pairing by default."}>
+      {issued && !expired ? <div className="mau-pairing-code" aria-live="polite">
         <strong className="mau-pairing-code-value">{issued.code}</strong>
         <span className="mau-muted">{zh ? "剩余" : "Expires in"} {remaining(issued.expiresAt, now)}</span>
         <p>{issued.instructions}</p>
-      </div>}
-      {issued && expired && <p className="mau-panel-note">{zh ? "关联码已过期，请重新生成。" : "The code expired. Generate a new one."}</p>}
-      <div className="mau-connector-buttons">
-        <Button variant="primary" disabled={create.isPending} onClick={() => create.mutate()}><ProductIcon name="contacts" />{zh ? "生成关联码" : "Generate code"}</Button>
-      </div>
-    </Section>
-    <Section title={zh ? "待使用的关联码" : "Pending codes"}>
-      {codes.isPending ? <p className="mau-panel-note">{zh ? "正在读取…" : "Loading…"}</p>
-        : codes.isError ? <p className="mau-error" role="alert">{errorMessage(t, codes.error instanceof ApiError ? codes.error.code : "request_failed")}</p>
-        : codes.data.data.length === 0 ? <p className="mau-panel-note">{zh ? "没有待使用的关联码。" : "No pending codes."}</p>
-        : codes.data.data.map((item) => <div className="mau-permission-row" key={item.id} data-pairing-code={item.id}>
-          <span>{issued?.id === item.id ? issued.code : "••••-••••"} <span className="mau-muted">{zh ? "有效至" : "Valid until"} {new Date(item.expiresAt).toLocaleTimeString(language)}</span></span>
-          <Button disabled={cancel.isPending} onClick={() => cancel.mutate(item.id)}>{zh ? "撤销" : "Revoke"}</Button>
-        </div>)}
-    </Section>
-  </div>;
+      </div> : null}
+      {issued && expired ? <ListRow muted title={zh ? "关联码已过期，请重新生成。" : "The code expired. Generate a new one."} /> : null}
+      <ListRow tone="action" title={create.isPending ? zh ? "正在生成…" : "Generating…" : zh ? "生成关联码" : "Generate code"} onClick={create.isPending ? undefined : () => create.mutate()} />
+    </SettingsSection>
+    <SettingsSection title={zh ? "待使用的关联码" : "Pending codes"}>
+      {codes.isPending ? loading : codes.isError ? failure(codes.error)
+        : codes.data.data.length === 0 ? <ListRow muted title={zh ? "没有待使用的关联码。" : "No pending codes."} />
+        : codes.data.data.map((item) => <ListRow key={item.id}
+          title={issued?.id === item.id ? issued.code : "••••-••••"}
+          subtitle={`${zh ? "有效至" : "Valid until"} ${new Date(item.expiresAt).toLocaleTimeString(language)}`}
+          trailing={<TextButton tone="danger" disabled={cancel.isPending} onClick={() => cancel.mutate(item.id)}>{zh ? "撤销" : "Revoke"}</TextButton>} />)}
+    </SettingsSection>
+  </SettingsPage>;
 }
