@@ -13,7 +13,7 @@ import { validateArtifactPath, type WorkspaceBackend } from "@olorinm/agent-envi
 
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
-import { ConnectorAccounts, connectorAccountsSchema } from "./connector-accounts.js";
+import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
@@ -319,7 +319,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.json({ ...result, data: result.data.map(account => {
       const assignedAgents = connectedApps.assigned(res.locals.owner, account.id)
         .filter(id => router.service.agents(res.locals.owner).some(agent => agent.id === id));
-      return { ...account, ...(assignedAgents.length ? { assignedAgents, permission: "read-only" } : {}) };
+      return { ...account, ...(assignedAgents.length ? { assignedAgents } : {}) };
     }) });
   });
   // Unified 飞书 entry, step 2: hand the app of the Agent's Feishu chat channel to the owner's Feishu connection.
@@ -330,10 +330,19 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const application = chatChannelApplication(router.connections.configuration(agent)?.connections, router.connections.agentDirectory(agentId));
     res.json(await connectorAccounts.provideApplication(owner, id, application));
   });
+  // Owner settings per operation (allow, ask, deny); the connector service enforces them on every call.
+  product.get("/connector-accounts/:id/policy", async (req, res) => res.json(await connectorAccounts.policy(res.locals.owner, String(req.params.id))));
+  product.put("/connector-accounts/:id/policy", async (req, res) =>
+    res.json(await connectorAccounts.setPolicy(res.locals.owner, String(req.params.id), policySettingsSchema.parse(req.body))));
+  product.post("/connector-accounts/:id/policy/reset", async (req, res) => {
+    z.object({}).strict().parse(req.body ?? {});
+    res.json(await connectorAccounts.resetPolicy(res.locals.owner, String(req.params.id)));
+  });
   product.post("/connector-accounts/:id/:action", async (req, res) => {
-    z.object({}).strict().parse(req.body);
     const action = z.enum(["check", "connect", "complete", "disconnect"]).parse(req.params.action);
-    const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action);
+    // Connect may name operations whose missing scopes to add; every other action takes no input.
+    const input = action === "connect" ? connectInputSchema.parse(req.body ?? {}) : (z.object({}).strict().parse(req.body), {});
+    const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action, input);
     if (result.authorizationUrl) connectorRuntime?.bind(result.authorizationUrl, res);
     res.json(result);
   });

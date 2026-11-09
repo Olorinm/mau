@@ -21,6 +21,22 @@ const operationViewSchema = z.object({ id: z.string(), owner: z.string(), agentI
   summary: z.string().max(4000), input: z.unknown(), createdAt: z.string(), expiresAt: z.string(),
   outcome: z.record(z.string(), z.unknown()).optional() }).passthrough();
 export type OperationView = z.infer<typeof operationViewSchema>;
+const settingSchema = z.enum(["allow", "ask", "deny"]);
+const policyOperationIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}$/);
+const label = z.string().min(1).max(200).transform(value => value.replace(/[\x00-\x1f\x7f]/g, ""));
+/** Reviewed fields of the connector's policy view; anything else (grant scopes included) stays on the server. */
+const policyOperationSchema = z.object({ id: policyOperationIdSchema, label, labelZh: label, risk: z.enum(["read", "write", "destructive"]),
+  setting: settingSchema, default: settingSchema, available: z.boolean(),
+  unavailableReason: z.enum(["scope_required", "not_supported"]).optional(), grantable: z.boolean().optional(),
+  grantScope: z.string().max(200).optional() });
+const policySchema = z.object({
+  groups: z.array(z.object({ id: z.string().regex(/^[a-z0-9_-]{1,64}$/), label, labelZh: label, operations: z.array(policyOperationSchema).max(200) })).max(50),
+  background: z.array(policyOperationSchema).max(50).optional() });
+type PolicyOperation = z.infer<typeof policyOperationSchema>;
+export const policySettingsSchema = z.object({ settings: z.record(policyOperationIdSchema, settingSchema)
+  .refine(settings => Object.keys(settings).length <= 200, "too_many_settings") }).strict();
+export const connectInputSchema = z.object({ operations: z.array(policyOperationIdSchema).min(1).max(20).optional() }).strict();
+const publicOperation = ({ grantScope: _scope, ...operation }: PolicyOperation) => operation;
 const errorCode = (body: unknown) => {
   const code = body && typeof body === "object" && "error" in body ? (body as { error: unknown }).error : undefined;
   return typeof code === "string" && /^[a-z0-9_]{1,80}$/.test(code) ? code : "operation_refused";
@@ -33,6 +49,8 @@ export interface AccountState {
   reason?: string;
   /** The authorized user's display name (Feishu), shown to that owner only. */
   name?: string;
+  /** The authorized account (Gmail address, Feishu user), shown to that owner only. */
+  account?: { email?: string; name?: string };
   authorizationUrl?: string;
   expiresAt?: string;
 }
@@ -62,14 +80,14 @@ export class ConnectorAccounts {
       x: z.string().min(1), d: z.string().min(1) }).parse(JSON.parse(readFileSync(path, "utf8")));
     this.key = { kid: privateJwk.kid, privateJwk };
   }
-  private async request(path: string, mutation = false, options: { body?: unknown; service?: string; status?: (status: number, body: unknown) => unknown } = {}): Promise<unknown> {
+  private async request(path: string, mutation = false, options: { body?: unknown; service?: string; method?: "PUT"; status?: (status: number, body: unknown) => unknown } = {}): Promise<unknown> {
     if (!this.options || !this.key || !this.endpoint) throw new RouterError("connector_service_not_configured", 503);
     let dispatched = false;
     try {
       const token = await signServiceToken({ key: this.key, issuer: this.options.issuer,
         audience: this.options.audience, service: options.service ?? "mau-account-management", ttlSeconds: 120 });
       dispatched = true;
-      const response = await fetch(this.endpoint + path, { method: mutation ? "POST" : "GET", redirect: "error",
+      const response = await fetch(this.endpoint + path, { method: options.method ?? (mutation ? "POST" : "GET"), redirect: "error",
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}) },
         ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(options.body !== undefined ? 150_000 : 65_000) });
       if (!response.ok && options.status && response.status < 500) {
@@ -129,7 +147,8 @@ export class ConnectorAccounts {
       throw new RouterError("connector_service_unavailable", 502);
     return result.data.connections;
   }
-  private state(raw: unknown, includeConsent = false): AccountState {
+  /** `includeConsent` returns the consent link (refusing a foreign one); `pendingConsent` adds it only while pending, dropping a foreign one. */
+  private state(raw: unknown, includeConsent = false, pendingConsent = false): AccountState {
     const parsed = z.record(z.string(), z.unknown()).safeParse(raw);
     if (!parsed.success) throw new RouterError("connector_service_unavailable", 502);
     const account = parsed.data, status = account.status;
@@ -143,6 +162,16 @@ export class ConnectorAccounts {
     if (reason.success && state !== "connected") result.reason = reason.data;
     const name = z.string().min(1).max(200).safeParse(account.userName);
     if (name.success && connected) result.name = name.data.replace(/[\x00-\x1f\x7f]/g, "");
+    if (connected) {
+      const email = z.email().max(254).safeParse(account.accountEmail);
+      const display = z.string().min(1).max(200).safeParse(account.accountName ?? account.userName);
+      if (email.success || display.success) result.account = { ...(email.success ? { email: email.data } : {}),
+        ...(display.success ? { name: display.data.replace(/[\x00-\x1f\x7f]/g, "") } : {}) };
+    }
+    if (pendingConsent && !includeConsent && state === "authorization_pending") {
+      // A reloaded page shows the same consent link (Feishu QR) again; a link outside the allow-list is left out.
+      try { return this.state(raw, true); } catch { return result; }
+    }
     if (includeConsent) {
       const rawUrl = account.authorizationUrl ?? account.verificationUrl;
       if (typeof rawUrl === "string") {
@@ -160,7 +189,7 @@ export class ConnectorAccounts {
     if (!this.configured) return { configured: false, data: [] };
     return { configured: true, data: (await this.entries()).filter(entry => entry.owner === owner)
       .map(entry => ({ id: entry.id, kind: entry.kind, label: entry.label, ...(entry.usage === "owner_private" ? { usage: "owner_private" as const } : {}),
-        ...this.state(entry.account) })) };
+        ...this.state(entry.account, false, true) })) };
   }
   /** Connection IDs and declared usage, for admission policy. Service-wide; never returned to a browser. */
   async usage() { return (await this.entries()).map(({ id, usage }) => ({ id, usage })); }
@@ -172,12 +201,54 @@ export class ConnectorAccounts {
     if (entry.kind !== "feishu") throw new RouterError("connector_application_not_supported", 409);
     return this.state(await this.request(`/v1/connections/${id}/application`, true, { body: application }));
   }
-  async action(owner: string, id: string, action: "check" | "connect" | "complete" | "disconnect") {
+  /** Service tokens are service-wide: authenticate and recheck upstream ownership before every account request. */
+  private async owned(owner: string, id: string) {
     if (!idSchema.safeParse(id).success) throw new RouterError("connector_account_not_found", 404);
-    // Service tokens are service-wide: authenticate and recheck upstream ownership before every action.
     const entry = (await this.entries()).find(entry => entry.id === id && entry.owner === owner);
     if (!entry) throw new RouterError("connector_account_not_found", 404);
+    return entry;
+  }
+  private async policyRequest(path: string, options: { body?: unknown; method?: "PUT"; mutation?: boolean } = {}) {
+    const raw = await this.request(path, options.mutation ?? false, { ...options, status: (status, body) => ({ refused: errorCode(body), status }) });
+    const refusal = z.object({ refused: z.string(), status: z.number() }).strict().safeParse(raw);
+    // Definite refusals (unknown operation, missing connection) keep their code; nothing else of the body is passed on.
+    if (refusal.success) throw new RouterError(refusal.data.refused, [400, 404].includes(refusal.data.status) ? refusal.data.status : 409);
+    const parsed = policySchema.safeParse(raw);
+    if (!parsed.success) throw new RouterError("connector_service_unavailable", 502);
+    return parsed.data;
+  }
+  private publicPolicy(policy: z.infer<typeof policySchema>) {
+    return { groups: policy.groups.map(group => ({ ...group, operations: group.operations.map(publicOperation) })),
+      ...(policy.background ? { background: policy.background.map(publicOperation) } : {}) };
+  }
+  /** The owner's allow/ask/deny settings for each operation of one of their connections. */
+  async policy(owner: string, id: string) {
+    await this.owned(owner, id);
+    return this.publicPolicy(await this.policyRequest(`/v1/connections/${id}/policy`));
+  }
+  async setPolicy(owner: string, id: string, input: z.infer<typeof policySettingsSchema>) {
+    await this.owned(owner, id);
+    return this.publicPolicy(await this.policyRequest(`/v1/connections/${id}/policy`, { method: "PUT", mutation: true, body: { settings: input.settings } }));
+  }
+  async resetPolicy(owner: string, id: string) {
+    await this.owned(owner, id);
+    return this.publicPolicy(await this.policyRequest(`/v1/connections/${id}/policy/reset`, { mutation: true }));
+  }
+  async action(owner: string, id: string, action: "check" | "connect" | "complete" | "disconnect", input: z.infer<typeof connectInputSchema> = {}) {
+    const entry = await this.owned(owner, id);
     if (action === "check") return this.state(entry.account);
+    if (action === "connect" && input.operations) {
+      // Adding operations to an authorization: the scopes come from the connector's own view, only for grantable operations.
+      const policy = await this.policyRequest(`/v1/connections/${id}/policy`);
+      const operations = [...policy.groups.flatMap(group => group.operations), ...(policy.background ?? [])];
+      const scopes = input.operations.map(operation => {
+        const found = operations.find(candidate => candidate.id === operation);
+        if (!found || found.available || found.unavailableReason !== "scope_required" || !found.grantable || !found.grantScope)
+          throw new RouterError("connector_operation_not_grantable", 409);
+        return found.grantScope;
+      });
+      return this.state(await this.request(`/v1/connections/${id}/connect`, true, { body: { scopes: [...new Set(scopes)] } }), true);
+    }
     // Do not invalidate a working account just because Connect was clicked twice.
     if (action === "connect" && this.state(entry.account).state === "connected") return this.state(entry.account);
     // Device-flow consent (Feishu) is finished by `complete`; while it waits, the same consent link is returned.
