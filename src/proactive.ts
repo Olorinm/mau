@@ -30,6 +30,9 @@ export const proactiveRuleInput = z.object({
   operations: z.array(z.string().min(1).max(160)).max(200).optional(),
   skills: z.array(z.object({ name: z.string().min(1).max(160), path: z.string().min(1).max(4096) }).strict()).max(30).default([]),
   notifications: z.enum(["changes", "always", "none"]).default("changes"),
+  /** Where notices go (Router ADR 0005 16.6): `web` records them in the conversation only; a connection id such as a
+   * chat channel or a push channel also delivers them there. New rules default to `web`; an edit keeps the prior one. */
+  notify: z.object({ channel: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/) }).strict().optional(),
   quietHours: z.object({ start: time, end: time }).strict().optional(),
   maxRunsPerDay: z.number().int().min(1).max(288).default(24),
   maxToolCalls: z.number().int().min(1).max(100).default(20),
@@ -43,8 +46,8 @@ export function heartbeatPreset(input: ProactiveRuleInput): ProactiveRuleInput {
     session: input.session ?? { type: "conversation", sessionId: input.targetSessionId, idleOnly: true },
     notifications: input.notifications ?? "changes" };
 }
-export type ProactiveRule = Omit<z.output<typeof proactiveRuleInput>, "status" | "schedule" | "session"> & {
-  schedule: z.output<typeof schedule>; session: z.output<typeof session>;
+export type ProactiveRule = Omit<z.output<typeof proactiveRuleInput>, "status" | "schedule" | "session" | "notify"> & {
+  schedule: z.output<typeof schedule>; session: z.output<typeof session>; notify: { channel: string };
   id: string; owner: string; version: number; status: "active" | "paused" | "authorization_required";
   createdAt: string; updatedAt: string; nextAt: string; activeRun?: string;
 };
@@ -53,7 +56,7 @@ export interface WorkSnapshot {
   runId?: string; outcomeUnknown?: boolean; error?: string;
 }
 export interface ProactivePort {
-  validate(rule: Pick<ProactiveRule, "owner" | "agentId" | "targetSessionId" | "connections" | "skills" | "execution" | "session" | "precheck">): Promise<void>;
+  validate(rule: Pick<ProactiveRule, "owner" | "agentId" | "targetSessionId" | "connections" | "skills" | "execution" | "session" | "precheck" | "notify">): Promise<void>;
   authorized(rule: ProactiveRule): Promise<boolean>;
   /** Trusted, read-only connector execution; only its successfully returned data may produce a checkpoint. */
   check?(rule: ProactiveRule, input: { eventId: string; previous?: string }): Promise<{ changed: boolean; checkpoint: string }>;
@@ -64,7 +67,9 @@ export interface ProactivePort {
   lookup(rule: ProactiveRule, eventId: string): Promise<WorkSnapshot | null>;
   /** Must validate against a source-specific trusted connector receipt, never model text. */
   validateCursor?(rule: ProactiveRule, sourceId: string, cursor: string, eventId: string): Promise<boolean>;
-  deliver(rule: ProactiveRule, input: { eventId: string; targetSessionId: string; text: string }): Promise<{ status: string; externalId?: string; error?: string }>;
+  deliver(rule: ProactiveRule, input: { eventId: string; targetSessionId: string; text: string; connectionId?: string | undefined }): Promise<{ status: string; externalId?: string; error?: string }>;
+  /** The connection notices of a rule without `notify` went to (its target session's newest owner conversation). */
+  deliveryConnection?(rule: ProactiveRule): Promise<string>;
   delivery(rule: ProactiveRule, eventId: string): Promise<{ status: string; externalId?: string; error?: string } | null>;
   cancel(rule: ProactiveRule, eventId: string): Promise<void>;
 }
@@ -152,6 +157,7 @@ export class ProactiveWork {
     if (prior?.activeRun) throw new RouterError("proactive_rule_has_active_run", 409);
     if (!prior && this.list(owner).length >= 100) throw new RouterError("proactive_rule_limit", 409);
     const now = this.clock(), rule: ProactiveRule = { ...input, schedule: input.schedule, session: input.session ?? { type: "rule" },
+      notify: input.notify ?? prior?.notify ?? { channel: "web" },
       id: id ?? randomUUID(), owner, version: (prior?.version ?? 0) + 1,
       createdAt: prior?.createdAt ?? now.toISOString(), updatedAt: now.toISOString(), nextAt: nextOccurrence({ schedule: input.schedule, timeZone: input.timeZone }, now) };
     await this.port.validate(rule);
@@ -217,6 +223,21 @@ export class ProactiveWork {
     const rule = this.store.get<ProactiveRule>("rules", trigger.rule.id);
     return rule?.status === "active" && rule.execution.type === "agent" && rule.version === trigger.rule.version && ["queued", "submitting", "running"].includes(trigger.status);
   }
+  /**
+   * Rules saved before `notify` existed delivered to their target session's newest owner conversation. They keep that
+   * connection (one-time data migration; the version is unchanged, so queued notices stay valid). A rule whose session
+   * cannot be resolved now is retried on the next start; until then its notices follow the newest conversation.
+   */
+  async migrateNotify() {
+    if (!this.port.deliveryConnection) return;
+    for (const { value: rule } of this.store.entries<Omit<ProactiveRule, "notify"> & { notify?: { channel: string } }>("rules")) {
+      if (rule.notify) continue;
+      const channel = await this.port.deliveryConnection(rule as ProactiveRule).catch(() => undefined);
+      if (!channel) continue;
+      const current = this.store.get<ProactiveRule>("rules", rule.id);
+      if (current && !current.notify) this.store.set("rules", rule.id, { ...current, notify: { channel } });
+    }
+  }
   start() { if (!this.timer) { this.timer = setInterval(() => {
     try { this.store.acquireLease(this.lease, this.clock().getTime()); void this.tick().catch(() => {}); } catch { /* Another process owns coordination. */ }
   }, 1000); this.timer.unref(); } }
@@ -273,10 +294,14 @@ export class ProactiveWork {
           }
           const ready = this.rule(current.owner, current.id);
           if (ready.version !== original.version || ready.status === "paused" || (ready.status !== "active" && !notice.authorization) || inQuietHours(ready, this.clock())) continue;
-          receipt = await this.port.deliver(original, { eventId: notice.id, targetSessionId: original.targetSessionId, text: notice.text });
+          // Triggers of rules saved before `notify` carry no target: Router then follows the newest owner conversation.
+          receipt = await this.port.deliver(original, { eventId: notice.id, targetSessionId: original.targetSessionId, text: notice.text,
+            ...(original.notify ? { connectionId: original.notify.channel } : {}) });
         }
         this.store.acquireLease(this.lease, this.clock().getTime());
-        const status = ["sent", "completed", "delivered"].includes(receipt.status) ? "sent" : ["uncertain", "failed"].includes(receipt.status) ? receipt.status : "submitted";
+        // `web`: recorded in the conversation, no channel requested. `suppressed`: the named channel has no conversation.
+        const status = ["sent", "completed", "delivered", "web"].includes(receipt.status) ? "sent" : receipt.status === "suppressed" ? "failed"
+          : ["uncertain", "failed"].includes(receipt.status) ? receipt.status : "submitted";
         this.store.set("notices", notice.id, { ...notice, status, ...(receipt.externalId ? { externalId: receipt.externalId } : {}), ...(receipt.error ? { error: receipt.error } : {}) });
       } catch { /* Router's stable outbox identity is reused; no new message key is minted. */ }
     }

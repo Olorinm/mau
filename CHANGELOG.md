@@ -4,6 +4,17 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.30] - 2026-11-09
+
+- Pins Router 0.7.0-alpha.14: a send-only Bark channel and owner notifications for web-only answers, questions and
+  reminders.
+- Proactive rules gain `notify.channel` (Router schedule notice targets): `web` keeps notices in the conversation, and
+  a connection id delivers them on that channel or push service. New rules default to `web`; an edit without
+  `notify` keeps the prior target, and a channel that is not registered is rejected (`proactive_notify_channel_not_found`).
+  On start, rules saved before this field keep the connection their notices used (the target session's newest owner
+  conversation) without a version change. A `web` receipt counts as sent; a channel without a conversation fails
+  with `no_conversation_on_connection`.
+
 ## [0.1.0-alpha.29] - 2026-11-09
 
 - Browser connections use the official agent-browser CLI: Mau installs an `agent-browser` command and the connector's
