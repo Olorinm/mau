@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ListRow, SettingsPage, SettingsSection, TextButton, useToast } from "@olorinm/agent-ui/app";
+import { ListRow, SettingsPage, SettingsSection, StatusLine, TextButton, useToast } from "@olorinm/agent-ui/app";
 import { mauApi, routerApi, type AgentSummary, type ChannelKind } from "../api/client";
 import { useMatrixAvailable } from "../api/features";
 import type { Session } from "../api/session";
@@ -54,11 +54,12 @@ export function ChannelsPage({ session }: { session: Session }) {
         const connected = agent.connections.some((connection) => connection.kind === kind);
         const account = kind === "feishu" ? personal(agent.agent.id) : undefined;
         return <ListRow key={kind} icon={<AppMark id={kind} />} title={t(`channel.${kind}`)}
-          subtitle={kind === "feishu" && account ? feishuPersonalState(account, zh) : undefined}
+          subtitle={<>{connected ? <StatusLine tone="success">{zh ? "已连接" : "Connected"}</StatusLine> : <StatusLine>{zh ? "未连接" : "Not connected"}</StatusLine>}
+            {kind === "feishu" && account ? <span className="mau-status-extra">{feishuPersonalState(account, zh)}</span> : null}</>}
           trailing={<>
             {kind === "feishu" && account ? <TextButton onClick={() => openSettings({ section: "connectors", item: "feishu" })}>{zh ? "个人权限" : "Personal access"}</TextButton> : null}
             {connected
-              ? <><span>{zh ? "已连接" : "Connected"}</span><TextButton disabled={check.isPending} aria-label={zh ? `检查${t(`channel.${kind}`)}` : `Check ${t(`channel.${kind}`)}`}
+              ? <><TextButton disabled={check.isPending} aria-label={zh ? `检查${t(`channel.${kind}`)}` : `Check ${t(`channel.${kind}`)}`}
                   onClick={() => check.mutate({ agent, kind })}>{zh ? "检查" : "Check"}</TextButton></>
               : <TextButton aria-label={zh ? `连接${t(`channel.${kind}`)}` : `Connect ${t(`channel.${kind}`)}`} onClick={() => setConnecting({ agent, kind })}>{zh ? "连接" : "Connect"}</TextButton>}
           </>} />;

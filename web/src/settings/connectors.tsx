@@ -14,6 +14,7 @@ import {
   SelectMenu,
   SettingsPage,
   SettingsSection,
+  StatusLine,
   TextButton,
   useToast,
 } from "@olorinm/agent-ui/app";
@@ -95,7 +96,7 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
       {expired(product) ? zh ? "重新授权" : "Re-authorize" : zh ? "连接" : "Connect"}</TextButton>;
   };
   const row = (product: Product) => <ListRow key={product.id} icon={<AppMark id={product.id} />} title={name(product)}
-    onClick={() => open(product)} ariaLabel={name(product)} trailing={action(product)} />;
+    subtitle={accountStatus(byProduct.get(product.id) ?? [], zh)} onClick={() => open(product)} ariaLabel={name(product)} trailing={action(product)} />;
   const groups: Array<[ProductGroup, string]> = [["work", zh ? "日常工作" : "Everyday work"], ["knowledge", zh ? "文件与知识" : "Files and knowledge"], ["tools", zh ? "工具" : "Tools"]];
   const expiredAccounts = data.filter((account) => account.state === "expired");
   return <SettingsPage title={zh ? "连接器" : "Connectors"}>
@@ -364,6 +365,15 @@ function mapOperations(policy: ConnectorPolicy, map: (operation: PolicyOperation
 }
 
 /** Feishu personal access for one Agent, shown next to its chat connection in 消息渠道. */
+/** Row status under an app's name: green connected, red when it needs re-authorization, grey otherwise. */
+export function accountStatus(accounts: ConnectorAccount[], zh: boolean) {
+  if (accounts.some(isConnected)) return <StatusLine tone="success">{zh ? "已连接" : "Connected"}</StatusLine>;
+  if (accounts.some((account) => account.state === "expired" || account.state === "needs_attention"))
+    return <StatusLine tone="danger">{zh ? "需要重新授权" : "Re-authorize"}</StatusLine>;
+  if (accounts.some((account) => account.state === "authorization_pending")) return <StatusLine tone="warning">{zh ? "等待授权" : "Waiting"}</StatusLine>;
+  return <StatusLine>{zh ? "未连接" : "Not connected"}</StatusLine>;
+}
+
 export function feishuPersonalState(account: ConnectorAccount | undefined, zh: boolean): string {
   if (!account) return zh ? "个人权限未开放" : "Personal access unavailable";
   switch (account.state) {

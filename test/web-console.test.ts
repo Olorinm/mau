@@ -851,9 +851,10 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "设置" });
   await settings.getByRole("button", { name: "连接器", exact: true }).click();
-  // Coming-soon apps are hidden; featured cards and rows show only available apps.
+  // Coming-soon apps are hidden; there are no featured cards, and each row shows its status.
   await see(settings.getByRole("button", { name: "Google 日历", exact: true })).toHaveCount(0);
-  await see(settings.getByRole("heading", { name: "精选" })).toBeVisible();
+  await see(settings.getByRole("heading", { name: "精选" })).toHaveCount(0);
+  await see(settings.locator(".agent-status-line").first()).toBeVisible();
   // A server without the policy API shows what it enforces, read-only.
   await settings.getByRole("button", { name: "Gmail", exact: true }).click();
   await see(settings.getByRole("heading", { name: "Gmail" })).toBeVisible();
