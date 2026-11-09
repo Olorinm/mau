@@ -4,7 +4,7 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
-## [Unreleased]
+## [0.1.0-alpha.29] - 2026-11-09
 
 - Browser connections use the official agent-browser CLI: Mau installs an `agent-browser` command and the connector's
   guide as a skill for Agents with a browser connection. The command relays through Agent Host like `gws` and
@@ -14,6 +14,9 @@ copied from it.
   `download` are saved under `browser_downloads/` with absolute paths in the result; screenshots are also attached as
   images. The handoff card shows the Agent's instructions and points to the live view's Done button.
 - The image keeps only its platform's agent-browser binary.
+- Pins Agent Connectors 0.1.0-alpha.10.
+
+PR: [#42](https://github.com/Olorinm/mau/pull/42)
 
 ## [0.1.0-alpha.28] - 2026-11-06
 
