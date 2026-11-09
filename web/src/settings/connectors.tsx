@@ -4,8 +4,6 @@ import {
   ConsentDialog,
   DetailHero,
   EmployeeAvatar,
-  FeaturedCard,
-  FeaturedGrid,
   InitialAvatar,
   ListRow,
   Modal,
@@ -30,7 +28,6 @@ import { openSettings, rememberSettingsReturn } from "./route";
 
 export const privacyPolicyUrl = "https://www.openmau.com/privacy.html";
 type Accounts = { configured: boolean; data: ConnectorAccount[] };
-const featuredIds = ["gmail", "feishu", "browser"];
 
 export function useConnectorAccounts(session: Session) {
   return useQuery({ queryKey: ["connector-accounts", session.owner], queryFn: mauApi(session.token).connectorAccounts,
@@ -56,7 +53,7 @@ const pendingQr = (account: ConnectorAccount, now = Date.now()) =>
   account.kind === "feishu" && (account.state === "authorization_pending" || account.state === "authorization_required")
   && !!safeExternalUrl(account.authorizationUrl) && (!account.expiresAt || Date.parse(account.expiresAt) > now);
 
-/** 连接器: search, 可用 / 已连接, featured cards and grouped rows; an app opens its detail page. */
+/** 连接器: search, 可用 / 已连接, grouped rows; an app opens its detail page. */
 export function ConnectorsPage({ session, item }: { session: Session; item?: string }) {
   const { language, t } = useI18n(), zh = language === "zh-CN";
   const accounts = useConnectorAccounts(session);
@@ -73,7 +70,6 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
   }, [data]);
   const list = [...byProduct.keys()].map((id) => productFor(id, data)).filter((product): product is Product => !!product);
   const name = (product: Product) => zh ? product.name : product.en ?? product.name;
-  const description = (product: Product) => zh ? product.description : product.descriptionEn;
   const connected = (product: Product) => (byProduct.get(product.id) ?? []).some(isConnected);
   const expired = (product: Product) => (byProduct.get(product.id) ?? []).some((account) => account.state === "expired");
   const open = (product: Product) => openSettings({ section: "connectors", item: product.id });
@@ -88,7 +84,6 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
 
   const matches = (product: Product) => `${product.name} ${product.en ?? ""} ${product.id}`.toLowerCase().includes(query.trim().toLowerCase());
   const visible = list.filter((product) => matches(product) && (tab === "available" || connected(product) || expired(product)));
-  const featured = !query && tab === "available" ? featuredIds.map((id) => list.find((product) => product.id === id)).filter((product): product is Product => !!product) : [];
   const action = (product: Product) => {
     const accountsFor = byProduct.get(product.id) ?? [];
     if (connected(product)) return <TextButton onClick={() => open(product)}>{zh ? "查看" : "View"}</TextButton>;
@@ -104,11 +99,13 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
   const groups: Array<[ProductGroup, string]> = [["work", zh ? "日常工作" : "Everyday work"], ["knowledge", zh ? "文件与知识" : "Files and knowledge"], ["tools", zh ? "工具" : "Tools"]];
   const expiredAccounts = data.filter((account) => account.state === "expired");
   return <SettingsPage title={zh ? "连接器" : "Connectors"}>
-    <SearchField value={query} onChange={setQuery} placeholder={zh ? "搜索" : "Search"} label={zh ? "搜索连接器" : "Search connectors"} clearLabel={zh ? "清空搜索" : "Clear search"} />
-    <SegmentedControl<"available" | "connected"> label={zh ? "连接器分类" : "Connector categories"} value={tab} onChange={setTab} options={[
-      { value: "available", label: zh ? "可用" : "Available" },
-      { value: "connected", label: zh ? "已连接" : "Connected", ...(accounts.isSuccess ? { badge: list.filter(connected).length } : {}) },
-    ]} />
+    <div className="mau-connectors-toolbar">
+      <SearchField value={query} onChange={setQuery} placeholder={zh ? "搜索" : "Search"} label={zh ? "搜索连接器" : "Search connectors"} clearLabel={zh ? "清空搜索" : "Clear search"} />
+      <SegmentedControl<"available" | "connected"> label={zh ? "连接器分类" : "Connector categories"} value={tab} onChange={setTab} options={[
+        { value: "available", label: zh ? "可用" : "Available" },
+        { value: "connected", label: zh ? "已连接" : "Connected", ...(accounts.isSuccess ? { badge: list.filter(connected).length } : {}) },
+      ]} />
+    </div>
     {accounts.isError ? <SettingsSection>
       <ListRow title={errorMessage(t, accounts.error instanceof ApiError ? accounts.error.code : "request_failed")} muted
         trailing={<TextButton onClick={() => void accounts.refetch()}>{zh ? "重新加载" : "Reload"}</TextButton>} />
@@ -120,10 +117,6 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
     {accounts.isPending ? <p className="mau-settings-note" role="status">{zh ? "正在读取连接状态…" : "Loading connections…"}</p> : null}
     {accounts.data && !accounts.data.configured ? <SettingsSection>
       <ListRow muted title={zh ? "连接器服务尚未配置" : "Connectors are not configured"} subtitle={zh ? "配置后，可以在这里连接 Gmail、飞书等应用。" : "Once configured, connect apps such as Gmail here."} />
-    </SettingsSection> : null}
-    {featured.length ? <SettingsSection title={zh ? "精选" : "Featured"} panel={false}>
-      <FeaturedGrid>{featured.map((product) => <FeaturedCard key={product.id} icon={<AppMark id={product.id} size="card" />}
-        title={name(product)} description={description(product)} onClick={() => open(product)} />)}</FeaturedGrid>
     </SettingsSection> : null}
     {tab === "connected" ? visible.length ? <SettingsSection title={zh ? "已连接" : "Connected"}>{visible.map(row)}</SettingsSection> : null
       : groups.map(([group, title]) => {
