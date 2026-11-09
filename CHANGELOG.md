@@ -16,7 +16,7 @@ copied from it.
 - The account list adds `account: { email?, name? }` for connected accounts, and keeps `authorizationUrl` and
   `expiresAt` while consent is pending, so a reloaded page shows the Feishu QR again. The `permission: "read-only"`
   field of assigned accounts is removed.
-- Requires the Agent Connectors operation policy API (next Connectors release).
+- Pin Agent Connectors 0.1.0-alpha.11 (operation policy API).
 
 ## [0.1.0-alpha.30] - 2026-11-09
 
