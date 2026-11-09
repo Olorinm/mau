@@ -4,6 +4,20 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [Unreleased]
+
+- Connector operation permissions: `GET|PUT /_mau/v1/connector-accounts/:id/policy` and
+  `POST /_mau/v1/connector-accounts/:id/policy/reset` let the owner set each operation of a connection to allow, ask or
+  deny; the connector service enforces them. Writes set to allow run in the owner's conversations without a card;
+  reads set to ask get the approval card. Scheduled and delegated work stays read-only, and operations set to ask are
+  refused there with `owner_approval_unavailable_here`. The `connected_apps` tool definition is unchanged.
+- `POST /_mau/v1/connector-accounts/:id/connect` accepts `{ "operations": [...] }` to add the scopes of grantable
+  operations (incremental consent), mapped by the connector service.
+- The account list adds `account: { email?, name? }` for connected accounts, and keeps `authorizationUrl` and
+  `expiresAt` while consent is pending, so a reloaded page shows the Feishu QR again. The `permission: "read-only"`
+  field of assigned accounts is removed.
+- Pin Agent Connectors 0.1.0-alpha.11 (operation policy API).
+
 ## [0.1.0-alpha.30] - 2026-11-09
 
 - Pins Router 0.7.0-alpha.14: a send-only Bark channel and owner notifications for web-only answers, questions and

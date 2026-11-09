@@ -194,9 +194,9 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
   );
   cleanup.push(() => mau.close());
   const base = `http://127.0.0.1:${(server.address() as any).port}`;
-  const api = async (path: string, body?: unknown, owner = "alice", prefix = root) => {
+  const api = async (path: string, body?: unknown, owner = "alice", prefix = root, method?: "PUT") => {
     const response = await fetch(base + prefix + path, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers: {
         authorization: "Bearer " + owner,
         "content-type": "application/json",

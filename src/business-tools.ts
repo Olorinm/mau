@@ -98,6 +98,14 @@ const HANDOFF_PREFIX = "mau-handoff:";
 const handoffCancel = "取消接管";
 // A structured single-choice question both Router's chat cards and the web console render with buttons.
 const handoffMethod = "item/tool/requestUserInput";
+/** Scheduled and delegated work cannot ask the owner, so an operation set to ask is refused there with this explanation. */
+export const APPROVAL_UNAVAILABLE_HERE = "owner_approval_unavailable_here";
+const approvalUnavailableHere = (refusal: Record<string, unknown>) => {
+  const detail = z.object({ operation: z.string().max(100).nullable().optional(), label: z.string().max(200).optional() }).passthrough().safeParse(refusal.detail).data;
+  return { status: "failed", error: APPROVAL_UNAVAILABLE_HERE, ...(detail?.operation ? { operation: detail.operation } : {}), ...(detail?.label ? { label: detail.label } : {}),
+    message: "这个操作被设置为每次都要你批准，但定时任务和委派任务里无法向你弹出批准卡片，所以这里不能执行。",
+    instruction: "The owner cannot approve here. Do not retry in this task; tell the owner it needs their approval in their own conversation, or that they can allow it in Mau's connector settings." };
+};
 const approvalRequired = z.object({ status: z.literal("approval_required"), operationId: z.string().min(1).max(64),
   expiresAt: z.string().optional() }).passthrough();
 export class BusinessHost extends HttpAgentHost {
@@ -366,6 +374,9 @@ export class BusinessHost extends HttpAgentHost {
       catch (error) { if (error instanceof RelayError) return { status: "failed", error: error.message }; throw error; }
     }
     const outcome = await read({ ...input, arguments: args });
+    // The owner set this operation to ask; only the owner's own conversation can show the approval card.
+    const refusal = z.object({ status: z.literal("failed"), error: z.literal("connector_operation_requires_approval") }).passthrough().safeParse(outcome);
+    if (refusal.success) return approvalUnavailableHere(refusal.data);
     const approval = approvalRequired.safeParse(outcome);
     if (approval.success) {
       if (!write || !this.approvals) return { status: "failed", error: "owner_approval_unavailable" };
