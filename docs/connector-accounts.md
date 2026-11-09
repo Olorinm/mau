@@ -75,7 +75,14 @@ minutes per environment):
 
 The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
 ConnectorService runs for `gws_read`/`gws_write`. The browser connector's agent-browser CLI comes with Agent Connectors'
-npm dependencies; its install script is denied in `allowScripts` and is not needed.
+npm dependencies; its install script is denied in `allowScripts` and is not needed. The npm package carries every
+platform's binary (about 116 MB); the Dockerfile keeps only the image's (`agent-browser-linux-x64`, about 18 MB) and marks
+it executable. An image assembled by replacing layers must do the same with
+`find node_modules -path '*/agent-browser/bin/agent-browser-*' ! -name agent-browser-linux-x64 ! -name '*.js' -delete`
+and `chmod 0755` on the kept binary; otherwise the connector copies the binary into its private directory at first use.
+
+Browser handoffs show the Agent's instructions on Mau's private card and, in the live view, Cloudflare's banner with
+Done and Failed; `handoff_status` reports when the owner pressed one.
 
 ## Product API
 

@@ -12,7 +12,8 @@ copied from it.
 - The browser relay follows the connector's new tools: upload files are read from the workspace by path (relative to
   the shell's directory) and the approved site is the browser's current origin; files from `screenshot`, `pdf` and
   `download` are saved under `browser_downloads/` with absolute paths in the result; screenshots are also attached as
-  images. The handoff card shows the Agent's instructions.
+  images. The handoff card shows the Agent's instructions and points to the live view's Done button.
+- The image keeps only its platform's agent-browser binary.
 
 ## [0.1.0-alpha.28] - 2026-11-06
 

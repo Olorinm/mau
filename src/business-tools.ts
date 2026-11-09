@@ -393,7 +393,7 @@ export class BusinessHost extends HttpAgentHost {
       if (!id.startsWith(prefix)) continue;
       if (Date.parse(value.expiresAt) <= Date.now()) { this.store.set("browser_handoffs", id, { ...value, status: "closed" }); continue; }
       cards.push({ id: HANDOFF_PREFIX + value.callId, runId, kind: "interaction", name: handoffMethod, status: "pending", deadlineAt: value.expiresAt,
-        input: { questions: [{ id: "handoff", question: `浏览器已交给你接管（${value.expiresAt} 前有效）。${value.instructions ? `Agent 的说明：${value.instructions}\n` : ""}请在此私密链接中操作，不要转发：\n${value.liveViewUrl}\n完成后直接回到对话告诉 Agent。`,
+        input: { questions: [{ id: "handoff", question: `浏览器已交给你接管（${value.expiresAt} 前有效）。${value.instructions ? `Agent 的说明：${value.instructions}\n` : ""}请在此私密链接中操作，不要转发：\n${value.liveViewUrl}\n完成后点页面里的 Done（无法完成点 Failed），也可以回到对话告诉 Agent。`,
           options: [{ label: handoffCancel }] }] } });
     }
     return cards;
