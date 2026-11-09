@@ -112,19 +112,39 @@ button.agent-list-row-main:focus-visible {
 }
 .agent-list-row-text {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 .agent-list-row-title {
+  font-weight: var(--fw-medium);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The secondary line is visibly lighter and smaller than the title (macOS settings rows). */
 .agent-list-row-subtitle {
-  color: var(--c-text-secondary);
-  font-size: var(--fs-note);
-  line-height: 1.45;
+  color: var(--c-text-tertiary);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-normal);
+  line-height: 1.4;
 }
+/* Status under a row title: a colored dot and a word (已连接 / 未连接 / 需要重新授权). */
+.agent-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-status-line::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-status-neutral);
+}
+.agent-status-line[data-tone="success"]::before { background: var(--c-status-success); }
+.agent-status-line[data-tone="danger"]::before { background: var(--c-status-danger); }
+.agent-status-line[data-tone="warning"]::before { background: var(--c-status-warning); }
 .agent-list-row[data-muted] .agent-list-row-title {
   color: var(--c-text-secondary);
 }
@@ -612,7 +632,8 @@ button.agent-list-row-main:focus-visible {
   display: grid;
   grid-template-columns: var(--w-settings-nav) minmax(0, 1fr);
   width: min(880px, calc(100vw - 48px));
-  height: min(680px, calc(100dvh - 48px));
+  /* Leave the app header visible above the dialog on short windows. */
+  height: min(680px, calc(100dvh - 112px));
   overflow: hidden;
 }
 .agent-settings-nav {

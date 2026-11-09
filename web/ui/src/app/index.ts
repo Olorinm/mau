@@ -38,6 +38,7 @@ export {
   GroupPanel,
   InitialAvatar,
   ListRow,
+  StatusLine,
   Modal,
   ModalActions,
   SearchField,

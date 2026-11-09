@@ -269,6 +269,11 @@
   --c-panel-line: oklch(92.191% 0 0);
   --c-panel-raised: oklch(100% 0 0);
   --c-text-secondary: var(--c-muted);
+  --c-text-tertiary: color-mix(in srgb, var(--c-muted) 78%, var(--c-bg));
+  --c-status-success: oklch(68% 0.17 150);
+  --c-status-danger: oklch(62% 0.21 27);
+  --c-status-warning: oklch(76% 0.16 70);
+  --c-status-neutral: oklch(70% 0.005 260);
   --c-action: var(--c-accent-solid);
   --c-danger-text: var(--c-error);
   --c-scrim: oklch(0% 0 0 / 0.1);

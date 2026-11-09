@@ -104,6 +104,11 @@ export function SettingsSection({
   );
 }
 
+/** A status for a row's secondary line: a colored dot and a short word. */
+export function StatusLine({ tone = "neutral", children }: { tone?: "success" | "danger" | "warning" | "neutral"; children: ReactNode }) {
+  return <span className="agent-status-line" data-tone={tone}>{children}</span>;
+}
+
 /**
  * One row of a group panel: an optional icon, a title (and an optional secondary line), and a trailing control.
  * `onClick` makes the leading part a button; the trailing control stays a separate target.
@@ -597,6 +602,11 @@ export function Modal({
           data-title-align={titleAlign}
           aria-describedby={undefined}
           onEscapeKeyDown={keepOpenForMenu(content)}
+          onOpenAutoFocus={(event) => {
+            // Focus the dialog itself: a ring on the close button right after opening reads as a selection.
+            event.preventDefault();
+            (event.currentTarget as HTMLElement | null)?.focus?.();
+          }}
         >
           <DialogPrimitive.Close asChild>
             <button type="button" className="agent-circle-button agent-modal-close" aria-label={closeLabel}>
