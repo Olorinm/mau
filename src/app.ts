@@ -169,6 +169,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       const work = await sessions(rule.owner, rule.agentId);
       work.validateTarget(rule.targetSessionId);
       if (rule.session.type === "conversation") work.validateTarget(rule.session.sessionId);
+      if (!work.deliveryConnections().includes(rule.notify.channel)) throw new RouterError("proactive_notify_channel_not_found", 400);
       const assigned = connectedApps.connections(rule.agentId, rule.owner);
       if (rule.connections.some(id => !assigned.includes(id))) throw new RouterError("proactive_connection_not_assigned", 403);
       if (rule.execution.type === "agent" && rule.skills.length) {
@@ -195,6 +196,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     },
     lookup: async (rule, id) => (await sessions(rule.owner, rule.agentId)).lookup(id),
     deliver: async (rule, input) => delivery((await sessions(rule.owner, rule.agentId)).deliver(input))!,
+    deliveryConnection: async rule => (await sessions(rule.owner, rule.agentId)).deliveryConnection(rule.targetSessionId),
     delivery: async (rule, id) => delivery((await sessions(rule.owner, rule.agentId)).lookupDelivery(id)),
     cancel: async (rule, id) => { await (await sessions(rule.owner, rule.agentId)).cancel(id); },
   };
@@ -427,7 +429,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
+  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); await proactive.migrateNotify(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
     // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`, only with AGENT_LEDGER_READ)
     // first, then SSH, which answers 404 for every other path. Older Routers have no `upgrade`.
     attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,

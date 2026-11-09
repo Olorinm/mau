@@ -352,3 +352,36 @@ it("does not resurrect a cancelled task when an in-flight conversation check rep
   expect(f.service.runs("alice", rule.id)[0]).toMatchObject({ status: "cancelled", cancellationRequested: true });
   expect(f.submitted).toHaveLength(0); expect(f.service.rule("alice", rule.id).activeRun).toBeUndefined();
 });
+
+it("delivers notices to the rule's notify channel and maps web and suppressed receipts", async () => {
+  const f = fixture();
+  const rule = await f.service.save("alice", f.input);
+  expect(rule.notify).toEqual({ channel: "web" });
+  const edited = await f.service.save("alice", { ...f.input, notify: { channel: "bark" } }, rule.id, rule.version);
+  // An edit that omits notify keeps the prior target.
+  expect((await f.service.save("alice", f.input, rule.id, edited.version)).notify).toEqual({ channel: "bark" });
+  expect(() => proactiveRuleInput.parse({ ...f.input, notify: { channel: "Bad Id" } })).toThrow();
+
+  f.port.deliver = async (_rule, input) => { f.notifications.push(input); const receipt = { status: input.connectionId === "bark" ? "web" : "suppressed", error: "no_conversation_on_connection" };
+    f.deliveries.set(input.eventId, receipt); return receipt; };
+  await f.service.runNow("alice", rule.id, "one"); await f.service.tick();
+  expect(f.notifications[0]).toMatchObject({ connectionId: "bark", targetSessionId: "owner-main" });
+  expect(f.service.notices("alice", rule.id)[0]!.status).toBe("sent");
+
+  const other = await f.service.save("alice", { ...f.input, name: "Other", notify: { channel: "feishu" } });
+  f.setAnswer(result("2"));
+  await f.service.runNow("alice", other.id, "two"); await f.service.tick();
+  expect(f.service.notices("alice", other.id)[0]).toMatchObject({ status: "failed", error: "no_conversation_on_connection" });
+});
+
+it("migrates rules saved before notify to their session's current connection, keeping their version", async () => {
+  const f = fixture(), saved = await f.service.save("alice", f.input), legacy = await f.service.save("alice", { ...f.input, name: "Unresolved" });
+  for (const rule of [saved, legacy]) { const { notify: _notify, ...old } = f.store.get<any>("rules", rule.id); f.store.set("rules", rule.id, old); }
+  f.port.deliveryConnection = async (rule) => { if (rule.id === legacy.id) throw new Error("host_sessions_unavailable"); return "feishu"; };
+  await f.service.migrateNotify();
+  expect(f.service.rule("alice", saved.id)).toMatchObject({ notify: { channel: "feishu" }, version: saved.version });
+  // Unresolved now: left as is (its notices follow the newest conversation) and retried on the next start.
+  expect(f.service.rule("alice", legacy.id).notify).toBeUndefined();
+  await f.service.runNow("alice", legacy.id, "legacy"); await f.service.tick();
+  expect(f.notifications.at(-1)).not.toHaveProperty("connectionId");
+});
