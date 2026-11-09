@@ -5,15 +5,62 @@ import type { SandboxFiles } from "./browser-relay.js";
 
 /**
  * Installs, in an Agent's environment, the guide of each assigned connector as a Codex skill and
- * a shell command (`gws`, `lark-cli`) that relays to the connector through Agent Host. The
+ * a shell command (`gws`, `lark-cli`, `agent-browser`) that relays to the connector through Agent Host. The
  * Agent then knows its connectors from the start and uses their official CLIs; credentials
  * and approvals stay with Mau and the connector service.
  */
 export const SKILLS_DIRECTORY = "/home/user/.codex/skills";
 export const RELAY_CLIENT = "/opt/agent-host/node_modules/@olorinm/agent-host/dist/service/relay-cli.js";
 const MARKER = "Installed by Mau";
-// Connector tool prefix behind each CLI command (see agent-host-relay).
-const prefixes: Record<string, string> = { gws: "gws", "lark-cli": "cli" };
+// Connector tool prefix behind each CLI command (`<prefix>_read` / `<prefix>_write`; see agent-host-relay).
+const prefixes: Record<string, string> = { gws: "gws", "lark-cli": "cli", "agent-browser": "agent_browser" };
+const COMMANDS = Object.keys(prefixes);
+
+/**
+ * `agent-browser` in the sandbox. Like agent-host-relay it forwards the shell command's arguments to the connector
+ * through Agent Host's /v1/relay, retrying a command the connector classifies as a write on the write tool, which
+ * asks the owner. It also passes its directory, so upload paths resolve as in a shell, and prints saved file paths.
+ */
+export const BROWSER_CLIENT = `#!/usr/bin/env node
+// ${MARKER}: runs agent-browser in the owner's remote browser through Mau (Agent Host relay).
+"use strict";
+const fail = (message, code = 2) => { process.stderr.write(message + "\\n"); process.exit(code); };
+const url = process.env.AGENT_HOST_RELAY_URL || "http://127.0.0.1:37420";
+async function relay(input) {
+  const response = await fetch(new URL("/v1/relay", url), { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ threadId: process.env.CODEX_THREAD_ID, callId: process.env.CODEX_TOOL_CALL_ID, tool: "connected_apps", input }) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) fail("relay refused: " + (body.error || response.status));
+  const text = ((body.result && body.result.contentItems) || []).map((item) => item.text || "").join("");
+  try { return JSON.parse(text); } catch { return text; }
+}
+async function main() {
+  const args = process.argv.slice(2);
+  if (!args.length) fail("usage: agent-browser <command> [args...]; start with: agent-browser skills get core");
+  if (!process.env.CODEX_THREAD_ID || !process.env.CODEX_TOOL_CALL_ID) fail("agent-browser runs through the owner's browser connection in Mau; call it from the Agent's shell.");
+  const catalog = JSON.stringify(await relay({ action: "tools" }));
+  const names = [...new Set([...catalog.matchAll(/"name":"([A-Za-z0-9_-]+__agent_browser)_read"/g)].map((match) => match[1]))];
+  if (!names.length) fail("agent-browser is not connected for this Agent here. Ask the owner to connect a browser in Mau.");
+  if (names.length > 1) fail("agent-browser has several browser connections (" + names.join(", ") + "); this command supports one.");
+  const call = (mode) => relay({ action: "call", name: names[0] + "_" + mode, arguments: { args, cwd: process.cwd() } });
+  let outcome = await call("read");
+  // upload is a write: the connector refuses it on the read tool and the owner approves it on the write tool.
+  if (/_command_requires_write_tool\\b/.test(JSON.stringify(outcome))) outcome = await call("write");
+  if (typeof outcome === "string") { process.stdout.write(outcome.endsWith("\\n") ? outcome : outcome + "\\n"); return; }
+  if (outcome && outcome.status && outcome.status !== "completed") {
+    const detail = outcome.detail && typeof outcome.detail === "object" ? outcome.detail : undefined;
+    if (detail && typeof detail.output === "string") process.stderr.write(detail.output + "\\n");
+    else process.stderr.write((outcome.error || outcome.status) + (outcome.detail ? " " + JSON.stringify(outcome.detail) : "") + "\\n");
+    process.exitCode = detail && Number.isInteger(detail.exitCode) && detail.exitCode > 0 ? detail.exitCode : 1;
+    return;
+  }
+  const result = (outcome && outcome.result) || outcome || {};
+  const output = typeof result.output === "string" ? result.output : JSON.stringify(result, null, 2);
+  if (output) process.stdout.write(output.endsWith("\\n") ? output : output + "\\n");
+  for (const file of Array.isArray(result.files) ? result.files : []) process.stdout.write("saved: " + file.path + "\\n");
+}
+main().catch((error) => fail(error instanceof Error ? error.message : String(error), 1));
+`;
 
 export interface ConnectionSummary { id: string; kind: string; settings?: Record<string, unknown> }
 export interface SkillPlan { skills: Array<{ name: string; content: string }>; commands: string[] }
@@ -22,13 +69,15 @@ export function skillDocument(guide: ConnectorGuide) {
   return `---\nname: ${guide.name}\ndescription: ${JSON.stringify(guide.description)}\n---\n\n<!-- ${MARKER}; regenerated from the connector's guide. -->\n\n${guide.body}`;
 }
 
+export type GuideLookup = (kind: string, product?: string) => ConnectorGuide | undefined;
+
 /** Guides of the Agent's connections whose CLI tools the connector actually offers right now. */
-export function planSkills(connections: ConnectionSummary[], assigned: string[], tools: string[]): SkillPlan {
+export function planSkills(connections: ConnectionSummary[], assigned: string[], tools: string[], guides: GuideLookup = connectorGuide): SkillPlan {
   const skills: SkillPlan["skills"] = [], commands = new Set<string>();
   for (const id of assigned) {
     const connection = connections.find(c => c.id === id);
     const product = typeof connection?.settings?.product === "string" ? connection.settings.product : undefined;
-    const guide = connection && connectorGuide(connection.kind, product);
+    const guide = connection && guides(connection.kind, product);
     const prefix = guide && prefixes[guide.command];
     if (!guide || !prefix || !tools.includes(`${id.replaceAll("-", "_")}__${prefix}_read`)) continue;
     skills.push({ name: guide.name, content: skillDocument(guide) });
@@ -59,11 +108,11 @@ for (const name of fs.readdirSync(root)) {
   if (!wanted.has(name) && fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(marker)) { fs.rmSync(path.join(root, name), { recursive: true, force: true }); result.removed.push(name); }
 }
 const relay = plan.relayClient, available = fs.existsSync(relay);
-for (const command of ["gws", "lark-cli"]) {
+for (const command of plan.known) {
   const file = path.join(plan.binDirectory, command), managed = fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(marker);
   if (plan.commands.includes(command) && available) {
     if (fs.existsSync(file) && !managed) { result.commands.push(command + ":kept-unmanaged"); continue; }
-    const script = "#!/bin/sh\\n# " + marker + ": runs " + command + " through the owner's connector in Mau (agent-host-relay).\\nexec node " + JSON.stringify(relay) + " " + command + " \\"$@\\"\\n";
+    const script = plan.clients[command] ?? "#!/bin/sh\\n# " + marker + ": runs " + command + " through the owner's connector in Mau (agent-host-relay).\\nexec node " + JSON.stringify(relay) + " " + command + " \\"$@\\"\\n";
     const tmp = atomic(file, script, 0o755); fs.chmodSync(tmp, 0o755); fs.renameSync(tmp, file); result.commands.push(command);
   } else if (managed) { fs.rmSync(file, { force: true }); result.removed.push(command); }
 }
@@ -74,7 +123,7 @@ console.log(JSON.stringify(result));
 export class AgentSkills {
   private readonly synced = new Map<string, string>();
   private readonly checked = new Map<string, number>();
-  constructor(private readonly apps: ConnectedApps, private readonly connections: () => ConnectionSummary[]) {}
+  constructor(private readonly apps: ConnectedApps, private readonly connections: () => ConnectionSummary[], private readonly guides: GuideLookup = connectorGuide) {}
   /** Idempotent; repeats only when the plan for this environment binding changes. */
   async sync(agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
     const reader = this.apps.reader(agentId, owner);
@@ -86,8 +135,9 @@ export class AgentSkills {
     const catalog = await reader({ action: "tools" }) as { status?: string; tools?: Array<{ name?: unknown }> };
     if (catalog?.status !== "completed") return undefined;
     const tools = (catalog.tools ?? []).map(tool => String(tool.name ?? ""));
-    const plan = planSkills(this.connections(), this.apps.connections(agentId, owner), tools);
-    const payload = JSON.stringify({ ...plan, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT });
+    const plan = planSkills(this.connections(), this.apps.connections(agentId, owner), tools, this.guides);
+    const payload = JSON.stringify({ ...plan, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT,
+      known: COMMANDS, clients: { "agent-browser": BROWSER_CLIENT } });
     const digest = createHash("sha256").update(payload).digest("hex");
     if (this.synced.get(key) === digest) return undefined;
     const sandbox = await files(), file = `/tmp/mau-agent-skills-${digest.slice(0, 16)}.json`;
