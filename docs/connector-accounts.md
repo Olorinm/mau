@@ -208,7 +208,7 @@ An application page checks the connection when it opens (重新检查 appears on
 authorized account, the Agents using the connection and per-operation permissions (读取权限 / 写入和删除权限 / 后台操作,
 each 允许 / 请求 / 不允许) from `GET /_mau/v1/connector-accounts/:id/policy`; changes use `PUT …/policy` and
 `POST …/policy/reset`. Allowing a write asks for confirmation. Operations that need more access offer 添加 when they are
-grantable (`POST …/connect` with `{ "scopes": [...] }`). In scheduled or delegated work, operations set to 请求 are
+grantable (`POST …/connect` with `{ "operations": [...] }`). In scheduled or delegated work, operations set to 请求 are
 refused. A server without the policy API shows what it enforces, read-only. Messaging channels live in 设置 → 消息渠道,
 which reuses Router's channel setup flow; deleted environments are omitted without modifying their records.
 

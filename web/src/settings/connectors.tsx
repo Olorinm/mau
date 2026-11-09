@@ -313,7 +313,7 @@ function PolicySections({ session, account, product }: { session: Session; accou
   });
   const reset = useMutation({ mutationFn: () => api.resetConnectorPolicy(account.id),
     onSuccess: (next) => { client.setQueryData(key, next); setResetting(false); }, onError: (error) => { setResetting(false); failed(error); } });
-  const grant = useMutation({ mutationFn: (operation: PolicyOperation) => api.connectWithScopes(account.id, [operation.id]),
+  const grant = useMutation({ mutationFn: (operation: PolicyOperation) => api.connectWithOperations(account.id, [operation.id]),
     onSuccess: (data) => {
       const consent = safeExternalUrl(data.authorizationUrl);
       if (consent) { rememberSettingsReturn({ section: "connectors", item: product.id }); window.location.assign(consent); }

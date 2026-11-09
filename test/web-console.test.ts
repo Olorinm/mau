@@ -840,7 +840,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
     mutations.push([action, request.postDataJSON()]);
     if (action === "policy") { send = request.postDataJSON().settings["gmail.send"]; return route.fulfill({ json: policy() }); }
     if (action === "reset") { send = "ask"; return route.fulfill({ json: policy() }); }
-    if (action === "connect" && request.postDataJSON().scopes) return route.fulfill({ status: 400, json: { error: "invalid_request" } });
+    if (action === "connect" && request.postDataJSON().operations) return route.fulfill({ status: 400, json: { error: "invalid_request" } });
     if (action === "connect") return route.fulfill({ json: { state, verification: "none", scopes: [], authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=fixture" } });
     if (action === "disconnect" && !failed) { failed = true; return route.fulfill({ status: 409, json: { error: "connector_action_unknown" } }); }
     state = action === "disconnect" ? "disconnected" : "connected";
@@ -895,7 +895,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
   expect(mutations.at(-1)).toEqual(["policy", { settings: { "gmail.send": "allow" } }]);
   await detail.getByRole("button", { name: "添加", exact: true }).click();
   await see(page.getByText("暂时无法添加这项权限。")).toBeVisible();
-  expect(mutations.at(-1)).toEqual(["connect", { scopes: ["gmail.labels.write"] }]);
+  expect(mutations.at(-1)).toEqual(["connect", { operations: ["gmail.labels.write"] }]);
   await detail.getByRole("button", { name: "重置为默认" }).click();
   await page.getByRole("dialog", { name: "重置为默认权限？" }).getByRole("button", { name: "重置", exact: true }).click();
   await see(detail.getByRole("combobox", { name: "发邮件" })).toHaveText(/请求/);
