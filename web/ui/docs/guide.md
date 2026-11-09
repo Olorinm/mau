@@ -50,6 +50,28 @@ Import `@olorinm/agent-ui/styles.css` and wrap your UI in `.agent-chat` for a de
 
 `@olorinm/agent-ui/app` adds product-neutral application primitives: buttons, dialogs, confirmation, toasts, empty states, avatars, settings rows, status pills, tooltips and state indicators. Import `@olorinm/agent-ui/app.css` once. Unlike the chat stylesheet, it defines tokens on `:root` (so portaled dialogs and toasts share them), switches to dark with `data-theme="dark"` on the root element, and applies a small base (`box-sizing`, heading/paragraph margins, focus ring, reduced motion). Use `.agent-app` on the application container for its background and typography.
 
+### Design system
+
+`@olorinm/agent-ui/app.css` also defines the shared design tokens: a near-white page (`--c-page`) with solid grey,
+borderless panels (`--c-panel`, `--r-panel: 16px`), the type scale (`--fs-body: 14px`, `--fs-note: 13px`,
+`--fs-emphasis: 15px`, `--fs-dialog-title: 18px`, `--fs-page-title: 21px`, `--lh-body: 1.6`), control and row heights
+(`--h-control: 36px`, `--h-row: 48px`), icon tiles (`--size-tile-sm: 32px`, `--size-tile: 40px`), the settings
+navigation (`--w-settings-nav: 225px`) and modals (`--w-modal: 512px`, `--r-modal: 20px`). Brand colors stay the
+accent, success and error tokens. `data-density="compact"` (or `DensityScope`) switches a subtree to the compact sizes
+used for run details, events, approvals and logs.
+
+The components built on them render caller-owned data only:
+
+- `SettingsDialog` + `SettingsPage`: the settings modal with an icon navigation; below 640 px it fills the screen, the
+  navigation becomes the first page and pages get a back button. `Modal`/`ModalActions` (full-width pill primary
+  button and a plain-text cancel) and `ConsentDialog` (icon, title, three explanatory items, footnote) share its shell.
+- `SettingsSection` (grey label, panel, optional note), `GroupPanel`, `ListRow` (icon, title, optional second line,
+  separate trailing control), `TextButton`, `SelectMenu` (text and chevron, e.g. Allow / Ask / Don't allow),
+  `SegmentedControl`, `SearchField`, `FeaturedCard`/`FeaturedGrid`, `AppIcon`, `DetailHero`, `CircleBackButton`,
+  `CircleButton` and `InitialAvatar`.
+
+Menus opened inside these modals render inside them; Escape closes an open menu before the modal.
+
 `ChatProvider` accepts a `translate` function and a `Button` replacement. `AgentInteraction.labels` replaces adapter copy. Message render callbacks, composer slots, resource actions and native interaction renderers let the product retain its own UI conventions.
 
 ## Working example and verification

@@ -134,7 +134,66 @@ export async function checkUiBrowser(page) {
   );
 }
 
+async function checkSettingsBrowser(page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings.getByRole("heading", { name: "Connectors" })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Connectors" })).toHaveAttribute("aria-current", "page");
+  // Design tokens: 36 px fully rounded controls, borderless grey panels, 48 px rows, 20 px modal radius.
+  const metrics = await page.evaluate(() => {
+    const style = (selector) => getComputedStyle(document.querySelector(selector));
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    return { search: box(".agent-search-field").height, segmented: box(".agent-segmented").height,
+      row: box(".agent-list-row").height, panelRadius: style(".agent-group-panel").borderTopLeftRadius,
+      panelBorder: style(".agent-group-panel").borderTopWidth, modalRadius: style(".agent-settings-dialog").borderTopLeftRadius,
+      nav: box(".agent-settings-nav").width, title: style(".agent-settings-page-header h2").fontSize };
+  });
+  assert.deepEqual(metrics, { search: 36, segmented: 36, row: 48, panelRadius: "16px", panelBorder: "0px", modalRadius: "20px", nav: 225, title: "21px" });
+  await settings.getByRole("searchbox", { name: "Search" }).fill("zzz");
+  await expect(settings.getByRole("button", { name: "Browser", exact: true })).toHaveCount(0);
+  await settings.getByRole("button", { name: "Clear search" }).click();
+  await settings.getByRole("button", { name: "Connected 1" }).click();
+  await expect(settings.getByRole("button", { name: "Connected 1" })).toHaveAttribute("aria-pressed", "true");
+  await settings.getByRole("button", { name: "Connect", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "Browser" });
+  await expect(consent).toContainText("What it can read");
+  await consent.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("no");
+  await settings.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("yes");
+  await settings.getByRole("button", { name: "Browser", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "Browser" })).toBeVisible();
+  await settings.getByRole("combobox", { name: "Upload files" }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(settings).toBeVisible();
+  await settings.getByRole("combobox", { name: "Upload files" }).click();
+  await page.getByRole("option", { name: "Allow", exact: true }).click();
+  await expect(page.getByLabel("Upload setting")).toHaveText("allow");
+  await settings.getByRole("button", { name: "All connectors" }).click();
+  await settings.getByRole("button", { name: "General" }).click();
+  await expect(settings.getByRole("heading", { name: "General" })).toBeVisible();
+  await settings.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("signed-out");
+  // Mobile: full screen, the navigation is the first page and pages get a back button instead.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => {
+    const full = await settings.boundingBox();
+    return [full.x, full.y, full.width, full.height];
+  }).toEqual([0, 0, 390, 844]);
+  await settings.getByRole("button", { name: "Back" }).click();
+  await expect(settings.getByRole("navigation", { name: "Settings" })).toBeVisible();
+  await settings.getByRole("button", { name: "Connectors" }).click();
+  await expect(settings.getByRole("navigation")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.setViewportSize({ width: 1100, height: 900 });
+}
+
 export async function checkAppBrowser(page) {
+  await checkSettingsBrowser(page);
   await page.getByRole("button", { name: "Helper Ready", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Helper" })).toBeVisible();
   await page.keyboard.press("Escape");

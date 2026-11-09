@@ -5,6 +5,7 @@ import "../styles/file-preview.css";
 import "../styles/markdown-preview.css";
 import "../styles/room-workspace.css";
 import "../integration.css";
+import "../styles/design-system.css";
 export * from "../provider";
 export * from "../scope";
 export * from "../files/editor";

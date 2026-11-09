@@ -37,8 +37,8 @@
   gap: var(--sp-3);
   width: min(720px, 100%);
   border: 0;
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
+  border-radius: var(--r-modal);
+  background: var(--c-page);
   padding: var(--sp-6);
   box-shadow: var(--shadow-lg);
   pointer-events: auto;

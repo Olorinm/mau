@@ -1,6 +1,7 @@
 import "../base.css";
 import "../styles/settings.css";
 import "../integration.css";
+import "../styles/design-system.css";
 export * from "../provider";
 export * from "../scope";
 export * from "../settings";

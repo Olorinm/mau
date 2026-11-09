@@ -9,7 +9,10 @@ import {
   ConfirmProvider,
   EmployeeAvatar,
   EmptyState,
+  ListRow,
   ObjectSettingsRow,
+  SettingsSection,
+  TextButton,
   ObjectSettingsSection,
   ProductStatus,
   ToastProvider,
@@ -59,4 +62,23 @@ test("the application stylesheet defines light and dark tokens used by portaled 
   const app = await readFile(new URL("../dist/app/app.css", import.meta.url), "utf8");
   assert.match(app, /@import "\.\/tokens\.css";/);
   assert.match(app, /@import "\.\/components\.css";/);
+});
+
+test("design-system rows keep the trailing action separate and expose density and tokens", async () => {
+  const html = renderToStaticMarkup(
+    h(SettingsSection, { title: "Write access", note: "Ask is refused in scheduled work.", density: "compact" },
+      h(ListRow, { title: "Send email", onClick() {}, ariaLabel: "Send email", trailing: h(TextButton, null, "Add") }),
+      h(ListRow, { title: "Manage labels", muted: true, subtitle: "Needs more access" }),
+    ),
+  );
+  assert.match(html, /data-density="compact"/);
+  assert.match(html, /<button type="button" class="agent-list-row-main" aria-label="Send email">/);
+  assert.match(html, /class="agent-list-row-trailing"><button type="button" class="agent-text-button" data-tone="primary">Add/);
+  assert.match(html, /data-muted=""[^>]*data-two-line=""/);
+  const tokens = await readFile(new URL("../dist/app/tokens.css", import.meta.url), "utf8");
+  for (const name of ["--c-panel", "--fs-page-title", "--h-row", "--h-control", "--r-panel", "--r-modal", "--w-settings-nav", "--size-tile"])
+    assert.match(tokens, new RegExp(`\\n  ${name}:`));
+  assert.match(tokens, /\[data-density="compact"\] \{/);
+  const app = await readFile(new URL("../dist/app/app.css", import.meta.url), "utf8");
+  assert.match(app, /@import "\.\/surfaces\.css";/);
 });

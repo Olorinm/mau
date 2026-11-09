@@ -9,7 +9,7 @@
   --og-sapling-shade: oklch(63.657% 0.1618 143.38);
   --og-sapling-trunk: oklch(25.625% 0.0058 196.79);
   --og-sapling-trunk-highlight: oklch(34.205% 0.0088 173.82);
-  --c-bg: oklch(97.941% 0.0013 286.38);
+  --c-bg: oklch(99.107% 0 0);
   --c-surface: oklch(100% 0 0);
   --c-surface-hover: oklch(96.715% 0 0);
   --c-surface-active: oklch(94.787% 0.0025 228.79);
@@ -24,7 +24,7 @@
   --c-text: oklch(24.371% 0.0059 271.17);
   --c-text-2: oklch(37.851% 0.0110 264.44);
   --c-text-3: var(--c-muted);
-  --c-muted: oklch(55.148% 0.0100 264.49);
+  --c-muted: oklch(45.238% 0.0055 258.34);
   --c-faint: oklch(56.000% 0.0094 264.50);
   --c-border: oklch(from var(--c-text) l c h / 0.08);
   --c-border-strong: oklch(from var(--c-text) l c h / 0.12);
@@ -258,4 +258,86 @@
   --shadow-md: 0 0 0 1px rgba(236,232,221,0.15), 0 1px 1px -0.5px rgba(0,0,0,0.08), 0 3px 3px rgba(0,0,0,0.08), 0 6px 6px rgba(0,0,0,0.04), 0 12px 12px rgba(0,0,0,0.04);
   --shadow-lg: 0 0 0 1px rgba(236,232,221,0.15), 0 1px 2px rgba(0,0,0,0.10), 0 6px 12px rgba(0,0,0,0.08), 0 12px 24px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.06);
   --shadow-flat: 0 0 0 1px rgba(236,232,221,0.15);
+}
+
+/* Design system: type scale, spacing, radii and surfaces shared by settings, connectors, chat and
+   compact operational views. Brand colors (accent, success, error) stay those above. */
+:root {
+  --c-page: var(--c-bg);
+  --c-panel: oklch(95.213% 0 0);
+  --c-panel-hover: oklch(92.797% 0 0);
+  --c-panel-line: oklch(92.191% 0 0);
+  --c-panel-raised: oklch(100% 0 0);
+  --c-text-secondary: var(--c-muted);
+  --c-text-tertiary: color-mix(in srgb, var(--c-muted) 78%, var(--c-bg));
+  --c-status-success: oklch(68% 0.17 150);
+  --c-status-danger: oklch(62% 0.21 27);
+  --c-status-warning: oklch(76% 0.16 70);
+  --c-status-neutral: oklch(70% 0.005 260);
+  --c-action: var(--c-accent-solid);
+  --c-danger-text: var(--c-error);
+  --c-scrim: oklch(0% 0 0 / 0.1);
+
+  --fs-caption: 12px;
+  --fs-note: 13px;
+  --fs-body: 14px;
+  --fs-emphasis: 15px;
+  --fs-dialog-title: 18px;
+  --fs-page-title: 21px;
+  --lh-body: 1.6;
+  --lh-ui: 1.43;
+  --lh-title: 1.3;
+
+  --space-page: 24px;
+  --space-section: 24px;
+  --space-label: 10px;
+  --space-row-x: 16px;
+  --space-panel-y: 6px;
+
+  --h-control: 36px;
+  --h-row: 48px;
+  --h-nav-item: 32px;
+  --w-settings-nav: 225px;
+  --w-modal: 512px;
+  --size-tile-sm: 32px;
+  --size-tile: 40px;
+  --size-circle-button: 30px;
+
+  --r-panel: 16px;
+  --r-card: 16px;
+  --r-modal: 20px;
+  --r-nav-item: 10px;
+  --r-tile-sm: 8px;
+  --r-tile: 10px;
+
+  --shadow-float: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 14px oklch(0% 0 0 / 0.08);
+  --shadow-tile: 0 0 0 0.5px oklch(0% 0 0 / 0.08), 0 1px 3px oklch(0% 0 0 / 0.06);
+  --shadow-modal: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 24px 64px oklch(0% 0 0 / 0.16), 0 2px 8px oklch(0% 0 0 / 0.06);
+}
+
+:root[data-theme="dark"] {
+  --c-panel: oklch(28.019% 0.0036 106.63);
+  --c-panel-hover: oklch(31.708% 0.0054 91.55);
+  --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
+  --c-panel-raised: oklch(33.640% 0.0070 95.27);
+  --c-action: var(--c-link);
+  --c-scrim: oklch(0% 0 0 / 0.45);
+  --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
+  --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
+  --shadow-modal: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 24px 64px oklch(0% 0 0 / 0.5);
+}
+
+/* Compact density for run details, events, approvals and logs. */
+[data-density="compact"] {
+  --fs-body: 13px;
+  --fs-emphasis: 14px;
+  --h-control: 30px;
+  --h-row: 36px;
+  --space-row-x: 12px;
+  --space-panel-y: 4px;
+  --space-label: 6px;
+  --space-section: 16px;
+  --r-panel: 12px;
+  --size-tile-sm: 24px;
+  --r-tile-sm: 6px;
 }
