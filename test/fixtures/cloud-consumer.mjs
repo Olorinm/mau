@@ -225,6 +225,7 @@ try {
   assert.equal(sessions.get(forked.eventId).status, "completed");
   const rule = await api("/proactive", { agentId: agent.id, targetSessionId: incoming.conversationId, name: "Fixture schedule", goal: "Prepare a report",
     schedule: { type: "interval", minutes: 5 }, timeZone: "Asia/Shanghai", connections: [], notifications: "always", status: "active",
+    notify: { channel: connection.id },
     skills: [{ name: "fixture-skill", path: "/trusted/fixture/SKILL.md" }] });
   assert.equal((await cli("pause")).state, "paused");
   const trigger = await api(`/proactive/${rule.id}/run`, { requestId: "fixture-trigger" });
@@ -270,7 +271,9 @@ try {
   }
   assert.equal(mau.proactive.notices(owner, direct.id)[0]?.status, "sent");
   assert.equal((await readFile(logs, "utf8")).trim(), beforeDirect);
-  assert.equal(delivered.filter(value => JSON.stringify(value).includes("Fixed fixture reminder")).length, 1);
+  // A rule without notify defaults to `web`: the reminder is recorded in the conversation and sent to no channel.
+  assert.equal(mau.proactive.rule(owner, direct.id).notify.channel, "web");
+  assert.equal(delivered.filter(value => JSON.stringify(value).includes("Fixed fixture reminder")).length, 0);
   assert.equal((await cli("destroy")).state, "deleted");
   console.log(
     "PASS: independent Mau/Router/Environment/Host archives, CLI setup, restart/resume, owner tool -> delegated task -> wait, narrowed fork, native skills/memory, frozen bounded memory, schedule held during manual pause -> explicit resume -> native toolOutput with current read-only memory -> stable outbox, trigger deduplication, and explicit destruction. Cloud lifecycle and Codex protocol are fixtures; no cloud/model acceptance is implied.",
