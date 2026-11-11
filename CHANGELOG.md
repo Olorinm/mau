@@ -4,6 +4,14 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.32] - 2026-11-11
+
+- Web console: the contacts page no longer goes blank when a channel kind has no label. Bark, web and room channels
+  get labels, and a missing label falls back to the other language, then to the key, instead of throwing.
+- Pin Agent UI 0.1.0-alpha.12 and Agent Frontend 0.1.0-alpha.12 (white panels on the grey app background again).
+
+PR: [#46](https://github.com/Olorinm/mau/pull/46)
+
 ## [0.1.0-alpha.31] - 2026-11-09
 
 - Connector operation permissions: `GET|PUT /_mau/v1/connector-accounts/:id/policy` and
