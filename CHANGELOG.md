@@ -4,6 +4,15 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.34] - 2026-11-11
+
+- Web console: the header row of the conversation page holds employees first, then groups. Sessions of other
+  channels are in the full list only and join the row while one is being read. The conversation opened on arrival
+  is a chat with an employee before any other channel's session.
+- Clearing a chat's history uses one confirmation dialog for the `/clear` command and the data controls page.
+
+PR: [#48](https://github.com/Olorinm/mau/pull/48)
+
 ## [0.1.0-alpha.33] - 2026-11-11
 
 - Web console: the conversation page is one column. Its header is a row of employee figures; the current conversation
