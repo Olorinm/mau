@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ListRow, Modal, ModalActions, ProductIcon, SelectMenu, SettingsPage, SettingsSection, TextButton, useToast } from "@olorinm/agent-ui/app";
+import { useQuery } from "@tanstack/react-query";
+import { ListRow, ProductIcon, SelectMenu, SettingsPage, SettingsSection, TextButton, useToast } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
 import { ledgerApi, ledgerFeatures, newIdempotencyKey, type ChatSummary } from "../api/ledger";
 import type { Session } from "../api/session";
@@ -8,6 +8,7 @@ import { errorMessage, useI18n, type Language } from "../i18n";
 import { useThemePreference } from "../theme";
 import { useAvatarAppearance } from "../avatar";
 import { privacyPolicyUrl } from "./connectors";
+import { PurgeChatDialog } from "../screens/purge-chat-dialog";
 
 /** 通用: language and theme. */
 export function GeneralPage() {
@@ -50,12 +51,7 @@ export function DataControlsPage({ session }: { session: Session }) {
   const features = ledgerFeatures(me.data);
   const enabled = features.has("send") && features.has("reset");
   const chats = useQuery({ queryKey: ["data-control-chats", session.owner], queryFn: ({ signal }) => api.chats(null, signal), enabled });
-  const [purging, setPurging] = useState<{ chat: ChatSummary; typed: string; busy: boolean }>();
-  const purge = useMutation({
-    mutationFn: (input: { chat: ChatSummary; cancelActive: boolean }) => api.purge(input.chat.chatId, input.chat.chatId, newIdempotencyKey(), input.cancelActive),
-    onSuccess: (_data, input) => { setPurging(undefined); toast({ kind: "success", title: zh ? `已清空与 ${input.chat.title} 的聊天记录` : `Cleared the history with ${input.chat.title}` }); void chats.refetch(); },
-    onError: (error) => { if (error instanceof ApiError && error.code === "session_busy") setPurging((current) => current && { ...current, busy: true }); },
-  });
+  const [purging, setPurging] = useState<ChatSummary>();
   const writable = (chats.data?.data ?? []).filter((chat) => !chat.readOnly);
   return <SettingsPage title={zh ? "数据控制" : "Data controls"}>
     <SettingsSection title={zh ? "聊天记录" : "Chat history"}
@@ -65,23 +61,12 @@ export function DataControlsPage({ session }: { session: Session }) {
         : !enabled ? <ListRow muted title={zh ? "这个 Router 尚未开启清空聊天记录。" : "This Router does not offer clearing chat history."} />
         : chats.isError ? <ListRow muted title={errorMessage(t, chats.error instanceof ApiError ? chats.error.code : "request_failed")} />
         : writable.length ? writable.map((chat) => <ListRow key={chat.chatId} title={chat.title}
-          trailing={<TextButton tone="danger" onClick={() => { purge.reset(); setPurging({ chat, typed: "", busy: false }); }}>{zh ? "清空" : "Clear"}</TextButton>} />)
+          trailing={<TextButton tone="danger" onClick={() => setPurging(chat)}>{zh ? "清空" : "Clear"}</TextButton>} />)
         : <ListRow muted title={zh ? "还没有聊天记录。" : "No chats yet."} />}
     </SettingsSection>
-    <Modal open={!!purging} onOpenChange={(open) => { if (!open) setPurging(undefined); }} closeLabel={zh ? "关闭" : "Close"}
-      title={zh ? "清空聊天记录？" : "Clear chat history?"}
-      description={zh ? "聊天记录将被永久删除，无法撤销；员工已经写入的记忆不会被删除。" : "The history is deleted permanently and cannot be undone; memories the Agent already wrote are kept."}
-      actions={<ModalActions danger confirmLabel={purging?.busy ? zh ? "停止任务并清空" : "Stop and clear" : zh ? "永久清空" : "Clear permanently"}
-        cancelLabel={zh ? "取消" : "Cancel"} pending={purge.isPending} disabled={!purging || purging.typed.trim() !== purging.chat.title}
-        onConfirm={() => purging && purge.mutate({ chat: purging.chat, cancelActive: purging.busy })} onCancel={() => setPurging(undefined)} />}>
-      {purging ? <label className="mau-field">
-        <span>{zh ? `输入“${purging.chat.title}”确认` : `Type “${purging.chat.title}” to confirm`}</span>
-        <input value={purging.typed} onChange={(event) => setPurging({ ...purging, typed: event.target.value })} autoComplete="off" />
-      </label> : null}
-      {purging?.busy ? <p className="mau-muted">{zh ? "当前任务进行中，清空前需要先停止它。" : "A task is running; it must stop first."}</p> : null}
-      {purge.error && !(purge.error instanceof ApiError && purge.error.code === "session_busy")
-        ? <p className="mau-error" role="alert">{errorMessage(t, purge.error instanceof ApiError ? purge.error.code : "request_failed")}</p> : null}
-    </Modal>
+    <PurgeChatDialog chat={purging} onClose={() => setPurging(undefined)}
+      purge={(chatId, cancelActive) => api.purge(chatId, chatId, newIdempotencyKey(), cancelActive)}
+      onPurged={(chat) => { toast({ kind: "success", title: zh ? `已清空与 ${chat.title} 的聊天记录` : `Cleared the history with ${chat.title}` }); void chats.refetch(); }} />
   </SettingsPage>;
 }
 

@@ -27,6 +27,7 @@ import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
+import { PurgeChatDialog } from "./purge-chat-dialog";
 import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
@@ -204,7 +205,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [withdrawing, setWithdrawing] = useState<{ chatId: string; eventId: string }>();
   // Phase 4 control: "新对话" asks to stop a running turn first; purge needs the chat's name typed.
   const [busyReset, setBusyReset] = useState<string>();
-  const [purging, setPurging] = useState<{ chatId: string; title: string; typed: string; busy: boolean }>();
+  const [purging, setPurging] = useState<{ chatId: string; title: string }>();
 
   useEffect(() => {
     if (!selected) return;
@@ -212,10 +213,14 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     return () => client.closeChat(selected);
   }, [client, selected]);
   const list = client.chatList();
+  // On a wide screen the first conversation opens by itself: a chat with an employee before another channel's session.
   useEffect(() => {
-    const first = list.find((chat) => !observedKey(chat)?.startsWith("work:"));
-    if (!selected && first && matchMedia("(min-width: 901px)").matches) setSelected(first.chatId);
-  }, [list.length, selected]);
+    if (selected || !agents.isSuccess || !matchMedia("(min-width: 901px)").matches) return;
+    const employees = new Set(agents.data.map(({ agent }) => agent.id));
+    const first = list.find((chat) => chat.kind === "dm" && employees.has(chat.agentIds[0] ?? ""))
+      ?? list.find((chat) => chat.kind === "group") ?? list.find((chat) => !observedKey(chat)?.startsWith("work:"));
+    if (first) setSelected(first.chatId);
+  }, [list.length, selected, agents.isSuccess]);
 
   const current: ChatSummary | undefined = selected ? client.chats.get(selected) : undefined;
   const view = selected ? client.view(selected) : undefined;
@@ -252,11 +257,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     mutationFn: (input: { chatId: string; cancelActive: boolean }) => client.reset(input.chatId, input.cancelActive),
     onSuccess: () => setBusyReset(undefined),
     onError: (failed, input) => { if (failed instanceof ApiError && failed.code === "session_busy") setBusyReset(input.chatId); },
-  });
-  const purge = useMutation({
-    mutationFn: (input: { chatId: string; cancelActive: boolean }) => client.purge(input.chatId, input.chatId, input.cancelActive),
-    onSuccess: () => setPurging(undefined),
-    onError: (failed) => { if (failed instanceof ApiError && failed.code === "session_busy") setPurging((value) => value ? { ...value, busy: true } : value); },
   });
   const quiet = (failed: unknown) => failed instanceof ApiError && failed.code === "session_busy" ? null : failed;
   const connectionError = client.connection.state === "closed" && client.connection.error;
@@ -318,9 +318,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const otherEntries = list.filter((chat) => chat.kind !== "group" && !(chat.kind === "dm" && known.has(chat.agentIds[0] ?? ""))
     && !observedKey(chat)?.startsWith("work:")).map(chatEntry);
   const latest = (entry: Entry) => entry.chat?.lastEvent?.at ?? "";
-  const allEntries = [...agentEntries, ...groupEntries, ...otherEntries].sort((a, b) => latest(b).localeCompare(latest(a)));
+  const recent = (entries: Entry[]) => [...entries].sort((a, b) => latest(b).localeCompare(latest(a)));
+  const allEntries = [...agentEntries, ...groupEntries, ...otherEntries];
   const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
-  const strip = useChatStrip(allEntries, currentKey);
+  // The header row holds employees first, then groups. Another channel's session is listed in the full list only,
+  // and joins the row while it is the one being read.
+  const strip = useChatStrip([...recent(agentEntries), ...recent(groupEntries), ...otherEntries.filter((entry) => entry.key === currentKey)], currentKey);
   // The profile card follows the conversation; it closes on one that has no single employee.
   const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
   useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
@@ -512,7 +515,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     { id: "new", name: "new", description: zh ? "开始新对话，之前的上下文不再带入" : "Start a new chat without the earlier context",
       onSelect: () => { clearDraft(current.chatId); reset.mutate({ chatId: current.chatId, cancelActive: false }); } },
     { id: "clear", name: "clear", description: zh ? "永久清空与它的聊天记录" : "Permanently clear the chat history",
-      onSelect: () => { clearDraft(current.chatId); purge.reset(); setPurging({ chatId: current.chatId, title: current.title, typed: "", busy: false }); } },
+      onSelect: () => { clearDraft(current.chatId); setPurging({ chatId: current.chatId, title: current.title }); } },
   ] : undefined;
   const onSend = () => {
     if (!current) return;
@@ -679,29 +682,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           </DialogContent>
         </Dialog>
       ) : null}
-      {purging ? (
-        <Dialog open onOpenChange={(value) => { if (!value) setPurging(undefined); }}>
-          <DialogContent aria-describedby={undefined}>
-            <DialogTitle>{zh ? "清空聊天记录？" : "Clear chat history?"}</DialogTitle>
-            <p>{zh ? "聊天记录将被永久删除；员工已经写入的记忆不会被删除。" : "The chat history is deleted permanently; memories the Agent already wrote are kept."}</p>
-            <p className="mau-muted">{zh ? "这会删除你在所有渠道（网页、飞书、邮件）与它的对话记录，并开始新对话。无法撤销。"
-              : "This deletes your messages with it from every channel (web, Feishu, mail) and starts a new chat. It cannot be undone."}</p>
-            <label className="mau-field">
-              <span>{zh ? `输入“${purging.title}”确认` : `Type “${purging.title}” to confirm`}</span>
-              <input value={purging.typed} onChange={(event) => setPurging({ ...purging, typed: event.target.value })} autoComplete="off" />
-            </label>
-            {purge.error && !(purge.error instanceof ApiError && purge.error.code === "session_busy")
-              ? <p role="alert">{errorMessage(t, purge.error instanceof ApiError ? purge.error.code : "request_failed")}</p> : null}
-            {purging.busy ? <p className="mau-muted">{zh ? "当前任务进行中，清空前需要先停止它。" : "A task is running; it must stop first."}</p> : null}
-            <div className="modal-actions">
-              <Button onClick={() => setPurging(undefined)}>{t("common.cancel")}</Button>
-              <Button disabled={purging.typed.trim() !== purging.title || purge.isPending}
-                onClick={() => purge.mutate({ chatId: purging.chatId, cancelActive: purging.busy })}>
-                {purging.busy ? (zh ? "停止任务并清空" : "Stop and clear") : (zh ? "永久清空" : "Clear permanently")}</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      <PurgeChatDialog chat={purging} onClose={() => setPurging(undefined)}
+        purge={(chatId, cancelActive) => client.purge(chatId, chatId, cancelActive)} />
       {groupWritable ? <LedgerCreateGroupDialog token={session.token} open={grouping} agents={agents.data ?? []}
         onOpenChange={setGrouping} onCreated={(summary) => { setGrouping(false); open(summary); }} /> : null}
       {groupWritable && room.group && membersOpen ? <LedgerGroupMembersDialog token={session.token} open chat={room.group}
