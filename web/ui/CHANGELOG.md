@@ -5,6 +5,13 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.12] - 2026-11-11
+
+- App background is grey again, so white panels float on it; settings dialogs and pages keep their
+  near-white surface through `--c-page`.
+
+PR: [#13](https://github.com/Olorinm/agent-ui/pull/13)
+
 ## [0.1.0-alpha.11] - 2026-11-09
 
 - Design-system tokens (type scale, spacing, radii, page and panel surfaces, compact density) and
