@@ -165,13 +165,13 @@ it.skipIf(!built)(
       .first()
       .click();
     const connect = page.getByRole("dialog", { name: "连接渠道" });
-    // Built-in chat needs no connection step and Matrix is not a channel to connect; the other channels are offered.
-    await see(connect.getByRole("button", { name: /Matrix/ })).toHaveCount(0);
+    // This Router has Matrix on, so Matrix is one of the message channels: already connected, and listed in the profile.
+    await see(connect.getByRole("button", { name: /Matrix/ })).toBeDisabled();
     for (const name of ["飞书", "微信", "Telegram"])
       await see(connect.getByRole("button", { name, exact: true })).toBeEnabled();
-    await see(profile.getByText("Matrix")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await see(page.getByRole("dialog")).toHaveCount(0);
+    await see(profile.getByText("Matrix", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "运行自检" }).click();
     await see(page.getByRole("button", { name: "运行自检" })).toBeEnabled();
@@ -621,6 +621,11 @@ it.skipIf(!built)(
     await see(
       page.getByRole("button", { name: "文件", exact: true }),
     ).toHaveCount(0);
+    // The console may frame Cloudflare's live view (a browser handoff) and nothing else, and cannot be framed itself.
+    const policy = (await page.request.get(f.base)).headers()["content-security-policy"] ?? "";
+    expect(policy).toContain("frame-src https://live.browser.run;");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain("default-src 'self'");
     await page.setViewportSize({ width: 390, height: 844 });
     expect(
       await page.evaluate(

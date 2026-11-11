@@ -24,6 +24,7 @@ import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
+import { useMatrixAvailable } from "../api/features";
 
 const actionLabel = {
   pause: "env.pause",
@@ -41,6 +42,7 @@ const channels = [
   "feishu",
   "weixin",
   "telegram",
+  "matrix",
   "grove-mail",
 ] as const;
 const isChannel = (kind: string): kind is (typeof channels)[number] =>
@@ -56,8 +58,9 @@ export function AgentDetail(props: {
   const confirm = useConfirm();
   const queries = useQueryClient();
   const { agent, environment } = props.summary;
-  // Matrix connections left from before Matrix was retired are not shown.
-  const connections = props.summary.connections.filter((connection) => connection.kind !== "matrix");
+  // A Matrix connection is shown only while Router has Matrix on; one left from before it was turned off is not.
+  const matrix = useMatrixAvailable(props.session);
+  const connections = props.summary.connections.filter((connection) => connection.kind !== "matrix" || matrix);
   const mau = mauApi(props.session.token),
     router = routerApi(props.session.token);
   const [connecting, setConnecting] = useState<{ job?: ConnectionJob } | null>(

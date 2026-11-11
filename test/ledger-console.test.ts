@@ -161,7 +161,7 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
   expect(await image.getAttribute("src")).toMatch(/^\/_agent-router\/v1\/web\/attachments\/at_/);
   const chip = page.locator(".room-chat-stream .room-message-file", { hasText: "notes.txt" }).first();
   await see(chip).toHaveText(/notes\.txt\s*文本 · 6 B/);
-  await see(chip).toHaveAttribute("title", "下载 notes.txt");
+  await see(chip).toHaveAttribute("title", "查看 notes.txt");
   const sent = page.locator(".room-chat-message.from-user", { has: page.locator(".room-message-file", { hasText: "notes.txt" }) }).first();
   expect(await sent.evaluate((element) => {
     const card = element.querySelector(".mau-attachments")!, bubble = element.querySelector(".room-chat-bubble")!;
@@ -169,9 +169,15 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
   })).toBe(true);
   await see(page.locator(".room-chat-stream").getByText("收到-1").first()).toBeVisible();
   expect(media[0]).toMatchObject([{ name: "图.png", mediaType: "image/png" }, { name: "notes.txt", mediaType: "text/plain" }]);
-  // The file card saves the bytes.
-  const [download] = await Promise.all([page.waitForEvent("download"), chip.click()]);
+  // The file card opens the file beside the conversation; its text is read there and "下载" saves the bytes.
+  await chip.click();
+  const fileView = page.getByRole("complementary", { name: "文件" });
+  await see(fileView.locator(".mau-side-head strong")).toHaveText("notes.txt");
+  await see(fileView.locator(".mau-side-text")).toHaveText("备忘");
+  const [download] = await Promise.all([page.waitForEvent("download"), fileView.getByRole("button", { name: "下载", exact: true }).click()]);
   expect(download.suggestedFilename()).toBe("notes.txt");
+  await fileView.getByRole("button", { name: "关闭", exact: true }).click();
+  await see(fileView).toHaveCount(0);
   // Composer cleared after the send.
   await see(drafts.getByText(/notes\.txt\s*6 B/)).toHaveCount(0);
 

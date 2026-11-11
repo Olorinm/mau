@@ -4,6 +4,18 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.35] - 2026-11-11
+
+- Web console: when an employee hands its browser to the owner, the live view opens in the card beside the
+  conversation and is operated there; the header keeps a button to reopen it. The console's content security policy
+  allows framing `https://live.browser.run` only.
+- A file in a message opens in the card beside the conversation: images and text (Markdown rendered) are shown, other
+  kinds and large files are offered as a download.
+- Matrix is offered as a message channel again while Router has Matrix on; its sign-in page and chat screen stay
+  removed.
+
+PR: [#49](https://github.com/Olorinm/mau/pull/49)
+
 ## [0.1.0-alpha.34] - 2026-11-11
 
 - Web console: the header row of the conversation page holds employees first, then groups. Sessions of other

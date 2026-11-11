@@ -585,6 +585,76 @@ body {
   background: var(--c-surface);
 }
 
+/* A file or the handed-over browser in the card on the right. */
+.mau-side-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mau-side-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-label);
+  min-height: 52px;
+  padding: 8px 10px 8px var(--space-row-x);
+}
+.mau-side-head > div {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.mau-side-head strong {
+  overflow: hidden;
+  font-size: var(--fs-emphasis);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-side-head small {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-caption);
+}
+.mau-side-head .mau-side-close {
+  position: static;
+}
+.mau-side-link {
+  color: var(--c-action);
+  font-size: var(--fs-note);
+  white-space: nowrap;
+}
+.mau-side-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-top: 1px solid var(--c-panel-line);
+  background: var(--c-panel);
+}
+.mau-side-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px var(--space-row-x) var(--space-section);
+  user-select: text;
+}
+.mau-side-image {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--r-tile);
+}
+.mau-side-text {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-note);
+  line-height: var(--lh-body);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* The handed-over browser needs room to be operated. */
+.mau-stage > .rooms-view[data-members-open="true"]:has(.mau-side-frame) {
+  grid-template-columns: minmax(320px, 2fr) minmax(480px, 3fr);
+}
+
 /* Narrow screens: the profile covers the conversation instead of sitting beside it. */
 @media (max-width: 900px) {
   .mau-side-card {
