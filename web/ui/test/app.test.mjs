@@ -8,12 +8,17 @@ import {
   Button,
   ConfirmProvider,
   EmployeeAvatar,
+  EmployeeAvatarAppearanceProvider,
   EmptyState,
   ListRow,
   ObjectSettingsRow,
   SettingsSection,
   TextButton,
   ObjectSettingsSection,
+  PIXEL_AVATAR_SPECIES,
+  PixelAvatar,
+  PixelAvatarGroup,
+  pixelAvatarFor,
   ProductStatus,
   ToastProvider,
 } from "../dist/app/index.js";
@@ -43,6 +48,34 @@ test("empty states and employee avatars keep caller-owned labels and determinist
   const avatar = renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 }));
   assert.match(avatar, /width:40px/);
   assert.doesNotMatch(avatar, /<img/);
+});
+
+test("employee avatars are pixel animals by default and keep the illustrated face as a choice", () => {
+  const pixel = renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", size: 40, state: "working" }));
+  assert.match(pixel, /class="agent-pixel-avatar"[^>]*data-state="working"/);
+  assert.match(pixel, /width:40px;height:40px/);
+  assert.match(pixel, /<svg viewBox="0 0 10 10"/);
+  // The same seed always gives the same animal and colour; a chosen animal keeps its own palette.
+  assert.deepEqual(pixelAvatarFor("agent-1"), pixelAvatarFor("agent-1"));
+  assert.ok(PIXEL_AVATAR_SPECIES.includes(pixelAvatarFor("agent-1").species));
+  assert.equal(pixelAvatarFor("agent-1", "panda").species, "panda");
+  assert.equal(PIXEL_AVATAR_SPECIES.length, 20);
+  assert.ok(new Set(Array.from({ length: 200 }, (_, index) => pixelAvatarFor("agent-" + index).species)).size >= 18);
+  for (const species of PIXEL_AVATAR_SPECIES)
+    assert.match(renderToStaticMarkup(h(PixelAvatar, { seed: "x", species })), new RegExp(`data-species="${species}"`));
+  // Offline closes the eyes; a title makes the figure a labelled image, otherwise it is decorative.
+  assert.match(renderToStaticMarkup(h(PixelAvatar, { seed: "x", species: "cat", state: "offline" })), /height="0\.8"/);
+  assert.match(renderToStaticMarkup(h(PixelAvatar, { seed: "x", title: "Helper" })), /role="img" aria-label="Helper"/);
+  assert.match(renderToStaticMarkup(h(PixelAvatar, { seed: "x" })), /aria-hidden="true"/);
+  assert.doesNotMatch(renderToStaticMarkup(h(PixelAvatar, { seed: "x", animated: false })), /data-animated/);
+  const group = renderToStaticMarkup(h(PixelAvatarGroup, { seeds: ["a", "b", "c", "d"], size: 40 }));
+  assert.equal(group.match(/class="agent-pixel-avatar"/g).length, 3);
+  const illustrated = renderToStaticMarkup(
+    h(EmployeeAvatarAppearanceProvider, { appearance: "illustrated" }, h(EmployeeAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 })),
+  );
+  assert.doesNotMatch(illustrated, /agent-pixel-avatar/);
+  assert.match(illustrated, /agent-ui-avatar-root/);
+  assert.match(renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", appearance: "illustrated" })), /agent-ui-avatar-root/);
 });
 
 test("confirm and toast providers render on the server without a document", () => {
@@ -81,4 +114,6 @@ test("design-system rows keep the trailing action separate and expose density an
   assert.match(tokens, /\[data-density="compact"\] \{/);
   const app = await readFile(new URL("../dist/app/app.css", import.meta.url), "utf8");
   assert.match(app, /@import "\.\/surfaces\.css";/);
+  assert.match(app, /@import "\.\/pixel-avatar\.css";/);
+  assert.match(await readFile(new URL("../dist/app/pixel-avatar.css", import.meta.url), "utf8"), /\.agent-pixel-avatar\[data-state="offline"\]/);
 });

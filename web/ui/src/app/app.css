@@ -1,6 +1,7 @@
 @import "./tokens.css";
 @import "./components.css";
 @import "./surfaces.css";
+@import "./pixel-avatar.css";
 /* Opt-in application primitives. Tokens are global so portaled dialogs and toasts share them;
    set data-theme="dark" on the root element for the dark theme. The base rules below are the
    parts of OpenGrove's Tailwind preflight and reset that these components assume. */

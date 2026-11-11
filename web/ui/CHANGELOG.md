@@ -5,6 +5,17 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.13] - 2026-11-11
+
+- `EmployeeAvatar` draws a pixel-art animal by default: the seed picks one of twenty animals and a
+  colour, as an inline SVG. The eyes show the state (`idle`, `working`, `offline`); the figure moves
+  only on hover and bounces once when its control is pressed. `PixelAvatar`, `PixelAvatarGroup`,
+  `pixelAvatarFor` and `PIXEL_AVATAR_SPECIES` are exported.
+- The illustrated face remains as `appearance="illustrated"`, or for a whole subtree through
+  `EmployeeAvatarAppearanceProvider`.
+
+PR: [#14](https://github.com/Olorinm/agent-ui/pull/14)
+
 ## [0.1.0-alpha.12] - 2026-11-11
 
 - App background is grey again, so white panels float on it; settings dialogs and pages keep their

@@ -72,6 +72,15 @@ The components built on them render caller-owned data only:
 
 Menus opened inside these modals render inside them; Escape closes an open menu before the modal.
 
+`EmployeeAvatar` draws an agent from a seed (usually its id). Its default appearance is a pixel-art animal
+(`PixelAvatar`): the seed picks one of twenty animals and a colour, the same every time, and the figure is an inline
+SVG with no network request. `state` is shown by the eyes (`idle`, `working` looks aside, `offline` closes them and
+greys the figure). The figure is still until it, or the button, link or `[data-avatar-hover]` element around it, is
+hovered, and bounces once when that control is pressed; `animated={false}` turns the motion off where many avatars
+repeat. `PixelAvatarGroup` stacks up to three members' figures for a group. The earlier illustrated face remains:
+pass `appearance="illustrated"`, or wrap a subtree in `EmployeeAvatarAppearanceProvider` to choose it for every avatar
+below. `pixelAvatarFor(seed)` returns the animal and colour a seed resolves to, and `species` pins a chosen animal.
+
 `ChatProvider` accepts a `translate` function and a `Button` replacement. `AgentInteraction.labels` replaces adapter copy. Message render callbacks, composer slots, resource actions and native interaction renderers let the product retain its own UI conventions.
 
 ## Working example and verification
