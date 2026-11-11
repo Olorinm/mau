@@ -66,10 +66,9 @@ function markFor(id: string) {
     case "browser": return <ProductIcon name="globe" />;
     case "weixin": return <ProductIcon name="chat" />;
     case "telegram": return <ProductIcon name="send" />;
-    case "matrix": return <ProductIcon name="rooms" />;
     case "grove-mail": return <ProductIcon name="mention" />;
     default: return <ProductIcon name="provider" />;
   }
 }
 
-export const channelKinds: ChannelKind[] = ["feishu", "weixin", "telegram", "matrix", "grove-mail"];
+export const channelKinds: ChannelKind[] = ["feishu", "weixin", "telegram", "grove-mail"];

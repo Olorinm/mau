@@ -5,6 +5,7 @@ import { chromium, expect as see } from "@playwright/test";
 import { ManagedService } from "@agent-router/server";
 import { alice, mauFixture, root } from "./fixtures/mau.js";
 import { accessIssuer } from "./fixtures/access.js";
+import { edgeMauFixture } from "./fixtures/edge.js";
 
 // agent-router ADR 0005 phase 7: Mau with `AGENT_MATRIX=off` (the Router service config's `matrix.enabled: false`).
 // Released Routers before phase 7 have no Matrix switch and skip.
@@ -22,10 +23,8 @@ function recordFetch() {
   return urls;
 }
 async function edgeMau(serving: Parameters<typeof mauFixture>[1] = {}) {
-  const access = await accessIssuer(cleanup);
-  const f = await mauFixture(cleanup, serving, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) }, off,
-    { edgeIdentityCerts: access.certsUrl });
-  return { f, access };
+  const f = await edgeMauFixture(cleanup, serving, off);
+  return { f, access: f.access };
 }
 
 it.skipIf(!supported)("refuses to start with Matrix off and no edge identity", async () => {
@@ -89,14 +88,11 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 
-  // Build assertion: the entry chunk holds no Matrix client code; it lives in lazily loaded chunks only.
+  // Build assertion: the console contains no Matrix client code at all, in the entry or in any other asset.
   const assets = readdirSync(webRoot + "assets");
-  const entry = readFileSync(webRoot + "index.html", "utf8").match(/assets\/(index-[^"]+\.js)/)![1]!;
-  const entryCode = readFileSync(webRoot + "assets/" + entry, "utf8");
-  expect(entryCode).not.toContain("_matrix/client");
-  expect(entryCode).not.toContain("m.login.password");
-  const matrixChunks = assets.filter((name) => /^(conversations|matrix-messages|matrix-login|login)-.*\.js$/.test(name));
-  expect(matrixChunks.length).toBeGreaterThanOrEqual(3);
+  expect(assets.some((name) => /^index-.*\.js$/.test(name))).toBe(true);
+  expect(assets.filter((name) => /_matrix\/client|m\.login\.password/.test(readFileSync(webRoot + "assets/" + name, "utf8")))).toEqual([]);
+  expect(assets.filter((name) => /^(matrix-login|login)-.*\.js$/.test(name))).toEqual([]);
 
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
@@ -113,9 +109,8 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   page.setDefaultTimeout(10_000);
   // No login page: the console starts from the Access session, and chats come from the ledger.
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
   await composer.fill("没有 Matrix 也能聊");
@@ -127,7 +122,7 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   await see(page.getByRole("button", { name: "连接飞书", exact: true })).toBeVisible();
   await see(page.getByText("Matrix", { exact: true })).toHaveCount(0);
   expect(matrixRequests).toEqual([]);
-  // Feature detection fails (Router restarting, network): a retry, never the Matrix console or Matrix login.
+  // Feature detection fails (Router restarting, network): a retry, never another console or a login form.
   const detection = await browser.newPage();
   let down = true;
   detection.on("request", (request) => { if (request.resourceType() === "script") scripts.push(new URL(request.url()).pathname); });
@@ -139,13 +134,14 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   down = false;
   await retry.click();
   await see(detection.locator(".thread-md-p", { hasText: "收到-1" })).toBeVisible();
-  // `/_mau/v1/info` itself fails: the console offers a retry, not the Matrix login form.
+  // `/_mau/v1/info` itself fails: the console offers a retry, never a login form.
   const boot = await browser.newPage();
   boot.on("request", (request) => { if (request.resourceType() === "script") scripts.push(new URL(request.url()).pathname); });
   await boot.route(/\/_mau\/v1\/info$/, (route) => route.abort());
   await boot.goto(f.base);
   await see(boot.getByRole("alert").getByRole("button", { name: "重试", exact: true })).toBeVisible();
+  await see(boot.getByLabel("密码")).toHaveCount(0);
   expect(matrixRequests).toEqual([]);
-  expect(scripts.filter((path) => /\/(conversations|matrix-messages|matrix-login|login)-[^/]*\.js$/.test(path))).toEqual([]);
+  expect(scripts.filter((path) => /\/(matrix-login|login)-[^/]*\.js$/.test(path))).toEqual([]);
   expect(errors).toEqual([]);
 }, 90_000);

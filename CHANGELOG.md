@@ -4,6 +4,24 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.33] - 2026-11-11
+
+- Web console: the conversation page is one column. Its header is a row of employee figures; the current conversation
+  shows its name and state, the others switch on a click, and an employee without a chat yet opens one. The rest are
+  in a list card beside the conversation (employees, groups, other channels' sessions, search, new employee, new
+  group). Clicking the current one again opens the employee's profile (environment, channels, self-check, delete) in a
+  card on the right; on narrow screens it covers the conversation.
+- The Contacts and Files navigation entries are removed; `?agent=<id>` opens the conversation with that employee.
+- Employees are drawn as pixel animals; Settings → General can switch to the illustrated faces.
+- The console signs in through the edge identity only. The Matrix sign-in page, the Matrix chat screen, Matrix group
+  creation and the Matrix channel option are removed; a service without an edge identity shows that web sign-in is
+  not available, and a Router without the ledger `history` feature shows that chat history is not available.
+- Sessions of other channels are titled by employee and channel instead of their session key; work sessions stay
+  hidden. A read-only conversation hides the composer. Messages and the composer share one centred width.
+- Pin Agent UI 0.1.0-alpha.13 (pixel-art employee avatars).
+
+PR: [#47](https://github.com/Olorinm/mau/pull/47)
+
 ## [0.1.0-alpha.32] - 2026-11-11
 
 - Web console: the contacts page no longer goes blank when a channel kind has no label. Bark, web and room channels

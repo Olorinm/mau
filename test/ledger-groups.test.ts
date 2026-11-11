@@ -91,7 +91,7 @@ it("describes the addressed state, stored mentions and member events", () => {
   expect(addressedLine([{ agentId: "a1", state: "not_addressed" }], undefined, nameOf, true)).toBe(noMentionHint(true));
   expect(addressedLine(undefined, { agentIds: ["a2"], all: false }, nameOf, true)).toBe("@写作助理");
   expect(addressedLine(undefined, { agentIds: [], all: true }, nameOf, true)).toBe("@所有人");
-  expect(addressedLine(undefined, { agentIds: [], all: false }, nameOf, true)).toBe("未 @ 任何 Agent，消息只记录");
+  expect(addressedLine(undefined, { agentIds: [], all: false }, nameOf, true)).toBe("未 @ 任何员工，消息只记录");
   // Imported or older messages carry no mentions: nothing is claimed about them.
   expect(addressedLine(undefined, undefined, nameOf, true)).toBe("");
   const member = { type: "agent" as const, id: "a1", name: "研究助理" };

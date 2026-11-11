@@ -1,14 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError, accessExpiredEvent, request, safeExternalUrl } from "../web/src/api/http.js";
-import { bootSession, clearSession, loadSession, logout, reloadDrafts, saveReloadDrafts, saveSession } from "../web/src/api/session.js";
-import { loginWithPassword, loginWithToken } from "../web/src/api/matrix-login.js";
+import { bootSession, logout, reloadDrafts, saveReloadDrafts } from "../web/src/api/session.js";
 import { mauApi, routerApi } from "../web/src/api/client.js";
+import { errorMessage, translator } from "../web/src/i18n.js";
 
 class MemoryStorage {
   private values = new Map<string, string>();
   getItem(key: string) { return this.values.get(key) ?? null; }
   setItem(key: string, value: string) { this.values.set(key, value); }
   removeItem(key: string) { this.values.delete(key); }
+  get size() { return this.values.size; }
 }
 type Call = { url: string; method: string; headers: Headers; body: unknown };
 function stubFetch(respond: (call: Call) => Response) {
@@ -33,10 +34,10 @@ it("bounds stalled requests and preserves caller cancellation", async () => {
   await expect(response).rejects.toThrow("navigation_cancelled");
 });
 
-it("requests carry the account bearer and map Mau, Router and Matrix failures to stable codes", async () => {
+it("requests carry a given bearer and map Mau and Router failures to stable codes; a foreign errcode is not a code", async () => {
   const calls = stubFetch((call) =>
     call.url.endsWith("/mau") ? Response.json({ error: "environment_operation_running" }, { status: 409 })
-      : call.url.endsWith("/matrix") ? Response.json({ errcode: "M_FORBIDDEN", error: "Invalid password" }, { status: 403 })
+      : call.url.endsWith("/foreign") ? Response.json({ errcode: "M_FORBIDDEN", error: "Invalid password" }, { status: 403 })
         : call.url.endsWith("/limited") ? new Response("Too many requests", { status: 429 })
           : call.url.endsWith("/odd") ? Response.json({ error: "<script>" }, { status: 500 })
             : call.url.endsWith("/empty") ? new Response(null, { status: 204 })
@@ -45,7 +46,7 @@ it("requests carry the account bearer and map Mau, Router and Matrix failures to
   expect(calls[0]).toMatchObject({ method: "POST", body: { a: 1 } });
   expect(calls[0]!.headers.get("authorization")).toBe("Bearer secret");
   expect(calls[0]!.headers.get("content-type")).toBe("application/json");
-  for (const [path, code, status] of [["/mau", "environment_operation_running", 409], ["/matrix", "M_FORBIDDEN", 403],
+  for (const [path, code, status] of [["/mau", "environment_operation_running", 409], ["/foreign", "request_failed", 403],
     ["/limited", "rate_limited", 429], ["/odd", "request_failed", 500]] as const)
     await expect(request(path)).rejects.toEqual(new ApiError(code, status));
   await expect(request("/empty", { body: {} })).resolves.toBeNull();
@@ -57,41 +58,6 @@ it("only https links are rendered or opened", () => {
   expect(safeExternalUrl("https://open.feishu.cn/qr?x=1")).toBe("https://open.feishu.cn/qr?x=1");
   for (const url of ["http://example.test", "javascript:alert(1)", "https://example.test/\u0007", "not a url", undefined])
     expect(safeExternalUrl(url)).toBeUndefined();
-});
-
-it("password login follows mau login: public homeserver, Matrix login, then Mau account", async () => {
-  const calls = stubFetch((call) =>
-    call.url === "/_mau/v1/info" ? Response.json({ homeserver: "https://matrix.example/" })
-      : call.url === "https://matrix.example/_matrix/client/v3/login" ? Response.json({ access_token: "token-1" })
-        : Response.json({ owner: "@alice:agents.example" }));
-  const session = await loginWithPassword(" alice ", "pw");
-  expect(session).toEqual({ token: "token-1", owner: "@alice:agents.example", homeserver: "https://matrix.example" });
-  expect(calls.map((c) => c.url)).toEqual(["/_mau/v1/info", "https://matrix.example/_matrix/client/v3/login", "/_mau/v1/account"]);
-  expect(calls[1]!.body).toEqual({ type: "m.login.password", identifier: { type: "m.id.user", user: "alice" },
-    password: "pw", initial_device_display_name: "Mau Web" });
-  expect(calls[1]!.headers.get("authorization")).toBeNull();
-  expect(calls[2]!.headers.get("authorization")).toBe("Bearer token-1");
-});
-
-it("token login verifies the account; logout revokes only devices created by password login", async () => {
-  const storage = new MemoryStorage();
-  vi.stubGlobal("localStorage", storage);
-  const calls = stubFetch(() => Response.json({ owner: "@alice:agents.example" }));
-  const pasted = await loginWithToken("  pasted  ");
-  expect(pasted).toEqual({ token: "pasted", owner: "@alice:agents.example" });
-  saveSession(pasted);
-  expect(loadSession()).toEqual(pasted);
-  await logout(pasted);
-  expect(calls).toHaveLength(1);
-  expect(loadSession()).toBeNull();
-  saveSession({ ...pasted, homeserver: "https://matrix.example" });
-  await logout({ ...pasted, homeserver: "https://matrix.example" });
-  expect(calls[1]).toMatchObject({ url: "https://matrix.example/_matrix/client/v3/logout", method: "POST" });
-  expect(calls[1]!.headers.get("authorization")).toBe("Bearer pasted");
-  expect(loadSession()).toBeNull();
-  storage.setItem("mau.session", "{not json");
-  expect(loadSession()).toBeNull();
-  clearSession();
 });
 
 it("client paths encode agent and job IDs and send the documented bodies", async () => {
@@ -111,42 +77,78 @@ it("client paths encode agent and job IDs and send the documented bodies", async
   ]);
 });
 
-it("edge login boots without a login page or token; Matrix login stays for login:\"matrix\"", async () => {
-  const storage = new MemoryStorage() as unknown as Storage;
-  saveSession({ token: "stale", owner: "@alice:agents.example" }, storage);
+it("edge login boots without a login page, token or stored session; sign-out goes to the Access logout URL", async () => {
+  const storage = new MemoryStorage();
+  vi.stubGlobal("localStorage", storage);
   const seen: Array<{ url: string; authorization: string | null; credentials: RequestCredentials | undefined }> = [];
+  let info: unknown = { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false };
   let account: () => Response = () => Response.json({ owner: "@alice:agents.example", via: "edge", email: "alice@example.test", expiresAt: "2026-11-06T10:00:00.000Z" });
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     seen.push({ url, authorization: new Headers(init.headers).get("authorization"), credentials: init.credentials });
-    return url === "/_mau/v1/info" ? Response.json({ login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false }) : account();
+    return url === "/_mau/v1/info" ? Response.json(info) : account();
   });
-  expect(await bootSession(storage)).toEqual({ mode: "edge", session: { token: "", owner: "@alice:agents.example",
+  const boot = await bootSession();
+  expect(boot).toEqual({ mode: "edge", session: { token: "", owner: "@alice:agents.example",
     edge: { logoutUrl: "/cdn-cgi/access/logout", email: "alice@example.test", expiresAt: "2026-11-06T10:00:00.000Z" } } });
-  expect(loadSession(storage)).toBeNull();
   expect(seen).toEqual([{ url: "/_mau/v1/info", authorization: null, credentials: "same-origin" },
     { url: "/_mau/v1/account", authorization: null, credentials: "same-origin" }]);
+  // Nothing is kept in the browser: the session lives in the Access cookie only.
+  expect(storage.size).toBe(0);
+  // Sign-out is a navigation to the logout URL, with no request of its own.
+  const visited: string[] = [];
+  vi.stubGlobal("location", { assign: (url: string) => { visited.push(url); } });
+  if (boot.mode !== "edge") throw new Error("edge_boot_expected");
+  logout(boot.session);
+  expect(visited).toEqual(["/cdn-cgi/access/logout"]);
+  expect(seen).toHaveLength(2);
+  // Only a same-origin path is followed for the logout.
+  for (const logoutUrl of ["https://evil.example/logout", "//evil.example/logout", undefined]) {
+    info = { login: "edge", logoutUrl, matrix: false };
+    expect(await bootSession()).toMatchObject({ mode: "edge", session: { edge: { logoutUrl: "/cdn-cgi/access/logout" } } });
+  }
+  info = { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false };
   account = () => Response.json({ error: "owner_not_configured", email: "stranger@example.test" }, { status: 403 });
-  expect(await bootSession(storage)).toEqual({ mode: "edge-denied", email: "stranger@example.test", logoutUrl: "/cdn-cgi/access/logout" });
+  expect(await bootSession()).toEqual({ mode: "edge-denied", email: "stranger@example.test", logoutUrl: "/cdn-cgi/access/logout" });
   account = () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } });
   const events: string[] = [];
   vi.stubGlobal("dispatchEvent", (event: Event) => { events.push(event.type); return true; });
-  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "access_session_expired" });
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "access_session_expired" });
   expect(events).toEqual([accessExpiredEvent]);
-  saveSession({ token: "kept", owner: "@alice:agents.example" }, storage);
-  vi.stubGlobal("fetch", async () => Response.json({ login: "matrix", homeserver: "https://matrix.example", matrix: true }));
-  expect(await bootSession(storage)).toEqual({ mode: "matrix", session: { token: "kept", owner: "@alice:agents.example" } });
 });
 
-it("never answers a failed /info with the Matrix login or a stored Matrix session", async () => {
-  const storage = new MemoryStorage() as unknown as Storage;
-  saveSession({ token: "stale", owner: "@alice:agents.example" }, storage);
-  vi.stubGlobal("fetch", async () => { throw new TypeError("fetch failed"); });
-  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "network_error" });
-  vi.stubGlobal("fetch", async () => new Response("bad gateway", { status: 502 }));
-  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "request_failed" });
+it("a service without edge login has no web login: the boot fails with web_login_unavailable and asks for nothing else", async () => {
+  const storage = new MemoryStorage();
+  // A session an older console stored is never read or used.
+  storage.setItem("mau.session", JSON.stringify({ token: "kept", owner: "@alice:agents.example" }));
+  vi.stubGlobal("localStorage", storage);
+  for (const info of [{ login: "matrix", homeserver: "https://matrix.example", matrix: true }, { homeserver: "https://matrix.example" }, {}]) {
+    const calls = stubFetch(() => Response.json(info));
+    expect(await bootSession()).toEqual({ mode: "edge-failed", code: "web_login_unavailable" });
+    expect(calls.map((call) => [call.url, call.headers.get("authorization")])).toEqual([["/_mau/v1/info", null]]);
+  }
+  for (const language of ["zh-CN", "en"] as const) {
+    const message = errorMessage(translator(language), "web_login_unavailable");
+    expect(message).toContain("Cloudflare Access");
+    expect(message).not.toContain("web_login_unavailable");
+  }
+  expect(errorMessage(translator("zh-CN"), "web_login_unavailable")).toBe("这个服务没有开启网页登录。请为它配置边缘身份（例如 Cloudflare Access）后再打开控制台。");
+});
+
+it("a failed /info offers a retry code and never falls back to a login or a stored session", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem("mau.session", JSON.stringify({ token: "stale", owner: "@alice:agents.example" }));
+  vi.stubGlobal("localStorage", storage);
+  const urls: string[] = [];
+  const failing = (respond: () => Promise<Response>) => vi.stubGlobal("fetch", async (url: string) => { urls.push(url); return respond(); });
+  failing(async () => { throw new TypeError("fetch failed"); });
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "network_error" });
+  failing(async () => new Response("bad gateway", { status: 502 }));
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "request_failed" });
   vi.stubGlobal("dispatchEvent", () => true);
-  vi.stubGlobal("fetch", async () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
-  expect(await bootSession(storage)).toEqual({ mode: "edge-failed", code: "access_session_expired" });
+  failing(async () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "access_session_expired" });
+  // Only /info was asked each time: no account read, no other origin.
+  expect(urls).toEqual(["/_mau/v1/info", "/_mau/v1/info", "/_mau/v1/info"]);
 });
 
 it("keeps unsent composer text across the Access re-login reload", () => {

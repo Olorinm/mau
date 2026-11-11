@@ -6,12 +6,14 @@ import { ledgerApi, ledgerFeatures, newIdempotencyKey, type ChatSummary } from "
 import type { Session } from "../api/session";
 import { errorMessage, useI18n, type Language } from "../i18n";
 import { useThemePreference } from "../theme";
+import { useAvatarAppearance } from "../avatar";
 import { privacyPolicyUrl } from "./connectors";
 
 /** 通用: language and theme. */
 export function GeneralPage() {
   const { language, setLanguage } = useI18n(), zh = language === "zh-CN";
   const [theme, setTheme] = useThemePreference();
+  const [avatar, setAvatar] = useAvatarAppearance();
   return <SettingsPage title={zh ? "通用" : "General"}>
     <SettingsSection>
       <ListRow title={zh ? "语言" : "Language"} trailing={<SelectMenu label={zh ? "语言" : "Language"} value={language}
@@ -19,6 +21,9 @@ export function GeneralPage() {
       <ListRow title={zh ? "外观" : "Appearance"} trailing={<SelectMenu label={zh ? "外观" : "Appearance"} value={theme}
         options={[{ value: "system", label: zh ? "跟随系统" : "System" }, { value: "light", label: zh ? "浅色" : "Light" }, { value: "dark", label: zh ? "深色" : "Dark" }]}
         onChange={setTheme} />} />
+      <ListRow title={zh ? "员工头像" : "Employee avatars"} trailing={<SelectMenu label={zh ? "员工头像" : "Employee avatars"} value={avatar}
+        options={[{ value: "pixel", label: zh ? "像素小动物" : "Pixel animals" }, { value: "illustrated", label: zh ? "插画" : "Illustrated" }]}
+        onChange={setAvatar} />} />
     </SettingsSection>
   </SettingsPage>;
 }

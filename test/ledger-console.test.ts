@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { chromium, expect as see } from "@playwright/test";
-import { alice, mauFixture } from "./fixtures/mau.js";
-import { accessIssuer } from "./fixtures/access.js";
+import { edgeMauFixture } from "./fixtures/edge.js";
 import { ManagedService } from "@agent-router/server";
 
 // Browser acceptance of the ledger console's phase 4 features (agent-router ADR 0005 section 16) against the built
@@ -16,34 +15,24 @@ const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 it.skipIf(!built)("starts a new chat, answers a card and purges the history from the ledger console", async (context) => {
-  const f = await mauFixture(cleanup, { webRoot }, undefined, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
-  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.reset || !me.limits.features.cards) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const browser = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } });
-  await browser.addInitScript(() => localStorage.setItem("mau.chatSource", "ledger"));
-  await browser.route("https://example.test/_matrix/client/v3/**", async (route) => {
-    const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST" };
-    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    if (route.request().url().endsWith("/login")) return route.fulfill({ json: { access_token: "alice", user_id: "@alice:example.test" }, headers: cors });
-    return route.fulfill({ json: {}, headers: cors });
-  });
+  const browser = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders() });
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(f.base);
-  await page.getByLabel("账号").fill("alice");
-  await page.getByLabel("密码").fill("correct");
-  await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).first().click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   // No control buttons in the header: "/" lists the commands, Enter runs the highlighted one.
   await see(page.getByRole("button", { name: "新对话", exact: true })).toHaveCount(0);
   const composer = page.getByPlaceholder("发送消息…");
@@ -83,7 +72,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await composer.fill("/clear");
   await page.getByRole("option", { name: /\/clear/ }).click();
   const purge = page.getByRole("dialog", { name: "清空聊天记录？" });
-  await see(purge).toContainText("Agent 已经写入的记忆不会被删除");
+  await see(purge).toContainText("员工已经写入的记忆不会被删除");
   await see(purge.getByRole("button", { name: "永久清空" })).toBeDisabled();
   await purge.getByRole("textbox").fill("helper");
   await purge.getByRole("button", { name: "永久清空" }).click();
@@ -91,7 +80,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await see(shown).toBeHidden();
   // The purged chat restarts with its new window only.
   await see.poll(async () => (await (await fetch(f.base + `/_agent-router/v1/web/chats/${encodeURIComponent("dm:" + f.agent.id)}/events`,
-    { headers: { authorization: "Bearer alice" } })).json() as { events: Array<{ kind: string }> }).events.map((event) => event.kind)).toEqual(["window"]);
+    { headers: f.edgeHeaders() })).json() as { events: Array<{ kind: string }> }).events.map((event) => event.kind)).toEqual(["window"]);
   await see(page.locator(".mau-chat-divider[data-kind='window']")).toHaveCount(1);
   expect(Number((db.prepare("SELECT generation FROM ledger_sessions WHERE session_key=?").get(session.session_key) as { generation: number }).generation)).toBe(2);
   expect(errors).toEqual([]);
@@ -122,32 +111,27 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
     { ledgerRead: true, ledgerSend: true, ledgerAttachments: true });
-  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.attachments) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders() })).newPage();
   const errors: string[] = [], violations: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (/Content Security Policy/i.test(message.text())) violations.push(message.text()); });
   const uploads: Array<Record<string, string>> = [];
   page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/_agent-router/v1/web/attachments") uploads.push(request.headers()); });
   await page.goto(f.base);
-  await page.evaluate(() => {
-    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
-    localStorage.setItem("mau.chatSource", "ledger");
-  });
-  await page.reload();
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
 
@@ -169,12 +153,12 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
 
   await composer.fill("看附件");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
-  // The stored message renders the image inline (fetched with the bearer, shown as a blob: URL) and the file as a card
-  // with its kind, above the text.
+  // The stored message renders the image inline (from its same-origin URL; the browser sends the Access session) and
+  // the file as a card with its kind, above the text.
   const image = page.locator(".mau-attachment-image img[alt='图.png']").first();
   await see(image).toBeVisible();
   await see.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(2);
-  expect(await image.getAttribute("src")).toMatch(/^blob:/);
+  expect(await image.getAttribute("src")).toMatch(/^\/_agent-router\/v1\/web\/attachments\/at_/);
   const chip = page.locator(".room-chat-stream .room-message-file", { hasText: "notes.txt" }).first();
   await see(chip).toHaveText(/notes\.txt\s*文本 · 6 B/);
   await see(chip).toHaveAttribute("title", "下载 notes.txt");
@@ -224,11 +208,9 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const access = await accessIssuer(cleanup);
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined,
-    { edgeIdentity: access.config({ "alice@example.test": alice }) }, { ledgerRead: true, ledgerSend: true, ledgerAttachments: true },
-    { edgeIdentityCerts: access.certsUrl });
-  const jwt = access.jwt();
+  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
+    { ledgerRead: true, ledgerSend: true, ledgerAttachments: true });
+  const jwt = f.access.jwt();
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> }; auth?: { via?: string } };
   // Released Routers before edge login and attachments skip.
   if (!me.limits?.features?.attachments || me.auth?.via !== "edge") return context.skip();
@@ -240,7 +222,6 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
   // Cloudflare adds the JWT to every request behind Access; the console itself sends no token.
   const browser = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
     extraHTTPHeaders: { "cf-access-jwt-assertion": jwt } });
-  await browser.addInitScript(() => localStorage.setItem("mau.chatSource", "ledger"));
   const page = await browser.newPage();
   const errors: string[] = [], authorization: string[] = [], uploads: number[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -249,9 +230,8 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
   await page.goto(f.base);
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
   // A text/plain upload passes Router's edge CSRF guard because it carries X-File-Name (ADR 0005 attachments note 13).
@@ -289,29 +269,24 @@ it.skipIf(!built)("while a reply runs, the send button stops it and text sent go
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
     { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
-  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.reset) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders() })).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(f.base);
-  await page.evaluate(() => {
-    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
-    localStorage.setItem("mau.chatSource", "ledger");
-  });
-  await page.reload();
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await composer.fill("查一下天气");
   await composer.press("Enter");
@@ -358,29 +333,24 @@ it.skipIf(!built)("a running reply keeps one working line below its content and 
     if (/\/runs\/run-1$/.test(path)) return Response.json(run);
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {},
+  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
     { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
-  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { authorization: "Bearer alice" } })).json() as { limits?: { features?: Record<string, boolean> } };
+  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.send) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } })).newPage();
+  const page = await (await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders() })).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(f.base);
-  await page.evaluate(() => {
-    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
-    localStorage.setItem("mau.chatSource", "ledger");
-  });
-  await page.reload();
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-  await page.getByLabel("选择员工").selectOption(f.agent.id);
-  await page.getByRole("button", { name: "打开对话", exact: true }).click();
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   // Every change to the reply, as (working line position, text) states.
   await page.evaluate(() => {
     const w = window as unknown as { states: string[] }; w.states = [];

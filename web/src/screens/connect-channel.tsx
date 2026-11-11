@@ -6,9 +6,8 @@ import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { LinkCode } from "./link-code";
-import { useMatrixAvailable } from "../api/features";
 
-const kinds: ChannelKind[] = ["feishu", "weixin", "telegram", "matrix", "grove-mail"];
+const kinds: ChannelKind[] = ["feishu", "weixin", "telegram", "grove-mail"];
 const terminal = (job: ConnectionJob) => job.state === "ready" || job.state === "failed";
 
 type ConnectProps = {
@@ -37,13 +36,11 @@ export function ConnectChannelFlow(props: ConnectProps & { title(text: string): 
   const router = routerApi(props.session.token);
   const agentId = props.summary.agent.id;
   const connected = new Set(props.summary.connections.map((c) => c.kind));
-  // Without Matrix (agent-router ADR 0005 19.3) the Matrix channel is not offered.
-  const matrix = useMatrixAvailable(props.session);
   const [kind, setKind] = useState<ChannelKind | null>(props.job?.kind ?? props.initialKind ?? null);
   const [job, setJob] = useState<ConnectionJob | null>(props.job ?? null);
   const [recovery, setRecovery] = useState<ConnectionJob["recovery"]>();
   const done = (channel: ChannelKind) => {
-    toast({ kind: "success", title: channel === "matrix" ? t("connect.matrixReady") : t("connect.ready", { channel: t(`channel.${channel}`) }) });
+    toast({ kind: "success", title: t("connect.ready", { channel: t(`channel.${channel}`) }) });
     props.onConnected();
     props.onClose();
   };
@@ -68,7 +65,7 @@ export function ConnectChannelFlow(props: ConnectProps & { title(text: string): 
           <div className="mau-form">
             <p className="mau-muted">{t("connect.choose")}</p>
             <div className="mau-channel-grid">
-              {kinds.filter((k) => k !== "matrix" || matrix).map((k) => (
+              {kinds.map((k) => (
                 <button key={k} type="button" className="mau-channel-choice" disabled={connected.has(k)} onClick={() => setKind(k)}>
                   <strong>{t(`channel.${k}`)}</strong>
                   {connected.has(k) ? <ProductStatus compact tone="success" label={t("job.ready")} /> : null}
@@ -113,7 +110,6 @@ function ChannelForm(props: {
         return { kind: "feishu", domain, ...(id ? { appId: id } : {}) };
       }
       case "weixin": return { kind: "weixin" };
-      case "matrix": return { kind: "matrix" };
       case "telegram": return token.trim() ? { kind: "telegram", token: token.trim() } : null;
       case "grove-mail":
         return serviceId && mail.inboxId && mail.ownerEmail && mail.apiKey

@@ -7,6 +7,7 @@ import {
   ObjectSettingsRow,
   ObjectSettingsSection,
   ProductStatus,
+  StatusLine,
   useConfirm,
   useToast,
   type ProductStatusTone,
@@ -40,7 +41,6 @@ const channels = [
   "feishu",
   "weixin",
   "telegram",
-  "matrix",
   "grove-mail",
 ] as const;
 const isChannel = (kind: string): kind is (typeof channels)[number] =>
@@ -55,7 +55,9 @@ export function AgentDetail(props: {
   const { toast } = useToast();
   const confirm = useConfirm();
   const queries = useQueryClient();
-  const { agent, environment, connections } = props.summary;
+  const { agent, environment } = props.summary;
+  // Matrix connections left from before Matrix was retired are not shown.
+  const connections = props.summary.connections.filter((connection) => connection.kind !== "matrix");
   const mau = mauApi(props.session.token),
     router = routerApi(props.session.token);
   const [connecting, setConnecting] = useState<{ job?: ConnectionJob } | null>(
@@ -273,13 +275,7 @@ export function AgentDetail(props: {
                 <ObjectSettingsRow
                   key={connection.id}
                   title={t(`channel.${connection.kind}`)}
-                  value={
-                    <ProductStatus
-                      compact
-                      tone="success"
-                      label={t("job.ready")}
-                    />
-                  }
+                  value={<StatusLine tone="success">{language === "zh-CN" ? "已连接" : "Connected"}</StatusLine>}
                 />
               ))}
               {pending.map((job) => (

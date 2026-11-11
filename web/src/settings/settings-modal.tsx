@@ -19,7 +19,7 @@ export function SettingsModal({ session, route, onSignOut }: { session: Session;
     { id: "extensions", label: zh ? "扩展" : "Extensions", icon: <ProductIcon name="extensions" /> },
     { id: "data", label: zh ? "数据控制" : "Data controls", icon: <ProductIcon name="locked" /> },
     { id: "help", label: zh ? "帮助与法律" : "Help and legal", icon: <ProductIcon name="help" /> },
-    { id: "logout", label: zh ? "退出" : "Sign out", icon: <ProductIcon name="logout" />, footer: true, onSelect: onSignOut },
+    { id: "logout", label: zh ? "退出登录" : "Sign out", icon: <ProductIcon name="logout" />, footer: true, onSelect: onSignOut },
   ];
   const page = (section: SettingsSection) => {
     switch (section) {
