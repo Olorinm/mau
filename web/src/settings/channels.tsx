@@ -4,6 +4,7 @@ import { ListRow, SettingsPage, SettingsSection, StatusLine, TextButton, useToas
 import { mauApi, routerApi, type AgentSummary, type ChannelKind } from "../api/client";
 import type { Session } from "../api/session";
 import { useI18n } from "../i18n";
+import { useMatrixAvailable } from "../api/features";
 import { ConnectChannelFlow } from "../screens/connect-channel";
 import { AppMark, channelKinds } from "./app-marks";
 import { feishuPersonalState, useAgents, useConnectorAccounts } from "./connectors";
@@ -25,7 +26,8 @@ export function ChannelsPage({ session }: { session: Session }) {
     },
     onError: () => toast({ kind: "error", title: zh ? "连接检查失败，请稍后重试。" : "Connection check failed. Try again later." }) });
   const active = (agents.data ?? []).filter((agent) => agent.environment?.state !== "deleted");
-  const kinds = channelKinds;
+  const matrix = useMatrixAvailable(session);
+  const kinds = channelKinds.filter((kind) => kind !== "matrix" || matrix);
   const personal = (agentId: string) => accounts.data?.data.find((account) => account.kind === "feishu" && account.assignedAgents?.includes(agentId));
 
   if (connecting) return <SettingsPage onBack={() => setConnecting(undefined)} backLabel={zh ? "消息渠道" : "Messaging"}

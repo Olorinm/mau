@@ -28,6 +28,7 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
+import { BrowserSideView, FileSideView, liveViewUrl } from "./side-views";
 import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
@@ -137,21 +138,24 @@ function fileKind(attachment: AttachmentRef, zh: boolean) {
   return attachment.contentType.split("/")[1]?.toUpperCase() ?? (zh ? "文件" : "File");
 }
 /** A file in a message: a card with its kind; a click downloads it. */
-function AttachmentChip({ api, attachment, onError, detail }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; detail?: string }) {
+function AttachmentChip({ api, attachment, onError, detail, onPreview }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; detail?: string;
+  /** Opens the file beside the conversation instead of downloading it. */
+  onPreview?: ((attachment: AttachmentRef) => void) | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   const size = formatBytes(attachment.size);
   const kind = attachmentKind(attachment.contentType);
-  return <MessageFileCard name={attachment.name} title={zh ? `下载 ${attachment.name}` : `Download ${attachment.name}`}
+  return <MessageFileCard name={attachment.name} title={onPreview ? (zh ? `查看 ${attachment.name}` : `View ${attachment.name}`) : (zh ? `下载 ${attachment.name}` : `Download ${attachment.name}`)}
     kind={kind === "image" ? "image" : codeExtensions.test(attachment.name) ? "code" : kind === "text" ? "text" : "file"}
     detail={detail ?? (size ? `${fileKind(attachment, zh)} · ${size}` : fileKind(attachment, zh))}
-    onOpen={() => void saveAttachment(api, attachment).catch(onError)} />;
+    onOpen={() => onPreview ? onPreview(attachment) : void saveAttachment(api, attachment).catch(onError)} />;
 }
 /** Message attachments: images inline, other files as download chips. */
-function LedgerAttachments({ api, attachments, onError }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void }) {
+function LedgerAttachments({ api, attachments, onError, onPreview }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void;
+  onPreview?: ((attachment: AttachmentRef) => void) | undefined }) {
   return <div className="mau-attachments">
     {attachments.map((ref) => attachmentKind(ref.contentType) === "image"
       ? <LedgerImage key={ref.attachmentId} api={api} attachment={ref} onError={onError} />
-      : <AttachmentChip key={ref.attachmentId} api={api} attachment={ref} onError={onError} />)}
+      : <AttachmentChip key={ref.attachmentId} api={api} attachment={ref} onError={onError} onPreview={onPreview} />)}
   </div>;
 }
 
@@ -190,6 +194,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [profile, setProfile] = useState<string>();
   const [creating, setCreating] = useState(false);
+  // Beside the conversation, instead of the profile: a message's file, or the browser an employee handed over.
+  const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }>();
+  useEffect(() => { if (profile !== undefined) setSideView(undefined); }, [profile]);
+  const dismissedHandoff = useRef<string | undefined>(undefined);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   // Text kept across an Access re-login reload ("重新登录") is restored once.
@@ -225,6 +233,17 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const current: ChatSummary | undefined = selected ? client.chats.get(selected) : undefined;
   const view = selected ? client.view(selected) : undefined;
   const fold = useMemo(() => view ? foldEvents(view.events) : undefined, [view?.events, view?.lastSeq]);
+  // A pending browser handoff: its private live-view link is read from the live card (history never stores it) and the
+  // view opens beside the conversation, where the owner operates the page.
+  const handoffCard = fold ? [...fold.cards.values()].find((card) => card.source === "mau-handoff" && card.status === "pending") : undefined;
+  const handoffLive = useQuery({ queryKey: ["ledger-card", current?.chatId, handoffCard?.cardId, "pending"], enabled: !!current && !!handoffCard,
+    queryFn: ({ signal }) => api.card(current!.chatId, handoffCard!.cardId, signal), retry: false, refetchOnWindowFocus: false });
+  const handoffUrl = handoffCard ? liveViewUrl(handoffLive.data?.text ?? handoffCard.text) : undefined;
+  useEffect(() => {
+    if (handoffCard && handoffUrl && dismissedHandoff.current !== handoffCard.cardId) { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }
+    else if (!handoffCard) setSideView((view) => view?.kind === "browser" ? undefined : view);
+  }, [handoffCard?.cardId, handoffUrl]);
+  useEffect(() => { setSideView((view) => view?.kind === "file" ? undefined : view); }, [current?.chatId]);
   const room = useLedgerGroup({ token: session.token, chat: current, view, agents: agents.data ?? [] });
   const agentName = (agentId: string) => room.group ? room.nameOf(agentId) : names.get(agentId) ?? current?.title ?? agentId;
 
@@ -369,7 +388,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const reaction of bubble.reactions) parts.push(`${reaction.key} ${reaction.senders.length}`);
     return parts.join(" · ");
   };
-  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError} /> : undefined;
+  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError}
+    onPreview={(attachment) => { setProfile(undefined); setSideView({ kind: "file", attachment }); }} /> : undefined;
 
   const sendable = features.has("send");
   const cardsOn = sendable && features.has("cards"), controlOn = sendable && features.has("reset");
@@ -554,6 +574,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         onPick={pick} onToggleAll={() => { remember(currentKey); setRosterOpen(true); }}
         label={zh ? "对话" : "Conversations"} allLabel={zh ? "全部对话" : "All conversations"} />
       {current ? <div className="room-header-actions">
+        {handoffCard && handoffUrl && sideView?.kind !== "browser" ? <button type="button" className="mau-header-button" aria-label={zh ? "接管浏览器" : "Browser handoff"}
+          title={zh ? "接管浏览器" : "Browser handoff"} onClick={() => { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }}><ProductIcon name="globe" /></button> : null}
         {currentAgent && known.has(currentAgent) ? <button type="button" className="mau-header-button" aria-pressed={profile === currentAgent}
           aria-label={zh ? "员工资料" : "Employee profile"} title={zh ? "员工资料" : "Employee profile"}
           onClick={() => setProfile((open) => open === currentAgent ? undefined : currentAgent)}><ProductIcon name="identity" /></button> : null}
@@ -581,7 +603,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
             label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
             emptyLabel={zh ? "没有找到" : "Nothing found"} /> : null}
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
-            {...(profileSummary ? { inspector: (
+            {...(sideView?.kind === "browser" && handoffUrl ? { inspector: (
+              <BrowserSideView url={handoffUrl} onClose={() => { dismissedHandoff.current = sideView.cardId; setSideView(undefined); }} />
+            ) } : sideView?.kind === "file" ? { inspector: (
+              <FileSideView key={sideView.attachment.attachmentId} api={api} attachment={sideView.attachment} onClose={() => setSideView(undefined)}
+                onDownload={() => void saveAttachment(api, sideView.attachment).catch(setUploadError)} />
+            ) } : profileSummary ? { inspector: (
               <aside className="mau-side-card" aria-label={zh ? "员工资料" : "Employee profile"}>
                 <button type="button" className="mau-side-close" aria-label={t("common.close")} title={t("common.close")} onClick={() => setProfile(undefined)}>×</button>
                 <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary} />

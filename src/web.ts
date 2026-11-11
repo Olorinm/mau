@@ -18,6 +18,8 @@ export function webConsole(root: string, homeserver?: string): express.RequestHa
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
+    // The only framed page is Cloudflare Browser Run's live view, shown when an Agent hands its browser to the owner.
+    "frame-src https://live.browser.run",
     "frame-ancestors 'none'",
   ].join("; ");
   const headers = (res: express.Response) => res.set({
