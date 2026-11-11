@@ -81,6 +81,9 @@ const zh = {
   "channel.telegram": "Telegram",
   "channel.matrix": "Matrix",
   "channel.grove-mail": "邮件",
+  "channel.bark": "Bark 推送",
+  "channel.web": "网页",
+  "channel.room": "群聊",
   "connect.title": "连接渠道",
   "connect.choose": "选择要连接的渠道",
   "connect.start": "开始连接",
@@ -286,6 +289,9 @@ const en: Record<MessageKey, string> = {
   "channel.telegram": "Telegram",
   "channel.matrix": "Matrix",
   "channel.grove-mail": "Email",
+  "channel.bark": "Bark",
+  "channel.web": "Web",
+  "channel.room": "Group chat",
   "connect.title": "Connect channel",
   "connect.choose": "Choose a channel",
   "connect.start": "Start",
@@ -425,8 +431,11 @@ export function saveLanguage(language: Language) {
 
 export type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 export function translator(language: Language): Translate {
+  // A key the server introduced later (for example a new channel kind) falls back to the other language or the key
+  // itself; a missing label must never take down the page.
   return (key, values) =>
-    dictionaries[language][key].replace(/\{(\w+)\}/g, (token, name: string) => String(values?.[name] ?? token));
+    (dictionaries[language][key] ?? dictionaries[language === "zh-CN" ? "en" : "zh-CN"][key] ?? String(key).replace(/^[a-z]+\./, ""))
+      .replace(/\{(\w+)\}/g, (token, name: string) => String(values?.[name] ?? token));
 }
 export function errorMessage(t: Translate, code: string): string {
   const key = `error.${code}` as MessageKey;
