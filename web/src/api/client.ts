@@ -12,13 +12,14 @@ export interface EnvironmentView {
   updatedAt?: string;
   error?: string;
 }
-export type ChannelKind = "feishu" | "weixin" | "telegram" | "matrix" | "grove-mail";
+export type ChannelKind = "feishu" | "weixin" | "telegram" | "grove-mail";
 export interface AgentSummary {
   agent: { id: string; owner: string; name: string; address: string; matrixId: string; createdAt: string; status: "provisioning" | "active";
     /** Router phase 7: `none` (no Matrix account), `dormant` or `active`. */
     matrix?: { state: "active" | "dormant" | "none"; userId: string | null } };
   host: { runtimeId: string } | null;
-  connections: Array<{ id: string; kind: ChannelKind }>;
+  /** Kinds this console does not connect (push, web, room, older Matrix connections) are listed by the server too. */
+  connections: Array<{ id: string; kind: ChannelKind | "bark" | "web" | "room" | "matrix" }>;
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
@@ -66,7 +67,6 @@ export type ConnectionRequest =
   | { kind: "feishu"; appId?: string; domain: "feishu" | "lark" }
   | { kind: "weixin" }
   | { kind: "telegram"; token: string }
-  | { kind: "matrix" }
   | { kind: "grove-mail"; serviceId: string; inboxId: string; apiKey: string; ownerEmail: string };
 export interface CheckResult {
   agentId: string;

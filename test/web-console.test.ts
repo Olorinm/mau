@@ -2,9 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
-import { alice, mauFixture } from "./fixtures/mau.js";
-import { accessIssuer } from "./fixtures/access.js";
-import { ManagedService } from "@agent-router/server";
+import { edgeMauFixture } from "./fixtures/edge.js";
 
 // Browser acceptance for the built console (`npm run build:web`). CI sets MAU_WEB_E2E=1 so a missing build fails.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -18,58 +16,47 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function browser(base: string) {
+type Fixture = Awaited<ReturnType<typeof edgeMauFixture>>;
+/** The console opened from the Access session: Cloudflare adds the JWT to every request, the console sends no token. */
+async function browser(f: Fixture, claims: Record<string, unknown> = {}) {
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
   const context = await instance.newContext({
     locale: "zh-CN",
     reducedMotion: "reduce",
     viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders(claims),
   });
-  const matrix: string[] = [];
-  // The public homeserver is the fixture server name; Playwright answers its client API, including CORS preflight.
-  await context.route(
-    "https://example.test/_matrix/client/v3/**",
-    async (route) => {
-      const request = route.request(),
-        cors = {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Headers": "authorization, content-type",
-          "Access-Control-Allow-Methods": "POST",
-        };
-      if (request.method() === "OPTIONS")
-        return route.fulfill({ status: 204, headers: cors });
-      matrix.push(new URL(request.url()).pathname);
-      if (request.url().endsWith("/login")) {
-        const body = request.postDataJSON();
-        return body.password === "correct"
-          ? route.fulfill({
-              json: { access_token: "alice", user_id: "@alice:example.test" },
-              headers: cors,
-            })
-          : route.fulfill({
-              status: 403,
-              json: { errcode: "M_FORBIDDEN", error: "Invalid password" },
-              headers: cors,
-            });
-      }
-      return route.fulfill({ json: {}, headers: cors });
-    },
-  );
+  const matrix: string[] = [], authorization: string[] = [];
+  // The console has no Matrix client: any Matrix request is recorded and never answered.
+  await context.route(/\/_matrix\//, (route) => {
+    matrix.push(new URL(route.request().url()).pathname);
+    return route.abort();
+  });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(base);
-  return { page, matrix, errors };
+  page.on("request", (request) => {
+    const value = request.headers()["authorization"];
+    if (value) authorization.push(value);
+  });
+  await page.goto(f.base);
+  return { page, context, matrix, authorization, errors };
 }
 
-const agentRow = (page: Page, name: string) =>
-  page.getByRole("button", { name: new RegExp(`^${name}`) });
+// Conversations are served by Router's owner ledger; without these flags the console has no conversation page.
+const ledger = { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerGroups: true };
+/** An employee's figure in the header row of the conversation page. */
+const agentChip = (page: Page, agentId: string) =>
+  page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
+/** The employee profile card beside the conversation (the former contacts detail). */
+const profileCard = (page: Page) =>
+  page.getByRole("complementary", { name: "员工资料" });
 
 it.skipIf(!built)(
-  "signs in, provisions an agent, controls its environment, connects a channel and signs out",
+  "opens from the Access session, provisions an agent, controls its environment, connects a channel and signs out",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
+    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
     const home = await fetch(f.base + "/");
     expect(home.headers.get("content-security-policy")).toContain(
       "connect-src 'self' https://example.test",
@@ -88,19 +75,15 @@ it.skipIf(!built)(
     expect(
       (
         await fetch(f.base + "/_mau/v1/missing", {
-          headers: { authorization: "Bearer alice" },
+          headers: f.edgeHeaders(),
         })
       ).status,
     ).toBe(404);
-    const { page, matrix, errors } = await browser(f.base);
+    const { page, matrix, authorization, errors } = await browser(f);
 
-    await page.getByLabel("账号").fill("alice");
-    await page.getByLabel("密码").fill("wrong");
-    await page.getByRole("button", { name: "登录", exact: true }).click();
-    await see(page.getByRole("alert")).toHaveText("账号或密码不正确。");
-    await page.getByLabel("密码").fill("correct");
-    await page.getByRole("button", { name: "登录", exact: true }).click();
-    await see(page.getByText("@alice:example.test")).toBeVisible();
+    // No sign-in step: the account is the Access identity.
+    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByLabel("密码")).toHaveCount(0);
     await page.getByRole("button", { name: "新建应用", exact: true }).click();
     const createApp = page.getByRole("dialog", {
       name: "新建应用",
@@ -123,15 +106,28 @@ it.skipIf(!built)(
       createApp.getByRole("textbox", { name: "App 名称", exact: true }),
     ).toHaveValue("");
     await createApp.getByRole("button", { name: "取消", exact: true }).click();
-    await page.getByRole("button", { name: "通讯录", exact: true }).click();
-    // The fixture pre-creates "helper" without an environment.
-    await see(agentRow(page, "helper")).toBeVisible();
-    await see(page.locator(".contacts-employee-runtime-card")).toContainText(
+    // There is no contacts page: the fixture's pre-created "helper" (without an environment) is a figure in the
+    // header row; a click opens the conversation, a second click on the current one its profile card.
+    for (const name of ["通讯录", "文件"])
+      await see(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+    const helper = agentChip(page, f.agent.id);
+    await see(helper).toHaveAttribute("title", "helper");
+    await see(helper.locator(".agent-pixel-avatar")).toBeVisible();
+    await helper.click();
+    await see(helper).toHaveAttribute("aria-selected", "true");
+    await helper.click();
+    const profile = profileCard(page);
+    await see(profile.getByRole("heading", { name: "helper" })).toBeVisible();
+    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "未配置环境",
     );
 
-    await page.getByRole("button", { name: "新建", exact: true }).click();
-    await page.getByRole("menuitem", { name: "新建员工" }).click();
+    // A new employee is created from the "+" of the 员工 section in the full list of conversations.
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    await page
+      .getByRole("complementary", { name: "全部对话" })
+      .getByRole("button", { name: "新建员工", exact: true })
+      .click();
     const dialog = page.getByRole("dialog", { name: "新建员工" });
     await dialog.getByLabel("名称").fill("Writer");
     await see(dialog.getByRole("button", { name: "创建" })).toBeDisabled();
@@ -142,21 +138,24 @@ it.skipIf(!built)(
       "true",
     );
     await dialog.getByRole("button", { name: "创建" }).click();
-    await see(page.getByRole("heading", { name: "writer" })).toBeVisible();
-    await see(page.locator(".contacts-employee-runtime-card")).toContainText(
+    // The new employee's conversation opens, and the open profile card follows it.
+    const writer = page.locator(".mau-chip[aria-selected='true']");
+    await see(writer).toHaveAttribute("title", "writer");
+    expect(await writer.getAttribute("data-chat-key")).toMatch(/^agent:.+/);
+    await see(profile.getByRole("heading", { name: "writer" })).toBeVisible();
+    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "可用",
       { timeout: 10_000 },
     );
-    expect(new URL(page.url()).searchParams.get("agent")).toBeTruthy();
 
     await page.getByRole("button", { name: "暂停" }).click();
-    await see(page.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "已暂停",
       { timeout: 10_000 },
     );
     await see(page.getByText("已手动暂停")).toBeVisible();
     await page.getByRole("button", { name: "恢复" }).click();
-    await see(page.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "可用",
       { timeout: 10_000 },
     );
@@ -166,8 +165,11 @@ it.skipIf(!built)(
       .first()
       .click();
     const connect = page.getByRole("dialog", { name: "连接渠道" });
-    // Provisioning already enabled built-in chat; users do not need a separate connection step.
-    await see(connect.getByRole("button", { name: /Matrix/ })).toBeDisabled();
+    // Built-in chat needs no connection step and Matrix is not a channel to connect; the other channels are offered.
+    await see(connect.getByRole("button", { name: /Matrix/ })).toHaveCount(0);
+    for (const name of ["飞书", "微信", "Telegram"])
+      await see(connect.getByRole("button", { name, exact: true })).toBeEnabled();
+    await see(profile.getByText("Matrix")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await see(page.getByRole("dialog")).toHaveCount(0);
 
@@ -185,7 +187,7 @@ it.skipIf(!built)(
     });
     await see(destroy).toContainText("无法恢复");
     await destroy.getByRole("button", { name: "销毁环境" }).click();
-    await see(page.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "已销毁",
       { timeout: 10_000 },
     );
@@ -194,66 +196,31 @@ it.skipIf(!built)(
     await page.getByRole("button", { name: "账号", exact: true }).click();
     await page.getByRole("menuitem", { name: "English" }).click();
     await see(
-      page.getByRole("button", { name: "Contacts", exact: true }),
+      page.getByRole("button", { name: "Conversations", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Account", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await see(
-      page.getByRole("heading", { name: "Return to your Mau" }),
-    ).toBeVisible();
-    expect(matrix.filter((path) => !path.endsWith("/sync"))).toEqual([
-      "/_matrix/client/v3/login",
-      "/_matrix/client/v3/login",
-      "/_matrix/client/v3/logout",
-    ]);
-    expect(
-      await page.evaluate(() => localStorage.getItem("mau.session")),
-    ).toBeNull();
-
-    await page.setViewportSize({ width: 390, height: 844 });
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
+      page.getByRole("button", { name: "Contacts", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Account", exact: true }).click();
+    // Sign-out ends the Access session: the console navigates to the logout URL `/info` names, and nowhere else.
+    await page.route("**/cdn-cgi/access/logout", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<title>signed out</title>" }),
+    );
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await page.waitForURL(f.base + "/cdn-cgi/access/logout");
+    await see(page).toHaveTitle("signed out");
+    expect(matrix).toEqual([]);
+    expect(authorization).toEqual([]);
     expect(errors).toEqual([]);
   },
   60_000,
 );
 
-it.skipIf(!built)(
-  "an expired session returns to sign-in with an explanation",
-  async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page } = await browser(f.base);
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "revoked", owner: "@alice:example.test" }),
-      ),
-    );
-    await page.reload();
-    await see(page.getByRole("region", { name: "通知" })).toContainText(
-      "登录已失效",
-    );
-    await see(
-      page.getByRole("heading", { name: "回到你的 Mau" }),
-    ).toBeVisible();
-  },
-  30_000,
-);
-
 it.skipIf(!built).each(["server", "network", "rate-limit"])(
   "channel setup recovers from a temporary %s failure",
   async (failure) => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
+    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const { page, errors } = await browser(f);
     const job = {
       id: "retry-job",
       kind: "weixin",
@@ -276,7 +243,10 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
       });
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    await page
+    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "微信" })
       .getByRole("button")
       .click();
@@ -296,14 +266,8 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
 it.skipIf(!built)(
   "an unknown channel setup job stops polling and asks to restart",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
+    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const { page, errors } = await browser(f);
     const job = {
       id: "expired-job",
       kind: "weixin",
@@ -322,7 +286,10 @@ it.skipIf(!built)(
       });
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    await page
+    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "微信" })
       .getByRole("button")
       .click();
@@ -340,14 +307,8 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "recovers a failed Feishu app with its original ID and polls binding",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
+    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const { page, errors } = await browser(f);
     const failed = {
       id: "feishu-failed",
       kind: "feishu",
@@ -390,7 +351,10 @@ it.skipIf(!built)(
       }),
     );
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    await page
+    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "飞书" })
       .getByRole("button")
       .click();
@@ -418,168 +382,94 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "composes generic pages with Mau-owned messages and never calls a native kernel or Bridge",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
-    page.setDefaultTimeout(5000);
-    await page.screenshot({ path: "/tmp/mau-neutral-login.png" });
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
-    const requests: string[] = [];
-    const transactions: string[] = [];
-    const groupBodies: any[] = [];
-    let accepted = false;
-    page.on("request", (request) =>
-      requests.push(new URL(request.url()).pathname),
-    );
-    const cors = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "authorization, content-type",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    // The employee answers through a fixture Host behind Router; the browser only ever talks to Mau and Router.
+    const runs = new Map<string, Record<string, unknown>>();
+    const host = (url: URL, init?: RequestInit) => {
+      const method = init?.method ?? "GET", path = url.pathname;
+      if (path.endsWith("/runs") && method === "POST") {
+        const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
+        const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: "Reply received through account messaging" };
+        runs.set(id, run);
+        return Response.json(run);
+      }
+      if (path.endsWith("/events")) return Response.json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+      if (path.endsWith("/calls")) return Response.json({ calls: [] });
+      const run = /\/runs\/(run-\d+)$/.exec(path)?.[1];
+      if (run && runs.has(run)) return Response.json(runs.get(run));
+      return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
     };
-    await page.route(
-      "https://example.test/_matrix/client/v3/**",
-      async (route) => {
-        const request = route.request(),
-          url = new URL(request.url());
-        if (request.method() === "OPTIONS")
-          return route.fulfill({ status: 204, headers: cors });
-        if (url.pathname.endsWith("/createRoom")) {
-          expect(request.postDataJSON().invite).toEqual([f.agent.matrixId]);
-          if (request.postDataJSON().preset === "private_chat") {
-            groupBodies.push(request.postDataJSON());
-            return route.fulfill({ json: { room_id: "!group:example.test" }, headers: cors });
-          }
-          return route.fulfill({
-            json: { room_id: "!direct:example.test" },
-            headers: cors,
-          });
-        }
-        if (url.pathname.includes(encodeURIComponent("!group:example.test")) && url.pathname.includes("/send/")) {
-          groupBodies.push(request.postDataJSON());
-          return route.fulfill({ json: { event_id: "group-sent" }, headers: cors });
-        }
-        if (url.pathname.includes("/send/")) {
-          transactions.push(url.pathname.split("/").at(-1)!);
-          expect(request.postDataJSON()).toEqual({
-            msgtype: "m.text",
-            body: "hello from Mau",
-          });
-          if (transactions.length === 1)
-            return route.fulfill({
-              status: 503,
-              json: { errcode: "M_UNKNOWN" },
-              headers: cors,
-            });
-          accepted = true;
-          return route.fulfill({ json: { event_id: "sent" }, headers: cors });
-        }
-        if (url.pathname.endsWith("/sync"))
-          return route.fulfill({
-            headers: cors,
-            json: {
-              next_batch: "cursor",
-              rooms: {
-                join: accepted
-                  ? {
-                      "!direct:example.test": {
-                        state: {
-                          events: [
-                            {
-                              type: "m.room.member",
-                              state_key: f.agent.matrixId,
-                              content: { membership: "join" },
-                            },
-                            {
-                              type: "m.room.member",
-                              state_key: "@alice:example.test",
-                              content: { membership: "join" },
-                            },
-                          ],
-                        },
-                        timeline: {
-                          events: [
-                            {
-                              event_id: "sent",
-                              type: "m.room.message",
-                              sender: "@alice:example.test",
-                              origin_server_ts: 1,
-                              content: {
-                                msgtype: "m.text",
-                                body: "hello from Mau",
-                              },
-                            },
-                            {
-                              event_id: "reply",
-                              type: "m.room.message",
-                              sender: f.agent.matrixId,
-                              origin_server_ts: 2,
-                              content: {
-                                msgtype: "m.text",
-                                body: "Reply received through account messaging",
-                              },
-                            },
-                          ],
-                        },
-                      },
-                    }
-                  : {},
-              },
-            },
-          });
-        return route.fulfill({
-          status: 501,
-          json: { error: "unexpected_fixture_request" },
-          headers: cors,
-        });
-      },
-    );
+    const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, ledger);
+    expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+    expect((await f.settled()).state).toBe("ready");
+    const { page, matrix, errors } = await browser(f);
+    page.setDefaultTimeout(5000);
+    const requests: string[] = [];
+    const sends: any[] = [];
+    const groupBodies: any[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      requests.push(path);
+      if (request.method() === "POST" && path === "/_agent-router/v1/web/groups")
+        groupBodies.push(request.postDataJSON());
+    });
+    // Router's first answer to a send is lost; the message is sent again under the same idempotency key.
+    await page.route("**/_agent-router/v1/web/chats/*/messages", (route) => {
+      sends.push(route.request().postDataJSON());
+      return sends.length === 1
+        ? route.fulfill({ status: 503, json: { error: "request_failed" } })
+        : route.continue();
+    });
     await page.reload();
-    await page.getByRole("button", { name: "通讯录", exact: true }).click();
-    await see(agentRow(page, "helper")).toBeVisible();
+    const helper = agentChip(page, f.agent.id);
+    await see(helper).toHaveAttribute("title", "helper");
     await page.screenshot({ path: "/tmp/mau-neutral-agents.png" });
-    await page.getByRole("button", { name: "对话", exact: true }).click();
-    await page.getByRole("button", { name: "发起单聊", exact: true }).click();
-    await page.getByLabel("选择员工").selectOption(f.agent.id);
-    await page.getByRole("button", { name: "打开对话", exact: true }).click();
+    await helper.click();
     await page.getByPlaceholder("发送消息…").fill("hello from Mau");
     await page.getByRole("button", { name: "发送消息", exact: true }).click();
-    await see(
-      page.getByRole("button", { name: "放弃重试", exact: true }),
-    ).toBeVisible();
-    await see(page.getByPlaceholder("发送消息…")).toHaveValue("hello from Mau");
-    await page.getByRole("button", { name: "重试", exact: true }).click();
+    // The unsent message stays in the conversation with its state and can be given up.
+    const unsent = page.locator(".room-chat-message.from-user", { hasText: "hello from Mau" });
+    await see(unsent).toContainText("发送失败，正在重试…");
+    await see(unsent.getByRole("button", { name: "放弃", exact: true })).toBeVisible();
     await see(
       page
         .locator(".room-chat-stream")
-        .getByText("Reply received through account messaging"),
+        .getByText("Reply received through account messaging")
+        .first(),
     ).toBeVisible();
-    expect(transactions).toHaveLength(2);
-    expect(transactions[0]).toBe(transactions[1]);
+    expect(sends).toHaveLength(2);
+    expect(sends[0]).toMatchObject({ text: "hello from Mau" });
+    expect(sends[0].idempotencyKey).toEqual(expect.any(String));
+    expect(sends[1]).toEqual(sends[0]);
+    expect(runs.size).toBe(1);
+    await see(page.locator(".room-chat-message.from-user", { hasText: "hello from Mau" })).toHaveCount(1);
     await see(page.getByPlaceholder("发送消息…")).toHaveValue("");
     await page.screenshot({ path: "/tmp/mau-neutral-messages.png" });
-    // Groups use the restored OpenGrove dialog, are marked as groups and send intentional mentions.
-    await page.getByRole("button", { name: "新建", exact: true }).click();
-    await page.getByRole("menuitem", { name: "发起群聊" }).click();
-    const group = page.getByRole("dialog", { name: "创建群聊" });
+    // Groups are Router groups created with the OpenGrove dialog, and send intentional mentions.
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    await page
+      .getByRole("complementary", { name: "全部对话" })
+      .getByRole("button", { name: "新建群聊", exact: true })
+      .click();
+    const group = page.getByRole("dialog", { name: "新建群聊" });
     await group.getByRole("textbox").fill("发布组");
     await group.getByRole("checkbox").first().check();
     await group.getByRole("button", { name: "创建", exact: true }).click();
-    await see(page.getByRole("region", { name: "对话" }).getByText("发布组")).toBeVisible();
-    expect(groupBodies[0]).toMatchObject({ preset: "private_chat", name: "发布组",
-      initial_state: [{ type: "ai.mau.room", state_key: "", content: { kind: "group" } }] });
+    const current = page.locator(".mau-chip[aria-selected='true']");
+    await see(current).toHaveAttribute("title", "发布组");
+    expect(await current.getAttribute("data-chat-key")).toMatch(/^chat:/);
+    expect(groupBodies).toHaveLength(1);
+    expect(groupBodies[0]).toMatchObject({ title: "发布组", agentIds: [f.agent.id] });
     const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
     await composer.pressSequentially("@");
     await page.getByRole("option", { name: /helper/ }).click();
     await see(composer).toHaveValue("@helper ");
     await composer.pressSequentially("看一下");
     await page.getByRole("button", { name: "发送消息", exact: true }).click();
-    await see.poll(() => groupBodies.length).toBe(2);
-    expect(groupBodies[1]).toEqual({ msgtype: "m.text", body: "@helper 看一下", "m.mentions": { user_ids: [f.agent.matrixId] } });
+    await see.poll(() => sends.length).toBe(3);
+    expect(sends[2]).toMatchObject({ text: "@helper 看一下", mentions: { agentIds: [f.agent.id], all: false } });
     await page.screenshot({ path: "/tmp/mau-group-messages.png" });
+    // Messages are Mau's own (Router's ledger): nothing is sent to a Matrix homeserver.
+    expect(matrix).toEqual([]);
     expect(
       requests.some(
         (path) =>
@@ -601,14 +491,8 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "keeps appearance menus and original dialogs in the selected theme scope",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
+    const f = await edgeMauFixture(cleanup, { webRoot });
+    const { page, errors } = await browser(f);
     await page.reload();
     await page.getByRole("button", { name: "设置", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "设置" });
@@ -721,38 +605,23 @@ it.skipIf(!built)(
 );
 
 it.skipIf(!built)(
-  "keeps the unavailable Files entry accessible without inventing a workspace page",
+  "has no Files entry and requests no workspace while shared files are not offered",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
-    const { page, errors } = await browser(f.base);
+    const f = await edgeMauFixture(cleanup, { webRoot });
+    const { page, errors } = await browser(f);
     const workspaceRequests: string[] = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname.startsWith("/_mau/v1/workspaces"))
         workspaceRequests.push(request.url());
     });
-    await page.evaluate(() =>
-      localStorage.setItem(
-        "mau.session",
-        JSON.stringify({ token: "alice", owner: "@alice:example.test" }),
-      ),
-    );
     await page.reload();
-    const files = page.getByRole("button", { name: "文件", exact: true });
-    await files.focus();
-    await page.keyboard.press("Enter");
     await see(
-      page.getByText("Mau 尚未接入共享文件浏览服务。", { exact: true }),
+      page.getByRole("button", { name: "对话", exact: true }),
     ).toBeVisible();
     await see(
-      page.getByRole("button", { name: "重试", exact: true }),
-    ).toHaveCount(0);
-    await see(
-      page.getByRole("link", { name: "下载", exact: true }),
+      page.getByRole("button", { name: "文件", exact: true }),
     ).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
-    await see(
-      page.getByText("Mau 尚未接入共享文件浏览服务。", { exact: true }),
-    ).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -765,9 +634,8 @@ it.skipIf(!built)(
 );
 
 it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channels and connectors", async () => {
-  const f = await mauFixture(cleanup, {webRoot});
-  const {page, errors} = await browser(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token:"alice", owner:"@alice:example.test"})));
+  const f = await edgeMauFixture(cleanup, {webRoot});
+  const {page, errors} = await browser(f);
   await page.reload();
   // One 设置 entry replaces 连接器 / 扩展 / 设置 in the main navigation.
   for (const name of ["连接器", "扩展"]) await see(page.getByRole("button", {name, exact:true})).toHaveCount(0);
@@ -815,8 +683,8 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
 }, 90_000);
 
 it.skipIf(!built)("connects Gmail after consent, returns to its page, edits permissions and gates uncertain disconnects", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
-  const { page, errors } = await browser(f.base);
+  const f = await edgeMauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f);
   let state = "authorization_required", failed = false, legacy = true;
   const mutations: Array<[string, unknown]> = [];
   const operation = (id: string, labelZh: string, risk: string, setting: string, extra = {}) =>
@@ -846,7 +714,6 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
     state = action === "disconnect" ? "disconnected" : "connected";
     return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
   });
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
   await page.reload();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "设置" });
@@ -914,46 +781,80 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
   expect(errors).toEqual([]);
 }, 90_000);
 
-// Edge login needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2).
-const edgeRouter = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
-it.skipIf(!built || !edgeRouter)(
+it.skipIf(!built)(
   "edge login: no login form, the expiry banner reloads, and an unmapped account gets the no-access page",
   async () => {
-    const access = await accessIssuer(cleanup);
-    const f = await mauFixture(cleanup, { webRoot }, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) },
-      { ledgerRead: true }, { edgeIdentityCerts: access.certsUrl });
-    const instance = await chromium.launch({ headless: true });
-    cleanup.push(() => instance.close());
-    const open = async (email: string) => {
-      // Cloudflare adds the JWT to every request behind Access; the console itself sends no token.
-      const context = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
-        extraHTTPHeaders: { "cf-access-jwt-assertion": access.jwt({ email }) } });
-      const page = await context.newPage(), authorization: string[] = [];
-      page.on("request", (request) => { const value = request.headers()["authorization"]; if (value) authorization.push(value); });
-      await page.goto(f.base);
-      return { page, authorization };
-    };
-    const { page, authorization } = await open("alice@example.test");
+    const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true });
+    const { page, authorization } = await browser(f);
     await see(page.getByText("alice@example.test").first()).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
     // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
     await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
-    await page.getByRole("button", { name: "通讯录" }).click();
+    // Returning to the conversation page reads the employees again.
+    await page.getByRole("button", { name: "App 商店", exact: true }).click();
+    await page.getByRole("button", { name: "对话", exact: true }).click();
     await see(page.getByText("登录已过期")).toBeVisible();
     await page.unroute("**/_mau/v1/agents");
     await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
     await see(page.getByText("登录已过期")).toHaveCount(0);
     expect(authorization).toEqual([]);
-    const stranger = await open("stranger@example.test");
+    const stranger = await browser(f, { email: "stranger@example.test" });
     await see(stranger.page.getByText("此账号未开通 Mau（stranger@example.test）")).toBeVisible();
     await see(stranger.page.getByRole("button", { name: "切换账号" })).toBeVisible();
   },
   60_000,
 );
 
+it.skipIf(!built)(
+  "edge login: a request refused as unauthenticated (the Access JWT ran out) shows the expiry banner, never a sign-in page",
+  async () => {
+    const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true });
+    const { page, context, errors } = await browser(f);
+    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    // From now on the edge header carries an expired JWT: Router refuses the next API call itself.
+    const past = Math.floor(Date.now() / 1000) - 3600;
+    await context.setExtraHTTPHeaders(f.edgeHeaders({ iat: past - 600, exp: past }));
+    const refused = page.waitForResponse((response) => new URL(response.url()).pathname === "/_mau/v1/agents" && response.status() === 401);
+    await page.getByRole("button", { name: "App 商店", exact: true }).click();
+    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await refused;
+    await see(page.getByRole("alert").filter({ hasText: "登录已过期" })).toBeVisible();
+    await see(page.getByLabel("密码")).toHaveCount(0);
+    // "重新登录" reloads; with a renewed Access session the console is back without the banner.
+    await context.setExtraHTTPHeaders(f.edgeHeaders());
+    await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
+    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByText("登录已过期")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  },
+  60_000,
+);
+
+it.skipIf(!built)(
+  "a service without an edge identity has no web login: the access page says so and offers a retry",
+  async () => {
+    const f = await edgeMauFixture(cleanup, { webRoot });
+    const { page, context, matrix, errors } = await browser(f);
+    const plain = await context.newPage();
+    await plain.route("**/_mau/v1/info", (route) => route.fulfill({ json: { login: "matrix", homeserver: "https://example.test", matrix: true } }));
+    const requests: string[] = [];
+    plain.on("request", (request) => requests.push(new URL(request.url()).pathname));
+    await plain.goto(f.base);
+    const alert = plain.getByRole("alert");
+    await see(alert).toContainText("这个服务没有开启网页登录。请为它配置边缘身份（例如 Cloudflare Access）后再打开控制台。");
+    await see(alert.getByRole("button", { name: "重试", exact: true })).toBeVisible();
+    await see(plain.getByLabel("密码")).toHaveCount(0);
+    expect(requests.filter((path) => path.startsWith("/_mau/v1/") && path !== "/_mau/v1/info")).toEqual([]);
+    expect(matrix).toEqual([]);
+    await page.close();
+    expect(errors).toEqual([]);
+  },
+  30_000,
+);
+
 it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with a QR from the account, expiry and re-authorization", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
-  const { page, errors } = await browser(f.base);
+  const f = await edgeMauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f);
   let state: Record<string, unknown> = { state: "expired", reason: "refresh_token_expired" }, confirmed = false;
   const requests: Array<[string, unknown]> = [];
   const link = "https://accounts.feishu.cn/oauth/v1/device/verify?user_code=FIXTURE";
@@ -976,7 +877,6 @@ it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with 
     if (confirmed) state = { state: "connected", name: "Alice", account: { name: "Alice" } };
     return route.fulfill({ json: { verification: confirmed ? "provider" : "none", scopes: [], ...state } });
   });
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
   await page.reload();
   await page.evaluate(() => { location.hash = "#/settings/connectors"; });
   const settings = page.getByRole("dialog", { name: "设置" });

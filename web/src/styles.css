@@ -9,124 +9,16 @@ body {
   margin: 0;
 }
 
-.mau-shell {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100%;
-}
-
-.mau-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  border-bottom: 1px solid var(--c-line-06);
-  padding: var(--sp-3) var(--sp-6);
-}
-
-.mau-brand {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-
-.mau-brand strong,
-.mau-wordmark {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-}
-
-.mau-brand span,
 .mau-muted {
   color: var(--c-text-2);
   font-size: var(--fs-sm);
 }
 
-.mau-account {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-
-.mau-owner {
-  overflow: hidden;
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mau-main {
-  min-height: 0;
-  overflow: auto;
-}
-
-.mau-agents {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: var(--sp-6);
-  width: min(1120px, 100%);
-  margin: 0 auto;
-  padding: var(--sp-6);
-}
-
-.mau-agents[data-compact] {
-  grid-template-columns: minmax(0, 1fr);
-  padding: var(--sp-4);
-}
-
-.mau-list,
-.mau-detail,
 .mau-agent {
   display: grid;
   align-content: start;
   gap: var(--sp-4);
   min-width: 0;
-}
-
-.mau-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.mau-section-heading h2,
-.mau-agent-title h2 {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-}
-
-.mau-row-selected {
-  background: var(--c-surface-active);
-}
-
-.mau-placeholder {
-  padding: var(--sp-8) 0;
-  text-align: center;
-}
-
-.mau-agent-header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  min-width: 0;
-}
-
-.mau-agent-title {
-  display: grid;
-  gap: var(--sp-1);
-  min-width: 0;
-}
-
-.mau-agent-title span {
-  overflow: hidden;
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mau-actions {
@@ -153,54 +45,6 @@ body {
   color: var(--c-error);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
-}
-
-.mau-link {
-  border: 0;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--c-link);
-  font: inherit;
-  font-size: var(--fs-sm);
-}
-
-.mau-login {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  padding: var(--sp-6);
-}
-
-.mau-login-card {
-  display: grid;
-  gap: var(--sp-4);
-  width: min(380px, 100%);
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
-  padding: var(--sp-8) var(--sp-6);
-  box-shadow: var(--shadow-lg);
-}
-
-.mau-login-heading {
-  display: grid;
-  gap: var(--sp-2);
-}
-
-.mau-login-heading h1 {
-  font-size: var(--modal-title-font-size);
-  font-weight: var(--fw-bold);
-}
-
-.mau-login-heading p {
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-}
-
-.mau-login-links {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
 }
 
 .mau-dialog {
@@ -230,8 +74,7 @@ body {
   padding: 0;
 }
 
-.mau-field small,
-.mau-check small {
+.mau-field small {
   display: block;
   color: var(--c-text-2);
   font-weight: var(--fw-normal);
@@ -264,8 +107,7 @@ body {
   border-color: var(--c-error);
 }
 
-.mau-choice,
-.mau-check {
+.mau-choice {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
@@ -330,40 +172,20 @@ body {
   gap: var(--sp-3);
 }
 
-.mau-inline-panel {
-  display: grid;
-  justify-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-4);
-}
-
-@media (max-width: 640px) {
-  .mau-header {
-    padding: var(--sp-3) var(--sp-4);
-  }
-
-  .mau-brand span,
-  .mau-owner {
-    display: none;
-  }
-}
-
 /* Product content uses the shared page surfaces. */
 .mau-agent .mau-actions { margin-block:var(--sp-2); }
-.cloud-auth-switch { border:0; padding:0; color:var(--c-text-2); background:transparent; cursor:pointer; font-size:var(--fs-sm); }
 
 .mau-run { display: grid; gap: var(--sp-3); min-width: 0; }
-.mau-run-status { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); color: var(--c-text-2); font-size: var(--fs-sm); }
 .mau-run pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mau-interaction { display: grid; gap: var(--sp-2); }
-
 
 /* Settings modal pages (tokens and components come from @olorinm/agent-ui/app). */
 /* 连接器: search and 可用/已连接 share one row; they stack on narrow screens. */
 .mau-connectors-toolbar { display: flex; gap: 12px; align-items: center; }
 .mau-connectors-toolbar > :first-child { flex: 1 1 auto; min-width: 0; }
 .mau-connectors-toolbar > :last-child { flex: 0 0 auto; width: 220px; }
-@media (max-width: 640px) { .mau-connectors-toolbar { flex-direction: column; align-items: stretch; } .mau-connectors-toolbar > :last-child { width: auto; } }
+@media (max-width: 640px) { .mau-connectors-toolbar { flex-direction: column; align-items: stretch; } .mau-connectors-toolbar > :last-child { width: auto; }
+}
 .mau-settings-note { margin: 0; padding: 0 2px; color: var(--c-text-secondary); font-size: var(--fs-caption); line-height: 1.6; }
 .mau-settings-end { display: flex; justify-content: flex-end; padding: 0 2px; }
 .mau-settings-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 24px; color: var(--c-text-secondary); text-align: center; }
@@ -387,23 +209,6 @@ body {
 .mau-letter-mark { font: 700 19px Georgia, serif; }
 .agent-app-icon[data-size="card"] .mau-letter-mark { font-size: 24px; }
 .mau-app-mark > svg { width: 60%; height: 60%; }
-
-/* OpenGrove group avatars take their size from the surrounding list or header. */
-.mau-room-avatar {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 8px;
-}
-.mau-room-avatar.has-members {
-  --room-avatar-stack-item-size: 18px;
-  --room-avatar-stack-overlap: 6px;
-  width: auto;
-}
-header .mau-room-avatar {
-  width: 30px;
-  height: 30px;
-}
 
 /* Origin of an owner message merged into the web DM (Feishu, mail, Matrix …). */
 .mau-channel-badge {
@@ -502,3 +307,290 @@ header .mau-room-avatar {
   align-items: center;
 }
 .mau-status-extra::before { content: "·"; margin: 0 6px; }
+
+/* The selected navigation entry is a white tile on the grey page. */
+:root .af-scope nav [data-expanded="true"] [data-active="true"],
+:root .af-scope [data-expanded="true"] nav [data-active="true"] {
+  background: var(--c-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Chat: one column. The full list of conversations and the employee profile are cards laid beside it. */
+.mau-stage {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.mau-stage > .rooms-view {
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+}
+.mau-stage > .rooms-view[data-members-open="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+}
+.mau-stage .rooms-list-panel {
+  display: none;
+}
+/* Messages and the composer share one centred measure. */
+.mau-stage .room-chat-stream {
+  width: min(820px, calc(100% - 56px));
+}
+.mau-stage[data-read-only] .room-composer {
+  display: none;
+}
+.mau-read-only-note {
+  margin: 0;
+  padding: var(--space-label) 0 var(--space-section);
+  color: var(--c-text-secondary);
+  font-size: var(--fs-note);
+  text-align: center;
+}
+
+/* The header row of figures. */
+.room-header.mau-strip-header {
+  gap: var(--space-label);
+  min-height: 60px;
+  border-bottom-color: transparent;
+  padding: 8px 14px 8px 12px;
+}
+.mau-strip {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 44px;
+}
+.mau-chip {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 5px;
+  transition: background 0.2s, padding 0.25s;
+}
+.mau-chip:hover {
+  background: var(--c-fill);
+}
+.mau-chip[aria-selected="true"] {
+  background: var(--c-panel);
+  padding-right: 16px;
+}
+.mau-chip-avatar {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+}
+.mau-chip-avatar .mau-badge {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  box-shadow: 0 0 0 2px var(--c-surface);
+}
+.mau-chip-label {
+  display: grid;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  text-align: left;
+  white-space: nowrap;
+  transition: max-width 0.28s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.2s, margin 0.28s;
+}
+.mau-chip[aria-selected="true"] .mau-chip-label {
+  max-width: 240px;
+  margin-left: 9px;
+  opacity: 1;
+}
+.mau-chip-label strong {
+  font-size: var(--fs-emphasis);
+  font-weight: 600;
+  line-height: var(--lh-title);
+}
+.mau-chip-label small {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-title);
+}
+/* "+N": a grey pixel blob the size of a figure. */
+.mau-chip-rest {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  background: var(--c-panel-hover);
+  clip-path: polygon(20% 0, 80% 0, 80% 10%, 90% 10%, 90% 20%, 100% 20%, 100% 80%, 90% 80%, 90% 90%, 80% 90%, 80% 100%, 20% 100%, 20% 90%, 10% 90%, 10% 80%, 0 80%, 0 20%, 10% 20%, 10% 10%, 20% 10%);
+  color: var(--c-text-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  place-items: center;
+}
+.mau-badge {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--c-accent-solid);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 5px;
+  place-items: center;
+}
+.mau-header-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  place-items: center;
+}
+.mau-header-button:hover,
+.mau-header-button[aria-pressed="true"] {
+  background: var(--c-fill);
+  color: var(--c-text);
+}
+
+/* The full list: a small card on the page, as tall as its rows. */
+.mau-roster {
+  flex: none;
+  align-self: flex-start;
+  width: 244px;
+  max-height: calc(100% - var(--app-page-top-inset, 0px) - var(--app-page-bottom-inset, 0px));
+  margin: var(--app-page-top-inset, 0px) 0 0 var(--app-page-inline-inset, 0px);
+  overflow: auto;
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  padding: 8px 6px 10px;
+  animation: mau-roster-in 0.2s ease-out;
+}
+@keyframes mau-roster-in {
+  from { opacity: 0; transform: translateX(-10px); }
+}
+.mau-roster-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mau-roster-top > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.mau-roster-close,
+.mau-side-close,
+.mau-roster h3 button {
+  display: grid;
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  place-items: center;
+}
+.mau-roster-close,
+.mau-side-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 18px;
+}
+.mau-roster-close:hover,
+.mau-side-close:hover,
+.mau-roster h3 button:hover {
+  background: var(--c-fill);
+  color: var(--c-text);
+}
+.mau-roster h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 4px 2px 8px;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+.mau-roster h3 button {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 16px;
+}
+.mau-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--r-nav-item);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 5px 8px;
+  text-align: left;
+}
+.mau-roster-row:hover {
+  background: var(--c-fill);
+}
+.mau-roster-row[aria-current="true"] {
+  background: var(--c-panel);
+}
+.mau-roster-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-roster-row[aria-current="true"] .mau-roster-name {
+  font-weight: 600;
+}
+.mau-roster-meta {
+  flex: none;
+  color: var(--c-text-tertiary);
+  font-size: 11.5px;
+}
+.mau-roster-empty {
+  margin: 12px 8px;
+}
+
+/* The employee profile: a card to the right of the conversation. */
+.mau-side-card {
+  position: relative;
+  min-width: 0;
+  overflow: auto;
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+}
+.mau-side-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  background: var(--c-surface);
+}
+
+/* Narrow screens: the profile covers the conversation instead of sitting beside it. */
+@media (max-width: 900px) {
+  .mau-side-card {
+    position: fixed;
+    z-index: 30;
+    border-radius: 0;
+    inset: 0;
+  }
+}

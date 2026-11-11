@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../web/src/api/http";
 import { readFileSync } from "node:fs";
 import {
-  AttachmentDrafts, LedgerClient, attachmentKind, attachmentLimits, attachmentUrl, cardAnswerBody, chatSourcePreference, foldEvents, formatBytes, ledgerApi, ledgerFeatures,
+  AttachmentDrafts, LedgerClient, attachmentKind, attachmentLimits, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi, ledgerFeatures,
   type AnswerRequest, type AnswerResponse, type AttachmentRef, type Card, type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery,
   type LedgerCommands, type LedgerSocket, type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse, type UploadOptions,
 } from "../web/src/api/ledger";
@@ -393,12 +393,7 @@ it("folds edits, redactions, reactions, card updates, deliveries and turns into 
   expect(fold.turns.get("t1")).toMatchObject({ state: "completed", inputEventIds: ["ev_1"], seq: 2 });
 });
 
-it("keeps Matrix unless the browser opts in, and reads features from the boolean map only", () => {
-  const storage = (value: string | null) => ({ getItem: () => value });
-  expect(chatSourcePreference(storage(null))).toBe("matrix");
-  expect(chatSourcePreference(storage("matrix"))).toBe("matrix");
-  expect(chatSourcePreference(storage("ledger"))).toBe("ledger");
-  expect(chatSourcePreference({ getItem: () => { throw new Error("denied"); } })).toBe("matrix");
+it("reads features from the boolean map only", () => {
   const me = (features: unknown) => ({ person: { id: "p", name: "n" }, ownerId: "o", identities: [], limits: { features } }) as never;
   expect([...ledgerFeatures(me(["history", "send", "bogus"]))]).toEqual([]);
   expect([...ledgerFeatures(me({ history: true, send: false, cards: false, attachments: false, reset: false, groups: false, bogus: true }))]).toEqual(["history"]);

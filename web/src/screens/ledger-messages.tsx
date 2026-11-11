@@ -1,21 +1,16 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
   Conversation,
-  ItemList,
   ListDetailLayout,
   LoadingSurface,
   MessageFileCard,
-  PageHeader,
-  RoomGroupAvatar,
   RoomHeaderActions,
-  SearchField,
-  SidebarHeader,
   type ConversationComposer,
   type MessageView,
 } from "@olorinm/agent-frontend";
-import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState, TextButton } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState, PixelAvatarGroup, ProductIcon, TextButton } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
@@ -30,6 +25,9 @@ import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session }
 import { errorMessage, useI18n } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
+import { AgentDetail } from "./agent-detail";
+import { CreateAgentDialog } from "./create-agent";
+import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
 const channelNames: Record<string, [string, string]> = {
@@ -111,29 +109,19 @@ async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
 }
 
 /**
- * An inline image from its same-origin attachment URL. With an edge login (Cloudflare Access, no bearer token) the
- * browser sends the Access cookie itself, so the URL is the `<img src>`. A bearer session needs the header, so the
- * bytes are fetched and shown through an object URL. A click opens the shared image preview.
+ * An inline image from its same-origin attachment URL: the browser sends the Access cookie itself (edge login, no
+ * bearer token), so the URL is the `<img src>`. A click opens the shared image preview.
  */
-function LedgerImage({ api, attachment, onError, direct }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void; direct: boolean }) {
+function LedgerImage({ api, attachment, onError }: { api: LedgerApi; attachment: AttachmentRef; onError(error: unknown): void }) {
   const { language } = useI18n(), zh = language === "zh-CN";
-  const [src, setSrc] = useState<string | undefined>(() => direct ? attachmentUrl(attachment) : undefined);
+  const src = attachmentUrl(attachment);
   const [failed, setFailed] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-    if (direct) { setSrc(attachmentUrl(attachment)); return; }
-    const abort = new AbortController();
-    let made: string | undefined;
-    api.downloadAttachment(attachment, abort.signal).then((blob) => { made = URL.createObjectURL(blob); setSrc(made); })
-      .catch(() => { if (!abort.signal.aborted) setFailed(true); });
-    return () => { abort.abort(); if (made) URL.revokeObjectURL(made); setSrc(undefined); };
-  }, [api, attachment.attachmentId, direct]);
-  if (failed || !src) return <AttachmentChip api={api} attachment={attachment} onError={onError}
-    detail={failed ? (zh ? "图片无法显示" : "Image unavailable") : (zh ? "加载中…" : "Loading…")} />;
+  useEffect(() => { setFailed(false); }, [attachment.attachmentId]);
+  if (failed) return <AttachmentChip api={api} attachment={attachment} onError={onError} detail={zh ? "图片无法显示" : "Image unavailable"} />;
   return <>
     <button type="button" className="mau-attachment-image" title={attachment.name} onClick={() => setPreviewing(true)}>
-      <img src={src} alt={attachment.name} loading="lazy" {...(direct ? { onError: () => setFailed(true) } : {})} />
+      <img src={src} alt={attachment.name} loading="lazy" onError={() => setFailed(true)} />
     </button>
     {previewing ? <ImagePreview image={{ src, alt: attachment.name }} onClose={() => setPreviewing(false)} /> : null}
   </>;
@@ -158,28 +146,28 @@ function AttachmentChip({ api, attachment, onError, detail }: { api: LedgerApi; 
     onOpen={() => void saveAttachment(api, attachment).catch(onError)} />;
 }
 /** Message attachments: images inline, other files as download chips. */
-function LedgerAttachments({ api, attachments, onError, direct }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void; direct: boolean }) {
+function LedgerAttachments({ api, attachments, onError }: { api: LedgerApi; attachments: readonly AttachmentRef[]; onError(error: unknown): void }) {
   return <div className="mau-attachments">
     {attachments.map((ref) => attachmentKind(ref.contentType) === "image"
-      ? <LedgerImage key={ref.attachmentId} api={api} attachment={ref} onError={onError} direct={direct} />
+      ? <LedgerImage key={ref.attachmentId} api={api} attachment={ref} onError={onError} />
       : <AttachmentChip key={ref.attachmentId} api={api} attachment={ref} onError={onError} />)}
   </div>;
 }
 
 /**
  * Messages served by Router's owner ledger (agent-router ADR 0005). Each console feature follows the
- * server-advertised phase flags; without `send`, DMs still send through Matrix and return on the socket.
+ * server-advertised flags; without `send` the conversations are read-only.
  */
-export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits, matrix: matrixOn = true }: {
+export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits }: {
   session: Session; initialAgentId?: string | undefined; onStartHandled?(): void; features: ReadonlySet<LedgerFeature>;
-  /** Router has Matrix on (ADR 0005 19.3); off: Matrix history shows as disabled and nothing calls Matrix. */
-  matrix?: boolean | undefined;
   /** `GET /me` attachment limits (ADR 0005 16.5). */
   limits?: { bytes: number; perMessage: number } | undefined;
 }) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
-  const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: () => mauApi(session.token).agents() });
+  const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: () => mauApi(session.token).agents(),
+    // Provisioning and lifecycle changes are durable server operations; poll faster only while one runs.
+    refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000 : 10_000 });
   const api = useMemo(() => ledgerApi(session.token), [session.token]);
   const client = useMemo(() => new LedgerClient(api, { socket: (url) => new WebSocket(url) as unknown as LedgerSocket }), [api]);
   useSyncExternalStore(client.subscribe, client.getVersion);
@@ -196,10 +184,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const chats = useQuery({ queryKey: ["ledger-chats", session.token], queryFn: ({ signal }) => client.loadChats(signal), retry: false });
   const names = new Map(agents.data?.map(({ agent }) => [agent.id, agent.name]) ?? []);
 
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string>();
-  const [starting, setStarting] = useState(false);
-  const [target, setTarget] = useState("");
+  // The full list of conversations (a card beside the chat), the employee profile card and the new-employee dialog.
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [profile, setProfile] = useState<string>();
+  const [creating, setCreating] = useState(false);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   // Text kept across an Access re-login reload ("重新登录") is restored once.
@@ -212,7 +201,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     globalThis.addEventListener(beforeAccessReloadEvent, save);
     return () => globalThis.removeEventListener(beforeAccessReloadEvent, save);
   }, []);
-  const [outgoing, setOutgoing] = useState<{ chatId: string; text: string; transaction: string }>();
   const [withdrawing, setWithdrawing] = useState<{ chatId: string; eventId: string }>();
   // Phase 4 control: "新对话" asks to stop a running turn first; purge needs the chat's name typed.
   const [busyReset, setBusyReset] = useState<string>();
@@ -244,7 +232,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const open = (summary: ChatSummary) => { client.updateSummary(summary); setSelected(summary.chatId); };
   const start = useMutation({
     mutationFn: (agentId: string) => api.openDm(agentId),
-    onSuccess: (summary) => { onStartHandled?.(); setStarting(false); open(summary); },
+    onSuccess: (summary) => { onStartHandled?.(); open(summary); },
   });
   const requested = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -255,24 +243,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (!initialAgentId) requested.current = undefined;
   }, [initialAgentId, agents.data]);
 
-  // Phase 2: Router serves history, sending still goes through the Matrix DM room (same transaction id on retry).
-  const matrixSend = useMutation({
-    mutationFn: async (message: { chatId: string; text: string; transaction: string }) => {
-      const agentId = client.chats.get(message.chatId)?.agentIds[0];
-      if (!agentId) throw new ApiError("conversation_not_found", 404);
-      if (!matrixOn) throw new ApiError("matrix_disabled", 409);
-      // Only a Router without `send` (phase 2) needs Matrix here; the Matrix client loads on first use (19.3).
-      const { MauConversations } = await import("../api/conversations");
-      const matrix = new MauConversations(session, agents.data ?? []);
-      await matrix.send(await matrix.start(agentId), message.text, message.transaction);
-    },
-    onSuccess: (_, message) => {
-      setOutgoing(undefined);
-      setDrafts((values) => ({ ...values, [message.chatId]: values[message.chatId] === message.text ? "" : values[message.chatId] ?? "" }));
-    },
-  });
   const pendingSends = view?.pending ?? [];
-  useEffect(() => blockBuildReload(!!outgoing || pendingSends.length > 0 || Object.values(drafts).some((value) => !!value.trim())), [outgoing, pendingSends.length, drafts]);
+  useEffect(() => blockBuildReload(pendingSends.length > 0 || Object.values(drafts).some((value) => !!value.trim())), [pendingSends.length, drafts]);
 
   const [uploadError, setUploadError] = useState<unknown>();
 
@@ -288,7 +260,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   });
   const quiet = (failed: unknown) => failed instanceof ApiError && failed.code === "session_busy" ? null : failed;
   const connectionError = client.connection.state === "closed" && client.connection.error;
-  const error = agents.error ?? chats.error ?? start.error ?? matrixSend.error ?? uploadError ?? quiet(reset.error)
+  const error = agents.error ?? chats.error ?? start.error ?? uploadError ?? quiet(reset.error)
     ?? (connectionError ? new ApiError(connectionError, 401) : null) ?? (view?.error ? new ApiError(view.error, 0) : null);
   const failure = error ? (
     <p role="alert" className="mau-error">
@@ -297,30 +269,91 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     </p>
   ) : null;
 
-  const avatar = (chat: ChatSummary, size: number) => chat.kind === "group" ? (
-    <RoomGroupAvatar title={chat.title} className="mau-room-avatar"
-      members={chat.agentIds.map((id) => ({ id, name: names.get(id) ?? id, avatarSeed: id }))} />
-  ) : <EmployeeAvatar seed={chat.agentIds[0] ?? chat.chatId} fallbackName={chat.title} size={size} />;
   // Observed sessions are titled by their session key when they have no label. Feishu groups read as the channel;
   // an Agent's own work sessions ("work:…") are not conversations and stay out of the list.
-  const observedKey = (chat: ChatSummary) => chat.kind === "observed" ? /^obs:[^:]+:(.+)$/.exec(chat.chatId)?.[1] : undefined;
+  // Router titles an unlabeled session with its session key ("feishu:group:<chat>[:<thread>]", "work:<name>"); the chat id
+  // itself is opaque.
+  const observedKey = (chat: ChatSummary) => chat.kind !== "observed" ? undefined
+    : /^[a-z][a-z-]*:\S+$/.test(chat.title) ? chat.title : /^obs:[^:]+:(.+)$/.exec(chat.chatId)?.[1];
   const titleOf = (chat: ChatSummary) => {
     const key = observedKey(chat);
     if (!key || chat.title !== key && chat.title !== chat.chatId) return chat.title;
     const agent = names.get(chat.agentIds[0] ?? "");
-    const channel = /^feishu:group:/.test(key) ? (zh ? "飞书群聊" : "Feishu group") : /^feishu:/.test(key) ? (zh ? "飞书" : "Feishu")
-      : channelNames[key.split(":")[0]!]?.[zh ? 0 : 1] ?? (zh ? "其他渠道" : "Other channel");
-    return agent ? `${agent} · ${channel}` : channel;
+    const parts = key.split(":");
+    const channel = parts[0] === "feishu" && parts[1] === "group" ? (parts[3] ? (zh ? "飞书话题" : "Feishu thread") : (zh ? "飞书群聊" : "Feishu group"))
+      : parts[0] === "feishu" ? (zh ? "飞书" : "Feishu")
+      : channelNames[parts[0]!]?.[zh ? 0 : 1] ?? (zh ? "其他渠道" : "Other channel");
+    // Several sessions of one channel are told apart by the tail of their own id.
+    const tail = (parts[3] ?? parts[2] ?? parts[1] ?? "").slice(-4);
+    return `${agent ? `${agent} · ` : ""}${channel}${tail ? ` ${tail}` : ""}`;
   };
-  const visible = list.filter((chat) => !observedKey(chat)?.startsWith("work:") && titleOf(chat).toLowerCase().includes(search.toLowerCase()));
+
+  // Everyone the owner can talk to: each employee (with or without a chat yet), then groups and other channels' sessions.
+  type Entry = ChatEntry & { chat?: ChatSummary | undefined; agentId?: string | undefined };
+  const clock = (at: string | undefined) => {
+    if (!at) return undefined;
+    const date = new Date(at);
+    return date.toDateString() === new Date().toDateString() ? date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })
+      : date.toLocaleDateString(language, { month: "numeric", day: "numeric" });
+  };
+  const known = new Set((agents.data ?? []).map(({ agent }) => agent.id));
+  const dms = new Map(list.flatMap((chat) => chat.kind === "dm" && chat.agentIds[0] ? [[chat.agentIds[0], chat] as const] : []));
+  const unavailable = ["unconfigured", "paused", "deleting", "deleted", "needs_action"];
+  const agentEntries: Entry[] = (agents.data ?? []).map(({ agent, environment }) => {
+    const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured";
+    // The figure's eyes carry the state: aside while a reply runs, closed when the environment cannot take messages.
+    const figure = chat?.activeTurns ? "working" : unavailable.includes(state) ? "offline" : "idle";
+    return { key: "agent:" + agent.id, title: agent.name, status: chat?.activeTurns ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
+      preview: chat?.lastEvent?.preview, time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
+      avatar: (size) => <EmployeeAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
+  });
+  const chatEntry = (chat: ChatSummary): Entry => ({ key: "chat:" + chat.chatId, title: titleOf(chat), preview: chat.lastEvent?.preview,
+    time: clock(chat.lastEvent?.at), unread: chat.unread, chat,
+    ...(chat.kind === "group" ? { status: `${chat.agentIds.length + 1} ${zh ? "位成员" : "participants"}` }
+      : { agentId: chat.agentIds[0], status: zh ? "只读" : "Read-only" }),
+    avatar: (size) => chat.kind === "group" ? <PixelAvatarGroup seeds={chat.agentIds} size={size} />
+      : <EmployeeAvatar seed={chat.agentIds[0] ?? chat.chatId} fallbackName={chat.title} size={size} /> });
+  const groupEntries = list.filter((chat) => chat.kind === "group").map(chatEntry);
+  // Sessions on other channels (a Feishu group, a chat with an employee that no longer exists) can be read here.
+  const otherEntries = list.filter((chat) => chat.kind !== "group" && !(chat.kind === "dm" && known.has(chat.agentIds[0] ?? ""))
+    && !observedKey(chat)?.startsWith("work:")).map(chatEntry);
+  const latest = (entry: Entry) => entry.chat?.lastEvent?.at ?? "";
+  const allEntries = [...agentEntries, ...groupEntries, ...otherEntries].sort((a, b) => latest(b).localeCompare(latest(a)));
+  const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
+  const strip = useChatStrip(allEntries, currentKey);
+  // The profile card follows the conversation; it closes on one that has no single employee.
+  const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
+  useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
+  const profileSummary = profile ? agents.data?.find(({ agent }) => agent.id === profile) : undefined;
+  // The current conversation's figure slides between the header row and its row in the full list.
+  const moved = useRef<{ key: string | undefined; from: DOMRect | undefined }>(undefined);
+  const remember = (key: string | undefined) => { moved.current = { key, from: figureRect(key) }; };
+  useLayoutEffect(() => { const move = moved.current; moved.current = undefined; if (move) slideFigure(move.key, move.from); }, [rosterOpen, currentKey]);
+  useEffect(() => {
+    if (!rosterOpen) return;
+    const outside = (event: PointerEvent) => { if (!(event.target as Element).closest?.(".mau-roster, [role='dialog']")) { remember(currentKey); setRosterOpen(false); } };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [rosterOpen, currentKey]);
+  const pick = (entry: Entry) => {
+    // The current one again: its profile (a group: its members).
+    if (entry.key === currentKey && !rosterOpen) {
+      if (entry.chat?.kind === "group") setMembersOpen(true);
+      else if (entry.agentId && known.has(entry.agentId)) setProfile((open) => open === entry.agentId ? undefined : entry.agentId);
+      return;
+    }
+    remember(entry.key);
+    setRosterOpen(false);
+    if (entry.chat) setSelected(entry.chat.chatId);
+    else if (entry.agentId) start.mutate(entry.agentId);
+  };
 
   const insertPrompt = (value: string) => { if (selected) setDrafts((values) => ({ ...values, [selected]: value })); };
-  const actorAvatar = (bubble: LedgerBubble) => <EmployeeAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} />;
+  const actorAvatar = (bubble: LedgerBubble) => <EmployeeAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} animated={false} {...(bubble.sender.type === "person" ? { appearance: "illustrated" as const } : {})} />;
   // The DM merges the owner's messages from every channel; non-web origins carry a small badge.
   const badge = (bubble: LedgerBubble) => bubble.channel && bubble.channel.kind !== "web" && bubble.channel.kind !== "room" ? (
     <span className="mau-channel-badge" data-channel={bubble.channel.kind}>
-      {bubble.channel.label ?? (bubble.channel.kind === "matrix" && !matrixOn ? (zh ? "Matrix（已停用）" : "Matrix (disabled)")
-        : channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind)}
+      {bubble.channel.label ?? channelNames[bubble.channel.kind]?.[zh ? 0 : 1] ?? bubble.channel.kind}
     </span>
   ) : null;
   const describe = (bubble: LedgerBubble) => {
@@ -333,7 +366,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const reaction of bubble.reactions) parts.push(`${reaction.key} ${reaction.senders.length}`);
     return parts.join(" · ");
   };
-  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError} direct={!session.token} /> : undefined;
+  const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError} /> : undefined;
 
   const sendable = features.has("send");
   const cardsOn = sendable && features.has("cards"), controlOn = sendable && features.has("reset");
@@ -374,7 +407,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       const name = agentName(turn.agentId);
       return {
         id: "turn:" + turn.turnId, role: "assistant", title: name,
-        avatar: <EmployeeAvatar seed={turn.agentId} fallbackName={name} size={28} />,
+        avatar: <EmployeeAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
           fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} />,
@@ -429,7 +462,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const item of view.inflight) if (!fold.turns.has(item.turnId)) {
       const name = agentName(item.agentId);
       messages.push({ id: "inflight:" + item.turnId, role: "assistant", title: name, state: "streaming",
-        avatar: <EmployeeAvatar seed={item.agentId} fallbackName={name} size={28} />, content: <ChatMarkdown markdown={item.text} /> });
+        avatar: <EmployeeAvatar seed={item.agentId} fallbackName={name} size={28} animated={false} />, content: <ChatMarkdown markdown={item.text} /> });
     }
     for (const item of view.pending) messages.push({
       id: "pending:" + item.idempotencyKey, role: "user", title: session.owner, copyText: item.text,
@@ -452,7 +485,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   }
 
   const groupWritable = features.has("groups") && features.has("send");
-  const canSend = !!current && !current.readOnly && (current.kind === "dm" || (current.kind === "group" && groupWritable));
+  const canSend = sendable && !!current && !current.readOnly && (current.kind === "dm" || (current.kind === "group" && groupWritable));
   const insertMention = (chatId: string, name: string) => setDrafts((values) => {
     const draft = values[chatId] ?? "";
     const base = draft.endsWith("@") ? draft.slice(0, -1) : draft;
@@ -497,50 +530,61 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         .then(({ status }) => { if (status === "unsupported") asMessage(); }, asMessage);
       return;
     }
-    // Phase 3: Router stores the message (one key per intent, reused on retry); no Matrix room is touched.
-    if (sendable) {
-      const attachments = uploads.take(chatId);
-      setDrafts((values) => ({ ...values, [chatId]: "" }));
-      // Groups: the client resolves mentions (ADR 0005 17.1); the addressed state is shown under the message.
-      void client.send(chatId, { text, attachments, ...(current.kind === "group" ? { mentions: room.mentions(text) } : {}) })
-        .then(room.record, () => undefined);
-      return;
-    }
-    const message = { chatId: current.chatId, text, transaction: crypto.randomUUID() };
-    setOutgoing(message);
-    matrixSend.mutate(message);
+    // Router stores the message (one key per intent, reused on retry).
+    const attachments = uploads.take(chatId);
+    setDrafts((values) => ({ ...values, [chatId]: "" }));
+    // Groups: the client resolves mentions (ADR 0005 17.1); the addressed state is shown under the message.
+    void client.send(chatId, { text, attachments, ...(current.kind === "group" ? { mentions: room.mentions(text) } : {}) })
+      .then(room.record, () => undefined);
   };
 
-  const sidebar = (
-    <>
-      <SidebarHeader title={zh ? "对话" : "Conversations"} actions={[
-        { id: "conversation", label: zh ? "发起单聊" : "New chat", onSelect: () => setStarting(true) },
-        ...(groupWritable ? [{ id: "group", label: zh ? "新建群聊" : "New group", onSelect: () => setGrouping(true) }] : []),
-      ]} />
-      <SearchField value={search} onChange={setSearch} placeholder={zh ? "搜索对话" : "Search conversations"} />
-      {failure}
-      {!failure && chats.isPending ? <LoadingSurface label={t("common.loading")} /> : null}
-      <ItemList label={zh ? "对话" : "Conversations"} {...(selected ? { selectedId: selected } : {})} onSelect={setSelected}
-        items={visible.map((chat) => ({
-          id: chat.chatId, title: titleOf(chat), description: chat.lastEvent?.preview ?? "", leading: avatar(chat, 24),
-          ...(chat.unread ? { trailing: <span className="mau-badge">{chat.unread}</span> } : {}),
-        }))} />
-    </>
+  const sections: ChatSection[] = [
+    { id: "agents", title: zh ? "员工" : "Employees", entries: agentEntries,
+      action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } } },
+    { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
+      ...(groupWritable ? { action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } } : {}) },
+    { id: "others", title: zh ? "其他渠道" : "Other channels", entries: otherEntries },
+  ];
+  const header = (
+    <header className="room-header mau-strip-header">
+      <ChatStrip entries={strip} current={currentKey} rest={allEntries.length - strip.length} expanded={rosterOpen}
+        onPick={pick} onToggleAll={() => { remember(currentKey); setRosterOpen(true); }}
+        label={zh ? "对话" : "Conversations"} allLabel={zh ? "全部对话" : "All conversations"} />
+      {current ? <div className="room-header-actions">
+        {currentAgent && known.has(currentAgent) ? <button type="button" className="mau-header-button" aria-pressed={profile === currentAgent}
+          aria-label={zh ? "员工资料" : "Employee profile"} title={zh ? "员工资料" : "Employee profile"}
+          onClick={() => setProfile((open) => open === currentAgent ? undefined : currentAgent)}><ProductIcon name="identity" /></button> : null}
+        <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
+          messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
+          onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
+          {...(room.group && groupWritable ? {
+            onRename: (title: string) => void room.rename(title, (summary) => client.updateSummary(summary)).catch(setUploadError),
+            onOpenSettings: () => setMembersOpen(true),
+          } : {})} />
+      </div> : null}
+    </header>
   );
 
   return (
     <>
-      {!list.length ? (
-        <CollectionEmptyState label={zh ? "消息" : "Messages"} loading={!failure && chats.isPending} illustration="messages"
-          title={zh ? "还没有员工会话" : "No conversations yet"}
-          description={zh ? "创建员工后，它会出现在通讯录；打开私聊或群聊后，这里显示对话。" : "Agents appear in Contacts. Open a conversation to see messages here."}
-          actions={[{ label: zh ? "发起单聊" : "Start a chat", variant: "primary", onClick: () => setStarting(true) },
-            ...(groupWritable ? [{ label: zh ? "新建群聊" : "New group", onClick: () => setGrouping(true) }] : [])]}
+      {!allEntries.length ? (
+        <CollectionEmptyState label={zh ? "对话" : "Conversations"} loading={!failure && (chats.isPending || agents.isPending)} illustration="messages"
+          title={t("agents.empty")} description={t("agents.emptyDetail")}
+          actions={[{ label: t("agents.create"), variant: "primary", onClick: () => setCreating(true) }]}
           notice={failure} />
       ) : (
-        <ListDetailLayout list={sidebar} detailOpen={!!current} onBack={() => setSelected(undefined)} backLabel={zh ? "消息" : "Messages"}
-          empty={<EmptyState illustration="messages" title={zh ? "选择员工开始对话" : "Select an Agent to begin"} />}
-          detail={current && view ? (
+        <div className="mau-stage" data-roster-open={rosterOpen || undefined} data-read-only={current && !canSend ? "" : undefined}>
+          {rosterOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={() => { remember(currentKey); setRosterOpen(false); }}
+            label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
+            emptyLabel={zh ? "没有找到" : "Nothing found"} /> : null}
+          <ListDetailLayout list={null} detailOpen onBack={() => undefined}
+            {...(profileSummary ? { inspector: (
+              <aside className="mau-side-card" aria-label={zh ? "员工资料" : "Employee profile"}>
+                <button type="button" className="mau-side-close" aria-label={t("common.close")} title={t("common.close")} onClick={() => setProfile(undefined)}>×</button>
+                <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary} />
+              </aside>
+            ) } : {})}
+            detail={current && view ? (
             // Files dropped anywhere on the conversation are attached (the composer handles its button and paste).
             <div className="mau-dropzone" data-dragging={dragging || undefined}
               {...(attachable ? {
@@ -554,17 +598,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 },
               } : {})}>
             <Conversation conversationId={current.chatId}
-              header={<PageHeader avatar={avatar(current, 30)} title={titleOf(current)}
-                description={current.kind === "group" ? `${current.agentIds.length + 1} ${zh ? "位成员" : "participants"}` : undefined}
-                actions={<>
-                  <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
-                  messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
-                  onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
-                  {...(room.group && groupWritable ? {
-                    onRename: (title: string) => void room.rename(title, (summary) => client.updateSummary(summary)).catch(setUploadError),
-                    onOpenSettings: () => setMembersOpen(true),
-                  } : {})} />
-                </>} />}
+              header={header}
               notice={<>
                 {failure}
                 {dragging ? <p className="mau-muted" role="status">{zh ? "松开以添加附件" : "Drop to attach"}</p> : null}
@@ -579,18 +613,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 </p> : null}
                 {client.connection.state === "reconnecting" ? <p className="mau-muted">{zh ? "正在重新连接…" : "Reconnecting…"}</p> : null}
                 {view.hasOlder ? <Button onClick={() => void client.loadOlder(current.chatId).catch(setUploadError)}>{zh ? "加载更早的消息" : "Load earlier messages"}</Button> : null}
-                {matrixSend.isError && outgoing?.chatId === current.chatId ? <>
-                  <Button onClick={() => matrixSend.mutate(outgoing)}>{t("common.retry")}</Button>
-                  <Button onClick={() => { setOutgoing(undefined); matrixSend.reset(); }}>{zh ? "放弃重试" : "Dismiss retry"}</Button>
-                </> : null}
               </>}
               {...(!view.loaded ? { empty: <LoadingSurface label={t("common.loading")} /> } : {})}
               messages={messages}
-              {...(canSend && room.hint(drafts[current.chatId] ?? "") ? { trailing: <p role="status" className="mau-mention-hint">{room.hint(drafts[current.chatId] ?? "")}</p> } : {})}
+              {...(!canSend ? { trailing: <p className="mau-read-only-note">{zh ? "这个对话只能查看，不能在这里回复。" : "This conversation can be read here, not replied to."}</p> }
+                : room.hint(drafts[current.chatId] ?? "") ? { trailing: <p role="status" className="mau-mention-hint">{room.hint(drafts[current.chatId] ?? "")}</p> } : {})}
               composer={{
                 value: drafts[current.chatId] ?? "",
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),
-                disabled: !canSend || matrixSend.isPending || !!outgoing,
+                disabled: !canSend,
                 placeholder: !canSend ? (zh ? "此对话只读" : "This conversation is read-only")
                   : current.kind === "group" ? (zh ? "@员工 让他回答，@所有人 让大家都回答…" : "@an employee to ask them, @all to ask everyone…")
                   : (zh ? "发送消息…" : "Send a message…"),
@@ -600,7 +631,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 } : {}),
                 ...(current.kind === "group" && canSend ? { mentions: [
                   ...room.candidates.map(({ id, name }) => ({ id, label: name,
-                    avatar: <EmployeeAvatar seed={id} fallbackName={name} size={20} />,
+                    avatar: <EmployeeAvatar seed={id} fallbackName={name} size={20} animated={false} />,
                     onSelect: () => insertMention(current.chatId, name) })),
                   { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的员工都回答" : "Every employee in the group answers",
                     onSelect: () => insertMention(current.chatId, zh ? "所有人" : "all") },
@@ -610,26 +641,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 onSend,
               }} />
             </div>
-          ) : null} />
+          ) : (
+            <>
+              {header}
+              {failure}
+              {start.isPending || chats.isPending ? <LoadingSurface label={t("common.loading")} />
+                : <EmptyState illustration="messages" title={zh ? "选一个员工开始对话" : "Pick an employee to start"} />}
+            </>
+          )} />
+        </div>
       )}
-      {starting ? (
-        <Dialog open onOpenChange={setStarting}>
-          <DialogContent aria-describedby={undefined}>
-            <DialogTitle>{zh ? "发起单聊" : "New chat"}</DialogTitle>
-            <label className="mau-field">
-              <span>{zh ? "选择员工" : "Select an Agent"}</span>
-              <select value={target} onChange={(e) => setTarget(e.target.value)}>
-                <option value="">{zh ? "选择员工" : "Select an Agent"}</option>
-                {agents.data?.map(({ agent }) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-              </select>
-            </label>
-            {failure}
-            <div className="modal-actions">
-              <Button disabled={!target || start.isPending} onClick={() => start.mutate(target)}>{zh ? "打开对话" : "Open conversation"}</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      {creating ? <CreateAgentDialog session={session} onClose={() => setCreating(false)}
+        onCreated={(id) => { setCreating(false); void agents.refetch().then(() => start.mutate(id)); }} /> : null}
       {withdrawing ? (
         <Dialog open onOpenChange={(value) => { if (!value) setWithdrawing(undefined); }}>
           <DialogContent aria-describedby={undefined}>
@@ -660,9 +683,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <Dialog open onOpenChange={(value) => { if (!value) setPurging(undefined); }}>
           <DialogContent aria-describedby={undefined}>
             <DialogTitle>{zh ? "清空聊天记录？" : "Clear chat history?"}</DialogTitle>
-            <p>{zh ? "聊天记录将被永久删除；Agent 已经写入的记忆不会被删除。" : "The chat history is deleted permanently; memories the Agent already wrote are kept."}</p>
-            <p className="mau-muted">{zh ? "这会删除你在所有渠道（网页、飞书、邮件、Matrix）与它的对话记录，并开始新对话。无法撤销。"
-              : "This deletes your messages with it from every channel (web, Feishu, mail, Matrix) and starts a new chat. It cannot be undone."}</p>
+            <p>{zh ? "聊天记录将被永久删除；员工已经写入的记忆不会被删除。" : "The chat history is deleted permanently; memories the Agent already wrote are kept."}</p>
+            <p className="mau-muted">{zh ? "这会删除你在所有渠道（网页、飞书、邮件）与它的对话记录，并开始新对话。无法撤销。"
+              : "This deletes your messages with it from every channel (web, Feishu, mail) and starts a new chat. It cannot be undone."}</p>
             <label className="mau-field">
               <span>{zh ? `输入“${purging.title}”确认` : `Type “${purging.title}” to confirm`}</span>
               <input value={purging.typed} onChange={(event) => setPurging({ ...purging, typed: event.target.value })} autoComplete="off" />

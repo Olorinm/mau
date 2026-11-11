@@ -1,25 +1,19 @@
 import { useThemePreference } from "./theme";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, EmployeeAvatar, useToast } from "@olorinm/agent-ui/app";
+import { Button, EmployeeAvatar, EmployeeAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
+import { useAvatarAppearance } from "./avatar";
 import {
   bootSession,
-  clearSession,
   logout,
   reloadForAccess,
-  saveSession,
   type Boot,
   type Session,
 } from "./api/session";
 import { accessExpiredEvent } from "./api/http";
 import { errorMessage, useI18n } from "./i18n";
-import { AgentsScreen } from "./screens/agents";
 import { MessagesScreen } from "./screens/messages";
-import {
-  AppsScreen,
-  CreateAppScreen,
-  FilesScreen,
-} from "./screens/product-pages";
+import { AppsScreen, CreateAppScreen } from "./screens/product-pages";
 import { SettingsModal } from "./settings/settings-modal";
 import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/route";
 import {
@@ -32,12 +26,10 @@ import {
 } from "@olorinm/agent-frontend";
 import { ProductIcon } from "@olorinm/agent-ui/app";
 
-// The Matrix login form loads only for `login:"matrix"` (agent-router ADR 0005 19.3).
-const LoginScreen = lazy(() => import("./screens/login").then((module) => ({ default: module.LoginScreen })));
-
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const { t, language, setLanguage } = useI18n();
   const [theme] = useThemePreference();
+  const [avatarAppearance] = useAvatarAppearance();
   const { toast } = useToast();
   const queries = useQueryClient();
   const [boot, setBoot] = useState<Boot>();
@@ -49,13 +41,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     void bootSession().then((result) => {
       if (!active) return;
       setBoot(result);
-      if (result.mode === "matrix" || result.mode === "edge") setSession(result.session);
+      if (result.mode === "edge") setSession(result.session);
     });
     return () => { active = false; };
   }, []);
-  const [view, setView] = useState(() =>
-    new URLSearchParams(location.search).has("agent") ? "agents" : "messages",
-  );
+  const [view, setView] = useState("messages");
   const settingsRoute = useSettingsRoute();
   // Landing parameters (the OAuth callback's ?view=connectors&oauth=…) apply once: they reopen the settings page the
   // owner started from, and are removed so a reload does not repeat them.
@@ -72,35 +62,20 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
   }, [t, toast]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [conversationTarget, setConversationTarget] = useState<string>();
+  // `?agent=<id>` opens the conversation with that employee.
+  const [conversationTarget, setConversationTarget] = useState<string | undefined>(() => new URLSearchParams(location.search).get("agent") ?? undefined);
   const current = useRef(session);
   current.current = session;
   useEffect(() => {
-    const expired = () => { if (current.current?.edge) setAccessExpired(true); };
+    const expired = () => { if (current.current) setAccessExpired(true); };
     globalThis.addEventListener(accessExpiredEvent, expired);
     return () => globalThis.removeEventListener(accessExpiredEvent, expired);
   }, []);
-  useEffect(
-    () =>
-      onExpired(() => {
-        if (!current.current) return;
-        if (current.current.edge) { setAccessExpired(true); return; }
-        toast({
-          kind: "error",
-          title: errorMessage(t, "account_session_invalid"),
-        });
-        clearSession();
-        queries.clear();
-        setSession(null);
-      }),
-    [onExpired, queries, t, toast],
-  );
-  const signIn = (next: Session) => {
-    saveSession(next);
-    setSession(next);
-  };
-  const signOut = async () => {
-    if (session) await logout(session);
+  // A 401 means the Access session ended: there is no sign-in page to return to, the banner offers the re-login.
+  useEffect(() => onExpired(() => { if (current.current) setAccessExpired(true); }), [onExpired]);
+  const signOut = () => {
+    if (!session) return;
+    logout(session);
     queries.clear();
     setSession(null);
   };
@@ -119,10 +94,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           : <Button variant="primary" onClick={() => location.reload()}>{t("common.retry")}</Button>}
       </main>
     );
-  if (!session)
-    return boot.mode === "matrix" ? (
-      <Suspense fallback={null}><LoginScreen onSignedIn={signIn} onToggleLanguage={toggleLanguage} /></Suspense>
-    ) : null;
+  if (!session) return null;
   const zh = language === "zh-CN";
   const labels: Partial<Record<FrontendLabelKey, string>> = {
     navigation: "主导航",
@@ -154,16 +126,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           id: "messages",
           label: zh ? "对话" : "Conversations",
           icon: <ProductIcon name="rooms" />,
-        },
-        {
-          id: "agents",
-          label: zh ? "通讯录" : "Contacts",
-          icon: <ProductIcon name="contacts" />,
-        },
-        {
-          id: "files",
-          label: zh ? "文件" : "Files",
-          icon: <ProductIcon name="archive" />,
         },
       ],
     },
@@ -208,6 +170,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         zh ? (labels[key] ?? frontendLabels[key]) : frontendLabels[key]
       }
     >
+      <EmployeeAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
         brand={t("app.name")}
         logo={<SaplingPlaceholder />}
@@ -221,12 +184,13 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
                 : setView(id)
             }
             account={{
-              name: session.edge?.email ?? session.owner,
+              name: session.edge.email ?? session.owner,
               avatar: (
                 <EmployeeAvatar
                   seed={session.owner}
                   fallbackName={session.owner}
                   size={28}
+                  appearance="illustrated"
                 />
               ),
               label: zh ? "账号" : "Account",
@@ -239,7 +203,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
                 {
                   id: "logout",
                   label: t("account.logout"),
-                  onSelect: () => void signOut(),
+                  onSelect: signOut,
                 },
               ],
             }}
@@ -252,26 +216,16 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             <Button variant="primary" onClick={reloadForAccess}>{t("access.relogin")}</Button>
           </div>
         ) : null}
-        {view === "agents" ? (
-          <AgentsScreen
-            session={session}
-            onMessages={(id) => {
-              setConversationTarget(id);
-              setView("messages");
-            }}
-          />
-        ) : view === "messages" ? (
+        {view === "messages" ? (
           <MessagesScreen
             session={session}
             initialAgentId={conversationTarget}
             onStartHandled={() => setConversationTarget(undefined)}
           />
-        ) : view === "files" ? (
-          <FilesScreen />
         ) : (
           <AppsScreen />
         )}
-        {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={() => void signOut()} /> : null}
+        {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={signOut} /> : null}
         <CreateAppScreen
           open={createOpen}
           onCancel={() => setCreateOpen(false)}
@@ -281,6 +235,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           }}
         />
       </AppShell>
+      </EmployeeAvatarAppearanceProvider>
     </FrontendProvider>
   );
 }

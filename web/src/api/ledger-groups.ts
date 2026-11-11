@@ -100,7 +100,7 @@ const stateNames: Record<AddressedState, [string, string]> = {
   queued: ["已通知", "notified"], delivered: ["已送达", "delivered"], failed: ["未能送达", "not delivered"],
   control: ["已处理", "handled"], not_addressed: ["未 @", "not mentioned"],
 };
-export const noMentionHint = (zh: boolean) => zh ? "未 @ 任何 Agent，消息只记录" : "No Agent mentioned; the message is only recorded";
+export const noMentionHint = (zh: boolean) => zh ? "未 @ 任何员工，消息只记录" : "No Agent mentioned; the message is only recorded";
 
 /**
  * One line such as "已通知：研究助理、写作助理". The send response is authoritative while it is known;

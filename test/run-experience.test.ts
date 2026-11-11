@@ -1,11 +1,76 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { chromium, expect as see } from "@playwright/test";
-import { mauFixture, alice } from "./fixtures/mau.js";
+import { chromium, expect as see, type Page, type WebSocketRoute } from "@playwright/test";
+import { edgeMauFixture } from "./fixtures/edge.js";
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.unstubAllGlobals(); });
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
+
+const web = "/_agent-router/v1/web";
+type FakeTurn = { state: string; runs: Array<{ claimId: string; runId: string | null; phase: string }> };
+/**
+ * Router's owner ledger (agent-router ADR 0005 section 8) for one DM, answered by Playwright: the chat's history and
+ * its turns are scripted by the test, while the runs behind them are read through Router's run routes as usual.
+ * The employee list still comes from the real Mau fixture.
+ */
+async function fakeLedger(page: Page, agentId: string, turnOf: (turnId: string) => FakeTurn | Promise<FakeTurn>) {
+  const chatId = "dm:" + agentId, events: any[] = [];
+  const owner = { type: "person", id: "prs_owner", name: "Alice" }, agent = { type: "agent", id: agentId, name: "helper" };
+  let socket: WebSocketRoute | undefined;
+  const append = (body: Record<string, unknown>, sender: unknown) => {
+    const event = { chatId, seq: events.length + 1, generation: 1, eventId: "ev_" + (events.length + 1), at: new Date().toISOString(), sender, ...body };
+    events.push(event);
+    socket?.send(JSON.stringify({ type: "event", event: "chat.event", data: event }));
+    return event;
+  };
+  const summary = () => ({ chatId, kind: "dm", title: "helper", agentIds: [agentId], readOnly: false, lastSeq: events.length, generation: 1,
+    readSeq: events.length, unread: 0, lastEvent: null, activeTurns: 0, pendingCards: 0, updatedAt: new Date().toISOString() });
+  await page.route(`**${web}/**`, async (route) => {
+    const request = route.request(), path = decodeURIComponent(new URL(request.url()).pathname.slice(web.length));
+    const json = (value: unknown, status = 200) => route.fulfill({ status, json: value });
+    if (path === "/me") return json({ person: owner, ownerId: "owner", identities: [], limits: { features: { history: true, send: true } } });
+    if (path === "/socket-tickets") return json({ ticket: "t1", expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    if (path === "/chats") return json({ data: [summary()], next: null });
+    if (path === "/chats/dm" || path === "/chats/" + chatId) return json(summary());
+    if (path === "/chats/" + chatId + "/events")
+      return json({ chatId, generation: 1, lastSeq: events.length, mode: "page", events, olderCursor: null, newerCursor: null, inflight: [] });
+    if (path.startsWith("/chats/" + chatId + "/turns/")) {
+      const turnId = path.split("/").at(-1)!;
+      const input = events.find((event) => event.kind === "turn" && event.turnId === turnId);
+      return json({ turnId, chatId, agentId, admission: "owner", inputEventIds: input?.inputEventIds ?? [], finalEventId: null, cardIds: [], ...await turnOf(turnId) });
+    }
+    if (path.endsWith("/read")) return json({ readSeq: request.postDataJSON().seq, unread: 0 });
+    return json({ error: "unexpected_fixture_request" }, 501);
+  });
+  await page.routeWebSocket(/\/_agent-router\/v1\/web\/socket/, (ws) => {
+    socket = ws;
+    ws.onMessage((raw) => {
+      if (raw === "ping") return ws.send("pong");
+      const request = JSON.parse(String(raw));
+      ws.send(JSON.stringify({ type: "res", id: request.id, ok: true, result: { chats: (request.params.chats ?? []).map((chat: any) => ({ ...chat, mode: "live", lastSeq: events.length, generation: 1 })), errors: [] } }));
+    });
+    ws.send(JSON.stringify({ type: "event", event: "hello", data: { socketId: "so_1", epoch: "ep_1", heartbeatMs: 30_000, limits: {} } }));
+  });
+  return {
+    chatId,
+    /** The owner's message and the turn it started. */
+    ask(turnId: string, text: string, state: string) {
+      const question = append({ kind: "message", role: "user", text, channel: { kind: "web" } }, owner);
+      append({ kind: "turn", turnId, agentId, state, inputEventIds: [question.eventId] }, { type: "system", id: "router", name: "Router" });
+    },
+    /** A reply of the employee: inside a turn, or on its own (`turnId` undefined). */
+    reply(turnId: string | undefined, text: string, final = true) {
+      append({ kind: "message", role: "assistant", text, ...(turnId ? { turnId, ...(final ? { final: true } : {}) } : {}) }, agent);
+    },
+    /** A turn's state change. */
+    turn(turnId: string, state: string) {
+      append({ kind: "turn", turnId, agentId, state, inputEventIds: [] }, { type: "system", id: "router", name: "Router" });
+    },
+  };
+}
+/** The console opens from the Access session (the page's context carries the edge header); there is no sign-in step. */
+const signIn = async (page: Page, base: string) => { await page.goto(base); };
 
 it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed text, restores approvals on refresh, submits native decisions once, answers questions, stops and retains expanded detail through final reply delivery", async () => {
   type Event = { sequence: number; event: Record<string, unknown> };
@@ -15,7 +80,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   const events: Event[] = [], calls: Call[] = [], decisions: unknown[] = [];
   let starts = 0;
   const emit = (event: Record<string, unknown>) => events.push({ sequence: events.length + 1, event: { runId: run!.id, ...event } });
-  const f = await mauFixture(cleanup, { webRoot, hostCapabilities: { runIdempotency: true }, host: (url, init) => {
+  const f = await edgeMauFixture(cleanup, { webRoot, hostCapabilities: { runIdempotency: true }, host: (url, init) => {
     const method = init?.method ?? "GET", path = url.pathname;
     if (path.endsWith("/runs") && method === "POST") {
       const input = JSON.parse(String(init?.body)); expect(input.requestKey).toEqual(expect.any(String));
@@ -45,35 +110,15 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
     if (path.endsWith("/cancel")) { run!.status = "cancelled"; return Response.json({ cancellationRequested: true }); }
     if (/\/runs\/run-\d+$/.test(path)) return Response.json(run);
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
-  } });
+  } }, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
-  const runtime = await f.service.runtime(f.agent.id), room = "!run:example.test";
-  const members = [alice, f.agent.matrixId].map((id) => ({ type: "m.room.member", state_key: id, content: { membership: "join" } }));
-  runtime.connector.store.set("rooms", room, { members: [alice, f.agent.matrixId], encrypted: false });
-  const timeline: Array<Record<string, unknown>> = [];
-  const event = (sender: string, content: unknown) => ({ event_id: "$" + (timeline.length + 1), sender, type: "m.room.message", content, origin_server_ts: Date.now() + 1 });
-  runtime.connector.transport.state = async () => members;
-  runtime.connector.transport.send = async (_room, _type, content) => { const item = event(f.agent.matrixId, content); timeline.push(item); return item.event_id; };
   const instance = await chromium.launch({ headless: true }); cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: "reduce" });
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: "reduce", extraHTTPHeaders: f.edgeHeaders() });
   page.setDefaultTimeout(8000);
   const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
-  await page.route("https://example.test/_matrix/client/v3/**", async (route) => {
-    const url = new URL(route.request().url()), headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS" };
-    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers });
-    if (url.pathname.endsWith("/sync")) {
-      await new Promise((r) => setTimeout(r, 50));
-      return route.fulfill({ headers, json: { next_batch: String(timeline.length), rooms: { join: { [room]: { state: { events: members }, timeline: { events: timeline.slice(Number(url.searchParams.get("since") ?? 0)) } } } } } });
-    }
-    if (url.pathname.includes("/send/")) {
-      const item = event(alice, route.request().postDataJSON()); timeline.push(item);
-      runtime.connector.ingest(room, item);
-      return route.fulfill({ headers, json: { event_id: item.event_id } });
-    }
-    return route.fulfill({ headers, json: {} });
-  });
-  await page.goto(f.base); await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" })));
-  await page.reload();
+  await signIn(page, f.base);
+  // The employee is in the header row before any chat exists; a click opens the DM.
+  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…"); await see(composer).toBeVisible();
   await composer.fill("测试执行过程"); await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.locator(".mau-run")).toContainText("第一段", { timeout: 12000 });
@@ -109,13 +154,16 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   await see(detailToggle).toBeVisible();
   await detailToggle.click();
   await see(page.locator(".mau-run")).toContainText("/workspace");
-  await page.getByRole("button", { name: "停止", exact: true }).click();
+  // In a DM the conversation's send button stops the running reply; the run surface has no stop of its own.
+  await see(page.locator(".mau-run").getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "停止运行", exact: true }).click();
   await see(page.locator(".mau-run")).toHaveAttribute("aria-label", "已取消", { timeout: 8000 });
   await see(detailToggle).toHaveAttribute("aria-expanded", "true");
   await see(page.locator(".mau-run")).toContainText("/workspace");
   await page.reload();
   await see(page.locator(".mau-run")).toHaveAttribute("aria-label", "已取消");
-  await see(page.getByText("Cancellation requested; waiting for the worker to stop and acknowledge.", { exact: true })).toBeHidden();
+  // Router's "Cancellation requested…" line is a durable notice of the ledger and stays in the history as a system
+  // line (the Matrix console hid that interim message), so its absence is not asserted here.
   expect(starts).toBe(1);
   await composer.fill("自然完成验收"); await page.getByRole("button", {name:"发送消息",exact:true}).click();
   await see(page.locator(".mau-run")).toHaveCount(2);
@@ -134,32 +182,19 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
 }, 60000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while a sleeping Host is unavailable, without polling or flashing loading states", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  const room = "!history:example.test";
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
   let reads = 0;
-  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
-    id: "old-task", conversationId: "old-conversation", status: "completed", cancelRequested: false,
-    receivedAt: "2026-10-21T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
-    runs: [{claimId: "old-claim", runId: "old-run", phase: "finished"}], replyMessageIds: ["$reply"], interactionMessageIds: [],
-  }], next: null } }));
+  const ledger = await fakeLedger(page, f.agent.id, () => ({ state: "completed", runs: [{claimId: "old-claim", runId: "old-run", phase: "finished"}] }));
+  ledger.ask("old-turn", "历史问题", "running");
+  ledger.reply("old-turn", "已经交付的历史回复");
+  ledger.turn("old-turn", "completed");
   await page.route("**/communication/runs/**", route => { reads++; return route.fulfill({status: 409, json: {error: "environment_not_ready"}}); });
-  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
-    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
-  }, json: { next_batch: "1", rooms: { join: { [room]: {
-    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
-    timeline: { events: [
-      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "历史问题"}},
-      {event_id: "$reply", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "已经交付的历史回复"}},
-    ]},
-  } } } } }));
-  await page.goto(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
-  await page.reload();
+  await signIn(page, f.base);
   const surface = page.locator(".mau-run");
   await see(surface).toContainText("已经交付的历史回复");
   await see(surface).toHaveAttribute("aria-label", "已完成");
@@ -183,64 +218,57 @@ it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while 
 }, 20000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("shows a reply streamed during a running task once, and keeps later unrelated replies", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  const room = "!stream:example.test";
-  let status = "running", replies: string[] = [];
-  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
-    id: "live-task", conversationId: "c", status, cancelRequested: false,
-    receivedAt: "2026-10-30T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
-    runs: [{claimId: "live-claim", runId: "live-run", phase: status === "running" ? "running" : "finished"}], replyMessageIds: replies, interactionMessageIds: [],
-  }], next: null } }));
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
+  let status = "running";
+  const ledger = await fakeLedger(page, f.agent.id, () => ({ state: status, runs: [{claimId: "live-claim", runId: "live-run", phase: status === "running" ? "running" : "finished"}] }));
+  ledger.ask("live-turn", "流式问题", "running");
+  // The reply is stored while its turn still runs.
+  ledger.reply("live-turn", "流式回复的第一段", false);
   await page.route("**/communication/runs/**", route => route.fulfill({status: 409, json: {error: "environment_not_ready"}}));
-  const reply = (id: string, body: string) => ({event_id: id, sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2,
-    content: {msgtype: "m.text", body, "m.relates_to": {"m.in_reply_to": {event_id: "$question"}}}});
-  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
-    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
-  }, json: { next_batch: "1", rooms: { join: { [room]: {
-    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
-    timeline: { events: [
-      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "流式问题"}},
-      reply("$streamed", "流式回复的第一段"),
-      ...(status === "running" ? [] : [reply("$relay", "子 Agent 稍后的汇报")]),
-    ]},
-  } } } } }));
-  await page.goto(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
-  await page.reload();
+  await signIn(page, f.base);
   const stream = page.locator(".room-chat-stream");
   await see(page.locator(".mau-run")).toContainText("流式回复的第一段");
   await page.waitForTimeout(3500);
   await see(stream.getByText("流式回复的第一段", {exact: true})).toHaveCount(1);
-  // Once finished, Router lists the streamed reply; a later reply to the same message stays visible.
-  status = "completed"; replies = ["$streamed"];
+  // Once finished, the streamed reply belongs to the turn; a later reply outside the turn stays visible.
+  status = "completed";
+  ledger.turn("live-turn", "completed");
+  ledger.reply(undefined, "子 Agent 稍后的汇报");
   await page.reload();
   await see(stream.getByText("子 Agent 稍后的汇报", {exact: true})).toHaveCount(1);
   await see(stream.getByText("流式回复的第一段", {exact: true})).toHaveCount(1);
+  await see(page.locator(".mau-run")).toContainText("流式回复的第一段");
+  await see(page.locator(".mau-run")).not.toContainText("子 Agent 稍后的汇报");
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no plain-message flash, no loading state, all pages before display, no re-read on return", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  const room = "!paged:example.test", runId = "paged-run";
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
+  const runId = "paged-run";
   let reads = 0;
   // Record anything a user would see flash by while the conversation assembles.
   await page.addInitScript(() => {
-    const seen = { plainReply: false, loading: false, summaries: [] as string[] };
+    // The ledger console shows the delivered reply as text until its turn is read and then inside the run surface
+    // (the Matrix console withheld it until then), so "never outside a run surface" is not asserted; the reply must
+    // never be on screen twice.
+    const seen = { doubled: false, loading: false, summaries: [] as string[] };
     (window as unknown as { seen: typeof seen }).seen = seen;
     new MutationObserver(() => {
+      let shown = 0;
       for (const element of document.querySelectorAll(".room-chat-stream *")) {
         if (element.children.length || !element.textContent?.includes("分页的历史回复")) continue;
-        if (!element.closest(".mau-run")) seen.plainReply = true;
+        shown++;
       }
+      if (shown > 1) seen.doubled = true;
       for (const run of document.querySelectorAll(".mau-run")) {
         if (run.textContent?.includes("正在读取执行过程")) seen.loading = true;
         const summary = run.querySelector(".og-disclosure--room-run > .og-disclosure-row")?.textContent ?? "";
@@ -248,11 +276,11 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
       }
     }).observe(document, { subtree: true, childList: true, characterData: true });
   });
-  await page.route("**/communication/tasks?*", async route => { await new Promise(r => setTimeout(r, 800)); return route.fulfill({ json: { data: [{
-    id: "paged-task", conversationId: "paged-conversation", status: "completed", cancelRequested: false,
-    receivedAt: "2026-11-04T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
-    runs: [{claimId: "paged-claim", runId, phase: "finished"}], replyMessageIds: ["$reply"], interactionMessageIds: [],
-  }], next: null } }); });
+  const ledger = await fakeLedger(page, f.agent.id, async () => { await new Promise(r => setTimeout(r, 800));
+    return { state: "completed", runs: [{claimId: "paged-claim", runId, phase: "finished"}] }; });
+  ledger.ask("paged-turn", "分页问题", "running");
+  ledger.reply("paged-turn", "分页的历史回复");
+  ledger.turn("paged-turn", "completed");
   const tool = (callId: string, command: string, output: string) => ({ runId, type: "native.tool", callId, phase: "finished",
     native: { type: "commandExecution", command, aggregatedOutput: output, exitCode: 0 } });
   await page.route("**/communication/runs/**", async route => {
@@ -265,27 +293,17 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
     await new Promise(r => setTimeout(r, 600));
     return route.fulfill({ json: { events: [{ sequence: 2, event: tool("two", "echo 第二页", "第二页") }], cursor: 2, hasMore: false, historyTruncated: false } });
   });
-  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
-    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
-  }, json: { next_batch: "1", rooms: { join: { [room]: {
-    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
-    timeline: { events: [
-      {event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "分页问题"}},
-      {event_id: "$reply", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "分页的历史回复"}},
-    ]},
-  } } } } }));
-  await page.goto(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
-  await page.reload();
+  await signIn(page, f.base);
   const surface = page.locator(".mau-run");
   await see(surface).toContainText("分页的历史回复");
   await see(surface).toHaveAttribute("aria-label", "已完成");
   await see.poll(() => reads).toBe(3);
   await see(surface).toContainText("已运行 2 条命令");
   // The collapsed process row only ever reads as a placeholder or the complete summary.
-  expect(await page.evaluate(() => (window as unknown as { seen: unknown }).seen)).toEqual({ plainReply: false, loading: false, summaries: ["执行过程", "已运行 2 条命令"] });
+  expect(await page.evaluate(() => (window as unknown as { seen: unknown }).seen)).toEqual({ doubled: false, loading: false, summaries: ["执行过程", "已运行 2 条命令"] });
   // Leaving and returning reuses the finished run instead of reading it again.
-  await page.getByRole("button", { name: "通讯录", exact: true }).click();
+  await page.getByRole("button", { name: "App 商店", exact: true }).click();
+  await see(surface).toHaveCount(0);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   await see(surface).toContainText("分页的历史回复");
   await page.waitForTimeout(1500);
@@ -293,17 +311,18 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not shortened values, and shows reasoning from completed items", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  const room = "!limits:example.test";
-  const task = (id: string, messageId: string, reply: string) => ({ id, conversationId: "limits", status: "completed", cancelRequested: false,
-    receivedAt: "2026-11-05T00:00:00Z", source: {connectionId: "matrix", target: room, messageId, sender: alice, scope: "direct"},
-    runs: [{claimId: id + "-claim", runId: id + "-run", phase: "finished"}], replyMessageIds: [reply], interactionMessageIds: []});
-  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [task("clipped", "$q1", "$r1"), task("lost", "$q2", "$r2")], next: null } }));
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
+  const ledger = await fakeLedger(page, f.agent.id, (turnId) => ({ state: "completed", runs: [{claimId: turnId + "-claim", runId: turnId + "-run", phase: "finished"}] }));
+  for (const [turnId, question, reply] of [["clipped", "问题一", "截断的回复"], ["lost", "问题二", "丢失的回复"]] as const) {
+    ledger.ask(turnId, question, "running");
+    ledger.reply(turnId, reply);
+    ledger.turn(turnId, "completed");
+  }
   await page.route("**/communication/runs/**", route => {
     const url = new URL(route.request().url()), claim = decodeURIComponent(url.pathname.split("/runs/")[1]!.split("/")[0]!), runId = claim.replace("-claim", "-run");
     if (!url.pathname.endsWith("/events")) return route.fulfill({ json: { claimId: claim, runId,
@@ -312,20 +331,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not sho
     return route.fulfill({ json: { events: [{ sequence: 1, event: reasoning }], cursor: 1, hasMore: false, liveGap: false,
       historyTruncated: claim === "lost-claim", contentTruncated: claim === "clipped-claim" } });
   });
-  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
-    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
-  }, json: { next_batch: "1", rooms: { join: { [room]: {
-    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
-    timeline: { events: [
-      {event_id: "$q1", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "问题一"}},
-      {event_id: "$r1", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 2, content: {msgtype: "m.text", body: "截断的回复"}},
-      {event_id: "$q2", sender: alice, type: "m.room.message", origin_server_ts: 3, content: {msgtype: "m.text", body: "问题二"}},
-      {event_id: "$r2", sender: f.agent.matrixId, type: "m.room.message", origin_server_ts: 4, content: {msgtype: "m.text", body: "丢失的回复"}},
-    ]},
-  } } } } }));
-  await page.goto(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
-  await page.reload();
+  await signIn(page, f.base);
   const [clipped, lost] = [page.locator('.mau-run[data-run-id="clipped-claim"]'), page.locator('.mau-run[data-run-id="lost-claim"]')];
   await see(clipped).toContainText("截断的回复");
   await see(clipped.locator(".mau-muted")).toHaveCount(0);
@@ -335,13 +341,13 @@ it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not sho
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the complete answer once a live run finishes and Router serves its archive", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  const room = "!live:example.test", runId = "live-run";
+  const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
+  const runId = "live-run";
   let finished = false;
   const note = (method: string, params: Record<string, unknown>) => ({ runId, type: "native.notification", notification: { method, params: { threadId: "t", ...params } } });
   const item = { id: "answer", type: "agentMessage", phase: "final_answer" };
@@ -351,11 +357,9 @@ it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the c
   // Once finished, Router serves its archive: completed items only, numbered from 1.
   const archive = [note("item/started", { item }), note("item/completed", { item: { ...item, text: "第一段，第二段，完整的最终回答。" } })]
     .map((event, index) => ({ sequence: index + 1, event }));
-  await page.route("**/communication/tasks?*", route => route.fulfill({ json: { data: [{
-    id: "live-task", conversationId: "live", status: finished ? "completed" : "running", cancelRequested: false,
-    receivedAt: "2026-11-05T00:00:00Z", source: {connectionId: "matrix", target: room, messageId: "$question", sender: alice, scope: "direct"},
-    runs: [{claimId: "live-claim", runId, phase: finished ? "finished" : "running"}], replyMessageIds: finished ? ["$reply"] : [], interactionMessageIds: [],
-  }], next: null } }));
+  const ledger = await fakeLedger(page, f.agent.id, () => ({ state: finished ? "completed" : "running",
+    runs: [{claimId: "live-claim", runId, phase: finished ? "finished" : "running"}] }));
+  ledger.ask("live-turn", "直播问题", "running");
   await page.route("**/communication/runs/**", route => {
     const url = new URL(route.request().url()), after = Number(url.searchParams.get("after") ?? 0);
     if (!url.pathname.endsWith("/events")) return route.fulfill({ json: { claimId: "live-claim", runId, calls: [],
@@ -363,19 +367,15 @@ it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the c
     const events = (finished ? archive : live).filter((entry) => entry.sequence > after);
     return route.fulfill({ json: { events, cursor: events.at(-1)?.sequence ?? after, hasMore: false, historyTruncated: false, liveGap: false } });
   });
-  await page.route("https://example.test/_matrix/client/v3/**", route => route.fulfill({ headers: {
-    "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type",
-  }, json: { next_batch: "1", rooms: { join: { [room]: {
-    state: { events: [alice, f.agent.matrixId].map(id => ({type: "m.room.member", state_key: id, content: {membership: "join"}})) },
-    timeline: { events: [{event_id: "$question", sender: alice, type: "m.room.message", origin_server_ts: 1, content: {msgtype: "m.text", body: "直播问题"}}] },
-  } } } } }));
-  await page.goto(f.base);
-  await page.evaluate(() => localStorage.setItem("mau.session", JSON.stringify({token: "alice", owner: "@alice:example.test"})));
-  await page.reload();
+  await signIn(page, f.base);
   const surface = page.locator(".mau-run");
   await see(surface).toHaveAttribute("aria-label", "正在执行");
   await see(surface).toContainText("第一段，第二段");
+  // The run ends: Router stores the final reply and the turn's end, and serves the run's archive.
   finished = true;
+  ledger.reply("live-turn", "第一段，第二段，完整的最终回答。");
+  ledger.turn("live-turn", "completed");
   await see(surface).toHaveAttribute("aria-label", "已完成", { timeout: 10000 });
   await see(surface).toContainText("第一段，第二段，完整的最终回答。", { timeout: 5000 });
+  await see(surface).toHaveCount(1);
 }, 30000);

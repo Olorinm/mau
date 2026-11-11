@@ -1,4 +1,4 @@
-/** A stable error code from Mau, Router or Matrix. Messages are never shown raw. */
+/** A stable error code from Mau or Router. Messages are never shown raw. */
 export class ApiError extends Error {
   constructor(readonly code: string, readonly status: number, readonly details: { email?: string } = {}) {
     super(code);
@@ -18,7 +18,7 @@ export async function request<T>(url: string, options: {
   credentials?: "omit" | "same-origin";
 } = {}): Promise<T> {
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
-  // Matrix sync holds a request for 25 seconds. Bound the whole response, including its body.
+  // Bound the whole response, including its body.
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), options.timeoutMs ?? 35_000);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
@@ -45,8 +45,7 @@ export async function request<T>(url: string, options: {
     // Rate limiters and proxies may answer with text rather than JSON.
     const data = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
     if (!response.ok) {
-      // Matrix pairs a stable errcode with a human message in error; Mau and Router send only error codes.
-      const reported = data?.errcode ?? data?.error;
+      const reported = data?.error;
       throw new ApiError(
         typeof reported === "string" && code.test(reported) ? reported
           : response.status === 429 ? "rate_limited" : "request_failed",

@@ -14,14 +14,6 @@ function Unconnected({ name }: { name: string }) {
     </InlineNotice>
   );
 }
-export function FilesScreen() {
-  const { language } = useI18n();
-  return (
-    <Unconnected
-      name={language === "zh-CN" ? "共享文件浏览" : "Shared file browsing"}
-    />
-  );
-}
 export function AppsScreen() {
   const { language } = useI18n();
   const zh = language === "zh-CN";
@@ -34,7 +26,7 @@ export function AppsScreen() {
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder={zh ? "搜索 App" : "Search apps"}
-      notice={<Unconnected name={zh ? "应用商店" : "App Store"} />}
+      notice={<Unconnected name={zh ? "App 商店" : "App Store"} />}
       empty={zh ? "暂无可展示的 App" : "No apps available"}
     />
   );

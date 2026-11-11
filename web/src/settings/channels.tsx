@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ListRow, SettingsPage, SettingsSection, StatusLine, TextButton, useToast } from "@olorinm/agent-ui/app";
 import { mauApi, routerApi, type AgentSummary, type ChannelKind } from "../api/client";
-import { useMatrixAvailable } from "../api/features";
 import type { Session } from "../api/session";
 import { useI18n } from "../i18n";
 import { ConnectChannelFlow } from "../screens/connect-channel";
@@ -16,7 +15,6 @@ export function ChannelsPage({ session }: { session: Session }) {
   const { toast } = useToast();
   const agents = useAgents(session);
   const accounts = useConnectorAccounts(session);
-  const matrix = useMatrixAvailable(session);
   const [connecting, setConnecting] = useState<{ agent: AgentSummary; kind: ChannelKind }>();
   const check = useMutation({ mutationFn: (input: { agent: AgentSummary; kind: ChannelKind }) => routerApi(session.token).check(input.agent.agent.id),
     onSuccess: (checks, input) => {
@@ -27,7 +25,7 @@ export function ChannelsPage({ session }: { session: Session }) {
     },
     onError: () => toast({ kind: "error", title: zh ? "连接检查失败，请稍后重试。" : "Connection check failed. Try again later." }) });
   const active = (agents.data ?? []).filter((agent) => agent.environment?.state !== "deleted");
-  const kinds = channelKinds.filter((kind) => kind !== "matrix" || matrix);
+  const kinds = channelKinds;
   const personal = (agentId: string) => accounts.data?.data.find((account) => account.kind === "feishu" && account.assignedAgents?.includes(agentId));
 
   if (connecting) return <SettingsPage onBack={() => setConnecting(undefined)} backLabel={zh ? "消息渠道" : "Messaging"}

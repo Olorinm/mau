@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type WebSocketRoute } from "@playwright/test";
-import { mauFixture } from "./fixtures/mau.js";
+import { edgeMauFixture } from "./fixtures/edge.js";
 
 // Browser acceptance for Router-native groups in the ledger console (agent-router ADR 0005 section 17.7).
 // The Router web channel is a Playwright fake implementing the section 8 and 17.1 shapes.
@@ -17,22 +17,21 @@ const web = "/_agent-router/v1/web";
 const owner = { type: "person", id: "prs_owner", name: "Alice" };
 
 it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addressed state and edits members", async () => {
-  const f = await mauFixture(cleanup, { webRoot });
+  const f = await edgeMauFixture(cleanup, { webRoot });
   const writer = { id: "agent-writer", name: "writer" };
   const helper = { id: f.agent.id, name: "helper" };
   const actor = (agent: { id: string; name: string }) => ({ type: "agent", ...agent });
   const instance = await chromium.launch({ headless: true });
   cleanup.push(() => instance.close());
-  const context = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 } });
+  const context = await instance.newContext({ locale: "zh-CN", reducedMotion: "reduce", viewport: { width: 1200, height: 900 },
+    extraHTTPHeaders: f.edgeHeaders() });
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const matrix: string[] = [];
-  await context.route("https://example.test/_matrix/client/v3/**", (route) => {
-    matrix.push(new URL(route.request().url()).pathname);
-    return route.fulfill({ json: {}, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type" } });
-  });
+  // The console has no Matrix client: any Matrix request is recorded and never answered.
+  await context.route(/\/_matrix\//, (route) => { matrix.push(new URL(route.request().url()).pathname); return route.abort(); });
 
   // ---- fake Router ledger ----
   const chatId = "room:rm_01", calls: Array<{ method: string; path: string; body?: any }> = [];
@@ -108,15 +107,14 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   });
 
   await page.goto(f.base);
-  await page.evaluate(() => {
-    localStorage.setItem("mau.session", JSON.stringify({ token: "alice", owner: "@alice:example.test" }));
-    localStorage.setItem("mau.chatSource", "ledger");
-  });
-  await page.reload();
   await page.getByRole("button", { name: "对话", exact: true }).click();
 
-  // "新建群聊" replaces Matrix group creation and reuses the OpenGrove group form.
-  await page.getByRole("button", { name: "新建群聊", exact: true }).click();
+  // "新建群聊" replaces Matrix group creation and reuses the OpenGrove group form. It is the "+" of the 群聊
+  // section in the full list of conversations.
+  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  const roster = page.getByRole("complementary", { name: "全部对话" });
+  await roster.getByRole("button", { name: "新建群聊", exact: true }).click();
+  await see(roster).toHaveCount(0);
   const dialog = page.getByRole("dialog", { name: "新建群聊" });
   await dialog.getByRole("textbox").fill("周报小组");
   for (const box of await dialog.getByRole("checkbox").all()) await box.check();
@@ -125,19 +123,23 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   const create = calls.find((call) => call.path === "/groups")!;
   expect(create.body).toMatchObject({ title: "周报小组", agentIds: [helper.id, writer.id] });
   expect(create.body.idempotencyKey).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
-  await see(page.getByRole("heading", { name: "周报小组" })).toBeVisible();
+  // The new group is the current conversation: its figure in the header row carries the name.
+  const currentChip = page.locator(".mau-chip[aria-selected='true']");
+  await see(currentChip).toHaveAttribute("data-chat-key", "chat:" + chatId);
+  await see(currentChip).toHaveAttribute("title", "周报小组");
+  await see(currentChip.locator("strong")).toHaveText("周报小组");
 
   // Without a mention the message is only recorded; the hint says so.
   const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
   await composer.fill("大家好");
-  await see(page.getByText("未 @ 任何 Agent，消息只记录")).toBeVisible();
+  await see(page.getByText("未 @ 任何员工，消息只记录")).toBeVisible();
   await composer.fill("");
   await composer.pressSequentially("@");
   await see(page.getByRole("option", { name: /所有人/ })).toBeVisible();
   await see(page.getByRole("option", { name: /writer/ })).toBeVisible();
   await page.getByRole("option", { name: /helper/ }).click();
   await see(composer).toHaveValue("@helper ");
-  await see(page.getByText("未 @ 任何 Agent，消息只记录")).toHaveCount(0);
+  await see(page.getByText("未 @ 任何员工，消息只记录")).toHaveCount(0);
   await composer.pressSequentially("看一下");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.getByText("已通知：helper")).toBeVisible();
@@ -170,9 +172,10 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   await panel.getByRole("button", { name: "关闭", exact: true }).first().click();
 
   // Matrix group creation is gone and no Matrix room was created.
-  await page.getByRole("button", { name: "新建", exact: true }).click();
-  await see(page.getByRole("menuitem", { name: "新建群聊" })).toBeVisible();
+  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  await see(roster.getByRole("region", { name: "群聊" }).getByRole("button", { name: "新建群聊", exact: true })).toBeVisible();
+  await see(page.getByRole("button", { name: "发起群聊" })).toHaveCount(0);
   await see(page.getByRole("menuitem", { name: "发起群聊" })).toHaveCount(0);
-  expect(matrix.some((path) => path.endsWith("/createRoom"))).toBe(false);
+  expect(matrix).toEqual([]);
   expect(errors).toEqual([]);
 }, 30_000);

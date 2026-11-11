@@ -109,14 +109,8 @@ export interface HistoryQuery { before?: number; after?: number; generation?: nu
 
 // ---- Flags ----
 /** Console features Router advertises per migration phase (ADR 0005 §11). */
-export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups" | "identity" | "matrix";
-const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups", "identity", "matrix"];
-export const chatSourceKey = "mau.chatSource";
-
-/** The console reads chats from Router only when the browser opted in; Matrix stays the default. */
-export function chatSourcePreference(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): "matrix" | "ledger" {
-  try { return storage?.getItem(chatSourceKey) === "ledger" ? "ledger" : "matrix"; } catch { return "matrix"; }
-}
+export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups" | "identity";
+const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups", "identity"];
 
 /** `limits.features` is a name → boolean map; only names set to `true` are on, unknown names are ignored. */
 export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeature> {
@@ -125,14 +119,6 @@ export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeatu
   return new Set(featureNames.filter((name) => (raw as Record<string, unknown>)[name] === true));
 }
 
-/**
- * Matrix is available unless Router says otherwise (ADR 0005 "Client contract" 1): every Router from phase 7 reports
- * `features.matrix` explicitly, so a missing entry (or no ledger API at all) is an older Router with Matrix.
- */
-export function matrixEnabled(me: LedgerMe | null | undefined): boolean {
-  const raw = me?.limits?.features as Record<string, unknown> | undefined;
-  return !raw || typeof raw !== "object" || !("matrix" in raw) || raw.matrix === true;
-}
 
 // ---- HTTP ----
 const keyPattern = /^[A-Za-z0-9_-]{16,128}$/;

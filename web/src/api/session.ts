@@ -1,53 +1,30 @@
 import { ApiError, request } from "./http";
 
 /**
- * Router/Matrix account session. Mau never issues a second identity. With edge login (Cloudflare Access) the console
- * holds no token: `token` is empty, requests carry no bearer and Cloudflare adds the JWT from the Access cookie.
+ * The owner's console session. The only login is the edge identity (Cloudflare Access): the console holds no token,
+ * so `token` is always empty, requests carry no bearer and Cloudflare adds the JWT from the Access cookie.
  */
-export interface Session { token: string; owner: string; homeserver?: string; edge?: EdgeLogin }
+export interface Session { token: ""; owner: string; edge: EdgeLogin }
 export interface EdgeLogin { logoutUrl: string; email?: string; expiresAt?: string }
-/** `/_mau/v1/info`: `login:"edge"` (no login page) or the legacy Matrix password login. */
-export type MauInfo = { login: "edge"; logoutUrl: string; matrix: false } | { login?: "matrix"; homeserver: string; matrix?: true };
+/** `/_mau/v1/info`. Only `login:"edge"` opens the console. */
+export type MauInfo = { login?: string; logoutUrl?: string };
 export type Boot =
-  | { mode: "matrix"; session: Session | null }
   | { mode: "edge"; session: Session }
   | { mode: "edge-denied"; email?: string; logoutUrl: string }
   | { mode: "edge-failed"; code: string };
-const key = "mau.session";
-
-export function loadSession(storage: Storage = localStorage): Session | null {
-  try {
-    const value = JSON.parse(storage.getItem(key) ?? "null") as Partial<Session> | null;
-    return typeof value?.token === "string" && typeof value.owner === "string"
-      ? { token: value.token, owner: value.owner, ...(typeof value.homeserver === "string" ? { homeserver: value.homeserver } : {}) }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveSession(session: Session, storage: Storage = localStorage) {
-  storage.setItem(key, JSON.stringify(session));
-}
-
-export function clearSession(storage: Storage = localStorage) {
-  storage.removeItem(key);
-}
 
 /** Only a same-origin path is followed for the Access logout. */
 const logoutPath = (value: unknown) => typeof value === "string" && /^\/[^/\\]/.test(value) ? value : "/cdn-cgi/access/logout";
 
 /**
- * Console boot (agent-router ADR 0005 18.3). With `login:"edge"` any stored Matrix session is removed and the account is
- * read with the same-origin Access cookie only; otherwise the stored Matrix session (or the login page) is used.
+ * Console boot (agent-router ADR 0005 18.3): the account is read with the same-origin Access cookie only. A service
+ * without an edge identity has no web login (`web_login_unavailable`); a failed request offers a retry.
  */
-export async function bootSession(storage: Storage = localStorage): Promise<Boot> {
-  // No answer says nothing about the login: the Matrix form or a stored token would be a dead end on an edge deployment.
+export async function bootSession(): Promise<Boot> {
   let info: MauInfo;
   try { info = await request<MauInfo>("/_mau/v1/info"); }
   catch (error) { return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" }; }
-  if (info.login !== "edge") return { mode: "matrix", session: loadSession(storage) };
-  clearSession(storage);
+  if (info.login !== "edge") return { mode: "edge-failed", code: "web_login_unavailable" };
   const logoutUrl = logoutPath(info.logoutUrl);
   try {
     const account = await request<{ owner?: unknown; email?: unknown; expiresAt?: unknown }>("/_mau/v1/account");
@@ -84,10 +61,7 @@ export function reloadDrafts(storage: Storage = sessionStorage, clear = false): 
   } catch { return {}; }
 }
 
-/** Revoke a password-login device; a pasted token belongs to whoever issued it. */
-export async function logout(session: Session) {
-  if (session.edge) { location.assign(session.edge.logoutUrl); return; }
-  // The Matrix client code loads only for a Matrix login (agent-router ADR 0005 19.3).
-  if (session.homeserver) await import("./matrix-login").then((matrix) => matrix.matrixLogout(session)).catch(() => undefined);
-  clearSession();
+/** Sign out through the edge: Access ends its session at the logout URL. */
+export function logout(session: Session) {
+  location.assign(session.edge.logoutUrl);
 }
