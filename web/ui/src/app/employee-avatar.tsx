@@ -1,5 +1,22 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { createContext, createElement, useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { NameAvatar } from "./name-avatar.js";
+import { PixelAvatar, type PixelAvatarSpecies, type PixelAvatarState } from "./pixel-avatar.js";
+
+/**
+ * How an employee is drawn: `pixel` is a pixel-art animal (the default), `illustrated` the Notionists
+ * face. Both are derived from the same seed, so switching keeps every employee distinct.
+ */
+export type EmployeeAvatarAppearance = "pixel" | "illustrated";
+const EmployeeAvatarAppearanceContext = createContext<EmployeeAvatarAppearance>("pixel");
+
+/** Sets the avatar appearance for every `EmployeeAvatar` below it that does not choose its own. */
+export function EmployeeAvatarAppearanceProvider(props: { appearance: EmployeeAvatarAppearance; children?: ReactNode }) {
+  return createElement(EmployeeAvatarAppearanceContext.Provider, { value: props.appearance }, props.children);
+}
+
+export function useEmployeeAvatarAppearance(): EmployeeAvatarAppearance {
+  return useContext(EmployeeAvatarAppearanceContext);
+}
 
 /**
  * 员工头像：seed（通常用员工 id）确定性生成 Notionists 插画脸。
@@ -80,9 +97,24 @@ export function EmployeeAvatar(props: {
   style?: CSSProperties;
   title?: string;
   fallbackName?: string;
+  /** Defaults to the nearest `EmployeeAvatarAppearanceProvider`, or `pixel`. */
+  appearance?: EmployeeAvatarAppearance;
+  /** Pixel appearance only: the employee's state, shown by the eyes. */
+  state?: PixelAvatarState;
+  /** Pixel appearance only: a chosen animal instead of the one the seed picks. */
+  species?: PixelAvatarSpecies;
+  /** Pixel appearance only: hover and press motion (on by default). */
+  animated?: boolean;
 }) {
   const size = props.size ?? 32;
-  const src = useEmployeeAvatarDataUri(props.seed);
+  const inherited = useEmployeeAvatarAppearance();
+  const appearance = props.appearance ?? inherited;
+  const src = useEmployeeAvatarDataUri(props.seed, appearance === "illustrated");
+  if (appearance === "pixel")
+    return (
+      <PixelAvatar seed={props.seed} size={size} className={props.className} style={props.style} title={props.title}
+        state={props.state} species={props.species} animated={props.animated} />
+    );
 
   const style: CSSProperties = {
     display: "block",

@@ -5,7 +5,7 @@ for (const name of ["styles", "thread", "disclosure", "cards"])
     new URL(`../dist/${name}.css`, import.meta.url),
   );
 await mkdir(new URL("../dist/app/", import.meta.url), { recursive: true });
-for (const name of ["app", "tokens", "components", "surfaces"])
+for (const name of ["app", "tokens", "components", "surfaces", "pixel-avatar"])
   await copyFile(
     new URL(`../src/app/${name}.css`, import.meta.url),
     new URL(`../dist/app/${name}.css`, import.meta.url),
