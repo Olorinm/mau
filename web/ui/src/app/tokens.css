@@ -9,7 +9,7 @@
   --og-sapling-shade: oklch(63.657% 0.1618 143.38);
   --og-sapling-trunk: oklch(25.625% 0.0058 196.79);
   --og-sapling-trunk-highlight: oklch(34.205% 0.0088 173.82);
-  --c-bg: oklch(99.107% 0 0);
+  --c-bg: oklch(97.941% 0.0013 286.38);
   --c-surface: oklch(100% 0 0);
   --c-surface-hover: oklch(96.715% 0 0);
   --c-surface-active: oklch(94.787% 0.0025 228.79);
@@ -263,7 +263,8 @@
 /* Design system: type scale, spacing, radii and surfaces shared by settings, connectors, chat and
    compact operational views. Brand colors (accent, success, error) stay those above. */
 :root {
-  --c-page: var(--c-bg);
+  /* Settings dialogs and pages: near white, above the grey app background. */
+  --c-page: oklch(99.107% 0 0);
   --c-panel: oklch(95.213% 0 0);
   --c-panel-hover: oklch(92.797% 0 0);
   --c-panel-line: oklch(92.191% 0 0);

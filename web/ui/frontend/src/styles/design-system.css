@@ -1,10 +1,9 @@
-/* Design system shared with @olorinm/agent-ui/app (type scale, spacing, radii, surfaces): a near-white page,
-   solid grey panels without borders, hairline column dividers, grey rounded bubbles and a floating composer.
+/* Design system shared with @olorinm/agent-ui/app (type scale, spacing, radii, surfaces): white panels floating on
+   the grey app background, grey rounded bubbles and a floating composer.
    Brand colors (accent, success, error) are unchanged. */
 :root {
-  --c-bg: oklch(99.107% 0 0);
   --c-muted: oklch(45.238% 0.0055 258.34);
-  --c-page: var(--c-bg);
+  --c-page: oklch(99.107% 0 0);
   --c-panel: oklch(95.213% 0 0);
   --c-panel-hover: oklch(92.797% 0 0);
   --c-panel-line: oklch(92.191% 0 0);
@@ -17,8 +16,6 @@
   --r-nav-item: 10px;
   --r-bubble: 20px;
 
-  --og-paper-board: var(--c-bg);
-  --og-paper-sheet: var(--c-bg);
   --og-section-title: var(--c-text-secondary);
   --og-section-muted: var(--c-text-secondary);
   --app-rail-button-active-bg: var(--c-panel);
@@ -50,31 +47,6 @@
     --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
     --c-panel-raised: oklch(33.640% 0.0070 95.27);
   }
-}
-
-/* Columns sit on the page and are divided by hairlines instead of floating cards. */
-.rooms-view {
-  gap: 0;
-  padding: 0;
-}
-.rooms-list-panel,
-.room-main-panel {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.rooms-list-panel {
-  border-right: 1px solid var(--c-panel-line);
-  border-left: 1px solid var(--c-panel-line);
-  padding: 14px 12px 16px;
-}
-.room-main-panel,
-.room-header,
-.room-message-stream {
-  background: transparent;
-}
-.room-header {
-  border-bottom-color: transparent;
 }
 
 /* Lists: 36 px rows, a light-grey rounded selection. */
