@@ -28,7 +28,8 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
-import { BrowserSideView, DocumentSideView, type EmployeeDocument, FileSideView, liveViewUrl } from "./side-views";
+import { liveViewUrl } from "../api/live-view";
+import { BrowserSideView, DocumentSideView, type EmployeeDocument, FileSideView } from "./side-views";
 import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];

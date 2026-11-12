@@ -160,7 +160,7 @@ it("keeps unsent composer text across the Access re-login reload", () => {
 });
 
 it("frames only a Cloudflare live-view link from a handoff card", async () => {
-  const { liveViewUrl } = await import("../web/src/screens/side-views.js");
+  const { liveViewUrl } = await import("../web/src/api/live-view.js");
   const url = "https://live.browser.run/ui/view?mode=tab&wss=live.browser.run/api/devtools/browser/s/page/t?jwt=abc.def";
   expect(liveViewUrl(`浏览器已交给你接管。请在此私密链接中操作，不要转发：\n${url}\n完成后点页面里的 Done。`)).toBe(url);
   expect(liveViewUrl("see https://live.browser.run.evil.example/ui/view?x=1")).toBeUndefined();

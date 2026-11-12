@@ -25,8 +25,11 @@ const manifestFile = new URL("package.json", root), manifest = JSON.parse(await 
 for (const { name } of Object.values(components)) if (manifest.peerDependencies[name]) manifest.peerDependencies[name] = version;
 await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
 // npm keeps a lockfile entry whose file: path is unchanged; drop the entries so it reads the new archives.
-const lockFile = new URL("package-lock.json", root), lock = JSON.parse(await readFile(lockFile, "utf8"));
-for (const { name } of Object.values(components)) delete lock.packages[`node_modules/${name}`];
-await writeFile(lockFile, JSON.stringify(lock, null, 2) + "\n");
-execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
+// The console (web/) installs Host's archive for its types, so its lockfile is refreshed the same way.
+for (const directory of ["./", "web/"]) {
+  const lockFile = new URL(directory + "package-lock.json", root), lock = JSON.parse(await readFile(lockFile, "utf8"));
+  for (const { name } of Object.values(components)) delete lock.packages[`node_modules/${name}`];
+  await writeFile(lockFile, JSON.stringify(lock, null, 2) + "\n");
+  execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL(directory, root), stdio: "inherit" });
+}
 console.log(`Pinned ${repository} ${version} (${revision.slice(0, 12)}). Run node scripts/bootstrap.mjs to install it.`);
