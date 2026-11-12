@@ -88,10 +88,6 @@
       "source": "web/src/components/network/app-store-view.css",
       "sourceSha256": "c0fc1c58f185e1acfba9e621908eee771b77b684a15f2cc53baf8755b33f9d93"
     },
-    "styles/app-store-error.css": {
-      "source": "web/src/components/network/app-store-error.css",
-      "sourceSha256": "1ae2efd46ccab5ce189153eca13a5cda54a3e63470c94949b7db04ba62cdb4b1"
-    },
     "styles/composer.css": {
       "source": "web/src/components/chat/opengrove-composer.css",
       "sourceSha256": "ebbc21dc3534aa5f0a07ad638b99674003586e549bd63a9c7e7971e8e0ab1460"
@@ -443,22 +439,17 @@
     "ui/inline-select.module.css": {
       "source": "web/src/components/shared/inline-select.module.css",
       "sourceSha256": "6cd3d18a69ebd7117d5e266e9f5f841a266eb468ed71ebee7fd6fc6115c93091",
-      "changes": "Unchanged source stylesheet or presentation helper."
+      "changes": "Removed selectors unused by this package."
     },
     "styles/section-sidebar.css": {
       "source": "web/src/components/sidebar/section-sidebar.css",
       "sourceSha256": "d1b6e8f0b1af33559651f26d1421d61bff6bcf4af36db4cfe4cedea98693125e",
-      "changes": "Unchanged source stylesheet or presentation helper."
+      "changes": "Removed selectors unused by this package."
     },
     "styles/mobile-nav.css": {
       "source": "web/src/app-mobile-nav.css",
       "sourceSha256": "9c4902e8c1307862bac79bb31aa28c0c366d8e980bd2a77923a01f1ea28281fe",
-      "changes": "Unchanged source stylesheet or presentation helper."
-    },
-    "styles/mounted-app-workbench.css": {
-      "source": "web/src/components/apps/mounted-app-workbench.css",
-      "sourceSha256": "14aa3d789b0e52ab7968369e14b44c9ca89de96a00363d13fac990e796a74030",
-      "changes": "Unchanged source stylesheet or presentation helper."
+      "changes": "Removed selectors unused by this package."
     },
     "layouts/adaptive-split-layout.module.css": {
       "source": "web/src/components/shared/adaptive-split-layout.module.css",
@@ -473,7 +464,7 @@
     "files/directory-panel.module.css": {
       "source": "web/src/components/shared/directory-panel.module.css",
       "sourceSha256": "e0ca8063fbc473ed0d5f2c5e956bbd7625390da004b4fbf6aaa54cb4db8ec224",
-      "changes": "Unchanged source stylesheet or presentation helper."
+      "changes": "Removed selectors unused by this package."
     },
     "presentation/settings-providers-panel.tsx": {
       "source": "web/src/components/sidebar/settings-provider-section.tsx",

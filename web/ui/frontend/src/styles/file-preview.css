@@ -104,10 +104,8 @@
   width: min(560px, 100%);
 }
 
-.mounted-app-markdown-shell,
 .file-preview-markdown-shell,
-.file-preview-source-shell,
-.file-preview-editor-shell {
+.file-preview-source-shell {
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -143,50 +141,9 @@
   white-space: inherit;
 }
 
-.file-preview-editor-shell {
-  display: grid;
-  overflow: hidden;
-  padding: 26px 28px;
-}
-
-.file-preview-editor-shell[data-preview-kind="markdown"] {
-  display: block;
-  overflow: auto;
-}
-
-.mounted-app-markdown-shell .markdown-preview,
 .file-preview-markdown-shell .markdown-preview {
   max-width: 820px;
   margin: 0 auto;
-}
-
-.file-preview-editor-shell .knowledge-markdown-codemirror,
-.file-preview-editor-shell .knowledge-markdown-codemirror .cm-editor,
-.file-preview-editor-shell .knowledge-markdown-codemirror .cm-scroller {
-  min-height: 0;
-  height: 100%;
-}
-
-.file-preview-editor-shell .knowledge-markdown-codemirror .cm-content {
-  min-height: 100%;
-}
-
-.file-preview-editor-shell[data-preview-kind="markdown"] .knowledge-markdown-codemirror {
-  width: 100%;
-  max-width: 820px;
-  margin: 0 auto;
-}
-
-.file-preview-editor-shell[data-preview-kind="markdown"] .markdown-rich-editor {
-  --markdown-block-gutter: clamp(72px, 6cqw, 88px);
-  width: 100%;
-  max-width: calc(820px + var(--markdown-block-gutter) + var(--markdown-block-gutter));
-  min-height: 0;
-  height: auto;
-  margin: 0 auto;
-  padding-inline: var(--markdown-block-gutter);
-  overflow: visible;
-  box-sizing: border-box;
 }
 
 .file-preview-content {
@@ -199,14 +156,9 @@
 
 @container file-preview (width < 760px) {
   .file-preview-markdown-shell,
-  .file-preview-source-shell,
-  .file-preview-editor-shell {
+  .file-preview-source-shell {
     --file-preview-collapsed-inset: var(--sp-4);
     padding: var(--sp-4);
-  }
-
-  .file-preview-editor-shell[data-preview-kind="markdown"] .markdown-rich-editor {
-    --markdown-block-gutter: 0px;
   }
 
   .markdown-rich-editor .milkdown-block-handle {
@@ -456,20 +408,6 @@
   opacity: 0.7;
 }
 
-.file-preview-editor-shell .knowledge-markdown-codemirror .cm-md-list-widget {
-  display: inline-block;
-  min-width: 1.6em;
-  padding-right: 0.45em;
-  box-sizing: border-box;
-  color: var(--c-text);
-  font-weight: var(--fw-semibold);
-  text-align: right;
-}
-
-.file-preview-editor-shell .knowledge-markdown-codemirror .cm-md-list-widget[data-ordered="false"] {
-  text-align: center;
-}
-
 .file-preview-truncated {
   max-width: 820px;
   margin: 12px auto 0;
@@ -656,15 +594,6 @@
   color: var(--c-text-2);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
-}
-
-.flow-step-activity {
-  margin-top: 5px;
-  min-width: 0;
-}
-
-.flow-step-activity .thread-activity {
-  width: 100%;
 }
 
 .flow-step-live-todos {

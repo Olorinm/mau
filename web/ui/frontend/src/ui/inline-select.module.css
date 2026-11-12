@@ -45,12 +45,6 @@
   place-items: center;
 }
 
-.icon :global(.entity-icon) {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--inline-select-entity-icon-radius);
-}
-
 .menu {
   z-index: 80;
   display: grid;
@@ -192,15 +186,6 @@
 .contactsMenu {
   max-height: 220px;
   overflow: auto;
-}
-
-:global(.contacts-kernel-model-field) .contactsRoot {
-  width: 100%;
-}
-
-:global(.contacts-kernel-model-field) .contactsRoot .trigger {
-  width: 100%;
-  justify-content: space-between;
 }
 
 .option:disabled {

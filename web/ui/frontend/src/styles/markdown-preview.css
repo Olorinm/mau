@@ -169,45 +169,6 @@
   cursor: text;
 }
 
-.md-editor-status {
-  position: static;
-  justify-self: end;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0;
-  width: max-content;
-  max-width: 100%;
-  min-height: 18px;
-  margin: 28px 0 0 auto;
-  border: 0;
-  background: transparent;
-  color: color-mix(in srgb, var(--c-muted) 82%, transparent);
-  font-size: var(--markdown-editor-status-font-size);
-  font-weight: var(--fw-medium);
-  line-height: var(--lh-tight);
-  pointer-events: none;
-  backdrop-filter: none;
-}
-
-.md-editor-status span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 0 4px;
-  white-space: nowrap;
-}
-
-.md-editor-status span + span::before {
-  content: "";
-  width: 2px;
-  height: 2px;
-  margin-right: 7px;
-  border-radius: var(--r-pill);
-  background: currentColor;
-  opacity: 0.55;
-}
-
 .markdown-preview h1,
 .markdown-preview h2,
 .markdown-preview h3,

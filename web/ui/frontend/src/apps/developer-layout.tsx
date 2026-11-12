@@ -12,7 +12,6 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 import { useI18n } from "../presentation/i18n";
 import { AdaptiveSplitLayout, type WorkspacePane } from "../layouts/adaptive-split-layout";
 import { ResizeHandle } from "../presentation/resize-handle";
-import "../styles/mounted-app-workbench.css";
 
 const DEFAULT_DEVELOPER_PANEL_WIDTH = 420;
 const MIN_DEVELOPER_PANEL_WIDTH = 280;

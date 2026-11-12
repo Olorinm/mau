@@ -132,18 +132,6 @@
   outline: none;
 }
 
-.contacts-console-section .contacts-section-heading {
-  align-items: flex-start;
-}
-
-.contacts-section-heading p,
-.contacts-console-action-row p {
-  margin: 4px 0 0;
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-}
-
 .contacts-activity-card {
   display: grid;
   gap: 8px;
@@ -188,14 +176,12 @@
   line-height: 1;
 }
 
-.contacts-recent-run-list,
-.contacts-skill-card-list {
+.contacts-recent-run-list {
   display: grid;
   gap: 8px;
 }
 
-.contacts-recent-run,
-.contacts-skill-card {
+.contacts-recent-run {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 10px;
@@ -226,8 +212,7 @@
   color: var(--contacts-run-error-fg);
 }
 
-.contacts-recent-run strong,
-.contacts-skill-card strong {
+.contacts-recent-run strong {
   display: block;
   overflow: hidden;
   color: var(--rooms-text);
@@ -237,8 +222,7 @@
   white-space: nowrap;
 }
 
-.contacts-recent-run small,
-.contacts-skill-card small {
+.contacts-recent-run small {
   display: block;
   margin-top: 3px;
   overflow: hidden;
@@ -246,53 +230,6 @@
   font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.contacts-console-action-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-}
-
-.contacts-console-action-row h3 {
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-console-action-row > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 32px;
-  border: 1px solid var(--rooms-border-strong);
-  border-radius: var(--r-md);
-  background: var(--rooms-panel);
-  color: var(--rooms-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  padding: 0 10px;
-}
-
-.contacts-console-action-row > button:hover,
-.contacts-console-action-row > button:focus-visible {
-  background: var(--rooms-panel-soft);
-  outline: none;
-}
-
-.contacts-empty-console {
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-md);
-  background: var(--rooms-panel-soft);
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  padding: 16px;
 }
 
 .contacts-editable-panel {
@@ -304,383 +241,6 @@
   border-color: color-mix(in srgb, var(--rooms-blue) 34%, var(--rooms-border));
   background: var(--contacts-editable-hover-bg);
   outline: none;
-}
-
-.contacts-persona-preview.console {
-  min-height: 520px;
-  padding: 24px 28px;
-}
-
-.contacts-skill-card {
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-}
-
-.contacts-skill-card svg {
-  color: var(--rooms-muted);
-}
-
-.contacts-skill-card-remove {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--rooms-muted);
-  cursor: pointer;
-}
-
-.contacts-skill-card-remove:hover,
-.contacts-skill-card-remove:focus-visible {
-  border-color: var(--contacts-remove-hover-border);
-  background: var(--contacts-remove-hover-bg);
-  color: var(--contacts-remove-hover-fg);
-  outline: none;
-}
-
-.contacts-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.contacts-section-heading h3 {
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--contacts-section-heading-font-size);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0;
-}
-
-.contacts-persona-editor,
-.contacts-persona-preview {
-  min-width: 0;
-}
-
-.contacts-persona-field {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.contacts-persona-field > span {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-persona-field .contacts-detail-textarea.persona {
-  min-height: 420px;
-  resize: vertical;
-}
-
-.contacts-persona-editor .knowledge-markdown-codemirror {
-  min-height: 230px;
-  border: 1px solid var(--contacts-shared-control-border);
-  border-radius: var(--r-sm);
-  background: var(--contacts-shared-control-bg);
-  padding: 14px;
-}
-
-.contacts-persona-editor .knowledge-markdown-codemirror .cm-content {
-  min-height: 198px;
-}
-
-.contacts-persona-editor .knowledge-markdown-codemirror .cm-editor {
-  min-height: 198px;
-}
-
-.contacts-persona-preview {
-  border: 1px solid var(--contacts-shared-control-border);
-  border-radius: var(--r-sm);
-  background: var(--contacts-shared-control-bg);
-  padding: 16px 18px;
-}
-
-.contacts-persona-preview .markdown-preview {
-  color: var(--rooms-text);
-  font-size: var(--fs-md);
-  line-height: var(--lh-relaxed);
-}
-
-.contacts-persona-preview .markdown-preview > :first-child {
-  margin-top: 0;
-}
-
-.contacts-persona-preview .markdown-preview > :last-child {
-  margin-bottom: 0;
-}
-
-.contacts-contract-section {
-  max-width: 920px;
-}
-
-.contacts-contract-editor {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.contacts-contract-field {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.contacts-contract-field.wide {
-  grid-column: 1 / -1;
-}
-
-.contacts-contract-field > span {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-contract-segmented {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(84px, 1fr));
-  width: min(100%, 220px);
-  min-height: 34px;
-  border: 1px solid var(--rooms-border-strong);
-  border-radius: var(--r-sm);
-  background: var(--rooms-panel-soft);
-  padding: 2px;
-}
-
-.contacts-contract-segmented button {
-  border: 0;
-  border-radius: var(--rooms-control-inner-radius);
-  background: transparent;
-  color: var(--rooms-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-contract-segmented button:hover,
-.contacts-contract-segmented button:focus-visible,
-.contacts-contract-segmented button[data-active="true"] {
-  background: var(--rooms-panel);
-  color: var(--rooms-text);
-  outline: none;
-}
-
-.contacts-access-segmented {
-  grid-template-columns: repeat(3, minmax(84px, 1fr));
-  width: min(100%, 340px);
-}
-
-.contacts-access-segmented button[data-danger="true"][data-active="true"] {
-  color: var(--c-error);
-}
-
-.contacts-access-hint {
-  margin: 6px 0 0;
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
-.contacts-rename-input {
-  max-width: 280px;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-contract-field .contacts-contract-textarea {
-  min-height: 112px;
-  line-height: var(--lh-normal);
-}
-
-.contacts-contract-field .contacts-contract-textarea.compact {
-  min-height: 112px;
-}
-
-.contacts-contract-readout {
-  min-width: 0;
-  border: 1px solid var(--contacts-shared-control-border);
-  border-radius: var(--r-sm);
-  background: var(--contacts-shared-control-bg);
-  padding: 4px 18px;
-}
-
-.contacts-contract-list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-}
-
-.contacts-contract-list div {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 14px;
-  min-height: 48px;
-  border-bottom: 1px solid var(--rooms-border);
-  padding: 12px 0;
-}
-
-.contacts-contract-list div:last-child {
-  border-bottom: 0;
-}
-
-.contacts-contract-list dt,
-.contacts-contract-list dd {
-  margin: 0;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-}
-
-.contacts-contract-list dt {
-  color: var(--rooms-muted);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-contract-list dd {
-  color: var(--rooms-text);
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 760px) {
-  .contacts-contract-editor,
-  .contacts-contract-list div {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.contacts-kernel-editor {
-  display: grid;
-  gap: 16px;
-  overflow: visible;
-}
-
-.contacts-kernel-option-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 8px;
-}
-
-.contacts-kernel-option,
-.contacts-kernel-readout {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-sm);
-  background: var(--rooms-panel);
-  color: var(--rooms-text);
-  font: inherit;
-  text-align: left;
-  padding: 12px;
-}
-
-.contacts-kernel-option {
-  cursor: pointer;
-}
-
-.contacts-kernel-option:hover,
-.contacts-kernel-option:focus-visible,
-.contacts-kernel-option[data-active="true"] {
-  border-color: color-mix(in srgb, var(--rooms-blue) 36%, var(--rooms-border));
-  background: var(--contacts-kernel-active-bg);
-  outline: none;
-}
-
-.contacts-kernel-option[data-ready="false"] {
-  color: var(--rooms-muted);
-}
-
-.contacts-kernel-option-icon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-sm);
-  background: var(--rooms-panel-soft);
-}
-
-.contacts-kernel-option strong,
-.contacts-kernel-option small,
-.contacts-kernel-readout strong,
-.contacts-kernel-readout small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.contacts-kernel-option strong,
-.contacts-kernel-readout strong {
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-kernel-option small,
-.contacts-kernel-readout small {
-  margin-top: 3px;
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
-.contacts-kernel-readout {
-  width: 100%;
-}
-
-button.contacts-kernel-readout {
-  cursor: pointer;
-}
-
-.contacts-kernel-runtime-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 360px));
-  gap: 12px;
-  align-items: start;
-  overflow: visible;
-}
-
-.contacts-kernel-access-block {
-  display: grid;
-  gap: 10px;
-  max-width: 520px;
-}
-
-.contacts-kernel-access-heading h3 {
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-kernel-access-heading p {
-  margin: 3px 0 0;
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-}
-
-.contacts-kernel-model-field {
-  display: grid;
-  gap: 7px;
-  max-width: 360px;
-  min-width: 0;
-  overflow: visible;
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
-.contacts-kernel-model-note {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  color: var(--rooms-text);
-  line-height: var(--lh-normal);
 }
 
 .contacts-skill-toolbar {
@@ -750,8 +310,7 @@ button.contacts-kernel-readout {
 }
 
 @media (max-width: 900px) {
-  .contacts-skill-toolbar,
-  .contacts-kernel-option-grid {
+  .contacts-skill-toolbar {
     grid-template-columns: minmax(0, 1fr);
   }
 

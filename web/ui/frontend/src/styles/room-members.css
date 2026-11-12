@@ -71,8 +71,7 @@
   padding-right: 2px;
 }
 
-.rooms-group-profile-card,
-.rooms-member-summary-card {
+.rooms-group-profile-card {
   border-bottom: 0;
   padding-bottom: 0;
 }
@@ -132,21 +131,13 @@
   box-shadow: var(--room-dialog-field-focus-shadow);
 }
 
-.rooms-group-profile-icon .entity-icon {
-  width: 34px;
-  height: 34px;
-  border: 0;
-  background: transparent;
-}
-
 .rooms-group-profile-copy {
   display: grid;
   gap: 1px;
   min-width: 0;
 }
 
-.rooms-group-profile-copy strong,
-.rooms-settings-section-title strong {
+.rooms-group-profile-copy strong {
   overflow: hidden;
   color: var(--og-section-text);
   font-size: var(--fs-base);
@@ -225,12 +216,6 @@
   border-color: var(--c-accent);
 }
 
-.rooms-member-summary-card {
-  display: grid;
-  gap: 8px;
-  padding: 0 6px;
-}
-
 .rooms-inline-member-section {
   display: grid;
   gap: var(--sp-2);
@@ -280,22 +265,6 @@
   gap: var(--sp-1);
 }
 
-.rooms-settings-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.rooms-settings-section-title strong {
-  font-size: var(--fs-base);
-}
-
-.rooms-settings-section-title span {
-  color: var(--og-section-muted);
-  font-size: var(--fs-sm);
-}
-
 .rooms-member-search {
   display: flex;
   align-items: center;
@@ -317,14 +286,6 @@
   color: var(--og-section-text);
   font: inherit;
   font-size: var(--fs-base);
-}
-
-.rooms-member-avatar-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
 }
 
 .rooms-member-mini-avatar,
@@ -623,8 +584,7 @@
 }
 
 .rooms-member-row p,
-.rooms-member-row small,
-.rooms-member-drawer-foot {
+.rooms-member-row small {
   margin: 0;
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
@@ -636,32 +596,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.rooms-member-drawer-foot {
-  display: grid;
-  gap: 6px;
-  border-top: 1px solid var(--og-section-border);
-  color: var(--og-section-muted);
-  padding: 10px 6px 0;
-}
-
-.rooms-member-approvals-button {
-  justify-self: start;
-  border: 0;
-  background: transparent;
-  color: var(--og-section-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  padding: 0;
-}
-
-.rooms-member-approvals-button:hover,
-.rooms-member-approvals-button:focus-visible {
-  color: var(--og-section-text);
-  outline: none;
 }
 
 .rooms-mention-menu {

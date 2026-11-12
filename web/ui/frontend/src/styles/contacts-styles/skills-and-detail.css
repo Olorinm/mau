@@ -68,10 +68,6 @@
   background: var(--c-link);
 }
 
-.contacts-skill-tags {
-  grid-column: 1 / -1;
-}
-
 .contacts-skill-copy {
   display: grid;
   gap: 4px;
@@ -94,67 +90,6 @@
 .contacts-skill-copy small {
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
-}
-
-.contacts-skill-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 5px;
-  max-width: 120px;
-}
-
-.contacts-skill-tags em {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  border-radius: var(--r-pill);
-  background: var(--contacts-shared-control-bg);
-  color: var(--rooms-muted);
-  font-size: var(--fs-xs);
-  font-style: normal;
-  padding: 0 7px;
-  white-space: nowrap;
-}
-
-.contacts-skill-tags em[data-published="true"] {
-  background: var(--contacts-skill-published-bg);
-  color: var(--contacts-skill-published-fg);
-}
-
-.contacts-skill-pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.contacts-skill-pill {
-  display: inline-flex;
-  align-items: center;
-  max-width: 240px;
-  min-height: 28px;
-  border: 1px solid var(--contacts-shared-control-border);
-  border-radius: var(--r-pill);
-  background: var(--contacts-shared-control-bg);
-  color: var(--rooms-text);
-  font-size: var(--fs-sm);
-  padding: 0 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.contacts-detail-hero {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-}
-
-.contacts-detail-hero .rooms-avatar {
-  width: 54px;
-  height: 54px;
-  font-size: var(--contacts-detail-avatar-font-size);
 }
 
 .contacts-avatar-editor {
@@ -212,44 +147,6 @@ button.contacts-avatar-editor:focus-visible {
   border-radius: var(--r-pill);
   outline: 2px solid var(--room-dialog-field-focus-border);
   outline-offset: 3px;
-}
-
-.contacts-detail-hero p {
-  margin: 4px 0 0;
-  color: var(--rooms-muted);
-  font-size: var(--fs-base);
-}
-
-.contacts-detail-list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  border-top: 1px solid var(--rooms-border);
-}
-
-.contacts-detail-list div {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  min-height: 44px;
-  border-bottom: 1px solid var(--rooms-border);
-}
-
-.contacts-detail-list dt {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
-.contacts-detail-list dd {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--fs-base);
-  overflow-wrap: anywhere;
 }
 
 .contacts-detail-actions {

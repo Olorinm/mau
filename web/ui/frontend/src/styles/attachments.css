@@ -69,16 +69,6 @@
   color: var(--c-faint);
 }
 
-.opengrove-attachment-save {
-  flex: 0 0 auto;
-  border-radius: var(--r-pill);
-  padding: 3px var(--sp-2);
-  color: var(--c-accent);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-}
-
-.opengrove-attachment-save:hover,
 .opengrove-attachment-remove:hover {
   background: var(--c-line-04);
 }
