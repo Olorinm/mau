@@ -36,6 +36,15 @@ async function pageSurface(dialog: Locator, dark: boolean) {
   expect(values.background[3]).toBe(255);
   const brightness = Math.max(...values.background.slice(0, 3));
   if (dark) expect(brightness).toBeLessThan(90); else expect(brightness).toBeGreaterThan(230);
+  if (!dark) return;
+  // A dark dialog has the page colour: the scrim behind it has to dim the page clearly.
+  const scrims = await dialog.page().evaluate(() => [...document.querySelectorAll(".modal-overlay, .agent-modal-overlay")].map(el => {
+    const rgb = document.createElement("canvas").getContext("2d")!;
+    rgb.fillStyle = getComputedStyle(el).backgroundColor; rgb.fillRect(0, 0, 1, 1);
+    return rgb.getImageData(0, 0, 1, 1).data[3] / 255;
+  }));
+  expect(scrims.length).toBeGreaterThan(0);
+  for (const alpha of scrims) expect(alpha).toBeGreaterThanOrEqual(0.5);
 }
 
 for (const mode of ["light", "dark", "system"] as const) for (const width of [390, 900, 1440]) {

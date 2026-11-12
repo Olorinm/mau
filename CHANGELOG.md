@@ -4,6 +4,12 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.37] - 2026-11-12
+
+- Dialogs stand out in dark mode: the page behind them is dimmed more, confirmation dialogs
+  included, and the dialog has a light edge.
+- Dialog buttons are 36px tall, like the other controls.
+
 ## [0.1.0-alpha.36] - 2026-11-12
 
 - Settings, confirmation and connector authorization dialogs use dark backgrounds in dark mode,
