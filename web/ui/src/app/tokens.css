@@ -182,6 +182,8 @@
   --dialog-danger-hover-bg: color-mix(in srgb, var(--c-error) 86%, var(--c-overlay-ink));
 }
 
+:root[data-resolved-theme="dark"],
+[data-resolved-theme="dark"],
 :root[data-theme="dark"] {
   color-scheme: dark;
   --og-white: oklch(100% 0 0);
@@ -316,6 +318,8 @@
   --shadow-modal: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 24px 64px oklch(0% 0 0 / 0.16), 0 2px 8px oklch(0% 0 0 / 0.06);
 }
 
+:root[data-resolved-theme="dark"],
+[data-resolved-theme="dark"],
 :root[data-theme="dark"] {
   --c-panel: oklch(28.019% 0.0036 106.63);
   --c-panel-hover: oklch(31.708% 0.0054 91.55);
@@ -326,6 +330,7 @@
   --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
   --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
   --shadow-modal: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 24px 64px oklch(0% 0 0 / 0.5);
+  --c-page: oklch(23.852% 0.0037 106.68);
 }
 
 /* Compact density for run details, events, approvals and logs. */

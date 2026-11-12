@@ -431,6 +431,8 @@
   mix-blend-mode: darken;
 }
 
+:root[data-resolved-theme="dark"] .agent-ui-avatar-root::after,
+[data-resolved-theme="dark"] .agent-ui-avatar-root::after,
 [data-theme="dark"] .agent-ui-avatar-root::after {
   mix-blend-mode: lighten;
 }

@@ -16,6 +16,7 @@
 .agent-pixel-avatar .w { fill: color-mix(in oklch, var(--pixel-avatar-color) 28%, white); }
 .agent-pixel-avatar .k { fill: oklch(24% 0.02 280); }
 /* On dark surfaces the dark cells (stripes, ears, noses) are lifted so they do not vanish. */
+:root[data-resolved-theme="dark"] .agent-pixel-avatar .k,
 :root[data-theme="dark"] .agent-pixel-avatar .k,
 [data-resolved-theme="dark"] .agent-pixel-avatar .k { fill: oklch(40% 0.02 280); }
 .agent-pixel-avatar .t { fill: oklch(74% 0.17 60); }

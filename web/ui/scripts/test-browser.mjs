@@ -192,7 +192,41 @@ async function checkSettingsBrowser(page) {
   await page.setViewportSize({ width: 1100, height: 900 });
 }
 
+async function checkResolvedThemeDialogs(page) {
+  const assertDark = async (locator) => {
+    const colors = await locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement("canvas").getContext("2d");
+      const rgb = (color) => { canvas.fillStyle = color; canvas.fillRect(0, 0, 1, 1); return [...canvas.getImageData(0, 0, 1, 1).data]; };
+      const text = element.querySelector("h1, h2, h3, p") ?? element;
+      return { background: rgb(style.backgroundColor), text: rgb(getComputedStyle(text).color) };
+    });
+    assert.equal(colors.background[3], 255, "dialog surface must be opaque");
+    assert.ok(Math.max(...colors.background.slice(0, 3)) < 90, "dark dialogs must not have a light background");
+    assert.ok(Math.min(...colors.text.slice(0, 3)) > 120, "dark dialogs must retain readable text");
+  };
+  for (const mode of ["dark", "system", "scoped"]) {
+    await page.evaluate((mode) => {
+      const root = document.documentElement;
+      delete root.dataset.theme; delete root.dataset.resolvedTheme; delete document.body.dataset.resolvedTheme;
+      if (mode === "scoped") document.body.dataset.resolvedTheme = "dark";
+      else { root.dataset.theme = mode; if (mode === "system") root.dataset.resolvedTheme = "dark"; }
+    }, mode);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible(); await assertDark(settings);
+    await settings.getByRole("button", { name: "Close settings" }).click();
+    await page.getByRole("button", { name: "Destroy", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: "Destroy environment?" });
+    await expect(confirm).toBeVisible(); await assertDark(confirm);
+    await assertDark(confirm.getByRole("button", { name: "取消", exact: true }));
+    await confirm.getByRole("button", { name: "取消", exact: true }).click();
+  }
+  await page.evaluate(() => { delete document.documentElement.dataset.theme; delete document.documentElement.dataset.resolvedTheme; delete document.body.dataset.resolvedTheme; });
+}
+
 export async function checkAppBrowser(page) {
+  await checkResolvedThemeDialogs(page);
   await checkSettingsBrowser(page);
   await page.getByRole("button", { name: "Helper Ready", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Helper" })).toBeVisible();
