@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.35",
+  "version": "0.1.0-alpha.36",
   "private": true,
   "description": "Mau: an agent product composed from Agent Router, Host and Environment.",
   "type": "module",
@@ -39,7 +39,7 @@
     "dev:web": "npm --prefix web run dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:web": "npm run build:web && MAU_WEB_E2E=1 vitest run test/web-api.test.ts test/web-console.test.ts test/web-ledger-groups.test.ts test/run-experience.test.ts test/ledger-console.test.ts",
+    "test:web": "npm run build:web && MAU_WEB_E2E=1 vitest run test/web-api.test.ts test/web-console.test.ts test/web-ledger-groups.test.ts test/run-experience.test.ts test/ledger-console.test.ts test/style-surfaces.test.ts",
     "start": "node dist/main.js",
     "verify:packages": "npm run build && node scripts/verify-packages.mjs",
     "pack:cli": "npm run build && node scripts/pack-cli.mjs",

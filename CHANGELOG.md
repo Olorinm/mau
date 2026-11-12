@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.36] - 2026-11-12
+
+- Settings, confirmation and connector authorization dialogs use dark backgrounds in dark mode,
+  including when the theme follows the system.
+- Reduce bundled frontend styles by removing duplicate and unused component rules while preserving
+  light-theme appearance and existing control sizes.
+
 ## [0.1.0-alpha.35] - 2026-11-11
 
 - Web console: when an employee hands its browser to the owner, the live view opens in the card beside the
