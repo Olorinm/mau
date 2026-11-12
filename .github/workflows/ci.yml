@@ -5,14 +5,15 @@ on:
   pull_request:
 permissions:
   contents: read
-# Two jobs run side by side on separate runners: `test` (typechecks, console build,
-# tests with browser acceptance) and `packages` (CLI, Host and archive verification).
-# The preparation steps are shared through YAML anchors so both use the same pinned toolchain.
+# Three jobs run side by side on separate runners: `test` (typechecks, console build,
+# tests with browser acceptance), `packages` (CLI, Host and archive verification) and `ui`
+# (the web/ui package's own checks). The preparation steps are shared through YAML anchors
+# so all use the same pinned toolchain.
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Keep this image in sync with @playwright/test in package-lock.json.
+    # Keep this image in sync with @playwright/test in package-lock.json and web/package-lock.json.
     container: &playwright-container
       image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
       options: --ipc=host
@@ -105,7 +106,7 @@ jobs:
           JS
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
-      - run: npm --prefix web run typecheck
+      # Builds web/ui, then typechecks and builds the console.
       - &build-web
         run: npm run build:web
       - run: npm test
@@ -147,3 +148,32 @@ jobs:
           npm run verify:packages -- --environment-archive .packages/agent-environment.tar \
             --host-archive "$RUNNER_TEMP/olorinm-agent-host-${{ steps.pins.outputs.host_version }}.tgz" \
             --host-fixture "$RUNNER_TEMP/host-source/${{ steps.pins.outputs.host_path }}/test/fixtures/codex-server.mjs"
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: *playwright-container
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - *checkout
+      - *setup-node
+      - *pin-npm
+      # The UI package needs no private component: install the web workspace on its own.
+      - run: npm --prefix web ci --ignore-scripts --no-audit --no-fund
+      - name: Check preinstalled Playwright browser
+        working-directory: web
+        run: |
+          node --input-type=commonjs <<'JS'
+          const assert = require('node:assert/strict');
+          const { readFileSync, accessSync, constants } = require('node:fs');
+          const { driverVersion } = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
+          assert.equal(driverVersion, require('@playwright/test/package.json').version,
+            'Update the Playwright image and npm package together');
+          accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
+          JS
+      - run: npm --prefix web --workspace ui run typecheck
+      - run: npm --prefix web --workspace ui run build
+      - run: npm --prefix web --workspace ui test
+      - run: npm --prefix web --workspace ui run test:browser
+      - run: npm --prefix web --workspace ui run test:restored

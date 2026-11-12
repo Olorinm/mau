@@ -1,0 +1,365 @@
+.app-shell[data-view="rooms"] .sidebar,
+.app-shell[data-view="contacts"] .sidebar {
+  display: none;
+}
+
+.app-shell[data-view="rooms"] .workspace,
+.app-shell[data-view="contacts"] .workspace {
+  grid-column: 2;
+}
+
+.rooms-view {
+  /* Mapped onto the global semantic tokens so rooms joins the one source of
+     truth and dark mode follows automatically (the former per-theme rooms
+     overrides are deleted). */
+  --rooms-bg: var(--c-bg);
+  --rooms-panel: var(--c-surface);
+  --rooms-panel-soft: var(--c-surface-sunken);
+  --rooms-border: var(--c-border);
+  --rooms-border-strong: var(--c-border-strong);
+  --rooms-text: var(--c-text);
+  --rooms-muted: var(--c-muted);
+  --rooms-blue: var(--c-link);
+  --rooms-blue-soft: var(--c-accent-soft);
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: grid;
+  box-sizing: border-box;
+  grid-template-columns: var(--opengrove-sidebar-width, 284px) minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--rooms-text);
+  padding: var(--app-page-top-inset) var(--app-page-inline-inset) var(--app-page-bottom-inset);
+}
+
+.rooms-view[data-members-open="true"] {
+  grid-template-columns: var(--opengrove-sidebar-width, 284px) minmax(0, 1fr) minmax(320px, 360px);
+}
+
+.rooms-list-header {
+  display: flex;
+  align-items: center;
+}
+
+.rooms-list-header {
+  justify-content: space-between;
+}
+
+.rooms-list-header {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  padding: 0 6px 0 8px;
+}
+
+.rooms-list-title {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.rooms-title-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r-sm);
+  background: var(--rooms-blue-soft);
+  color: var(--rooms-blue);
+}
+
+.rooms-title-icon {
+  display: none;
+}
+
+.rooms-list-item > .rooms-avatar {
+  --avatar-badge-size: var(--sp-2);
+  --avatar-ring-color: var(--og-sidebar-bg);
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-directory-tree-menu-item);
+  background: transparent;
+  color: var(--og-section-icon);
+  box-shadow: none;
+  font-size: var(--rooms-mini-avatar-font-size);
+}
+
+.room-empty-state h3,
+.room-settings-panel h3 {
+  margin: 0;
+  font-size: var(--rooms-empty-title-font-size);
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-semibold);
+}
+
+.rooms-list-title h1 {
+  margin: 0;
+  color: var(--og-section-title);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+.rooms-list-title p {
+  display: none;
+}
+
+.rooms-list-title p,
+.room-empty-state p,
+.room-settings-panel p {
+  margin: 0;
+  color: var(--rooms-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.rooms-icon-button {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rooms-icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--og-section-muted);
+  box-shadow: none;
+}
+
+.rooms-icon-button:hover,
+.rooms-icon-button:focus-visible {
+  background: var(--og-section-hover);
+  color: var(--og-section-text);
+}
+
+.collaboration-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  border: 1px solid var(--rooms-border);
+  border-radius: var(--r-sm);
+  background: var(--rooms-panel-soft);
+  padding: 2px;
+}
+
+.collaboration-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--rooms-control-inner-radius);
+  background: transparent;
+  color: var(--rooms-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+}
+
+.collaboration-switch button:hover,
+.collaboration-switch button:focus-visible {
+  background: var(--og-section-hover);
+  color: var(--rooms-text);
+  outline: none;
+}
+
+.collaboration-switch button[data-active="true"] {
+  background: var(--c-surface);
+  color: var(--rooms-text);
+  outline: none;
+  box-shadow: var(--shadow-xs);
+}
+
+.rooms-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-height);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--c-text) 3%, var(--c-surface));
+  color: var(--og-section-muted);
+  padding: 0 10px;
+}
+
+.rooms-search:focus-within {
+  background: color-mix(in srgb, var(--c-text) 4.5%, var(--c-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-border) 58%, transparent);
+}
+
+.rooms-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--rooms-text);
+  font: inherit;
+  font-size: var(--fs-base);
+}
+
+.rooms-search-wrap {
+  position: relative;
+  z-index: 35;
+}
+
+.rooms-search-clear {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--rooms-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.rooms-search-clear:hover,
+.rooms-search-clear:focus-visible {
+  background: var(--rooms-blue-soft);
+  color: var(--rooms-blue);
+  outline: none;
+}
+
+.rooms-avatar {
+  --room-avatar-color: var(--rooms-blue);
+  --avatar-badge-size: var(--sp-3);
+  --avatar-ring-color: var(--rooms-panel);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--rooms-avatar-radius);
+  background: var(--room-avatar-color);
+  color: var(--og-white);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  overflow: visible;
+  box-shadow: var(--rooms-avatar-shadow);
+}
+
+.rooms-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.room-header-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: var(--sp-9);
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.room-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.room-empty-state,
+.room-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 24px;
+}
+
+.room-empty-state {
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.room-empty-state svg {
+  color: var(--rooms-blue);
+}
+
+.rooms-runtime-empty {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  align-self: stretch;
+  background: var(--rooms-panel);
+  border: 1px solid var(--rooms-border);
+  border-radius: var(--r-sm);
+}
+
+.room-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--rooms-blue);
+  color: var(--og-white);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  padding: 0 14px;
+}
+
+.room-primary-button:hover,
+.room-primary-button:focus-visible {
+  background: var(--rooms-primary-hover-bg);
+}
+
+.room-settings-panel section {
+  display: grid;
+  gap: 8px;
+  width: min(720px, 100%);
+  border: 1px solid var(--rooms-border);
+  border-radius: var(--r-sm);
+  background: var(--rooms-panel);
+  padding: 16px;
+}
+
+@media (max-width: 900px) {
+  .rooms-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The dark --rooms-* overrides were removed — the vars now map to global
+   tokens that already switch with the theme. The room-composer dark background
+   override is also gone: the composer is transparent in both themes. */
+
+.rooms-view[data-list-detail="compact"] .room-header {
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-1-5) var(--sp-2);
+}
+
+.rooms-view[data-list-detail="compact"] .room-header > .compact-detail-back {
+  flex-basis: 100%;
+}
+
+.rooms-view[data-list-detail="compact"] .room-header-main {
+  flex: 1;
+}

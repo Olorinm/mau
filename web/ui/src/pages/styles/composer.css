@@ -1,0 +1,128 @@
+.opengrove-composer {
+  display: grid;
+  width: min(760px, calc(100% - 48px));
+  gap: 0;
+  margin: 0 auto;
+  padding: 8px;
+  border: 1px solid var(--composer-border);
+  border-radius: var(--r-xl);
+  background: var(--composer-surface);
+  box-shadow: var(--composer-shadow);
+  overflow: visible;
+}
+
+.opengrove-question-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-height: 40px;
+}
+
+.opengrove-question-line[data-skill="true"] {
+  padding-top: 3px;
+}
+
+.opengrove-question {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  min-height: 40px;
+  max-height: 68px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 2px 2px 4px;
+  color: var(--composer-question-fg);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-normal);
+  line-height: var(--lh-normal);
+  resize: none;
+}
+
+.opengrove-question::placeholder {
+  color: var(--composer-placeholder-fg);
+}
+
+.opengrove-composer[data-skill="true"] .opengrove-question {
+  min-height: 40px;
+  padding-top: 3px;
+}
+
+.opengrove-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.opengrove-composer-footer-left,
+.opengrove-composer-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opengrove-composer-footer-left {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.opengrove-composer-footer-right {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.opengrove-composer-plus {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 0;
+  color: var(--opengrove-composer-plus-fg);
+  background: transparent;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.opengrove-composer-plus svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  stroke: currentColor;
+}
+
+.opengrove-composer-plus:hover {
+  background: var(--composer-control-hover-bg);
+  color: var(--composer-control-hover-fg);
+}
+
+.opengrove-action.opengrove-composer-plus:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--composer-focus-ring);
+}
+
+.opengrove-primary.opengrove-send {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-pill);
+  background: var(--composer-send-bg);
+  color: var(--composer-send-fg);
+  box-shadow: none;
+}
+
+.opengrove-primary.opengrove-send:hover {
+  background: var(--composer-send-bg-hover);
+}

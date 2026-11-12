@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LoadingSurface } from "@olorinm/agent-frontend";
+import { LoadingSurface } from "@olorinm/agent-ui/pages";
 import { Button } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";

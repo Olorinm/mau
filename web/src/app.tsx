@@ -23,7 +23,7 @@ import {
   FrontendProvider,
   frontendLabels,
   type FrontendLabelKey,
-} from "@olorinm/agent-frontend";
+} from "@olorinm/agent-ui/pages";
 import { ProductIcon } from "@olorinm/agent-ui/app";
 
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {

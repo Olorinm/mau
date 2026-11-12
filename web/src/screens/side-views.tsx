@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatMarkdown } from "@olorinm/agent-ui";
 import { Button, useToast } from "@olorinm/agent-ui/app";
-import { FileEditor } from "@olorinm/agent-frontend";
+import { FileEditor } from "@olorinm/agent-ui/pages";
 import { mauApi, memoryDelimiter, type MemoryFile, type MemoryOperation } from "../api/client";
 import type { Session } from "../api/session";
 import { ApiError } from "../api/http";

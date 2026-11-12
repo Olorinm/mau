@@ -1,0 +1,125 @@
+.room-group-avatar {
+  display: grid;
+  place-items: center;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  overflow: hidden;
+}
+
+.room-group-avatar:not(.grove-avatar) {
+  background: var(--room-group-avatar-bg);
+  color: var(--room-group-avatar-fg);
+  box-shadow: inset 0 0 0 1px var(--room-group-avatar-border);
+}
+
+.room-group-avatar:not(.grove-avatar) svg {
+  width: 62%;
+  height: 62%;
+  stroke-width: 2.15;
+}
+
+.room-group-avatar.has-members {
+  --room-avatar-stack-item-size: var(--sp-5);
+  --room-avatar-stack-overlap: var(--sp-2);
+  display: flex;
+  width: max-content;
+  height: var(--room-avatar-stack-item-size);
+  align-items: center;
+  justify-content: flex-start;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.room-group-avatar.has-members .room-group-avatar-stack {
+  --avatar-group-overlap: var(--room-avatar-stack-overlap);
+  --avatar-ring-color: var(--og-surface);
+  width: max-content;
+  height: var(--room-avatar-stack-item-size);
+  overflow: visible;
+}
+
+.room-group-avatar-stack > .room-group-avatar-member,
+.room-group-avatar-stack > .room-group-avatar-count {
+  --avatar-size: var(--room-avatar-stack-item-size);
+  width: var(--room-avatar-stack-item-size);
+  height: var(--room-avatar-stack-item-size);
+  border-radius: var(--r-pill);
+}
+
+.room-group-avatar-stack > .room-group-avatar-member {
+  overflow: visible;
+  background: transparent;
+}
+
+.room-group-avatar-stack > .room-group-avatar-count {
+  overflow: hidden;
+  background: var(--c-surface-hover);
+  color: var(--og-text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.rooms-list-item:has(> .room-group-avatar.has-members) {
+  grid-template-columns: var(--sp-10) minmax(0, 1fr) auto;
+}
+
+.rooms-group-profile-icon.room-group-avatar {
+  font-size: var(--fs-md);
+}
+
+.rooms-group-profile-card:has(.room-group-avatar.has-members) {
+  grid-template-columns: var(--sp-10) minmax(0, 1fr);
+}
+
+.rooms-group-profile-icon.room-group-avatar.has-members {
+  --room-avatar-stack-item-size: var(--sp-4);
+  --room-avatar-stack-overlap: var(--sp-1);
+  width: var(--sp-10);
+  height: var(--sp-4);
+}
+
+.contacts-nav-panel .rooms-icon-button,
+.rooms-list-panel .rooms-icon-button {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+}
+
+.contacts-sidebar-directory {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 0;
+}
+
+.contacts-nav-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.contacts-nav-section-label small {
+  color: var(--og-section-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-normal);
+  white-space: nowrap;
+}
+
+.contacts-detail-layout {
+  min-height: 0;
+  overflow: auto;
+}
+
+.contacts-detail-layout .contacts-detail-panel {
+  min-height: 100%;
+  width: 100%;
+}

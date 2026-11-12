@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { SearchField } from "@olorinm/agent-frontend";
+import { SearchField } from "@olorinm/agent-ui/pages";
 
 /** One conversation the owner can switch to: an employee (with or without a chat yet), a group, or another channel's session. */
 export interface ChatEntry {

@@ -1,0 +1,328 @@
+import assert from "node:assert/strict";
+import { build } from "esbuild";
+import { chromium, expect } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+export async function checkUiBrowser(page) {
+  await expect(page.getByRole("table")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Docs" })).toHaveAttribute(
+    "href",
+    "https://example.com",
+  );
+  assert.equal(await page.locator('a[href^="javascript:"]').count(), 0);
+  assert.equal(await page.evaluate(() => Boolean(window.bad)), false);
+  const preview = page.getByRole("button", {
+    name: "Preview image Sample",
+    exact: true,
+  });
+  await preview.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(preview).toBeFocused();
+  const hidden = page.getByRole("button", { name: "Hidden action" });
+  await expect(hidden).not.toBeVisible();
+  await page.getByRole("button", { name: "Process", exact: true }).click();
+  await expect(hidden).toBeVisible();
+  await hidden.click();
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText(
+    "process-clicked",
+  );
+  await page.getByRole("button", { name: "Process", exact: true }).click();
+  await expect(hidden).not.toBeVisible();
+  await page.locator(".thread-resource-card").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Resource action")).toHaveText("preview");
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Download resource" }).click();
+  await expect(page.getByLabel("Resource action")).toHaveText("download");
+  await page
+    .getByRole("button", { name: "Always allow", exact: true })
+    .dblclick();
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText(
+    '{"choice":"native-always"}',
+  );
+  await expect(
+    page.getByRole("button", { name: "Allow once", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Retry action" }).click();
+  await expect(page.getByRole("alert")).toContainText("Transient failure");
+  await page.getByRole("button", { name: "Retry action" }).click();
+  await expect(page.getByLabel("Attempts")).toHaveText("2");
+  await expect(
+    page.getByRole("button", { name: "Retry action" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "questions", exact: true }).click();
+  await page.getByRole("button", { name: "1. one,two" }).click();
+  await page.getByRole("button", { name: "2. three" }).click();
+  await expect(
+    page.getByRole("button", { name: "Skip", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("Secret", { exact: true })).toHaveAttribute(
+    "type",
+    "password",
+  );
+  await page.getByLabel("Secret", { exact: true }).fill("fixture-answer");
+  await page.getByRole("button", { name: "Answer", exact: true }).click();
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText(
+    '{"answers":{"paths":["one,two","three"],"secret":"fixture-answer"}}',
+  );
+  await page.getByRole("button", { name: "form", exact: true }).click();
+  await page.getByLabel("JSON response", { exact: true }).fill("[]");
+  await page.getByRole("button", { name: "Submit response" }).click();
+  await expect(page.getByRole("alert")).toContainText("JSON object");
+  await page
+    .getByLabel("JSON response", { exact: true })
+    .fill('{"enabled":true}');
+  await page.getByRole("button", { name: "Submit response" }).click();
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText(
+    '{"action":"accept","content":{"enabled":true}}',
+  );
+  await page.getByRole("button", { name: "native", exact: true }).click();
+  await page
+    .getByLabel("JSON response", { exact: true })
+    .fill('{"decision":{"nativeField":true}}');
+  await page.getByRole("button", { name: "Submit response" }).click();
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText(
+    '{"native":{"decision":{"nativeField":true}}}',
+  );
+  await page.getByRole("button", { name: "Start interaction" }).click();
+  await expect(
+    page.getByRole("button", { name: "Live approve" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Abort interaction" }).click();
+  await expect(page.getByRole("button", { name: "Live approve" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByLabel("Reply", { exact: true })).toHaveText("aborted");
+  const input = page.getByRole("textbox", {
+    name: "Ask the agent",
+    exact: true,
+  });
+  await input.fill("你好");
+  await input.dispatchEvent("compositionstart");
+  await input.press("Enter");
+  await expect(page.getByLabel("Sent", { exact: true })).toHaveText("[]");
+  await input.dispatchEvent("compositionend");
+  await input.fill("hello");
+  await input.press("Shift+Enter");
+  await expect(page.getByLabel("Sent", { exact: true })).toHaveText("[]");
+  await input.fill("hello");
+  await input.press("Enter");
+  await expect(page.getByLabel("Sent", { exact: true })).toHaveText(
+    '["hello"]',
+  );
+  await input.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Stop running" }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Stop running" }).click();
+  await expect(
+    page.getByRole("button", { name: "Send message" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Theme", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+    "mobile content must not overflow",
+  );
+}
+
+async function checkSettingsBrowser(page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings.getByRole("heading", { name: "Connectors" })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Connectors" })).toHaveAttribute("aria-current", "page");
+  // Design tokens: 36 px fully rounded controls, borderless grey panels, 48 px rows, 20 px modal radius.
+  const metrics = await page.evaluate(() => {
+    const style = (selector) => getComputedStyle(document.querySelector(selector));
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    return { search: box(".agent-search-field").height, segmented: box(".agent-segmented").height,
+      row: box(".agent-list-row").height, panelRadius: style(".agent-group-panel").borderTopLeftRadius,
+      panelBorder: style(".agent-group-panel").borderTopWidth, modalRadius: style(".agent-settings-dialog").borderTopLeftRadius,
+      nav: box(".agent-settings-nav").width, title: style(".agent-settings-page-header h2").fontSize };
+  });
+  assert.deepEqual(metrics, { search: 36, segmented: 36, row: 48, panelRadius: "16px", panelBorder: "0px", modalRadius: "20px", nav: 225, title: "21px" });
+  await settings.getByRole("searchbox", { name: "Search" }).fill("zzz");
+  await expect(settings.getByRole("button", { name: "Browser", exact: true })).toHaveCount(0);
+  await settings.getByRole("button", { name: "Clear search" }).click();
+  await settings.getByRole("button", { name: "Connected 1" }).click();
+  await expect(settings.getByRole("button", { name: "Connected 1" })).toHaveAttribute("aria-pressed", "true");
+  // Icon segments: named by their label, as wide as their icons, with a divider before a set-apart segment.
+  const sections = settings.getByRole("group", { name: "Detail sections" });
+  await sections.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(settings.getByLabel("Detail section", { exact: true })).toHaveText("advanced");
+  await expect(sections.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-pressed", "false");
+  assert.ok((await sections.boundingBox()).width < 140, "icon segments must not stretch across the page");
+  await expect(sections.locator(".agent-segmented-divider")).toHaveCount(1);
+  await settings.getByRole("button", { name: "Connect", exact: true }).click();
+  const consent = page.getByRole("dialog", { name: "Browser" });
+  await expect(consent).toContainText("What it can read");
+  await consent.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("no");
+  await settings.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("yes");
+  await settings.getByRole("button", { name: "Browser", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "Browser" })).toBeVisible();
+  await settings.getByRole("combobox", { name: "Upload files" }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(settings).toBeVisible();
+  await settings.getByRole("combobox", { name: "Upload files" }).click();
+  await page.getByRole("option", { name: "Allow", exact: true }).click();
+  await expect(page.getByLabel("Upload setting")).toHaveText("allow");
+  await settings.getByRole("button", { name: "All connectors" }).click();
+  await settings.getByRole("button", { name: "General" }).click();
+  await expect(settings.getByRole("heading", { name: "General" })).toBeVisible();
+  await settings.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByLabel("Connected")).toHaveText("signed-out");
+  // Mobile: full screen, the navigation is the first page and pages get a back button instead.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => {
+    const full = await settings.boundingBox();
+    return [full.x, full.y, full.width, full.height];
+  }).toEqual([0, 0, 390, 844]);
+  await settings.getByRole("button", { name: "Back" }).click();
+  await expect(settings.getByRole("navigation", { name: "Settings" })).toBeVisible();
+  await settings.getByRole("button", { name: "Connectors" }).click();
+  await expect(settings.getByRole("navigation")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.setViewportSize({ width: 1100, height: 900 });
+}
+
+async function checkResolvedThemeDialogs(page) {
+  const assertDark = async (locator) => {
+    const colors = await locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement("canvas").getContext("2d");
+      const rgb = (color) => { canvas.fillStyle = color; canvas.fillRect(0, 0, 1, 1); return [...canvas.getImageData(0, 0, 1, 1).data]; };
+      const text = element.querySelector("h1, h2, h3, p") ?? element;
+      return { background: rgb(style.backgroundColor), text: rgb(getComputedStyle(text).color) };
+    });
+    assert.equal(colors.background[3], 255, "dialog surface must be opaque");
+    assert.ok(Math.max(...colors.background.slice(0, 3)) < 90, "dark dialogs must not have a light background");
+    assert.ok(Math.min(...colors.text.slice(0, 3)) > 120, "dark dialogs must retain readable text");
+  };
+  // The dialog has the page colour, so in dark themes the scrim is what separates it from the page behind.
+  const assertScrim = async (selector) => {
+    const alpha = await page.locator(selector).evaluate((element) => {
+      const canvas = document.createElement("canvas").getContext("2d");
+      canvas.fillStyle = getComputedStyle(element).backgroundColor; canvas.fillRect(0, 0, 1, 1);
+      return canvas.getImageData(0, 0, 1, 1).data[3] / 255;
+    });
+    assert.ok(alpha >= 0.5, `${selector} must dim a dark page behind a dialog (alpha ${alpha})`);
+  };
+  for (const mode of ["dark", "system", "scoped"]) {
+    await page.evaluate((mode) => {
+      const root = document.documentElement;
+      delete root.dataset.theme; delete root.dataset.resolvedTheme; delete document.body.dataset.resolvedTheme;
+      if (mode === "scoped") document.body.dataset.resolvedTheme = "dark";
+      else { root.dataset.theme = mode; if (mode === "system") root.dataset.resolvedTheme = "dark"; }
+    }, mode);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible(); await assertDark(settings);
+    await assertScrim(".agent-modal-overlay");
+    await settings.getByRole("button", { name: "Close settings" }).click();
+    await page.getByRole("button", { name: "Destroy", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: "Destroy environment?" });
+    await expect(confirm).toBeVisible(); await assertDark(confirm);
+    await assertScrim(".modal-overlay");
+    await assertDark(confirm.getByRole("button", { name: "取消", exact: true }));
+    await confirm.getByRole("button", { name: "取消", exact: true }).click();
+  }
+  await page.evaluate(() => { delete document.documentElement.dataset.theme; delete document.documentElement.dataset.resolvedTheme; delete document.body.dataset.resolvedTheme; });
+}
+
+export async function checkAppBrowser(page) {
+  await checkResolvedThemeDialogs(page);
+  await checkSettingsBrowser(page);
+  await page.getByRole("button", { name: "Helper Ready", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Helper" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Destroy", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: "Destroy environment?" });
+  await expect(confirm).toContainText("Workspace files are removed.");
+  await confirm.getByRole("button", { name: "取消" }).click();
+  await expect(page.getByLabel("Confirm result")).toHaveText("null");
+  await page.getByRole("button", { name: "Destroy", exact: true }).click();
+  await page.getByRole("button", { name: "确认" }).click();
+  await expect(page.getByLabel("Confirm result")).toHaveText("primary");
+  await page.getByRole("button", { name: "Notify", exact: true }).click();
+  const notices = page.getByRole("region", { name: "通知" });
+  await expect(notices.getByRole("status")).toHaveText("Agent paused");
+  await notices.getByRole("button", { name: "关闭通知" }).click();
+  await expect(notices.getByRole("status")).toHaveCount(0);
+  const background = () => page.evaluate(() => getComputedStyle(document.querySelector(".agent-app")).backgroundColor);
+  const light = await background();
+  await page.getByRole("button", { name: "Theme", exact: true }).click();
+  assert.notEqual(await background(), light, "dark theme must change application tokens");
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    true,
+    "mobile application content must not overflow",
+  );
+}
+
+async function buildFixture(entry, output) {
+  await mkdir(output, { recursive: true });
+  await build({
+    entryPoints: [entry],
+    outfile: join(output, "app.js"),
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    loader: { ".json": "json" },
+  });
+  await writeFile(
+    join(output, "index.html"),
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="./app.css"><div id="root"></div><script src="./app.js"></script>',
+  );
+}
+
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const output = resolve(".local/browser/chat");
+  const appOutput = resolve(".local/browser/app");
+  await buildFixture("test/browser-fixture.tsx", output);
+  await buildFixture("test/app-fixture.tsx", appOutput);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 1100, height: 900 },
+      reducedMotion: "reduce",
+    });
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await checkUiBrowser(page);
+    await page.screenshot({
+      path: join(output, "standalone-mobile.png"),
+      fullPage: true,
+    });
+    const appPage = await browser.newPage({
+      viewport: { width: 1100, height: 900 },
+      reducedMotion: "reduce",
+    });
+    appPage.on("pageerror", (error) => errors.push(error.message));
+    await appPage.goto(pathToFileURL(join(appOutput, "index.html")).href);
+    await checkAppBrowser(appPage);
+    await appPage.screenshot({ path: join(appOutput, "app-mobile.png"), fullPage: true });
+    assert.deepEqual(errors, []);
+    console.log("Shared UI browser interactions passed");
+  } finally {
+    await browser.close();
+  }
+}

@@ -1,0 +1,17 @@
+.rooms-empty-row {
+  color: var(--rooms-muted);
+  font-size: var(--fs-base);
+  padding: 12px 10px;
+}
+
+.rooms-create-menu-wrap {
+  position: relative;
+  opacity: 0.58;
+  pointer-events: auto;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+.rooms-list-header:hover .rooms-create-menu-wrap,
+.rooms-list-header:focus-within .rooms-create-menu-wrap {
+  opacity: 1;
+}

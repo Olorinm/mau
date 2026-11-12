@@ -1,0 +1,55 @@
+/* Design system shared with @olorinm/agent-ui/app (type scale, spacing, radii, surfaces): white panels floating on
+   the grey app background, grey rounded bubbles and a floating composer.
+   Brand colors (accent, success, error) are unchanged. */
+
+/* Lists: 36 px rows, a light-grey rounded selection. */
+.rooms-list-item {
+  min-height: 40px;
+  border-radius: var(--r-nav-item);
+}
+.rooms-list-item[data-active="true"] {
+  background: var(--c-panel);
+  font-weight: var(--fw-normal);
+}
+.rooms-search {
+  min-height: 36px;
+  border-radius: var(--r-pill);
+  background: var(--c-panel);
+  padding: 0 14px;
+}
+.rooms-search:focus-within {
+  background: var(--c-panel);
+  box-shadow: 0 0 0 2px var(--c-focus-ring);
+}
+
+/* Bubbles: grey, generously rounded, 15 px body text. Markdown blocks keep their own spacing. */
+.room-chat-bubble {
+  border-radius: var(--r-bubble);
+  font-size: 15px;
+  line-height: var(--lh-relaxed);
+  padding: 10px 16px;
+}
+.room-chat-bubble:has(> :is(.thread-md-p, .thread-md-list, .thread-md-heading, .thread-code-block, blockquote, table, hr)) {
+  display: grid;
+  gap: 8px;
+  white-space: normal;
+}
+.room-chat-bubble > .thread-md-p {
+  white-space: pre-line;
+}
+.room-chat-bubble > blockquote {
+  margin: 0;
+  border-left: 2px solid var(--c-panel-line);
+  padding-left: 12px;
+  color: var(--c-text-secondary);
+}
+.room-chat-bubble ol,
+.room-chat-bubble ul {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+/* Composer: a white floating pill. */
+.room-composer-og.opengrove-composer {
+  border-radius: 24px;
+}
