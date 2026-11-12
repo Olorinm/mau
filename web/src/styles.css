@@ -325,9 +325,13 @@ body {
   padding-top: 6px;
 }
 
-/* Chat: one column. The full list of conversations opens inside the conversation's own card, on its left; the
-   employee profile, a file or the handed-over browser is a card laid beside it. */
+/* Chat: one column. People are on the left and content on the right, both floating inside the conversation's card
+   without moving it: the people panel (the full list of conversations, or one employee's profile) and a file.
+   The handed-over browser needs room to be operated, so it is a card beside the conversation. */
 .mau-stage {
+  position: relative;
+  --mau-float-inset: 8px;
+  --mau-float-shadow: var(--shadow-float), 0 10px 28px oklch(0% 0 0 / 0.1);
   display: flex;
   height: 100%;
   min-width: 0;
@@ -337,16 +341,11 @@ body {
   flex: 1;
   grid-template-columns: minmax(0, 1fr);
 }
+.mau-stage > .rooms-view {
+  position: relative;
+}
 .mau-stage > .rooms-view[data-members-open="true"] {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-}
-/* The list and the conversation meet without a gap, so together they are one card. */
-.mau-stage[data-roster-open] > .rooms-view {
-  padding-left: 0;
-}
-.mau-stage[data-roster-open] > .rooms-view > .room-main-panel {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
 }
 .mau-stage .rooms-list-panel {
   display: none;
@@ -488,14 +487,80 @@ body {
 
 /* The full list: a small card on the page, as tall as its rows. */
 .mau-roster {
-  flex: none;
+  position: absolute;
+  z-index: 20;
+  top: calc(var(--app-page-top-inset, 0px) + var(--mau-float-inset));
+  bottom: calc(var(--app-page-bottom-inset, 0px) + var(--mau-float-inset));
+  left: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
   width: 244px;
-  margin: var(--app-page-top-inset, 0px) 0 var(--app-page-bottom-inset, 0px) var(--app-page-inline-inset, 0px);
+  max-width: calc(100% - 2 * (var(--app-page-inline-inset, 0px) + var(--mau-float-inset)));
   overflow: auto;
-  border-radius: var(--r-lg) 0 0 var(--r-lg);
-  background: var(--c-surface);
+  border-radius: 14px;
+  background: var(--c-panel-raised);
+  box-shadow: var(--mau-float-shadow);
   padding: 8px 6px 10px;
+  transition: width 0.18s ease;
   animation: mau-roster-in 0.2s ease-out;
+}
+/* An employee's profile needs more room than the list. */
+.mau-roster[data-view="profile"] {
+  width: 340px;
+  padding: 8px 0 0;
+}
+.mau-roster[data-view="profile"] .mau-roster-top {
+  padding: 0 8px;
+}
+.mau-roster-back {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-note);
+  padding: 0 10px;
+}
+.mau-roster-back:hover {
+  color: var(--c-text);
+}
+/* A row and, for an employee, the button that opens the profile; it takes the place of the time on hover. */
+.mau-roster-item {
+  position: relative;
+}
+.mau-roster-info {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: none;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  background: none;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: 600 12px/1 var(--font-sans);
+  place-items: center;
+  scale: 0.75;
+}
+.mau-roster-item:hover .mau-roster-info,
+.mau-roster-info:focus-visible,
+.mau-roster-row[aria-current="true"] + .mau-roster-info {
+  display: grid;
+}
+.mau-roster-info:hover {
+  color: var(--c-text);
+}
+.mau-roster-item:hover:has(.mau-roster-info) .mau-roster-meta,
+.mau-roster-item:has(.mau-roster-info:focus-visible) .mau-roster-meta,
+.mau-roster-row[aria-current="true"]:has(+ .mau-roster-info) .mau-roster-meta {
+  visibility: hidden;
 }
 @keyframes mau-roster-in {
   from { opacity: 0; transform: translateX(-10px); }
@@ -511,7 +576,7 @@ body {
 }
 .mau-roster-close,
 .mau-side-close,
-.mau-roster h3 button {
+.mau-roster[data-view="list"] h3 button {
   display: grid;
   flex: none;
   border: 0;
@@ -531,11 +596,11 @@ body {
 }
 .mau-roster-close:hover,
 .mau-side-close:hover,
-.mau-roster h3 button:hover {
+.mau-roster[data-view="list"] h3 button:hover {
   background: var(--c-fill);
   color: var(--c-text);
 }
-.mau-roster h3 {
+.mau-roster[data-view="list"] h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -544,7 +609,7 @@ body {
   font-size: var(--fs-caption);
   font-weight: 500;
 }
-.mau-roster h3 button {
+.mau-roster[data-view="list"] h3 button {
   width: 22px;
   height: 22px;
   border-radius: 6px;
@@ -591,7 +656,7 @@ body {
   margin: 12px 8px;
 }
 
-/* The employee profile: a card to the right of the conversation. */
+/* A file or the handed-over browser, on the right of the conversation. */
 .mau-side-card {
   position: relative;
   min-width: 0;
@@ -677,20 +742,34 @@ body {
   grid-template-columns: minmax(320px, 2fr) minmax(480px, 3fr);
 }
 
-/* Phones: the list takes the whole card while it is open, instead of squeezing the conversation beside it. */
-@media (max-width: 640px) {
-  .mau-roster {
-    flex: 1;
-    width: auto;
-    margin-right: var(--app-page-inline-inset, 0px);
-    border-radius: var(--r-lg);
+/* A file floats over the right of the conversation, as the people panel does over the left. */
+@media (min-width: 901px) {
+  .mau-stage > .rooms-view[data-members-open="true"]:not(:has(.mau-side-frame)) {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .mau-stage[data-roster-open] > .rooms-view {
-    display: none;
+  .mau-side-view:not(:has(.mau-side-frame)) {
+    position: absolute;
+    z-index: 20;
+    top: calc(var(--app-page-top-inset, 0px) + var(--mau-float-inset));
+    right: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
+    bottom: calc(var(--app-page-bottom-inset, 0px) + var(--mau-float-inset));
+    width: min(400px, calc(100% - 2 * (var(--app-page-inline-inset, 0px) + var(--mau-float-inset))));
+    border-radius: 14px;
+    background: var(--c-panel-raised);
+    box-shadow: var(--mau-float-shadow);
   }
 }
 
-/* Narrow screens: the profile covers the conversation instead of sitting beside it. */
+/* Phones: the people panel covers the whole card. */
+@media (max-width: 640px) {
+  .mau-roster,
+  .mau-roster[data-view="profile"] {
+    right: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
+    width: auto;
+  }
+}
+
+/* Narrow screens: a file or the browser covers the conversation instead of sitting beside it. */
 @media (max-width: 900px) {
   .mau-side-card {
     position: fixed;

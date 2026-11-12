@@ -190,13 +190,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const names = new Map(agents.data?.map(({ agent }) => [agent.id, agent.name]) ?? []);
 
   const [selected, setSelected] = useState<string>();
-  // The full list of conversations (a card beside the chat), the employee profile card and the new-employee dialog.
+  // The people panel over the left of the chat (the full list of conversations, or one employee's profile opened
+  // from it) and the new-employee dialog.
   const [rosterOpen, setRosterOpen] = useState(false);
   const [profile, setProfile] = useState<string>();
   const [creating, setCreating] = useState(false);
-  // Beside the conversation, instead of the profile: a message's file, or the browser an employee handed over.
+  // On the right of the conversation: a message's file, or the browser an employee handed over.
   const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }>();
-  useEffect(() => { if (profile !== undefined) setSideView(undefined); }, [profile]);
   const dismissedHandoff = useRef<string | undefined>(undefined);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -351,12 +351,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const moved = useRef<{ key: string | undefined; from: DOMRect | undefined }>(undefined);
   const remember = (key: string | undefined) => { moved.current = { key, from: figureRect(key) }; };
   useLayoutEffect(() => { const move = moved.current; moved.current = undefined; if (move) slideFigure(move.key, move.from); }, [rosterOpen, currentKey]);
+  const panelOpen = rosterOpen || profileSummary !== undefined;
+  const closePanel = () => { remember(currentKey); setRosterOpen(false); setProfile(undefined); };
   useEffect(() => {
-    if (!rosterOpen) return;
-    const outside = (event: PointerEvent) => { if (!(event.target as Element).closest?.(".mau-roster, [role='dialog']")) { remember(currentKey); setRosterOpen(false); } };
+    if (!panelOpen) return;
+    // The panel floats over the conversation, so a press anywhere else puts it away. Dialogs, menus and toasts the
+    // profile opens are outside it too, and do not.
+    const outside = (event: PointerEvent) => {
+      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .agent-toast-region")) closePanel();
+    };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
-  }, [rosterOpen, currentKey]);
+  }, [panelOpen, currentKey]);
   const pick = (entry: Entry) => {
     // The current one again: its profile (a group: its members).
     if (entry.key === currentKey && !rosterOpen) {
@@ -366,6 +372,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     }
     remember(entry.key);
     setRosterOpen(false);
+    setProfile(undefined);
     if (entry.chat) setSelected(entry.chat.chatId);
     else if (entry.agentId) start.mutate(entry.agentId);
   };
@@ -570,15 +577,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   ];
   const header = (
     <header className="room-header mau-strip-header">
-      <ChatStrip entries={strip} current={currentKey} rest={allEntries.length - strip.length} expanded={rosterOpen}
-        onPick={pick} onToggleAll={() => { remember(currentKey); setRosterOpen(true); }}
+      <ChatStrip entries={strip} current={currentKey} rest={allEntries.length - strip.length} expanded={panelOpen}
+        onPick={pick} onToggleAll={() => { remember(currentKey); setProfile(undefined); setRosterOpen(true); }}
         label={zh ? "对话" : "Conversations"} allLabel={zh ? "全部对话" : "All conversations"} />
       {current ? <div className="room-header-actions">
         {handoffCard && handoffUrl && sideView?.kind !== "browser" ? <button type="button" className="mau-header-button" aria-label={zh ? "接管浏览器" : "Browser handoff"}
           title={zh ? "接管浏览器" : "Browser handoff"} onClick={() => { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }}><ProductIcon name="globe" /></button> : null}
-        {currentAgent && known.has(currentAgent) ? <button type="button" className="mau-header-button" aria-pressed={profile === currentAgent}
-          aria-label={zh ? "员工资料" : "Employee profile"} title={zh ? "员工资料" : "Employee profile"}
-          onClick={() => setProfile((open) => open === currentAgent ? undefined : currentAgent)}><ProductIcon name="identity" /></button> : null}
         <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
           messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
           onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
@@ -598,21 +602,21 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           actions={[{ label: t("agents.create"), variant: "primary", onClick: () => setCreating(true) }]}
           notice={failure} />
       ) : (
-        <div className="mau-stage" data-roster-open={rosterOpen || undefined} data-read-only={current && !canSend ? "" : undefined}>
-          {rosterOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={() => { remember(currentKey); setRosterOpen(false); }}
+        <div className="mau-stage" data-roster-open={panelOpen || undefined} data-read-only={current && !canSend ? "" : undefined}>
+          {panelOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={closePanel}
             label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
-            emptyLabel={zh ? "没有找到" : "Nothing found"} /> : null}
+            emptyLabel={zh ? "没有找到" : "Nothing found"}
+            onProfile={{ label: zh ? "员工资料" : "Employee profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
+              open: (entry) => { setRosterOpen(true); setProfile(entry.key.slice(6)); } }}
+            onBack={() => { setProfile(undefined); setRosterOpen(true); }}
+            profile={profileSummary ? { label: zh ? "员工资料" : "Employee profile", backLabel: zh ? "全部对话" : "All conversations",
+              content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary} /> } : undefined} /> : null}
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
             {...(sideView?.kind === "browser" && handoffUrl ? { inspector: (
               <BrowserSideView url={handoffUrl} onClose={() => { dismissedHandoff.current = sideView.cardId; setSideView(undefined); }} />
             ) } : sideView?.kind === "file" ? { inspector: (
               <FileSideView key={sideView.attachment.attachmentId} api={api} attachment={sideView.attachment} onClose={() => setSideView(undefined)}
                 onDownload={() => void saveAttachment(api, sideView.attachment).catch(setUploadError)} />
-            ) } : profileSummary ? { inspector: (
-              <aside className="mau-side-card" aria-label={zh ? "员工资料" : "Employee profile"}>
-                <button type="button" className="mau-side-close" aria-label={t("common.close")} title={t("common.close")} onClick={() => setProfile(undefined)}>×</button>
-                <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary} />
-              </aside>
             ) } : {})}
             detail={current && view ? (
             // Files dropped anywhere on the conversation are attached (the composer handles its button and paste).

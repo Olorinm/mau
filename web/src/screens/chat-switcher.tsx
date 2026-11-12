@@ -83,21 +83,39 @@ export function ChatStrip({ entries, current, rest, expanded, onPick, onToggleAl
   );
 }
 
-/** The full list: a small card beside the conversation, one row per conversation. */
-export function ChatRoster({ sections, current, onPick, onClose, label, searchLabel, closeLabel, emptyLabel }: {
+/** The people panel, floating over the left of the conversation: the full list, one row per conversation, or one
+ *  employee's profile opened from it. */
+export function ChatRoster({ sections, current, onPick, onClose, label, searchLabel, closeLabel, emptyLabel, profile, onProfile, onBack }: {
   sections: readonly ChatSection[]; current: string | undefined; onPick(entry: ChatEntry): void; onClose(): void;
   label: string; searchLabel: string; closeLabel: string; emptyLabel: string;
+  /** An employee's profile, shown in place of the list. */
+  profile?: { label: string; backLabel: string; content: ReactNode } | undefined;
+  /** Opens an employee's profile from its row. */
+  onProfile?: { label: string; available(entry: ChatEntry): boolean; open(entry: ChatEntry): void } | undefined;
+  onBack?(): void;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const shown = sections.map((section) => ({ ...section, entries: section.entries.filter((entry) => entry.title.toLowerCase().includes(query)) }));
   useEffect(() => {
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    // Escape closes the panel, unless it is closing a dialog or menu opened from the profile.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']")) onClose();
+    };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
   }, [onClose]);
+  if (profile) return (
+    <aside className="mau-roster" data-view="profile" aria-label={profile.label}>
+      <div className="mau-roster-top">
+        <button type="button" className="mau-roster-back" onClick={onBack}><span aria-hidden="true">‹</span> {profile.backLabel}</button>
+        <button type="button" className="mau-roster-close" aria-label={closeLabel} title={closeLabel} onClick={onClose}>×</button>
+      </div>
+      {profile.content}
+    </aside>
+  );
   return (
-    <aside className="mau-roster" aria-label={label}>
+    <aside className="mau-roster" data-view="list" aria-label={label}>
       <div className="mau-roster-top">
         <SearchField value={search} onChange={setSearch} placeholder={searchLabel} />
         <button type="button" className="mau-roster-close" aria-label={closeLabel} title={closeLabel} onClick={onClose}>×</button>
@@ -109,12 +127,16 @@ export function ChatRoster({ sections, current, onPick, onClose, label, searchLa
             {section.action ? <button type="button" aria-label={section.action.label} title={section.action.label} onClick={section.action.onSelect}>+</button> : null}
           </h3>
           {section.entries.map((entry) => (
-            <button key={entry.key} type="button" className="mau-roster-row" data-chat-key={entry.key} aria-current={entry.key === current ? "true" : undefined}
-              title={entry.preview} onClick={() => onPick(entry)}>
-              {entry.avatar(30)}
-              <span className="mau-roster-name">{entry.title}</span>
-              <span className="mau-roster-meta">{entry.unread ? <span className="mau-badge">{entry.unread}</span> : entry.time}</span>
-            </button>
+            <div key={entry.key} className="mau-roster-item">
+              <button type="button" className="mau-roster-row" data-chat-key={entry.key} aria-current={entry.key === current ? "true" : undefined}
+                title={entry.preview} onClick={() => onPick(entry)}>
+                {entry.avatar(30)}
+                <span className="mau-roster-name">{entry.title}</span>
+                <span className="mau-roster-meta">{entry.unread ? <span className="mau-badge">{entry.unread}</span> : entry.time}</span>
+              </button>
+              {onProfile?.available(entry) ? <button type="button" className="mau-roster-info" aria-label={`${onProfile.label} · ${entry.title}`}
+                title={onProfile.label} onClick={() => onProfile.open(entry)}>i</button> : null}
+            </div>
           ))}
         </section>
       ) : null)}

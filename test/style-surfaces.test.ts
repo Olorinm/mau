@@ -70,21 +70,36 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
       const top = await page.evaluate(() => ({ bar: document.querySelector(".app-titlebar")!.getBoundingClientRect().width,
         card: document.querySelector(".room-main-panel")!.getBoundingClientRect().top }));
       expect(top.bar).toBeLessThan(200); expect(top.card).toBeLessThan(16);
-      // The list of conversations opens inside the conversation's card: same top and bottom, and no gap between them.
+      // The people panel floats inside the conversation's card and does not move or resize it.
+      const card = () => page.evaluate(() => { const r = document.querySelector(".room-main-panel")!.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; });
+      const before = await card();
       await page.locator(".mau-chip-more").click();
       const roster = page.locator(".mau-roster"); await see(roster).toBeVisible();
-      // The list slides in; once it has settled its right edge is the conversation's left edge.
-      await see.poll(() => page.evaluate(() => { const [list, chat] = [".mau-roster", ".room-main-panel"].map(q => document.querySelector(q)!.getBoundingClientRect());
-        return Math.max(Math.abs(list!.right - chat!.left), Math.abs(list!.top - chat!.top), Math.abs(list!.bottom - chat!.bottom)); })).toBeLessThan(1);
+      await see.poll(() => roster.evaluate(el => getComputedStyle(el).transform)).toBe("none");
+      expect(await card()).toEqual(before);
+      const inside = async () => { const r = await roster.evaluate(el => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; });
+        expect(r[0]!).toBeGreaterThan(before[0]!); expect(r[1]!).toBeGreaterThan(before[1]!); expect(r[2]!).toBeLessThan(before[2]!); expect(r[3]!).toBeLessThan(before[3]!); return r[2]! - r[0]!; };
+      expect(await inside()).toBeLessThan(260);
       await capture(page, `${prefix}-roster`);
-      await page.locator(".mau-roster-close").click(); await see(roster).toBeHidden();
+      // An employee's profile opens in the same panel, which widens for it; back returns to the list.
+      await roster.getByRole("button", { name: /^员工资料/ }).first().click();
+      const profile = page.getByRole("complementary", { name: "员工资料" }); await see(profile).toBeVisible();
+      await see.poll(inside).toBeGreaterThan(330);
+      expect(await card()).toEqual(before);
+      await capture(page, `${prefix}-profile`);
+      await profile.getByRole("button", { name: "全部对话" }).click();
+      await see(page.getByRole("complementary", { name: "全部对话" })).toBeVisible();
+      // A press on the conversation puts the panel away.
+      await composer.click(); await see(roster).toBeHidden();
     }
     if (width === 390) {
-      // On a phone the profile covers the page, title bar included, so its close button can be reached.
+      // The current employee's figure opens the profile; on a phone the panel covers the card and can be closed.
       await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
-      const side = page.locator(".mau-side-card"); await see(side).toBeVisible();
-      await page.locator(".mau-side-close").click(); await see(side).toBeHidden();
-      // The list takes the whole card on a phone, and picking a conversation brings the conversation back.
+      const profile = page.getByRole("complementary", { name: "员工资料" }); await see(profile).toBeVisible();
+      expect(await profile.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);
+      await capture(page, `${prefix}-profile`);
+      await profile.getByRole("button", { name: "收起" }).click(); await see(profile).toBeHidden();
+      // The list covers the card too, and picking a conversation brings the conversation back.
       await page.locator(".mau-chip-more").click();
       const roster = page.locator(".mau-roster"); await see(roster).toBeVisible(); await capture(page, `${prefix}-roster`);
       expect(await roster.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);

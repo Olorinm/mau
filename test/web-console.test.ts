@@ -49,7 +49,7 @@ const ledger = { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerCo
 /** An employee's figure in the header row of the conversation page. */
 const agentChip = (page: Page, agentId: string) =>
   page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
-/** The employee profile card beside the conversation (the former contacts detail). */
+/** The employee profile in the people panel (the former contacts detail); the current employee's figure opens it. */
 const profileCard = (page: Page) =>
   page.getByRole("complementary", { name: "员工资料" });
 
@@ -138,10 +138,11 @@ it.skipIf(!built)(
       "true",
     );
     await dialog.getByRole("button", { name: "创建" }).click();
-    // The new employee's conversation opens, and the open profile card follows it.
+    // The new employee's conversation opens; its figure opens its profile.
     const writer = page.locator(".mau-chip[aria-selected='true']");
     await see(writer).toHaveAttribute("title", "writer");
     expect(await writer.getAttribute("data-chat-key")).toMatch(/^agent:.+/);
+    await writer.click();
     await see(profile.getByRole("heading", { name: "writer" })).toBeVisible();
     await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
       "可用",
@@ -245,7 +246,7 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
-    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await agentChip(page, f.agent.id).click();
     await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "微信" })
       .getByRole("button")
@@ -288,7 +289,7 @@ it.skipIf(!built)(
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
-    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await agentChip(page, f.agent.id).click();
     await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "微信" })
       .getByRole("button")
@@ -353,7 +354,7 @@ it.skipIf(!built)(
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
-    await page.getByRole("button", { name: "员工资料", exact: true }).click();
+    await agentChip(page, f.agent.id).click();
     await profileCard(page)
       .locator(".agent-ui-settings-row", { hasText: "飞书" })
       .getByRole("button")
