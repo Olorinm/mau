@@ -205,6 +205,15 @@ async function checkResolvedThemeDialogs(page) {
     assert.ok(Math.max(...colors.background.slice(0, 3)) < 90, "dark dialogs must not have a light background");
     assert.ok(Math.min(...colors.text.slice(0, 3)) > 120, "dark dialogs must retain readable text");
   };
+  // The dialog has the page colour, so in dark themes the scrim is what separates it from the page behind.
+  const assertScrim = async (selector) => {
+    const alpha = await page.locator(selector).evaluate((element) => {
+      const canvas = document.createElement("canvas").getContext("2d");
+      canvas.fillStyle = getComputedStyle(element).backgroundColor; canvas.fillRect(0, 0, 1, 1);
+      return canvas.getImageData(0, 0, 1, 1).data[3] / 255;
+    });
+    assert.ok(alpha >= 0.5, `${selector} must dim a dark page behind a dialog (alpha ${alpha})`);
+  };
   for (const mode of ["dark", "system", "scoped"]) {
     await page.evaluate((mode) => {
       const root = document.documentElement;
@@ -215,10 +224,12 @@ async function checkResolvedThemeDialogs(page) {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "Settings" });
     await expect(settings).toBeVisible(); await assertDark(settings);
+    await assertScrim(".agent-modal-overlay");
     await settings.getByRole("button", { name: "Close settings" }).click();
     await page.getByRole("button", { name: "Destroy", exact: true }).click();
     const confirm = page.getByRole("dialog", { name: "Destroy environment?" });
     await expect(confirm).toBeVisible(); await assertDark(confirm);
+    await assertScrim(".modal-overlay");
     await assertDark(confirm.getByRole("button", { name: "取消", exact: true }));
     await confirm.getByRole("button", { name: "取消", exact: true }).click();
   }
