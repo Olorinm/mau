@@ -2,7 +2,7 @@
 
 [English](web.md)
 
-控制台（`web/src`）用 [`web/ui`](../web/ui/README.md) 里的 `@olorinm/agent-ui` 组装页面（页面布局在 `./pages` 及各功能入口，底层组件在 `.` 与 `./app`）。
+控制台（`web/src`）用 [`web/ui`](../web/ui/README.md) 里的 `@olorinm/agent-ui` 组装页面（页面布局在 `./pages`，底层组件在 `.` 与 `./app`）。
 组件包只接收数据、React 内容和回调，不依赖 Mau、Router、Host 或 Environment。认证、导航、接口请求和环境/渠道流程都在 `web/src`。
 
 控制台提供与自有员工的对话（单聊和群聊）、员工创建与管理、环境生命周期、渠道连接、连接器账号和设置。
