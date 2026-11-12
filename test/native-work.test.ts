@@ -109,7 +109,7 @@ it("product native and memory APIs enforce owner identity before touching the Ho
       if (body.method === "memory/status") return unsupported ? Response.json({ error: "native_request_failed", nativeError: { code: -32601, message: "Method not found" } }, { status: 502 }) : Response.json({ result: { state: "disabled" } });
     }
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
-  } }, undefined, { nativeWork: { employeeTools: true } });
+  } }, { nativeWork: { employeeTools: true } });
   await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
   const base = `/agents/${f.agent.id}`;
   expect((await f.api(`${base}/native/skills`, undefined, "invalid")).status).toBe(401);

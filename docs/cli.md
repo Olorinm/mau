@@ -46,7 +46,7 @@ operate on the selected Agent.
 `mau delete NAME --yes` permanently deletes an Agent: it destroys every cloud
 environment it still has, deactivates its Matrix account, and removes its
 memory, schedules, channel connections and product records. Sent messages stay
-in chat history; shared workspaces belong to the account and are kept. It is
+in chat history. It is
 refused while work or a scheduled run is in progress. If it stops partway, the
 Agent stops receiving messages and running `mau delete` again finishes it.
 
@@ -74,21 +74,6 @@ local session directory.
 
 Maintainers can build this archive with `npm run pack:cli` and verify a fresh
 global installation with `npm run verify:cli` after bootstrapping the source tree.
-
-The workspace commands require the 0.1.0-alpha.4 client build. Until published,
-build its independent archive with `npm run pack:cli` and install the resulting
-`.packages/olorinm-mau-cli-0.1.0-alpha.4.tgz` locally.
-
-```sh
-mau workspace-create project
-mau setup designer --environment shared-codex --workspace WORKSPACE_ID
-mau setup developer --environment shared-codex --workspace WORKSPACE_ID
-mau workspaces
-```
-
-Use an operator-provided profile with workspace support. Omitting `--workspace`
-creates an independent persistent workspace. The same account can share one
-workspace among Agents; credentials and native sessions remain per environment.
 
 ## Recover Feishu setup
 

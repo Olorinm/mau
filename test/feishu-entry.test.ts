@@ -84,7 +84,7 @@ it("reports expiry with its reason, owner-private usage, and finishes the device
 
 async function product() {
   const u = await upstream();
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options, connectedApps: { url: u.options.url, issuer: "fixture",
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options, connectedApps: { url: u.options.url, issuer: "fixture",
     audience: "fixture-connectors", callerKeyFile: u.keyFile, assignments: [] } });
   return { u, f, channels: routerApplication(f.mau.router.connections.agentDirectory(f.agent.id)) };
 }

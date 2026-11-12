@@ -28,12 +28,12 @@ async function edgeMau(serving: Parameters<typeof mauFixture>[1] = {}) {
 }
 
 it.skipIf(!supported)("refuses to start with Matrix off and no edge identity", async () => {
-  await expect(mauFixture(cleanup, {}, undefined, {}, off)).rejects.toThrow("matrix_off_requires_edge_identity");
+  await expect(mauFixture(cleanup, {}, {}, off)).rejects.toThrow("matrix_off_requires_edge_identity");
 });
 
 it.skipIf(!supported)("refuses to start with Matrix off and no ledger: the console would have no chat source", async () => {
   const access = await accessIssuer(cleanup);
-  await expect(mauFixture(cleanup, {}, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) }, { matrix: { enabled: false } },
+  await expect(mauFixture(cleanup, {}, { edgeIdentity: access.config({ "alice@example.test": alice }) }, { matrix: { enabled: false } },
     { edgeIdentityCerts: access.certsUrl })).rejects.toThrow("matrix_off_requires_ledger_read");
 });
 

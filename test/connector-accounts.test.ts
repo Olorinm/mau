@@ -51,7 +51,7 @@ it("keeps unconfigured service explicit and authenticates every Mau account rout
 it("uses real authority verification, isolates owner accounts and strips unreviewed fields", async () => {
   const u = await upstream();
   u.state.account = { status: "connected", verification: "oauth", scopes: ["gmail.readonly"], access_token: "never-return-this", authorizationUrl: u.state.consent };
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options });
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options });
   const response = await f.api("/connector-accounts");
   expect(response.data).toEqual({ configured: true, data: [{ id: "alice-gmail", kind: "google", label: "Gmail", state: "connected", verification: "oauth", scopes: ["gmail.readonly"] }] });
   expect(JSON.stringify(response)).not.toContain("never-return-this");
@@ -66,7 +66,7 @@ it("uses real authority verification, isolates owner accounts and strips unrevie
 });
 it("starts owner consent, checks the callback result and disconnects without granting Agent access", async () => {
   const u = await upstream();
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options });
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options });
   const consent = await f.api("/connector-accounts/alice-gmail/connect", {});
   expect(consent.data).toEqual({ state: "authorization_required", verification: "none", scopes: [], authorizationUrl: u.state.consent });
   u.state.account = { status: "connected", verification: "oauth" };

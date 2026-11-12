@@ -3,8 +3,7 @@
 Replacement preserves the Agent ID, owner, channel identities and communication
 records. Native sessions, runs and pending calls are reset because they belong to
 the old Host. The caller must pause the old environment first, finish or explicitly
-resolve outstanding work, and close SSH sessions. Shared workspaces are not yet
-supported by this replacement operation.
+resolve outstanding work, and close SSH sessions.
 
 Use the locally built CLI:
 
