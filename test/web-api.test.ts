@@ -81,7 +81,7 @@ it("edge login boots without a login page, token or stored session; sign-out goe
   const storage = new MemoryStorage();
   vi.stubGlobal("localStorage", storage);
   const seen: Array<{ url: string; authorization: string | null; credentials: RequestCredentials | undefined }> = [];
-  let info: unknown = { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false };
+  let info: unknown = { login: "edge", logoutUrl: "/cdn-cgi/access/logout" };
   let account: () => Response = () => Response.json({ owner: "@alice:agents.example", via: "edge", email: "alice@example.test", expiresAt: "2026-11-06T10:00:00.000Z" });
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     seen.push({ url, authorization: new Headers(init.headers).get("authorization"), credentials: init.credentials });
@@ -103,10 +103,10 @@ it("edge login boots without a login page, token or stored session; sign-out goe
   expect(seen).toHaveLength(2);
   // Only a same-origin path is followed for the logout.
   for (const logoutUrl of ["https://evil.example/logout", "//evil.example/logout", undefined]) {
-    info = { login: "edge", logoutUrl, matrix: false };
+    info = { login: "edge", logoutUrl };
     expect(await bootSession()).toMatchObject({ mode: "edge", session: { edge: { logoutUrl: "/cdn-cgi/access/logout" } } });
   }
-  info = { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false };
+  info = { login: "edge", logoutUrl: "/cdn-cgi/access/logout" };
   account = () => Response.json({ error: "owner_not_configured", email: "stranger@example.test" }, { status: 403 });
   expect(await bootSession()).toEqual({ mode: "edge-denied", email: "stranger@example.test", logoutUrl: "/cdn-cgi/access/logout" });
   account = () => new Response(null, { status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } });
@@ -121,7 +121,7 @@ it("a service without edge login has no web login: the boot fails with web_login
   // A session an older console stored is never read or used.
   storage.setItem("mau.session", JSON.stringify({ token: "kept", owner: "@alice:agents.example" }));
   vi.stubGlobal("localStorage", storage);
-  for (const info of [{ login: "matrix", homeserver: "https://matrix.example", matrix: true }, { homeserver: "https://matrix.example" }, {}]) {
+  for (const info of [{ login: "other" }, {}]) {
     const calls = stubFetch(() => Response.json(info));
     expect(await bootSession()).toEqual({ mode: "edge-failed", code: "web_login_unavailable" });
     expect(calls.map((call) => [call.url, call.headers.get("authorization")])).toEqual([["/_mau/v1/info", null]]);

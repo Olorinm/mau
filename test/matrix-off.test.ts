@@ -2,45 +2,40 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see } from "@playwright/test";
-import { ManagedService } from "@agent-router/server";
 import { alice, mauFixture, root } from "./fixtures/mau.js";
-import { accessIssuer } from "./fixtures/access.js";
-import { edgeMauFixture } from "./fixtures/edge.js";
 
-// agent-router ADR 0005 phase 7: Mau with `AGENT_MATRIX=off` (the Router service config's `matrix.enabled: false`).
-// Released Routers before phase 7 have no Matrix switch and skip.
-const supported = typeof (ManagedService.prototype as { matrixEnabled?: unknown }).matrixEnabled === "function";
+// Mau runs Router with its Matrix switch off (agent-router ADR 0005 section 19), whatever the service config says:
+// owners sign in at the edge, chats come from the ledger and no homeserver is ever contacted.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.unstubAllGlobals(); });
-const off = { matrix: { enabled: false }, ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerGroups: true };
+// A service config that asks for Matrix: Mau turns it off and never uses these settings.
+const matrixSettings = { matrix: { enabled: true }, homeserver: "https://matrix.fixture", asToken: "a".repeat(48), hsToken: "h".repeat(48) };
 
-/** Every outbound fetch of the server process (the fixture's Matrix settings point at https://matrix.fixture). */
+/** Every outbound fetch of the server process. */
 function recordFetch() {
   const urls: string[] = [], inner = globalThis.fetch;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => { urls.push(String(input instanceof Request ? input.url : input)); return inner(input, init); });
   return urls;
 }
 async function edgeMau(serving: Parameters<typeof mauFixture>[1] = {}) {
-  const f = await edgeMauFixture(cleanup, serving, off);
+  const f = await mauFixture(cleanup, serving, {}, matrixSettings);
   return { f, access: f.access };
 }
 
-it.skipIf(!supported)("refuses to start with Matrix off and no edge identity", async () => {
-  await expect(mauFixture(cleanup, {}, {}, off)).rejects.toThrow("matrix_off_requires_edge_identity");
+it("refuses to start without an edge identity: there is no other owner login", async () => {
+  await expect(mauFixture(cleanup, {}, { edgeIdentity: undefined })).rejects.toThrow("edge_identity_required");
 });
 
-it.skipIf(!supported)("refuses to start with Matrix off and no ledger: the console would have no chat source", async () => {
-  const access = await accessIssuer(cleanup);
-  await expect(mauFixture(cleanup, {}, { edgeIdentity: access.config({ "alice@example.test": alice }) }, { matrix: { enabled: false } },
-    { edgeIdentityCerts: access.certsUrl })).rejects.toThrow("matrix_off_requires_ledger_read");
+it("refuses to start without the ledger: the console would have no chat source", async () => {
+  await expect(mauFixture(cleanup, {}, {}, { ledgerRead: false })).rejects.toThrow("ledger_read_required");
 });
 
-it.skipIf(!supported)("creates, configures and deletes employees without Matrix and serves the edge-only info", async () => {
+it("creates, configures and deletes employees without Matrix and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();
-  expect(await (await fetch(f.base + root + "/info")).json()).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false });
+  expect(await (await fetch(f.base + root + "/info")).json()).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });
   const jwt = access.jwt();
   expect(await (await fetch(f.base + root + "/account", { headers: { "cf-access-jwt-assertion": jwt } })).json()).toMatchObject({ owner: alice, via: "edge" });
   const router = await (await fetch(`${f.base}/_agent-router/v1/agents/${f.agent.id}`, { headers: { "cf-access-jwt-assertion": jwt } })).json() as { matrix: unknown };
@@ -66,7 +61,7 @@ it.skipIf(!supported)("creates, configures and deletes employees without Matrix 
   expect(urls.filter((url) => url.includes("matrix.fixture") || url.includes("/_matrix/"))).toEqual([]);
 }, 60_000);
 
-it.skipIf(!supported || !built)("runs the console with features.matrix=false without any Matrix code path", async (context) => {
+it.skipIf(!built)("runs the console without any Matrix code path", async () => {
   const runs = new Map<string, Record<string, unknown>>();
   const host = (url: URL, init?: RequestInit) => {
     const method = init?.method ?? "GET", path = url.pathname;
@@ -84,7 +79,7 @@ it.skipIf(!supported || !built)("runs the console with features.matrix=false wit
   const { f, access } = await edgeMau({ webRoot, host, hostCapabilities: { runIdempotency: true } });
   const jwt = access.jwt();
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> } };
-  if (me.limits?.features?.matrix !== false) return context.skip();
+  expect(me.limits?.features?.matrix).toBe(false);
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 

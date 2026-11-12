@@ -42,17 +42,15 @@ const optionsSchema = z.object({
       skillInterval: z.number().int().min(0).max(1000000).default(15) }).strict().prefault({}),
   }).strict().prefault({}),
   connectionsFile: z.string().min(1).optional(),
-  publicHomeserver: z.url().optional(),
-  /** Router's edge identity (agent-router ADR 0005 18.2), validated by Router. Same shape as AGENT_EDGE_IDENTITY_FILE's `edgeIdentity`. */
+  /** Router's edge identity (agent-router ADR 0005 18.2), validated by Router. Same shape as AGENT_EDGE_IDENTITY_FILE's `edgeIdentity`.
+   * Required here or in the Router service config: it is the only owner login. */
   edgeIdentity: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 const apiRoot = "/_mau/v1";
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
 interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number }
-type EdgeIdentityConfig = ServiceConfig extends { edgeIdentity?: infer T } ? T : never;
+type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
 interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined }
-interface EdgeRouterService { authenticateRequest?(request: OwnerRequest): Promise<OwnerPrincipal> }
-const bearer = (req: { headers: IncomingMessage["headers"] }) => req.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1] ?? "";
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
 /** Product records keyed or tagged by a deleted employee: business scopes (`agentId:operation`), JSON keys
@@ -77,10 +75,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
-  const publicHomeserver = new URL(options.publicHomeserver ?? `https://${config.serverName}`);
-  if (!["https:", "http:"].includes(publicHomeserver.protocol) || publicHomeserver.username ||
-      publicHomeserver.password || publicHomeserver.search || publicHomeserver.hash || publicHomeserver.pathname !== "/")
-    throw new Error("invalid_public_homeserver_url");
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
   // Owner writes need an approval presenter: only Mau's authority key (connectorAccounts) can sign grants.
@@ -90,15 +84,15 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
-  const edgeIdentity = options.edgeIdentity ?? (config as { edgeIdentity?: unknown }).edgeIdentity;
-  if (options.edgeIdentity && (config as { edgeIdentity?: unknown }).edgeIdentity) throw new Error("edge_identity_configured_twice");
-  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), ...(edgeIdentity ? { edgeIdentity: edgeIdentity as EdgeIdentityConfig } : {}) };
-  // agent-router ADR 0005 19.1: `AGENT_MATRIX=off` reaches Router through the service config. Without Matrix there is
-  // no Matrix login, so owners must sign in through the edge identity.
-  const matrix = (config as { matrix?: { enabled?: boolean } }).matrix?.enabled !== false;
-  if (!matrix && !edgeIdentity) throw new Error("matrix_off_requires_edge_identity");
-  // Without Matrix the console's only chat source is the ledger (Router refuses `ledgerRead` without `ledgerSend`).
-  if (!matrix && !(config as { ledgerRead?: boolean }).ledgerRead) throw new Error("matrix_off_requires_ledger_read");
+  const edgeIdentity = options.edgeIdentity as EdgeIdentityConfig | undefined ?? config.edgeIdentity;
+  if (options.edgeIdentity && config.edgeIdentity) throw new Error("edge_identity_configured_twice");
+  // Owners sign in through the edge identity only, and the console's only chat source is Router's ledger
+  // (Router refuses `ledgerRead` without `ledgerSend`).
+  if (!edgeIdentity) throw new Error("edge_identity_required");
+  if (!config.ledgerRead) throw new Error("ledger_read_required");
+  // Mau always runs Router with its Matrix switch off (agent-router ADR 0005 19.1): no homeserver is contacted.
+  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), matrix: { enabled: false },
+    edgeIdentity };
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
@@ -126,14 +120,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       http: (id, binding) => environments.http(id, binding),
     },
   });
-  const owners = router.service as typeof router.service & EdgeRouterService;
-  // A Router without request authentication would silently ignore the edge config.
-  if (edgeIdentity && typeof owners.authenticateRequest !== "function") throw new Error("router_edge_identity_unsupported");
-  /** Every owner route and the SSH upgrade: the Access JWT when edge identity is on, otherwise the bearer token. */
+  /** Every owner route and the SSH upgrade: the Access JWT when the request carries one, otherwise the bearer token. */
   // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests.
-  const authenticateRequest = async (req: OwnerRequest): Promise<OwnerPrincipal> =>
-    owners.authenticateRequest ? owners.authenticateRequest({ headers: req.headers, method: req.method })
-      : { ownerId: await router.service.authenticate(bearer(req)), via: "bearer" };
+  const authenticateRequest = (req: OwnerRequest): Promise<OwnerPrincipal> =>
+    router.service.authenticateRequest({ headers: req.headers, method: req.method });
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments);
   business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
@@ -240,14 +230,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     await connectorRuntime.callback(req, res);
   });
   // The console only reads its own files; product and Router routes keep their own handlers.
-  if (serving.webRoot) app.use(webConsole(serving.webRoot, matrix ? publicHomeserver.origin : undefined));
+  if (serving.webRoot) app.use(webConsole(serving.webRoot));
   const product = express.Router();
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
   product.use(express.json({ limit: "16kb" }));
   product.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  // Login needs the public account endpoint, never the internal Matrix service address.
-  product.get("/info", (_req, res) => res.json(edgeIdentity ? { login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false }
-    : { login: "matrix", homeserver: publicHomeserver.origin, matrix: true }));
+  product.get("/info", (_req, res) => res.json({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" }));
   product.use(async (req, res, next) => {
     const principal = await authenticateRequest(req);
     res.locals.principal = principal; res.locals.owner = principal.ownerId;

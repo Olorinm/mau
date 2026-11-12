@@ -43,8 +43,7 @@ The server release archive also includes `web/dist`. After installing the archiv
 point `MAU_WEB_ROOT` to that directory inside the installed Mau package. `npm pack`
 builds both server and console before packaging.
 
-The page's Content Security Policy allows connections only to the same origin and
-the public homeserver (`publicHomeserver` in `mau.json`) while Router's Matrix switch is on. The only
+The page's Content Security Policy allows connections only to the same origin. The only
 framed page is the live browser view an Agent hands to its owner.
 
 ## Login (Cloudflare Access)
@@ -53,9 +52,9 @@ The console has no login page and stores no token. Its only login is the edge id
 in `mau.json` (the shape of Router's `edgeIdentity`), Router verifies the `Cf-Access-Jwt-Assertion` JWT on
 every `/_mau/v1` and `/_agent-router/v1` owner request and on the SSH upgrade, and maps its email (or a
 configured service token) to an owner. The plain email header and the `CF_Authorization` cookie are never
-trusted. `GET /_mau/v1/info` then returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout",
-"matrix": false }`. A service without `edgeIdentity` has no web login; the console shows an error with a
-retry button.
+trusted. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
+Mau does not start without `edgeIdentity` (`edge_identity_required`) or without Router's ledger
+(`ledger_read_required`), and it always runs Router with Matrix off: no homeserver is configured or contacted.
 
 - Boot reads `GET /_mau/v1/account` with the same-origin Access cookie; Cloudflare adds the JWT.
 - An account that is not mapped gets a full page naming its email, with "Switch account" (Access logout).
@@ -66,13 +65,6 @@ retry button.
 - Cloudflare adds the JWT to cross-site requests too, so Router accepts an unsafe (non-GET) edge request only with
   an `Origin` of the console (`edgeIdentity.origins`, default the public URL's origin, or the request's own host)
   and a JSON-like body type. Non-browser callers behind Access send a bearer token or an explicit `Origin`.
-
-### Without Matrix (`AGENT_MATRIX=off`)
-
-With Router's Matrix switch off, Mau requires `edgeIdentity` (start fails with
-`matrix_off_requires_edge_identity`) and Router's ledger (`matrix_off_requires_ledger_read`), serves no
-homeserver in the console's `connect-src`, and adds no Matrix connection when an environment becomes ready.
-The console reads `features.matrix` from `GET /web/me`: when it is `false`, Matrix is not offered as a channel.
 
 ## Conversations
 

@@ -12,11 +12,14 @@ This package uses Node.js; SSH additionally requires local `ssh` and `ssh-keygen
 It does not install the Mau server or any Agent Kit package. It is distributed through GitHub Releases;
 `npm install -g @olorinm/mau-cli` from the npm registry is not available.
 
-Your operator supplies a service URL, an account, and access to an environment
-profile with model access configured. Save your password in a private local file.
+Mau sits behind Cloudflare Access. Your operator supplies the service URL, maps your Access email (or an
+Access service token) to an account, and assigns an environment profile with model access configured.
 
 ```sh
-mau login --url https://mau.example --user '@alice:agents.example' --password-file /private/password
+cloudflared access login https://mau.example
+mau login --url https://mau.example
+# automation: an Access service token mapped by the operator
+mau login --url https://mau.example --access-client-id-file /private/id --access-client-secret-file /private/secret
 mau options
 mau setup helper --environment cloud-codex
 mau channel-connect feishu
@@ -24,18 +27,11 @@ mau check
 mau status
 ```
 
-Behind Cloudflare Access (and always when the service runs without Matrix), log in at the edge instead:
-
-```sh
-cloudflared access login https://mau.example
-mau login --url https://mau.example --edge
-# automation: an Access service token mapped by the operator
-mau login --url https://mau.example --access-client-id-file /private/id --access-client-secret-file /private/secret
-```
-
-`--edge` is the default when `GET /_mau/v1/info` reports `login: "edge"`. Access credentials are read on every call
+Access credentials are read on every call
 (`--access-client-id-file`/`--access-client-secret-file`, `CF_ACCESS_CLIENT_ID[_FILE]`/`CF_ACCESS_CLIENT_SECRET[_FILE]`,
 `--access-token-file`/`CF_ACCESS_TOKEN[_FILE]`, or `cloudflared access token`) and are never saved.
+`mau login --url URL --token-file FILE` signs in with an account bearer token instead, where the operator's
+Router issues them.
 
 Follow the links or QR codes to connect your own channel. To select an Agent that
 already exists, use `mau agents` and `mau use NAME` instead of `setup`.
@@ -44,7 +40,7 @@ logging in alone does not allocate a container. `mau pause` and `mau resume`
 operate on the selected Agent.
 
 `mau delete NAME --yes` permanently deletes an Agent: it destroys every cloud
-environment it still has, deactivates its Matrix account, and removes its
+environment it still has and removes its
 memory, schedules, channel connections and product records. Sent messages stay
 in chat history. It is
 refused while work or a scheduled run is in progress. If it stops partway, the

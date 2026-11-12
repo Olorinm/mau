@@ -26,7 +26,6 @@ import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
-import { useMatrixAvailable } from "../api/features";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
 import { openSettings } from "../settings/route";
 import { employeeDocuments, memoryTarget, type EmployeeDocument } from "./side-views";
@@ -43,13 +42,11 @@ const checkTone: Record<string, LineTone> = {
   verified: "success",
   needs_action: "warning",
   not_verified: "neutral",
-  disabled: "neutral",
 };
 const channels = [
   "feishu",
   "weixin",
   "telegram",
-  "matrix",
   "grove-mail",
 ] as const;
 const isChannel = (kind: string): kind is (typeof channels)[number] =>
@@ -69,9 +66,7 @@ export function AgentDetail(props: {
   const confirm = useConfirm();
   const queries = useQueryClient();
   const { agent, environment } = props.summary;
-  // A Matrix connection is shown only while Router has Matrix on; one left from before it was turned off is not.
-  const matrix = useMatrixAvailable(props.session);
-  const connections = props.summary.connections.filter((connection) => connection.kind !== "matrix" || matrix);
+  const { connections } = props.summary;
   const mau = mauApi(props.session.token),
     router = routerApi(props.session.token);
   const [connecting, setConnecting] = useState<{ job?: ConnectionJob } | null>(

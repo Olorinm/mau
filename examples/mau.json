@@ -26,5 +26,10 @@
       }
     ]
   },
-  "publicHomeserver": "https://matrix.example"
+  "edgeIdentity": {
+    "provider": "cloudflare-access",
+    "teamDomain": "https://example-team.cloudflareaccess.com",
+    "audiences": ["ACCESS_APPLICATION_AUDIENCE_TAG"],
+    "owners": { "alice@example.com": "@alice:agents.example" }
+  }
 }

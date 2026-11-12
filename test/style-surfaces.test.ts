@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page, type Locator } from "@playwright/test";
-import { edgeMauFixture } from "./fixtures/edge.js";
+import { mauFixture } from "./fixtures/mau.js";
 
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
@@ -49,7 +49,7 @@ async function pageSurface(dialog: Locator, dark: boolean) {
 
 for (const mode of ["light", "dark", "system"] as const) for (const width of [390, 900, 1440]) {
   it.skipIf(!built)(`keeps console dialogs readable and interactive: ${mode} at ${width}`, async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+    const f = await mauFixture(cleanup, { webRoot }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
     const instance = await chromium.launch({ headless: true }); cleanup.push(() => instance.close());
     const context = await instance.newContext({ viewport: { width, height: 900 }, locale: "zh-CN", reducedMotion: "reduce",

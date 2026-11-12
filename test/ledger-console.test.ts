@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { chromium, expect as see } from "@playwright/test";
-import { edgeMauFixture } from "./fixtures/edge.js";
 import { ManagedService } from "@agent-router/server";
+import { mauFixture } from "./fixtures/mau.js";
 
 // Browser acceptance of the ledger console's phase 4 features (agent-router ADR 0005 section 16) against the built
 // console and the local Router build: controls (the "/new" and "/clear" commands, a Router card answered by its button,
@@ -15,7 +15,7 @@ const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 it.skipIf(!built)("starts a new chat, answers a card and purges the history from the ledger console", async (context) => {
-  const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  const f = await mauFixture(cleanup, { webRoot }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.reset || !me.limits.features.cards) return context.skip();
@@ -111,7 +111,7 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {},
     { ledgerRead: true, ledgerSend: true, ledgerAttachments: true });
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.attachments) return context.skip();
@@ -214,7 +214,7 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {},
     { ledgerRead: true, ledgerSend: true, ledgerAttachments: true });
   const jwt = f.access.jwt();
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> }; auth?: { via?: string } };
@@ -275,7 +275,7 @@ it.skipIf(!built)("while a reply runs, the send button stops it and text sent go
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {},
     { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.reset) return context.skip();
@@ -339,7 +339,7 @@ it.skipIf(!built)("a running reply keeps one working line below its content and 
     if (/\/runs\/run-1$/.test(path)) return Response.json(run);
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } },
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {},
     { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: f.edgeHeaders() })).json() as { limits?: { features?: Record<string, boolean> } };
   if (!me.limits?.features?.send) return context.skip();

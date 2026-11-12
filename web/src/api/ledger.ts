@@ -112,11 +112,6 @@ export interface HistoryQuery { before?: number; after?: number; generation?: nu
 export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups" | "identity";
 const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups", "identity"];
 
-/** Router reports `features.matrix` explicitly from the release that made Matrix optional; an older Router has it on. */
-export function matrixEnabled(me: LedgerMe | null | undefined): boolean {
-  const raw = me?.limits?.features as Record<string, unknown> | undefined;
-  return !raw || typeof raw !== "object" || !("matrix" in raw) || raw.matrix === true;
-}
 
 /** `limits.features` is a name → boolean map; only names set to `true` are on, unknown names are ignored. */
 export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeature> {

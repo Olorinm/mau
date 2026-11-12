@@ -143,7 +143,7 @@ it("deletes an employee whose sandbox is already missing without rebuilding its 
     config.connections.push({ id: "feishu", kind: "feishu", credentialsFile: join(dir, "feishu.json"), domain: "feishu",
       ownerAddresses: [], peerAddresses: [], groupIds: [] });
   });
-  expect(connections.summary(f.service.agent(f.agent.id)).connections.map((c) => c.kind)).toEqual(["matrix", "feishu"]);
+  expect(connections.summary(f.service.agent(f.agent.id)).connections.map((c) => c.kind)).toEqual(["feishu"]);
   f.cloud.clear();
   // Rebuilding this runtime now throws a plain Error (host_binding_configuration_changed). Before the fix,
   // removeAgent rebuilt it after the cloud step: 500 operation_failed and needs_action/environment_lifecycle_unconfirmed.

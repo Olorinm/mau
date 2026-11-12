@@ -12,13 +12,11 @@ export interface EnvironmentView {
   updatedAt?: string;
   error?: string;
 }
-export type ChannelKind = "feishu" | "weixin" | "telegram" | "matrix" | "grove-mail";
+export type ChannelKind = "feishu" | "weixin" | "telegram" | "grove-mail";
 export interface AgentSummary {
-  agent: { id: string; owner: string; name: string; address: string; matrixId: string; createdAt: string; status: "provisioning" | "active";
-    /** Router phase 7: `none` (no Matrix account), `dormant` or `active`. */
-    matrix?: { state: "active" | "dormant" | "none"; userId: string | null } };
+  agent: { id: string; owner: string; name: string; address: string; createdAt: string; status: "provisioning" | "active" };
   host: { runtimeId: string } | null;
-  /** Kinds this console does not connect (push, web, room, older Matrix connections) are listed by the server too. */
+  /** Kinds this console does not connect (push, web, room) are listed by the server too. */
   connections: Array<{ id: string; kind: ChannelKind | "bark" | "web" | "room" }>;
   environment: EnvironmentView | null;
 }
@@ -71,15 +69,13 @@ export interface ConnectionJob {
 export type ConnectionRequest =
   | { kind: "feishu"; appId?: string; domain: "feishu" | "lark" }
   | { kind: "weixin" }
-  | { kind: "matrix" }
   | { kind: "telegram"; token: string }
   | { kind: "grove-mail"; serviceId: string; inboxId: string; apiKey: string; ownerEmail: string };
 export interface CheckResult {
   agentId: string;
   connectionId?: string;
   kind: string;
-  /** `disabled`: a Matrix connection kept while Matrix is off (agent-router ADR 0005 19.2). */
-  status: "verified" | "needs_action" | "not_verified" | "disabled";
+  status: "verified" | "needs_action" | "not_verified";
   detail: string;
 }
 

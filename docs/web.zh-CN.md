@@ -32,11 +32,11 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 
 服务端发布包包含 `web/dist`；安装发布包后，将 `MAU_WEB_ROOT` 指向已安装 Mau 包中的该目录。`npm pack` 会先构建服务端和控制台。
 
-页面的内容安全策略只允许连接同域，以及 Router 的 Matrix 开关打开时的公开 Matrix 服务器（`mau.json` 中的 `publicHomeserver`）。唯一允许嵌入的页面是员工交给所有者操作的浏览器实时画面。
+页面的内容安全策略只允许连接同域。唯一允许嵌入的页面是员工交给所有者操作的浏览器实时画面。
 
 ## 登录（Cloudflare Access）
 
-控制台没有登录页，也不保存令牌，唯一的登录方式是边缘身份：`mau.json` 配置 `edgeIdentity`（与 Router 的 `edgeIdentity` 同形）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout", "matrix": false }`。没有配置 `edgeIdentity` 的服务没有网页登录，控制台显示错误和重试按钮。
+控制台没有登录页，也不保存令牌，唯一的登录方式是边缘身份：`mau.json` 配置 `edgeIdentity`（与 Router 的 `edgeIdentity` 同形）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`。没有配置 `edgeIdentity`（`edge_identity_required`）或没有开启 Router 账本（`ledger_read_required`）时 Mau 拒绝启动；Mau 始终以关闭 Matrix 的方式运行 Router，不配置也不访问任何 Matrix 服务器。
 
 - 启动时凭同域 Access cookie 读取 `GET /_mau/v1/account`，由 Cloudflare 附加 JWT。
 - 未开通的账号显示整页“此账号未开通 Mau（邮箱）”和“切换账号”（Access 退出）。
@@ -44,10 +44,6 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 - “退出登录”跳转 Access 退出。
 - 命令行和自动化的 bearer 调用继续可用，除非 Router 设置 `bearer: "deny"`。
 - Cloudflare 对跨站请求同样附加 JWT，因此边缘身份的非 GET 请求必须带控制台的 `Origin`（`edgeIdentity.origins`，默认取公开地址的源，或与请求自身 Host 相同），且请求体类型不能是表单可发送的类型。Access 之后的非浏览器调用方需带 bearer 令牌或显式 `Origin`。
-
-### 关闭 Matrix（`AGENT_MATRIX=off`）
-
-Router 的 Matrix 开关关闭时，Mau 要求配置 `edgeIdentity`（否则启动失败 `matrix_off_requires_edge_identity`）和 Router 账本（`matrix_off_requires_ledger_read`），控制台的 `connect-src` 不含 Matrix 服务器，环境就绪时也不添加 Matrix 连接。控制台从 `GET /web/me` 读取 `features.matrix`，为 `false` 时不提供 Matrix 渠道。
 
 ## 对话
 

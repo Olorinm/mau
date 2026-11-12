@@ -1,4 +1,5 @@
-// Shared Mau fixture: simulated cloud lifecycle, fake Router accounts ("alice", "bob") and a fixture Host.
+// Shared Mau fixture: simulated cloud lifecycle, a stand-in for Cloudflare Access (alice's email is mapped to her
+// owner), bearer accounts ("alice", "bob") for direct API calls, Router's ledger and a fixture Host.
 import { vi, expect } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,13 +9,15 @@ import { RouterError as WorkError } from "@agent-router/server";
 import { createMau } from "../../src/app.js";
 import { privateFile } from "../../src/files.js";
 import type { EnvironmentProvider } from "../../src/environments.js";
+import { accessIssuer } from "./access.js";
 
 export const alice = "@alice:example.test",
+  aliceEmail = "alice@example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
   hostCapabilities?: { runIdempotency?: boolean } } = {}, extraOptions: Record<string, unknown> = {},
-  /** Extra Router service settings, for example `{ ledgerRead: true }`. */
+  /** Router service settings. Ledger flags given here replace the fixture's (send, cards, control and groups on). */
   routerConfig: Record<string, unknown> = {},
   /** Extra Router dependencies, for example `{ edgeIdentityCerts }`. */
   routerDependencies: Record<string, unknown> = {}) {
@@ -121,7 +124,9 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       { id: "personal", kernel: "codex", cwd: "/home/user/workspace" },
     ],
   });
+  const access = await accessIssuer(cleanup);
   privateFile(optionsFile, {
+    edgeIdentity: access.config({ [aliceEmail]: alice }),
     ...extraOptions,
     environments: {
       configFile: "providers.json",
@@ -143,11 +148,9 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
   const mau = createMau(
     {
       serverName: "example.test",
-      homeserver: "https://matrix.fixture",
       publicUrl: "http://127.0.0.1" + root,
       stateDir: directory,
-      asToken: "a".repeat(48),
-      hsToken: "h".repeat(48),
+      ...("ledgerRead" in routerConfig ? {} : { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerGroups: true }),
       ...routerConfig,
     },
     optionsFile,
@@ -156,27 +159,13 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       return provider;
     } }),
       router: {
+      edgeIdentityCerts: access.certsUrl,
       ...routerDependencies,
-      provision: async () => {},
-      deprovision: async () => {},
       authenticate: async (token) => {
         if (token === "alice") return alice;
         if (token === "bob") return bob;
         throw new WorkError("account_session_invalid", 401);
       },
-      transport: (agent) => ({
-        identity: async () => agent.matrixId,
-        sync: async (since) => {
-          await new Promise((r) => setTimeout(r, 10));
-          return { next_batch: since ?? "0" };
-        },
-        state: async () => [],
-        history: async () => ({ events: [] }),
-        createRoom: async () => "!fixture:example.test",
-        join: async () => {},
-        send: async () => "$fixture",
-        stop: () => {},
-      }),
     } },
     serving,
   );
@@ -225,6 +214,9 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     agent,
     path,
     settled,
+    access,
+    /** The header Cloudflare adds behind Access: for a browser context's `extraHTTPHeaders` or a direct request. */
+    edgeHeaders: (claims: Record<string, unknown> = {}) => ({ "cf-access-jwt-assertion": access.jwt(claims) }),
     get creates() {
       return creates;
     },
