@@ -9,6 +9,7 @@ copied from it.
 - Dialogs stand out in dark mode: the page behind them is dimmed more, confirmation dialogs
   included, and the dialog has a light edge.
 - Dialog buttons are 36px tall, like the other controls.
+- The message field no longer shows a blue box when it has focus.
 
 ## [0.1.0-alpha.36] - 2026-11-12
 

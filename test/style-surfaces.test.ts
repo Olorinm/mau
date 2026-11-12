@@ -66,6 +66,7 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
     const prefix = `${mode}-${width}`;
     await capture(page, `${prefix}-chat`);
     await composer.fill("/"); await see(page.getByRole("listbox", { name: "斜杠命令" })).toBeVisible();
+    expect(await composer.evaluate(el => el === document.activeElement && getComputedStyle(el).outlineStyle)).toBe("none");
     await capture(page, `${prefix}-commands`);
     await composer.fill("/clear"); await page.getByRole("option", { name: /\/clear/ }).click();
     const clear = page.getByRole("dialog", { name: "清空聊天记录？" }); await see(clear).toBeVisible();
