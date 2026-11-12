@@ -4,9 +4,8 @@ import react from "@vitejs/plugin-react";
 import manifest from "./package.json" with { type: "json" };
 import { scopedStyles } from "./scripts/scoped-styles.mjs";
 
-// One library build for every public entry. The page entries (src/pages) also get one complete,
-// `.af-scope`-scoped stylesheet each; the component stylesheets are copied unchanged by copy-styles.
-const pages = ["shell", "conversation", "settings", "files", "catalog", "extensions", "auth", "profile"];
+// One library build for every public entry. The page entry (src/pages) also gets one complete,
+// `.af-scope`-scoped stylesheet; the application stylesheets are copied unchanged by copy-styles.
 export default defineConfig({
   plugins: [react(), scopedStyles()],
   build: {
@@ -17,7 +16,6 @@ export default defineConfig({
         "agent-host": resolve(import.meta.dirname, "src/agent-host.tsx"),
         "app/index": resolve(import.meta.dirname, "src/app/index.ts"),
         "pages/index": resolve(import.meta.dirname, "src/pages/index.ts"),
-        ...Object.fromEntries(pages.map((name) => [`pages/entries/${name}`, resolve(import.meta.dirname, `src/pages/entries/${name}.ts`)])),
       },
       formats: ["es"],
       fileName: (_, name) => `${name}.js`,

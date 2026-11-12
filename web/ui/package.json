@@ -20,10 +20,6 @@
       "types": "./dist/agent-host.d.ts",
       "import": "./dist/agent-host.js"
     },
-    "./styles.css": "./dist/styles.css",
-    "./thread.css": "./dist/thread.css",
-    "./disclosure.css": "./dist/disclosure.css",
-    "./cards.css": "./dist/cards.css",
     "./app": {
       "types": "./dist/app/index.d.ts",
       "import": "./dist/app/index.js"
@@ -33,47 +29,7 @@
       "types": "./dist/pages/index.d.ts",
       "import": "./dist/pages/index.js"
     },
-    "./pages.css": "./dist/pages/pages.css",
-    "./shell": {
-      "types": "./dist/pages/entries/shell.d.ts",
-      "import": "./dist/pages/entries/shell.js"
-    },
-    "./shell.css": "./dist/pages/entries/shell.css",
-    "./conversation": {
-      "types": "./dist/pages/entries/conversation.d.ts",
-      "import": "./dist/pages/entries/conversation.js"
-    },
-    "./conversation.css": "./dist/pages/entries/conversation.css",
-    "./settings": {
-      "types": "./dist/pages/entries/settings.d.ts",
-      "import": "./dist/pages/entries/settings.js"
-    },
-    "./settings.css": "./dist/pages/entries/settings.css",
-    "./files": {
-      "types": "./dist/pages/entries/files.d.ts",
-      "import": "./dist/pages/entries/files.js"
-    },
-    "./files.css": "./dist/pages/entries/files.css",
-    "./catalog": {
-      "types": "./dist/pages/entries/catalog.d.ts",
-      "import": "./dist/pages/entries/catalog.js"
-    },
-    "./catalog.css": "./dist/pages/entries/catalog.css",
-    "./extensions": {
-      "types": "./dist/pages/entries/extensions.d.ts",
-      "import": "./dist/pages/entries/extensions.js"
-    },
-    "./extensions.css": "./dist/pages/entries/extensions.css",
-    "./auth": {
-      "types": "./dist/pages/entries/auth.d.ts",
-      "import": "./dist/pages/entries/auth.js"
-    },
-    "./auth.css": "./dist/pages/entries/auth.css",
-    "./profile": {
-      "types": "./dist/pages/entries/profile.d.ts",
-      "import": "./dist/pages/entries/profile.js"
-    },
-    "./profile.css": "./dist/pages/entries/profile.css"
+    "./pages.css": "./dist/pages/pages.css"
   },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.types.json && node scripts/types.mjs && node scripts/copy-styles.mjs",

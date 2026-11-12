@@ -1,4 +1,3 @@
-import "./style.css";
 export { FrontendScope, type FrontendTheme } from "./scope";
 export {
   FrontendProvider,
@@ -183,3 +182,6 @@ export * from "./auth-flows";
 export * from "./presentation/titlebar-controls";
 
 export * from "./startup-view";
+
+// The shared page styles load after the components' own CSS modules, so they keep precedence over them.
+import "./style.css";

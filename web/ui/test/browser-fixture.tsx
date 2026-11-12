@@ -14,7 +14,7 @@ import {
   AgentInteraction,
   useAgentInteractions,
 } from "@olorinm/agent-ui/agent-host";
-import "@olorinm/agent-ui/styles.css";
+import "../src/styles.css";
 const pixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 function Fixture() {
