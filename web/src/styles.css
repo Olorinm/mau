@@ -504,8 +504,23 @@ body {
 }
 /* An employee's profile needs more room than the list. */
 .mau-roster[data-view="profile"] {
-  width: 340px;
+  width: 400px;
   padding: 8px 0 0;
+}
+/* The profile: the employee, a row of section icons, and the open section in the settings pages' own components. */
+.mau-profile {
+  display: grid;
+  padding: 0 20px 24px;
+}
+.mau-profile .agent-detail-hero {
+  padding-bottom: 0;
+}
+.mau-profile-tabs {
+  justify-self: center;
+  margin: 20px 0;
+}
+.mau-profile-value {
+  color: var(--c-text-secondary);
 }
 .mau-roster[data-view="profile"] .mau-roster-top {
   padding: 0 8px;
