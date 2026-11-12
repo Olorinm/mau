@@ -1,11 +1,19 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createServer} from 'vite';
+import {createServer,parseAst} from 'vite';
 import {chromium,expect} from '@playwright/test';
 const output=path.resolve('.restored-tests');await fs.mkdir(output,{recursive:true});
 const file=path.join(output,'fixture.html');await fs.writeFile(file,'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/test/restored-surfaces.jsx"></script></body></html>');
-const server=await createServer({configFile:false,root:process.cwd(),cacheDir:path.join(output,'vite-cache'),optimizeDeps:{entries:['test/restored-surfaces.jsx'],include:['@codemirror/commands','@codemirror/lang-css','@codemirror/lang-html','@codemirror/lang-javascript','@codemirror/lang-json','@codemirror/lang-markdown','@codemirror/lang-yaml','@codemirror/language','@codemirror/state','@codemirror/view','@lezer/highlight','@milkdown/crepe','@milkdown/kit/core','@milkdown/kit/prose/state','@milkdown/kit/utils','@vidstack/react','@vidstack/react/player/layouts/default']},server:{watch:null,hmr:false,host:'127.0.0.1',port:0}});await server.listen();
+// The icon package's index evaluates every icon on each page load, which dominated the run in development mode.
+// Resolve it to a module that re-exports only the icons the built files import; a missing icon fails the import.
+const iconPackage='@phosphor-icons/react';const iconNames=new Set();
+for(const directory of ['dist','node_modules/@olorinm/agent-ui/dist'])for(const entry of await fs.readdir(directory,{recursive:true})){
+ if(!entry.endsWith('.js'))continue;const source=await fs.readFile(path.join(directory,entry),'utf8');if(!source.includes(iconPackage))continue;
+ for(const node of parseAst(source).body){if(node.source?.value!==iconPackage)continue;if(node.type!=='ImportDeclaration'||node.specifiers.some(specifier=>specifier.type!=='ImportSpecifier'))throw new Error(`${directory}/${entry}: only named imports of ${iconPackage} are supported here`);for(const specifier of node.specifiers)iconNames.add(specifier.imported.name);}
+}
+const icons=path.join(output,'icons.js');await fs.writeFile(icons,[...iconNames].sort().map(name=>`export {${name}} from '${iconPackage}/dist/csr/${name.replace(/Icon$/,'')}';`).join('\n'));
+const server=await createServer({configFile:false,root:process.cwd(),resolve:{alias:[{find:new RegExp(`^${iconPackage}$`),replacement:icons}]},cacheDir:path.join(output,'vite-cache'),optimizeDeps:{entries:['test/restored-surfaces.jsx'],include:['@codemirror/commands','@codemirror/lang-css','@codemirror/lang-html','@codemirror/lang-javascript','@codemirror/lang-json','@codemirror/lang-markdown','@codemirror/lang-yaml','@codemirror/language','@codemirror/state','@codemirror/view','@lezer/highlight','@milkdown/crepe','@milkdown/kit/core','@milkdown/kit/prose/state','@milkdown/kit/utils','@vidstack/react','@vidstack/react/player/layouts/default']},server:{watch:null,hmr:false,host:'127.0.0.1',port:0}});await server.listen();
 const browser=await chromium.launch();
 const cases=['employee','avatar','inline','capabilities','group','contacts','delete','flow','files','draft','providers','storage','extensions','publish','flowlist','workbench','appchat','create-group','delete-group','mcp','auth','team','startup','titlebar','notes'];
 const fixtureUrl=(name,state,theme)=>`${server.resolvedUrls.local[0]}.restored-tests/fixture.html?case=${name}&state=${state}${theme?`&theme=${theme}`:''}`;
