@@ -336,6 +336,11 @@ body {
 .mau-stage .room-chat-stream {
   width: min(820px, calc(100% - 56px));
 }
+/* The composer card is the focus target. app.css loads after the frontend sheet, so its general focus outline
+   would otherwise draw a blue box around the text field inside the card. */
+.room-composer .opengrove-question:focus-visible {
+  outline: 0;
+}
 .mau-stage[data-read-only] .room-composer {
   display: none;
 }
