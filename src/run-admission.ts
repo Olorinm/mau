@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Trusted composition metadata. Never accepted from model arguments or forwarded as Host HTTP policy. */
-export const runAdmissionSchema = z.object({
+const runAdmissionSchema = z.object({
   kind: z.enum(["owner", "delegation", "schedule"]),
   owner: z.string().min(1), agentId: z.string().min(1), reference: z.string().min(1),
   expiresAt: z.iso.datetime().optional(),

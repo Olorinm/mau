@@ -533,21 +533,11 @@ export class EnvironmentManager {
     const configured = this.configuration.configuration(this.service.owned(record.agentId, owner));
     if (record.previous && configured?.host?.binding !== record.operationId)
       await this.configuration.replaceHost(owner, record.agentId, host);
-    else await this.configuration.edit(owner, record.agentId, config => {
-      // Only an agent whose Matrix adapter runs gets the Matrix connection (agent-router ADR 0005 19.2).
-      if (this.matrixEnabled(record.agentId) && !config.connections.some(connection => connection.kind === "matrix"))
-        config.connections.push({ id: "matrix", kind: "matrix", ownerAddresses: [owner], peerAddresses: [], groupIds: [] });
-      config.host = host;
-    });
+    else await this.configuration.edit(owner, record.agentId, config => { config.host = host; });
     record.phase = "ready";
     delete record.error;
     this.save(record);
     this.activity.set(record.agentId, Date.now());
-  }
-  /** Router before phase 7 has no switch: Matrix is always on there. */
-  private matrixEnabled(agentId: string): boolean {
-    const service = this.service as ManagedService & { matrixEnabled?(agentId: string): boolean };
-    return service.matrixEnabled ? service.matrixEnabled(agentId) : true;
   }
   http(
     agentId: string,

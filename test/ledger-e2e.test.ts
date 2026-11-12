@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LedgerClient, attachmentLimits, foldEvents, ledgerApi, ledgerFeatures, type LedgerSocket } from "../web/src/api/ledger";
-import { alice, mauFixture } from "./fixtures/mau.js";
+import { LedgerClient, attachmentLimits, foldEvents, ledgerApi, ledgerFeatures, newIdempotencyKey, type LedgerSocket } from "../web/src/api/ledger";
+import { mauFixture } from "./fixtures/mau.js";
 
-// Mau embedding a Router with AGENT_LEDGER_READ: a Matrix-ingested owner message is served by the ledger
-// history API behind Mau's console and pushed over the event socket on Mau's own HTTP server.
+// Mau embedding Router's ledger: an owner message is served by the ledger history API behind Mau's console
+// and pushed over the event socket on Mau's own HTTP server.
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
@@ -21,7 +21,7 @@ const until = async <T>(read: () => T | undefined | Promise<T | undefined>, labe
   throw new Error("timeout_" + label);
 };
 
-it("serves a Matrix-ingested message through /web history and the event socket to the ledger client", async (context) => {
+it("serves owner messages through /web history and the event socket to the ledger client", async (context) => {
   // A console root, so the SPA fallback is mounted in front of Router as in production.
   const webRoot = mkdtempSync(join(tmpdir(), "mau-ledger-web-"));
   cleanup.push(() => rmSync(webRoot, { recursive: true, force: true }));
@@ -50,25 +50,21 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
-  const runtime = await f.service.runtime(f.agent.id);
-  const room = "!ledger-dm:example.test", chatId = `dm:${f.agent.id}`;
-  runtime.connector.store.set("rooms", room, { members: [alice, f.agent.matrixId], encrypted: false });
-  const ingest = (id: string, body: string) => runtime.connector.ingest(room, {
-    event_id: id, sender: alice, type: "m.room.message", content: { msgtype: "m.text", body }, origin_server_ts: Date.now() + 1,
-  });
-  ingest("$ledger-1", "hello from matrix");
-
+  const chatId = `dm:${f.agent.id}`;
   const api = ledgerApi("alice", f.base + "/_agent-router/v1/web");
   const me = await api.me();
   expect(me.limits?.features).toMatchObject({ history: true });
   const sendable = ledgerFeatures(me).has("send");
   expect(await api.openDm(f.agent.id)).toMatchObject({ chatId, kind: "dm" });
+  // A message stored by another client of the same owner (another tab): read from history, then pushed live.
+  const elsewhere = (text: string) => api.send(chatId, { idempotencyKey: newIdempotencyKey(), text });
+  await elsewhere("hello from another tab");
   const page = await until(async () => {
     const result = await api.events(chatId);
-    return result.events.some((event) => event.kind === "message" && event.text === "hello from matrix") ? result : undefined;
+    return result.events.some((event) => event.kind === "message" && event.text === "hello from another tab") ? result : undefined;
   }, "history");
   expect(page).toMatchObject({ mode: "page", generation: 1, newerCursor: null });
-  expect(page.events.find((event) => event.kind === "message")).toMatchObject({ role: "user", sender: { type: "person" }, channel: { kind: "matrix" } });
+  expect(page.events.find((event) => event.kind === "message")).toMatchObject({ role: "user", sender: { type: "person" }, text: "hello from another tab" });
   // Not shadowed by the console fallback (JSON, not index.html) and owner scoped.
   const unknown = await fetch(f.base + "/_agent-router/v1/web/unknown", { headers: { authorization: "Bearer alice" } });
   expect([unknown.status, unknown.headers.get("content-type")]).toEqual([404, expect.stringContaining("application/json")]);
@@ -84,7 +80,7 @@ it("serves a Matrix-ingested message through /web history and the event socket t
   client.connect();
   await until(() => client.connection.state === "open", "socket");
   const before = client.view(chatId).lastSeq;
-  ingest("$ledger-2", "live over the socket");
+  await elsewhere("live over the socket");
   const live = await until(() => client.view(chatId).events.find((event) => event.kind === "message" && event.text === "live over the socket"), "live");
   expect(live.seq).toBeGreaterThan(before);
   expect(client.view(chatId).events.map((event) => event.seq)).toEqual(

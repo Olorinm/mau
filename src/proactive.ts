@@ -39,7 +39,7 @@ export const proactiveRuleInput = z.object({
   timeoutSeconds: z.number().int().min(30).max(3600).default(600),
   status: z.enum(["active", "paused"]).default("paused"),
 }).strict();
-export type ProactiveRuleInput = z.input<typeof proactiveRuleInput>;
+type ProactiveRuleInput = z.input<typeof proactiveRuleInput>;
 /** An explicit creation preset, not a separate timer or execution engine. */
 export function heartbeatPreset(input: ProactiveRuleInput): ProactiveRuleInput {
   return { ...input, preset: "heartbeat", schedule: input.schedule ?? { type: "interval", minutes: 30 },
@@ -68,8 +68,6 @@ export interface ProactivePort {
   /** Must validate against a source-specific trusted connector receipt, never model text. */
   validateCursor?(rule: ProactiveRule, sourceId: string, cursor: string, eventId: string): Promise<boolean>;
   deliver(rule: ProactiveRule, input: { eventId: string; targetSessionId: string; text: string; connectionId?: string | undefined }): Promise<{ status: string; externalId?: string; error?: string }>;
-  /** The connection notices of a rule without `notify` went to (its target session's newest owner conversation). */
-  deliveryConnection?(rule: ProactiveRule): Promise<string>;
   delivery(rule: ProactiveRule, eventId: string): Promise<{ status: string; externalId?: string; error?: string } | null>;
   cancel(rule: ProactiveRule, eventId: string): Promise<void>;
 }
@@ -222,21 +220,6 @@ export class ProactiveWork {
     if (!trigger || trigger.cancellationRequested || trigger.rule.owner !== admission.owner || trigger.rule.agentId !== admission.agentId) return false;
     const rule = this.store.get<ProactiveRule>("rules", trigger.rule.id);
     return rule?.status === "active" && rule.execution.type === "agent" && rule.version === trigger.rule.version && ["queued", "submitting", "running"].includes(trigger.status);
-  }
-  /**
-   * Rules saved before `notify` existed delivered to their target session's newest owner conversation. They keep that
-   * connection (one-time data migration; the version is unchanged, so queued notices stay valid). A rule whose session
-   * cannot be resolved now is retried on the next start; until then its notices follow the newest conversation.
-   */
-  async migrateNotify() {
-    if (!this.port.deliveryConnection) return;
-    for (const { value: rule } of this.store.entries<Omit<ProactiveRule, "notify"> & { notify?: { channel: string } }>("rules")) {
-      if (rule.notify) continue;
-      const channel = await this.port.deliveryConnection(rule as ProactiveRule).catch(() => undefined);
-      if (!channel) continue;
-      const current = this.store.get<ProactiveRule>("rules", rule.id);
-      if (current && !current.notify) this.store.set("rules", rule.id, { ...current, notify: { channel } });
-    }
   }
   start() { if (!this.timer) { this.timer = setInterval(() => {
     try { this.store.acquireLease(this.lease, this.clock().getTime()); void this.tick().catch(() => {}); } catch { /* Another process owns coordination. */ }
@@ -528,7 +511,7 @@ export class ProactiveWork {
   }
 }
 
-export function proactivePrompt(rule: ProactiveRule): string {
+function proactivePrompt(rule: ProactiveRule): string {
   return `This turn is a saved task${rule.preset ? ` (preset: ${rule.preset})` : ""}. Goal: ${rule.goal}\n` +
     (rule.skills.length ? `Selected native skills (validated against discovery): ${JSON.stringify(rule.skills)}. Use the native skill discovery/read workflow for these selections.\n` : "") +
     `Read only the explicitly granted sources (${rule.connections.join(", ") || "none"}). Tool permissions are enforced by Mau; this text grants none. ` +

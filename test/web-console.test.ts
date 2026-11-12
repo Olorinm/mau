@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
-import { edgeMauFixture } from "./fixtures/edge.js";
+import { mauFixture } from "./fixtures/mau.js";
 
 // Browser acceptance for the built console (`npm run build:web`). CI sets MAU_WEB_E2E=1 so a missing build fails.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -16,7 +16,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-type Fixture = Awaited<ReturnType<typeof edgeMauFixture>>;
+type Fixture = Awaited<ReturnType<typeof mauFixture>>;
 /** The console opened from the Access session: Cloudflare adds the JWT to every request, the console sends no token. */
 async function browser(f: Fixture, claims: Record<string, unknown> = {}) {
   const instance = await chromium.launch({ headless: true });
@@ -45,7 +45,6 @@ async function browser(f: Fixture, claims: Record<string, unknown> = {}) {
 }
 
 // Conversations are served by Router's owner ledger; without these flags the console has no conversation page.
-const ledger = { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerGroups: true };
 /** An employee's figure in the header row of the conversation page. */
 const agentChip = (page: Page, agentId: string) =>
   page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
@@ -61,11 +60,9 @@ const profileState = (page: Page) => profileCard(page).locator(".agent-status-li
 it.skipIf(!built)(
   "opens from the Access session, provisions an agent, controls its environment, connects a channel and signs out",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const f = await mauFixture(cleanup, { webRoot });
     const home = await fetch(f.base + "/");
-    expect(home.headers.get("content-security-policy")).toContain(
-      "connect-src 'self' https://example.test",
-    );
+    expect(home.headers.get("content-security-policy")).toContain("connect-src 'self';");
     for (const path of ["/health/live", "/HEALTH/live/"]) {
       const health = await fetch(f.base + path);
       expect(health.status).toBe(200);
@@ -172,13 +169,12 @@ it.skipIf(!built)(
       .first()
       .click();
     const connect = page.getByRole("dialog", { name: "连接渠道" });
-    // This Router has Matrix on, so Matrix is one of the message channels: already connected, and listed in the profile.
-    await see(connect.getByRole("button", { name: /Matrix/ })).toBeDisabled();
+    await see(connect.getByRole("button", { name: /Matrix/ })).toHaveCount(0);
     for (const name of ["飞书", "微信", "Telegram"])
       await see(connect.getByRole("button", { name, exact: true })).toBeEnabled();
     await page.keyboard.press("Escape");
     await see(page.getByRole("dialog")).toHaveCount(0);
-    await see(profile.getByText("Matrix", { exact: true })).toBeVisible();
+    await see(profile.getByText("Matrix", { exact: true })).toHaveCount(0);
 
     await profileTab(page, "状态");
     await page.getByRole("button", { name: "运行自检" }).click();
@@ -229,7 +225,7 @@ it.skipIf(!built)(
 it.skipIf(!built).each(["server", "network", "rate-limit"])(
   "channel setup recovers from a temporary %s failure",
   async (failure) => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     const job = {
       id: "retry-job",
@@ -277,7 +273,7 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
 it.skipIf(!built)(
   "the profile lists the employee's documents: instructions are read beside the conversation and memory is edited there entry by entry",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const f = await mauFixture(cleanup, { webRoot });
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
     const memory = `/agents/${f.agent.id}/memory`;
     await f.api(memory, { action: "add", target: "user", content: "Prefers short answers." });
@@ -342,7 +338,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "an unknown channel setup job stops polling and asks to restart",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     const job = {
       id: "expired-job",
@@ -384,7 +380,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "recovers a failed Feishu app with its original ID and polls binding",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     const failed = {
       id: "feishu-failed",
@@ -476,7 +472,7 @@ it.skipIf(!built)(
       if (run && runs.has(run)) return Response.json(runs.get(run));
       return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
     };
-    const f = await edgeMauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, ledger);
+    const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } });
     expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
     expect((await f.settled()).state).toBe("ready");
     const { page, matrix, errors } = await browser(f);
@@ -569,7 +565,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "keeps appearance menus and original dialogs in the selected theme scope",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot });
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     await page.reload();
     await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -685,7 +681,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "has no Files entry and requests no workspace while shared files are not offered",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot });
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     const workspaceRequests: string[] = [];
     page.on("request", (request) => {
@@ -717,7 +713,7 @@ it.skipIf(!built)(
 );
 
 it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channels and connectors", async () => {
-  const f = await edgeMauFixture(cleanup, {webRoot});
+  const f = await mauFixture(cleanup, {webRoot});
   const {page, errors} = await browser(f);
   await page.reload();
   // One 设置 entry replaces 连接器 / 扩展 / 设置 in the main navigation.
@@ -766,7 +762,7 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
 }, 90_000);
 
 it.skipIf(!built)("connects Gmail after consent, returns to its page, edits permissions and gates uncertain disconnects", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   const { page, errors } = await browser(f);
   let state = "authorization_required", failed = false, legacy = true;
   const mutations: Array<[string, unknown]> = [];
@@ -867,7 +863,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
 it.skipIf(!built)(
   "edge login: no login form, the expiry banner reloads, and an unmapped account gets the no-access page",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true });
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, authorization } = await browser(f);
     await see(page.getByText("alice@example.test").first()).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
@@ -891,7 +887,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "edge login: a request refused as unauthenticated (the Access JWT ran out) shows the expiry banner, never a sign-in page",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot }, { ledgerRead: true });
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, context, errors } = await browser(f);
     await see(page.getByText("alice@example.test").first()).toBeVisible();
     // From now on the edge header carries an expired JWT: Router refuses the next API call itself.
@@ -916,10 +912,10 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "a service without an edge identity has no web login: the access page says so and offers a retry",
   async () => {
-    const f = await edgeMauFixture(cleanup, { webRoot });
+    const f = await mauFixture(cleanup, { webRoot });
     const { page, context, matrix, errors } = await browser(f);
     const plain = await context.newPage();
-    await plain.route("**/_mau/v1/info", (route) => route.fulfill({ json: { login: "matrix", homeserver: "https://example.test", matrix: true } }));
+    await plain.route("**/_mau/v1/info", (route) => route.fulfill({ json: { login: "other" } }));
     const requests: string[] = [];
     plain.on("request", (request) => requests.push(new URL(request.url()).pathname));
     await plain.goto(f.base);
@@ -936,7 +932,7 @@ it.skipIf(!built)(
 );
 
 it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with a QR from the account, expiry and re-authorization", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   const { page, errors } = await browser(f);
   let state: Record<string, unknown> = { state: "expired", reason: "refresh_token_expired" }, confirmed = false;
   const requests: Array<[string, unknown]> = [];

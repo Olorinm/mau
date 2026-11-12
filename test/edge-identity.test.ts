@@ -1,19 +1,12 @@
 import { afterEach, expect, it } from "vitest";
-import { ManagedService } from "@agent-router/server";
 import { connectSshTunnel } from "../src/ssh-transport.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
-import { accessIssuer } from "./fixtures/access.js";
-
-// Needs a Router with `authenticateRequest` (agent-router ADR 0005 18.2); older pinned Routers skip this file.
-const supported = typeof (ManagedService.prototype as { authenticateRequest?: unknown }).authenticateRequest === "function";
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
 async function accessFixture() {
-  const access = await accessIssuer(cleanup);
-  const f = await mauFixture(cleanup, {}, { edgeIdentity: access.config({ "alice@example.test": alice }) }, {},
-    { edgeIdentityCerts: access.certsUrl });
-  const jwt = access.jwt;
+  const f = await mauFixture(cleanup);
+  const jwt = f.access.jwt;
   const call = async (path: string, headers: Record<string, string>, body?: unknown) => {
     const response = await fetch(f.base + path, { headers: { "content-type": "application/json", ...headers },
       ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }) });
@@ -22,9 +15,9 @@ async function accessFixture() {
   return { f, jwt, call };
 }
 
-it.skipIf(!supported)("authenticates /_mau/v1, Router owner routes and the SSH upgrade with the Access JWT", async () => {
+it("authenticates /_mau/v1, Router owner routes and the SSH upgrade with the Access JWT", async () => {
   const { f, jwt, call } = await accessFixture();
-  expect((await call("/_mau/v1/info", {})).data).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false });
+  expect((await call("/_mau/v1/info", {})).data).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });
   const edge = { "cf-access-jwt-assertion": jwt() };
   expect(await call("/_mau/v1/account", edge)).toMatchObject({ status: 200,
     data: { owner: alice, via: "edge", email: "alice@example.test", person: { name: "alice" } } });
@@ -46,10 +39,4 @@ it.skipIf(!supported)("authenticates /_mau/v1, Router owner routes and the SSH u
   await expect(connectSshTunnel(ssh, { "cf-access-jwt-assertion": jwt({ aud: ["other"] }) })).rejects.toThrow("account_session_invalid");
   // Authenticated: the request gets past the owner check and fails on the unknown Agent instead.
   await expect(connectSshTunnel(ssh, edge)).rejects.toThrow("ssh_connection_rejected");
-});
-
-it("keeps the Matrix login contract without edge identity", async () => {
-  const f = await mauFixture(cleanup);
-  expect((await f.api("/info")).data).toEqual({ login: "matrix", homeserver: "https://example.test", matrix: true });
-  expect((await f.api("/account")).data).toMatchObject({ owner: alice, via: "bearer" });
 });

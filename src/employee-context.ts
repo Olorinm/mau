@@ -10,15 +10,15 @@ import { scanMemory } from "./memory-safety.js";
 // MIT © 2025 Nous Research. See NOTICE. This port deliberately uses literal matching.
 export const MEMORY_LIMITS = { memory: 2200, user: 1375 } as const;
 export const MEMORY_DELIMITER = "\n§\n";
-export type MemoryTarget = keyof typeof MEMORY_LIMITS;
-export type MemoryOrigin = "owner" | "delegation" | "review";
+type MemoryTarget = keyof typeof MEMORY_LIMITS;
+type MemoryOrigin = "owner" | "delegation" | "review";
 const targetSchema = z.enum(["memory", "user"]);
 const operationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("add"), content: z.string().min(1).max(65536) }).strict(),
   z.object({ action: z.literal("replace"), old_text: z.string().min(1).max(65536), content: z.string().min(1).max(65536) }).strict(),
   z.object({ action: z.literal("remove"), old_text: z.string().min(1).max(65536) }).strict(),
 ]);
-export const memoryMutationInput = z.discriminatedUnion("action", [
+const memoryMutationInput = z.discriminatedUnion("action", [
   operationSchema.options[0].extend({ target: targetSchema.default("memory") }),
   operationSchema.options[1].extend({ target: targetSchema.default("memory") }),
   operationSchema.options[2].extend({ target: targetSchema.default("memory") }),

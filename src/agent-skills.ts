@@ -9,8 +9,8 @@ import type { SandboxFiles } from "./browser-relay.js";
  * Agent then knows its connectors from the start and uses their official CLIs; credentials
  * and approvals stay with Mau and the connector service.
  */
-export const SKILLS_DIRECTORY = "/home/user/.codex/skills";
-export const RELAY_CLIENT = "/opt/agent-host/node_modules/@olorinm/agent-host/dist/service/relay-cli.js";
+const SKILLS_DIRECTORY = "/home/user/.codex/skills";
+const RELAY_CLIENT = "/opt/agent-host/node_modules/@olorinm/agent-host/dist/service/relay-cli.js";
 const MARKER = "Installed by Mau";
 // Connector tool prefix behind each CLI command (`<prefix>_read` / `<prefix>_write`; see agent-host-relay).
 const prefixes: Record<string, string> = { gws: "gws", "lark-cli": "cli", "agent-browser": "agent_browser" };
@@ -62,14 +62,14 @@ async function main() {
 main().catch((error) => fail(error instanceof Error ? error.message : String(error), 1));
 `;
 
-export interface ConnectionSummary { id: string; kind: string; settings?: Record<string, unknown> }
-export interface SkillPlan { skills: Array<{ name: string; content: string }>; commands: string[] }
+interface ConnectionSummary { id: string; kind: string; settings?: Record<string, unknown> }
+interface SkillPlan { skills: Array<{ name: string; content: string }>; commands: string[] }
 
-export function skillDocument(guide: ConnectorGuide) {
+function skillDocument(guide: ConnectorGuide) {
   return `---\nname: ${guide.name}\ndescription: ${JSON.stringify(guide.description)}\n---\n\n<!-- ${MARKER}; regenerated from the connector's guide. -->\n\n${guide.body}`;
 }
 
-export type GuideLookup = (kind: string, product?: string) => ConnectorGuide | undefined;
+type GuideLookup = (kind: string, product?: string) => ConnectorGuide | undefined;
 
 /** Guides of the Agent's connections whose CLI tools the connector actually offers right now. */
 export function planSkills(connections: ConnectionSummary[], assigned: string[], tools: string[], guides: GuideLookup = connectorGuide): SkillPlan {

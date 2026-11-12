@@ -2,42 +2,20 @@
 
 [简体中文](web.zh-CN.md)
 
-Mau composes the page layouts (`@olorinm/agent-ui/pages` and its feature entries) with the
+The console (`web/src`) composes the page layouts (`@olorinm/agent-ui/pages` and its feature entries) with the
 lower-level components (`@olorinm/agent-ui`, `@olorinm/agent-ui/app`) of the UI package in
 [`web/ui`](../web/ui/README.md). The package receives data, React content and callbacks; it has
-no Mau, Router, Host, Environment or Matrix backend dependency. Mau owns authentication, routes, navigation,
-requests, account messaging and environment/channel workflows in `web/src`.
+no Mau, Router, Host or Environment dependency. Authentication, navigation, requests and the
+environment/channel workflows are in `web/src`.
 
-The UI covers account sign-in, Agent creation and management, environment
-lifecycle, channel connections and messages with owned Agents. Account messages
-use the public Matrix client API and Router's existing delivery path. There is no direct kernel chat, wallet or
-withdrawal feature. Apps, extensions and settings keep visible product-owned
-entries with explicit “not connected yet” content where no integration exists.
-
-## Settings
-
-The main navigation has one **设置** entry. It opens a modal over the app with a left navigation: 通用 (language,
-theme), 连接器, 消息渠道, 身份与配对, 扩展, 数据控制 (clear a chat's history through Router's ledger purge), 帮助与法律
-and 退出 (the edge login's logout). Agent settings such as model and instructions stay on the Agent's page.
-
-Pages are deep-linkable: `#/settings/<section>[/<item>]`, for example `#/settings/connectors/gmail`. Before an OAuth
-redirect the console remembers the page; the callback's `/?view=connectors&oauth=…` reopens it. Below 640 px the modal
-fills the screen, the navigation is its first page and each page has a back button.
-
-Surfaces, type scale, spacing and components come from `@olorinm/agent-ui/app` (standard density for settings, compact
-for run details and approval cards).
-
-The original navigation, conversation input/search, profile, appearance settings,
-app forms and extension workspace are reused. Extension navigation retains Skills,
-MCP, kernel plugins, Hooks, Tools and CLI. Unavailable operations are disabled.
-The original form layout and optional sapling artwork are reused; Router account
-credentials and session verification remain in Mau. Neither the UI package
-nor Mau implements OpenGrove Bridge compatibility endpoints.
+The console covers conversations with owned Agents (direct chats and groups), Agent creation and
+management, environment lifecycle, channel connections, connector accounts and settings. It talks only
+to Mau (`/_mau/v1`) and the embedded Router (`/_agent-router/v1`) on its own origin; the browser never
+receives Host credentials or reaches an environment directly. App creation and the App Store are visible
+entries that say "Not connected yet"; they have no backend.
 
 `web/` is an npm workspace: `web/package-lock.json` locks the console and `web/ui` together, and
 the console depends on the workspace package directly. `npm run build:web` builds `web/ui` first.
-The page and component entries come from one build, so translations and shared providers use one
-context instance.
 
 ## Develop
 
@@ -65,74 +43,92 @@ The server release archive also includes `web/dist`. After installing the archiv
 point `MAU_WEB_ROOT` to that directory inside the installed Mau package. `npm pack`
 builds both server and console before packaging.
 
-The page's Content Security Policy allows connections only to the same origin and
-the public homeserver (`publicHomeserver` in `mau.json`). That homeserver must
-allow browser CORS on its client API, which Synapse does by default.
+The page's Content Security Policy allows connections only to the same origin. The only
+framed page is the live browser view an Agent hands to its owner.
 
-## Sessions
+## Login (Cloudflare Access)
 
-- Password sign-in follows `mau login`: `GET /_mau/v1/info`, Matrix
-  `m.login.password`, then `GET /_mau/v1/account`. Sign-out revokes that device.
-- Token sign-in verifies an existing access token. Sign-out forgets it but does not
-  revoke it.
-- The token is kept in the browser's `localStorage` (`mau.session`). Any `401`
-  returns to sign-in.
+The console has no login page and stores no token. Its only login is the edge identity: with `edgeIdentity`
+in `mau.json` (the shape of Router's `edgeIdentity`), Router verifies the `Cf-Access-Jwt-Assertion` JWT on
+every `/_mau/v1` and `/_agent-router/v1` owner request and on the SSH upgrade, and maps its email (or a
+configured service token) to an owner. The plain email header and the `CF_Authorization` cookie are never
+trusted. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
+Mau does not start without `edgeIdentity` (`edge_identity_required`) or without Router's ledger
+(`ledger_read_required`), and it always runs Router with Matrix off: no homeserver is configured or contacted.
 
-### Edge login (Cloudflare Access)
-
-With `edgeIdentity` in `mau.json` (the shape of agent-router's `edgeIdentity`, ADR 0005 section 18.2), Router
-verifies the `Cf-Access-Jwt-Assertion` JWT on every `/_mau/v1` and `/_agent-router/v1` owner request and on the
-SSH upgrade, and maps its email (or a configured service token) to an owner. The plain email header and the
-`CF_Authorization` cookie are never trusted. `GET /_mau/v1/info` then returns `{ "login": "edge", "logoutUrl":
-"/cdn-cgi/access/logout", "matrix": false }`.
-
-- There is no login page and no stored token. Boot removes any `mau.session` and reads `GET /_mau/v1/account`
-  with the same-origin Access cookie; Cloudflare adds the JWT.
+- Boot reads `GET /_mau/v1/account` with the same-origin Access cookie; Cloudflare adds the JWT.
 - An account that is not mapped gets a full page naming its email, with "Switch account" (Access logout).
 - An expired Access session (an API redirect, a `401`, or a socket re-ticket that fails) shows a banner.
   "Sign in again" keeps unsent composer text in `sessionStorage` and reloads the page.
-- Messages always use Router's ledger. "Sign out" goes to the Access logout.
-- Bearer callers (the CLIs, automation) keep working unless Router's `bearer` is `"deny"`.
+- "Sign out" goes to the Access logout.
+- Bearer callers (the CLI, automation) keep working unless Router's `bearer` is `"deny"`.
 - Cloudflare adds the JWT to cross-site requests too, so Router accepts an unsafe (non-GET) edge request only with
   an `Origin` of the console (`edgeIdentity.origins`, default the public URL's origin, or the request's own host)
   and a JSON-like body type. Non-browser callers behind Access send a bearer token or an explicit `Origin`.
 
-### Without Matrix (`AGENT_MATRIX=off`)
+## Conversations
 
-With Router's Matrix switch off (agent-router ADR 0005 section 19), Mau requires `edgeIdentity` (start fails with
-`matrix_off_requires_edge_identity`), serves no homeserver in the console's `connect-src`, and adds no Matrix
-connection when an environment becomes ready. The console reads `features.matrix` from `GET /web/me`: when it is
-`false`, chats always come from the ledger, the Matrix chat source, Matrix login and `MauConversations` are never
-loaded (they are separate chunks behind dynamic imports), Matrix is not offered as a channel or connector, and Matrix
-history in a DM is badged "Matrix (disabled)".
+Chats are served by Router's owner ledger (`/_agent-router/v1/web`); the console follows the feature flags
+Router advertises in `GET /web/me`. Without `history` the console reports that chat history is unavailable;
+without `send` conversations are read-only.
+
+- Each owned Agent has one direct chat. A few conversations stay in the header row; the people panel lists
+  all of them and opens an Agent's profile: environment state and checks, channels, connectors, documents,
+  and configuration (kernel, environment profile, destroy the environment, delete the Agent).
+- "New group" creates a Router group room with a title and up to 20 of the owner's Agents. In a group only
+  the Agents the owner @-mentions (or everyone, with `@all`/`@所有人`) start work; a message without a
+  mention is only recorded. The member panel renames the group and adds or removes Agents.
+- Messages carry text and attachments (when Router advertises them): images are shown inline, other files
+  as download cards. Messages that arrived on another channel are labelled with it.
+- A failed send keeps the draft for a retry with the same idempotency key.
+- "New chat" starts a fresh session, and settings can clear a chat's history, when Router offers `reset`.
+- An Agent's instructions (`AGENTS.md`, read-only) and its two memory files (`MEMORY.md`, `USER.md`,
+  edited one entry at a time) open beside the conversation.
+
+Host health alone does not verify message routing; live acceptance must send a
+message through the console and observe the Agent's reply.
+
+## Execution and interactions
+
+The console reads runs through Router's public run, event and call-result APIs. It shows streamed text,
+reasoning, tool arguments and results, run state and pending approvals or questions under the message that
+started them. Owners answer approvals and questions, stop a running reply, or send text into it, all
+through Router. Native choices and answer formats come from Host's public interaction helpers; Mau does
+not define its own approval options.
+
+Event cursors resume after a disconnection. A refresh rebuilds the run from retained history and reports
+lost events explicitly; a finished run is read once from Router's archive. Closed or expired interactions
+are disabled. When an Agent hands its browser to the owner, the live view opens beside the conversation.
+
+The build-version watcher reloads an outdated page only when it is idle: never during a pending change,
+an open dialog or form, or while an input has focus.
+
+## Settings
+
+The main navigation has one **设置** entry. It opens a modal over the app with a left navigation: 通用 (language,
+theme, avatars), 连接器, 消息渠道, 身份与配对, 扩展, 数据控制 (clear a chat's history through Router's ledger purge),
+帮助与法律 and 退出 (the edge login's logout). An Agent's own state and configuration are on its profile in the
+people panel. 扩展 lists Skills, MCP, kernel plugins, Hooks, Tools and CLI as not connected: Agents install and use
+them in their own environment.
+
+Pages are deep-linkable: `#/settings/<section>[/<item>]`, for example `#/settings/connectors/gmail`. Before an OAuth
+redirect the console remembers the page; the callback's `/?view=connectors&oauth=…` reopens it. Below 640 px the modal
+fills the screen, the navigation is its first page and each page has a back button.
+
+Surfaces, type scale, spacing and components come from `@olorinm/agent-ui/app` (standard density for settings, compact
+for run details and approval cards).
 
 ## Channels
 
-Router setup jobs are polled every two seconds, including after temporary network,
-server or rate-limit errors. Errors show a retry button; missing or expired jobs
-stop polling. Router's `qr` field is a terminal
-drawing; the console renders its own QR code from the job's `https` link and
-offers the same link to open. Jobs live ten minutes in Router memory; an expired or
-unknown job asks the user to start again. Channels are connected per Agent in
-设置 → 消息渠道, inside the modal. Feishu personal access (acting as the owner) is
-authorized in 设置 → 连接器 → 飞书 through Agent Connectors; see
+Channels are connected per Agent in 设置 → 消息渠道, inside the modal. Router setup jobs are polled every
+two seconds, including after temporary network, server or rate-limit errors. Errors show a retry button;
+missing or expired jobs stop polling. Router's `qr` field is a terminal drawing; the console renders its
+own QR code from the job's `https` link and offers the same link to open. Jobs live ten minutes in Router
+memory; an expired or unknown job asks the user to start again. Feishu personal access (acting as the
+owner) is authorized in 设置 → 连接器 → 飞书 through Agent Connectors; see
 [connector-accounts.md](connector-accounts.md).
 
-## Verify
-
-```sh
-npm run test:web
-```
-
-This builds the console, runs the connection-layer tests and drives Chromium
-against a fixture Mau: password sign-in (including a rejected password), agent
-creation, pause and resume, Matrix connection, checks, destruction, language
-switching, sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing
-build fails rather than skips. Cloud lifecycle, Matrix and channels are fixtures;
-QR scanning, real Matrix sign-in and channel authorization need deployment-specific
-acceptance.
-
-## Recover an existing Feishu app
+### Recover an existing Feishu app
 
 On Feishu connection failures, choose **Recover connection** and enter the original
 App ID from the developer console. The console preserves the known App ID and
@@ -140,62 +136,15 @@ region. The official consent page restores access to that app;
 no App Secret is copied. Saved credentials are reused when only binding failed.
 Failed setup jobs remain available after a Router restart.
 
-## Message behavior
+## Verify
 
-Environment bootstrap enables the owner's Matrix connection for built-in chat.
-Host health alone does not verify message routing; live acceptance must send a
-message through the web console and observe its Agent reply.
+```sh
+npm run test:web
+```
 
-Navigation has separate Conversations and Contacts entries. As in OpenGrove rooms,
-each owned Agent has one direct chat titled with its name: the most recently active
-room with only the owner and that Agent. Older duplicate rooms stay on the server and
-keep their history; the owner's private chats on every channel share one Router main
-session anyway. Chats and groups are listed together by recent activity; groups show
-member avatars. Starting a chat waits for the initial room sync and reuses the
-existing direct room.
-
-"New group" uses the restored OpenGrove create-group dialog. The browser creates the
-room with the owner's account (`preset: private_chat`) and an `ai.mau.room` state
-event `{kind: "group"}`, so a group with one employee is still a group for Mau and
-Router. In a group, only employees the owner @-mentions (Matrix `m.mentions`) or
-everyone (`@所有人`/`@all`, `m.mentions.room`) start work; each answering employee's
-process appears under the message. Employees in a group of only the owner and the
-owner's agents receive the owner's grants; mixed groups do not. The product adapter
-uses Matrix sync cursors and displays recent text/notice messages. A limited
-history is marked as such. Other message kinds and older-history pagination are
-not implemented in this first account-messaging integration.
-
-A failed send preserves the draft and transaction ID. Retry reuses that ID to
-avoid duplicate delivery; dismissing retry is an explicit user action. A server
-acknowledgment confirms sending, while Agent replies appear only after sync.
-The browser tests simulate Matrix and do not establish live model acceptance.
-
-The Files navigation entry is explicitly unavailable. This integration does not
-assemble a replacement file application from the frontend package’s workbench
-components.
-
-
-## Execution and interactions
-
-Mau uses Router's public task/run/event/call-result APIs to associate Matrix
-messages with execution. `RunMessage` comes from Agent Frontend; Host display projections and fallback `AgentInteraction` come from Agent UI;
-Host's public interaction helpers preserve native choices and response formats.
-The browser receives neither Host credentials nor direct environment access.
-
-The conversation shows streamed text, tool arguments/results, run state and
-pending approvals/questions. Users can answer or cancel through Router. Event
-cursors resume after disconnection; refresh reconstructs retained history and
-explicitly reports truncation. Closed/expired interactions are disabled. Exact
-reply IDs deduplicate the run output without hiding independent channel messages.
-Protocol fixtures verify this flow separately from live model acceptance.
-
-
-The original run renderer is supplied through `MessageView.body` so its process
-area and answer bubbles retain their original structure. Host display projection
-preserves call IDs and full native input/output. Native choices and question
-answers are still interpreted/serialized by Host's public helpers. History pages
-render immediately and the reader drains final events after seeing terminal state.
-The product build-version watcher avoids refreshing active execution, pending
-interactions, drafts, outgoing messages, forms or dialogs. Unconnected Files,
-Store and Extensions services remain explicitly unavailable; their extracted
-presentation components do not imply those Mau backends exist.
+This builds the console, runs the connection-layer tests and drives Chromium against a fixture Mau:
+opening from the Access session, Agent creation, pause and resume, channel connection, checks,
+destruction, settings and connectors, conversations, groups, attachments, run details and approvals,
+language switching, sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing build fails
+rather than skips. Cloud lifecycle, Host, Access and channels are fixtures; QR scanning, a real Access
+login, channel authorization and model replies need deployment-specific acceptance.

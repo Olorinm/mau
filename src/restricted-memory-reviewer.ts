@@ -3,8 +3,7 @@ import { isAbsolute } from "node:path";
 import type { WorkSessions } from "@agent-router/server";
 import type { MemoryReviewScope, MemoryReviewSubmission, RestrictedMemoryReviewer, ReviewCapabilities, ReviewWork } from "./memory-review.js";
 
-export const CODEX_REVIEW_VERSION = "0.165.0";
-export const CODEX_REVIEW_SOURCE = "360319d8dee62d87e2d59fc0c21805d79519cfed";
+const CODEX_REVIEW_VERSION = "0.165.0";
 const disabledFeatures = ["apps", "connectors", "code_mode", "code_mode_only", "code_mode_host", "context_management",
   "current_time_reminder", "deferred_executor", "enable_fanout", "goals", "hooks", "codex_hooks", "plugin_hooks",
   "image_generation", "imagegenext", "memories", "memory_tool", "multi_agent", "multi_agent_v2", "multi_agent_v2_dynamic_tools",
@@ -19,7 +18,7 @@ function freeze<T>(value: T): T {
   if (value && typeof value === "object") { for (const nested of Object.values(value)) freeze(nested); Object.freeze(value); }
   return value;
 }
-export const CODEX_REVIEW_ARGS = freeze(["app-server", "--listen", "stdio://", "-c", "features.api_key_model_discovery=false"]);
+const CODEX_REVIEW_ARGS = freeze(["app-server", "--listen", "stdio://", "-c", "features.api_key_model_discovery=false"]);
 export const CODEX_REVIEW_THREAD = freeze({
   model: "gpt-5.4", approvalPolicy: "never", sandbox: "read-only", ephemeral: true,
   environments: [] as unknown[], runtimeWorkspaceRoots: [] as string[], selectedCapabilityRoots: [] as string[],
@@ -30,7 +29,7 @@ export const CODEX_REVIEW_THREAD = freeze({
     "project_doc_max_bytes": 0, web_search: "disabled", mcp_servers: {},
   },
 });
-export interface CodexReviewProfile {
+interface CodexReviewProfile {
   id: string; kernel: "codex"; cwd: string;
   command: string; args: string[]; env: { HOME: string; CODEX_HOME: string };
   thread: typeof CODEX_REVIEW_THREAD;

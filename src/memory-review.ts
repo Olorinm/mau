@@ -3,12 +3,11 @@ import type { WorkSessions } from "@agent-router/server";
 import { z } from "zod";
 import { DurableStore } from "./store.js";
 
-/** Hermes-inspired cadence, implemented at Mau's public component boundary. See
- * docs/hermes-memory-source.md: the installed template uses 10 user turns / 15
- * tool iterations; Hermes' missing-key skill fallback is 10 tool iterations. */
+/** Hermes-inspired cadence, implemented at Mau's public component boundary: Hermes' installed
+ * template uses 10 user turns / 15 tool iterations (see docs/hermes-memory.md). */
 export const MEMORY_REVIEW_DEFAULTS = Object.freeze({ enabled: true, memoryInterval: 10, skillInterval: 15 });
 export interface MemoryReviewScope { owner: string; agentId: string; }
-export interface MemoryReviewSessionScope extends MemoryReviewScope { sessionId: string; }
+interface MemoryReviewSessionScope extends MemoryReviewScope { sessionId: string; }
 export interface MemoryReviewCompletion extends MemoryReviewSessionScope {
   runId: string;
   origin: "owner" | "schedule" | "delegation" | "review";
@@ -23,7 +22,7 @@ export interface MemoryReviewConfig {
   maxContextBytes?: number; maxHistoryPages?: number; operationTimeoutMs?: number;
 }
 export type MemoryReviewSourceSessions = Pick<WorkSessions, "owner" | "agentId" | "getSession" | "history">;
-export interface MemoryReviewSnapshot extends MemoryReviewSessionScope {
+interface MemoryReviewSnapshot extends MemoryReviewSessionScope {
   source: "native_history"; sourceRunId: string; capturedAt: string; items: unknown[];
 }
 export interface ReviewCapabilities extends MemoryReviewScope {
@@ -65,14 +64,14 @@ export interface RestrictedMemoryReviewer {
   lookup(scope: MemoryReviewScope, eventId: string, signal: AbortSignal): Promise<ReviewWork | null>;
   cancel(scope: MemoryReviewScope, eventId: string, signal: AbortSignal): Promise<unknown>;
 }
-export interface MemoryReviewDependencies {
+interface MemoryReviewDependencies {
   /** May wrap getSession/history to map a trusted Host session ID to Router's ID. */
   sourceSessions(scope: MemoryReviewScope, signal: AbortSignal): Promise<MemoryReviewSourceSessions>;
   reviewer?: RestrictedMemoryReviewer;
   config?: MemoryReviewConfig;
   clock?: () => Date;
 }
-export interface MemoryReviewJob extends MemoryReviewSessionScope {
+interface MemoryReviewJob extends MemoryReviewSessionScope {
   id: string; runId: string; reviewSessionId: string; createdAt: string; updatedAt: string;
   reviewMemory: boolean; reviewSkills: boolean;
   status: "queued" | "submitting" | "running" | "uncertain" | "completed" | "failed" | "cancelled" | "unsupported";

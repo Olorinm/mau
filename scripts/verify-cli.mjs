@@ -12,21 +12,20 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../", import.meta.url);
 const temporary = await mkdtemp(join(tmpdir(), "mau-cli-consumer-"));
 const version = JSON.parse(await readFile(new URL("package.json", root))).version;
-let requests = 0, recovered = false, edgeInfo = false;
+let requests = 0, recovered = false;
 const edgeRequests = [];
 const failed = { id: "recovery", kind: "feishu", state: "failed", error: "feishu_creation_outcome_unknown",
   recovery: { action: "authorize_existing_app", appId: "cli_fixture", domain: "lark" } };
 const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
-  // Edge login (agent-router ADR 0005 18.3, 19.6): a Matrix-free Mau behind Cloudflare Access. Access credentials only.
-  if (req.headers["cf-access-client-id"] || req.headers["cf-access-token"] || req.url === "/_mau/v1/info" && edgeInfo) {
+  // Access login (agent-router ADR 0005 18.3): Mau behind Cloudflare Access. Access credentials only, never a bearer.
+  if (req.headers["cf-access-client-id"] || req.headers["cf-access-token"]) {
     assert.equal(req.headers.authorization, undefined);
-    if (req.url !== "/_mau/v1/info") assert.equal(req.headers.origin, "http://" + req.headers.host);
+    assert.equal(req.headers.origin, "http://" + req.headers.host);
     const service = req.headers["cf-access-client-id"] === "edge.access" && req.headers["cf-access-client-secret"] === "edge-secret";
     const token = req.headers["cf-access-token"] === "edge-token";
     edgeRequests.push(req.url);
-    if (req.url === "/_mau/v1/info") res.end(JSON.stringify({ login: "edge", logoutUrl: "/cdn-cgi/access/logout", matrix: false }));
-    else if (!service && !token) { res.writeHead(401); res.end(JSON.stringify({ error: "edge_identity_invalid" })); }
+    if (!service && !token) { res.writeHead(401); res.end(JSON.stringify({ error: "edge_identity_invalid" })); }
     else if (req.url === "/_mau/v1/account") res.end(JSON.stringify({ owner: "@alice:example.test", via: service ? "edge-service" : "edge" }));
     else if (req.url === "/_mau/v1/agents") res.end(JSON.stringify({ data: [{ agent: { id: "helper", name: "helper" } }] }));
     else { res.writeHead(404); res.end("{}"); }
@@ -76,10 +75,10 @@ try {
     assert.match(error.stderr, /mau channel-connect feishu --app-id cli_fixture --domain lark\n/);
     assert.match(error.stderr, /feishu_creation_outcome_unknown/); return true;
   });
-  await assert.rejects(cli("channel-connect", "matrix", "--app-id", "cli_fixture"), /app_id_requires_feishu_channel_connect/);
+  await assert.rejects(cli("channel-connect", "weixin", "--app-id", "cli_fixture"), /app_id_requires_feishu_channel_connect/);
+  await assert.rejects(cli("channel-connect", "matrix", "--allow-http"), /unknown_channel/);
   await assert.rejects(cli("channel-connect", "feishu", "--app-id", "bad id"), /invalid_feishu_app_id/);
-  // Edge login: Access service token files (no Matrix), then an Access token from the environment.
-  edgeInfo = true;
+  // Access login: Access service token files, then an Access token from the environment.
   // PATH holds only node, so `cloudflared access token` is unavailable and credentials must come from files or env.
   const { mkdir, symlink } = await import("node:fs/promises");
   await mkdir(join(temporary, "no-cloudflared")); await symlink(process.execPath, join(temporary, "no-cloudflared", "node"));
@@ -95,9 +94,9 @@ try {
   assert.equal(JSON.parse(await edgeCli({ CF_ACCESS_CLIENT_ID_FILE: id, CF_ACCESS_CLIENT_SECRET_FILE: secret }, "agents", "--allow-http")).data[0].agent.name, "helper");
   assert.equal(JSON.parse(await edgeCli({ CF_ACCESS_TOKEN: "edge-token" }, "agents", "--allow-http")).data[0].agent.name, "helper");
   await assert.rejects(edgeCli({}, "agents", "--allow-http"), /access_credentials_required/);
-  assert.ok(!edgeRequests.some((url) => url.startsWith("/_matrix/")));
+  assert.deepEqual([...new Set(edgeRequests)].sort(), ["/_mau/v1/account", "/_mau/v1/agents"]);
   console.log("PASS: independent CLI install, login/selection, existing app recovery, binding polling and durable job recovery instructions.");
-  console.log("PASS: edge login with Access service token files and an Access token, without Matrix.");
+  console.log("PASS: Access login with service token files and an Access token.");
 } finally {
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   await rm(temporary, { recursive: true, force: true });

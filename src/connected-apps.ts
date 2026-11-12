@@ -16,9 +16,9 @@ export const connectedAppInput = z.object({ action: z.enum(["tools", "call"]), n
 export const connectedAppDefinition = { name: "connected_apps", timeoutMs: 600_000,
   description: "Use the owner's authorized apps through Mau. First call action=tools to discover available operations and their exact input schemas. Then use action=call, name and arguments. Reads run directly. In the owner's own conversations, operations marked risk=write ask the owner to approve on a trusted card and this call waits for the decision, then returns the outcome; if the owner declines, the result is owner_denied: do not retry or ask for approvals in chat. Scheduled and delegated work can only read. Account consent and credentials stay in Mau; if authorization is missing or expired the result says so (feishu_personal_authorization_required with state and an authorization link): tell the owner it needs re-authorization (需要重新授权) and pass the link, or ask them to re-authorize the app in Mau's connectors. Connections that act as the owner's personal identity (Feishu) work only in the owner's private conversation; elsewhere they are listed in unavailableHere and calls return connected_app_owner_private_only. Do not look for credentials or endpoints in the sandbox.",
   inputSchema: z.toJSONSchema(connectedAppInput) };
-export interface ConnectedAppScope { connections: string[]; operations?: string[] | undefined; }
+interface ConnectedAppScope { connections: string[]; operations?: string[] | undefined; }
 /** `write` is set only by Mau for owner admissions; model arguments never select it. */
-export interface ConnectedAppOptions { write?: boolean; }
+interface ConnectedAppOptions { write?: boolean; }
 export type ConnectedAppReader = (input: z.infer<typeof connectedAppInput>, scope?: ConnectedAppScope, options?: ConnectedAppOptions) => Promise<unknown>;
 export const browserToolName = (connection: string, tool: string) => `${connection.replaceAll("-", "_")}__${tool}`;
 export class ConnectedApps {

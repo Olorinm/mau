@@ -41,7 +41,7 @@ const errorCode = (body: unknown) => {
   const code = body && typeof body === "object" && "error" in body ? (body as { error: unknown }).error : undefined;
   return typeof code === "string" && /^[a-z0-9_]{1,80}$/.test(code) ? code : "operation_refused";
 };
-export interface AccountState {
+interface AccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
   scopes: string[];

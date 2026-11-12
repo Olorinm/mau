@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type WebSocketRoute } from "@playwright/test";
-import { edgeMauFixture } from "./fixtures/edge.js";
+import { mauFixture } from "./fixtures/mau.js";
 
 // Browser acceptance for Router-native groups in the ledger console (agent-router ADR 0005 section 17.7).
 // The Router web channel is a Playwright fake implementing the section 8 and 17.1 shapes.
@@ -17,7 +17,7 @@ const web = "/_agent-router/v1/web";
 const owner = { type: "person", id: "prs_owner", name: "Alice" };
 
 it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addressed state and edits members", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   const writer = { id: "agent-writer", name: "writer" };
   const helper = { id: f.agent.id, name: "helper" };
   const actor = (agent: { id: string; name: string }) => ({ type: "agent", ...agent });

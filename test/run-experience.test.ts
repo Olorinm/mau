@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { chromium, expect as see, type Page, type WebSocketRoute } from "@playwright/test";
-import { edgeMauFixture } from "./fixtures/edge.js";
+import { mauFixture } from "./fixtures/mau.js";
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.unstubAllGlobals(); });
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -80,7 +80,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   const events: Event[] = [], calls: Call[] = [], decisions: unknown[] = [];
   let starts = 0;
   const emit = (event: Record<string, unknown>) => events.push({ sequence: events.length + 1, event: { runId: run!.id, ...event } });
-  const f = await edgeMauFixture(cleanup, { webRoot, hostCapabilities: { runIdempotency: true }, host: (url, init) => {
+  const f = await mauFixture(cleanup, { webRoot, hostCapabilities: { runIdempotency: true }, host: (url, init) => {
     const method = init?.method ?? "GET", path = url.pathname;
     if (path.endsWith("/runs") && method === "POST") {
       const input = JSON.parse(String(init?.body)); expect(input.requestKey).toEqual(expect.any(String));
@@ -110,7 +110,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
     if (path.endsWith("/cancel")) { run!.status = "cancelled"; return Response.json({ cancellationRequested: true }); }
     if (/\/runs\/run-\d+$/.test(path)) return Response.json(run);
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
-  } }, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  } }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
   await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
   const instance = await chromium.launch({ headless: true }); cleanup.push(() => instance.close());
   const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: "reduce", extraHTTPHeaders: f.edgeHeaders() });
@@ -182,7 +182,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
 }, 60000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while a sleeping Host is unavailable, without polling or flashing loading states", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
@@ -218,7 +218,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("retains delivered history while 
 }, 20000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("shows a reply streamed during a running task once, and keeps later unrelated replies", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
@@ -247,7 +247,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows a reply streamed during a 
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no plain-message flash, no loading state, all pages before display, no re-read on return", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
@@ -311,7 +311,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("paints finished history once: no
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not shortened values, and shows reasoning from completed items", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });
@@ -341,7 +341,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not sho
 }, 30000);
 
 it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the complete answer once a live run finishes and Router serves its archive", async () => {
-  const f = await edgeMauFixture(cleanup, { webRoot });
+  const f = await mauFixture(cleanup, { webRoot });
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const instance = await chromium.launch({ headless: true });

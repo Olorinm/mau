@@ -23,7 +23,7 @@ const handoffResult = z.object({ handoffId: z.string().min(1).max(200).regex(/^[
   expiresAt: z.iso.datetime({ offset: true }), instructions: z.string().max(500).optional() }).passthrough();
 /** What the model passes to the browser tools: agent-browser arguments and, from the shell command, its directory. */
 const commandInput = z.object({ args: z.array(z.string()).min(1).max(100), cwd: z.string().max(4096).optional() }).strict();
-export type BrowserTool = "agent_browser_read" | "agent_browser_write" | "handoff_start" | "handoff_cancel";
+type BrowserTool = "agent_browser_read" | "agent_browser_write" | "handoff_start" | "handoff_cancel";
 const relayed: BrowserTool[] = ["agent_browser_read", "agent_browser_write", "handoff_start", "handoff_cancel"];
 
 export function browserTool(name: string, connections: string[]): { connection: string; tool: BrowserTool } | undefined {

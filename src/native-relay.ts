@@ -9,7 +9,7 @@ export interface NativeRelayHost {
   nativeSessions(input: { runtimeId: string; action: "bindings" }): Promise<unknown>;
   events(runId: string, after: number, limit?: number): Promise<{ events: Array<{ event: Record<string, unknown> }>; cursor: number; hasMore: boolean }>;
 }
-export interface NativeRelayPort {
+interface NativeRelayPort {
   employees(): NativeRelayEmployee[];
   host(employee: NativeRelayEmployee): NativeRelayHost;
   sessions(owner: string, agentId: string): Promise<WorkSessions>;
@@ -18,7 +18,7 @@ export interface NativeRelayPort {
   touch(agentId: string): void;
   record?(owner: string, agentId: string, sessionId: string, source: string, text: string): void;
 }
-export interface NativeRelayOptions { intervalMs?: number; keepAliveMs?: number; clock?: () => number }
+interface NativeRelayOptions { intervalMs?: number; keepAliveMs?: number; clock?: () => number }
 
 const page = z.object({
   epoch: z.string(), cursor: z.number().int().nonnegative(), hasMore: z.boolean(), historyTruncated: z.boolean().optional(),

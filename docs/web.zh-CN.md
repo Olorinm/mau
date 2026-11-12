@@ -2,32 +2,21 @@
 
 [English](web.md)
 
-Mau 复用从 OpenGrove 原源码提取的页面结构、样式和交互，提供账号登录、员工管理、环境生命周期、渠道连接、账号消息。
-账号消息经过 Matrix 与 Router；不包含直接内核聊天、钱包和提现。
+控制台（`web/src`）用 [`web/ui`](../web/ui/README.md) 里的 `@olorinm/agent-ui` 组装页面（页面布局在 `./pages` 及各功能入口，底层组件在 `.` 与 `./app`）。
+组件包只接收数据、React 内容和回调，不依赖 Mau、Router、Host 或 Environment。认证、导航、接口请求和环境/渠道流程都在 `web/src`。
 
-公共组件来自 [`web/ui`](../web/ui/README.md) 里的 `@olorinm/agent-ui`（页面布局在 `./pages` 及各功能入口，底层组件在 `.` 与 `./app`），仅接收数据和回调。
-认证、接口请求、导航和业务流程由 Mau 的 `web/src` 负责；组件包不依赖这些服务。
+控制台提供与自有员工的对话（单聊和群聊）、员工创建与管理、环境生命周期、渠道连接、连接器账号和设置。
+它只访问同域的 Mau（`/_mau/v1`）和内嵌的 Router（`/_agent-router/v1`）；浏览器不持有 Host 凭据，也不直连执行环境。
+“新建应用”和“App 商店”入口保留，明确显示“尚未接入”，没有对应后端。
+
 `web/` 是 npm workspace，`web/package-lock.json` 同时锁定控制台与 `web/ui`；`npm run build:web` 先构建 `web/ui`。
-应用创建、商店、扩展和设置入口保留；Mau 没有接入的服务明确显示“尚未接入”，操作不可提交。
-外观设置、消息输入与搜索、资料页、移动端导航使用提取包中的原组件。
-图形化扩展保留 Skills、MCP、内核插件、Hooks、Tools 和 CLI 六类入口。
-
-## 设置
-
-主导航只有一个「设置」入口，打开覆盖在应用上的弹窗，左侧导航：通用（语言、外观）、连接器、消息渠道、身份与配对、扩展、
-数据控制（通过 Router 账本清空某个对话的聊天记录）、帮助与法律、退出（边缘登录的登出）。员工的模型、指令等设置仍在员工页面。
-
-页面可直接链接：`#/settings/<分区>[/<项目>]`，例如 `#/settings/connectors/gmail`。跳转 OAuth 授权前控制台记住当前页面，
-回调的 `/?view=connectors&oauth=…` 会重新打开它。宽度小于 640 px 时弹窗全屏，导航是第一页，各页面带返回按钮。
-
-界面、字号、间距和组件来自 `@olorinm/agent-ui/app`（设置页用标准密度，执行过程和审批卡片用紧凑密度）。
 
 ## 开发
 
 ```sh
 node scripts/bootstrap.mjs            # 同时安装 web/ 依赖
 MAU_CONFIG_FILE=/private/mau.json npm start
-npm run dev:web                        # Vite 运行在 5173，/_mau 和 /_agent-router 代理到 8790
+npm run dev:web                        # 先构建 web/ui，Vite 运行在 5173，/_mau 和 /_agent-router 代理到 8790
 ```
 
 用 `MAU_DEV_BACKEND_URL` 代理到其他服务。
@@ -41,30 +30,62 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 
 设置 `MAU_WEB_ROOT` 后，`mau-server` 以和接口相同的域名提供控制台，不需要配置跨域。以 `/_` 开头的路径和 `/health` 路由不会返回页面。[Dockerfile](../Dockerfile) 会构建控制台并设置 `MAU_WEB_ROOT=/app/web`。
 
-服务端发布包包含 `web/dist`；安装发布包后，将 `MAU_WEB_ROOT` 指向已安装 Mau 包中的该目录。`npm pack` 会先构建服务端和控制台。渠道任务遇到临时网络错误、服务端错误或限流后会继续轮询，并提供重试按钮；任务不存在或已过期时停止轮询。
+服务端发布包包含 `web/dist`；安装发布包后，将 `MAU_WEB_ROOT` 指向已安装 Mau 包中的该目录。`npm pack` 会先构建服务端和控制台。
 
-页面的内容安全策略只允许连接同域和公开 Matrix 服务器（`mau.json` 中的 `publicHomeserver`）。该服务器需要允许浏览器跨域访问客户端接口，Synapse 默认允许。
+页面的内容安全策略只允许连接同域。唯一允许嵌入的页面是员工交给所有者操作的浏览器实时画面。
 
-## 登录状态
+## 登录（Cloudflare Access）
 
-- 密码登录与 `mau login` 相同：`GET /_mau/v1/info`、Matrix `m.login.password`、`GET /_mau/v1/account`。退出时吊销该设备。
-- 令牌登录只校验已有访问令牌。退出时只在浏览器里忘记它，不吊销。
-- 令牌保存在浏览器 `localStorage`（`mau.session`）。任何 `401` 都会回到登录页。
+控制台没有登录页，也不保存令牌，唯一的登录方式是边缘身份：`mau.json` 配置 `edgeIdentity`（与 Router 的 `edgeIdentity` 同形）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`。没有配置 `edgeIdentity`（`edge_identity_required`）或没有开启 Router 账本（`ledger_read_required`）时 Mau 拒绝启动；Mau 始终以关闭 Matrix 的方式运行 Router，不配置也不访问任何 Matrix 服务器。
 
-### 边缘登录（Cloudflare Access）
-
-`mau.json` 配置 `edgeIdentity`（与 agent-router `edgeIdentity` 同形，见 ADR 0005 第 18.2 节）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout", "matrix": false }`。
-
-- 没有登录页，也不保存令牌：启动时删除 `mau.session`，凭同域 Access cookie 读取 `GET /_mau/v1/account`，由 Cloudflare 附加 JWT。
+- 启动时凭同域 Access cookie 读取 `GET /_mau/v1/account`，由 Cloudflare 附加 JWT。
 - 未开通的账号显示整页“此账号未开通 Mau（邮箱）”和“切换账号”（Access 退出）。
 - Access 会话过期（接口被重定向、`401` 或套接字重新取票失败）时显示“登录已过期”横幅；“重新登录”把未发送的输入按对话存入 `sessionStorage` 后刷新页面。
-- 对话始终使用 Router 账本；“退出登录”跳转 Access 退出。
+- “退出登录”跳转 Access 退出。
 - 命令行和自动化的 bearer 调用继续可用，除非 Router 设置 `bearer: "deny"`。
 - Cloudflare 对跨站请求同样附加 JWT，因此边缘身份的非 GET 请求必须带控制台的 `Origin`（`edgeIdentity.origins`，默认取公开地址的源，或与请求自身 Host 相同），且请求体类型不能是表单可发送的类型。Access 之后的非浏览器调用方需带 bearer 令牌或显式 `Origin`。
 
+## 对话
+
+对话来自 Router 的所有者账本（`/_agent-router/v1/web`），控制台按 `GET /web/me` 公布的功能开关工作：没有 `history` 时提示聊天记录不可用，没有 `send` 时对话只读。
+
+- 每个自有员工有一个单聊。顶部一行保留少数几个对话；人员面板列出全部对话，并可打开员工资料：环境状态与自检、渠道、连接器、文档，以及配置（内核、环境方案、销毁环境、删除员工）。
+- “新建群聊”创建 Router 群聊房间，填写标题并选择最多 20 个自有员工。群里只有被所有者 @ 的员工（或 `@所有人`/`@all`）开始处理；没有 @ 的消息只记录。成员面板可改名、添加和移除员工。
+- 消息包含文字和附件（Router 公布该功能时）：图片内嵌显示，其他文件显示为下载卡片。来自其他渠道的消息带渠道标记。
+- 发送失败保留草稿，重试复用同一个幂等键。
+- Router 提供 `reset` 时，可以“新对话”开始新会话，也可以在设置中清空某个对话的聊天记录。
+- 员工的指令（`AGENTS.md`，只读）和两个记忆文件（`MEMORY.md`、`USER.md`，逐条编辑）在对话旁打开。
+
+Host 健康检查不代表消息链路已通过；线上验收必须从控制台发送消息并确认收到员工回复。
+
+## 执行过程与交互
+
+控制台通过 Router 的公开运行、事件和调用结果接口读取执行过程，在触发它的消息下方显示增量正文、推理、工具参数与结果、运行状态以及待处理的审批和提问。所有者可以回答审批和提问、停止正在进行的回复，或向它追加文字，全部经过 Router。原生选项和回答格式由 Host 的公开交互转换器决定，Mau 不自定义审批选项。
+
+断线后按事件游标续读。刷新后从保留的历史重建，事件丢失时明确提示；已结束的运行从 Router 归档读取一次。已处理或过期的交互不可再次提交。员工把浏览器交给所有者时，实时画面在对话旁打开。
+
+构建版本检查只在页面闲置时刷新旧页面：有待完成的修改、打开的弹窗或表单、输入框聚焦时不刷新。
+
+## 设置
+
+主导航只有一个「设置」入口，打开覆盖在应用上的弹窗，左侧导航：通用（语言、外观、头像）、连接器、消息渠道、身份与配对、扩展、
+数据控制（通过 Router 账本清空某个对话的聊天记录）、帮助与法律、退出（边缘登录的登出）。员工自己的状态和配置在人员面板的员工资料里。
+扩展页列出 Skills、MCP、内核插件、Hooks、Tools 和 CLI，均显示尚未接入：员工可以在自己的环境里安装和使用。
+
+页面可直接链接：`#/settings/<分区>[/<项目>]`，例如 `#/settings/connectors/gmail`。跳转 OAuth 授权前控制台记住当前页面，
+回调的 `/?view=connectors&oauth=…` 会重新打开它。宽度小于 640 px 时弹窗全屏，导航是第一页，各页面带返回按钮。
+
+界面、字号、间距和组件来自 `@olorinm/agent-ui/app`（设置页用标准密度，执行过程和审批卡片用紧凑密度）。
+
 ## 渠道
 
-每两秒查询一次 Router 的连接任务。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。渠道在「设置 → 消息渠道」中按员工连接，流程在弹窗内完成。飞书个人权限（以主人身份）在「设置 → 连接器 → 飞书」通过 Agent Connectors 授权，见 [connector-accounts.md](connector-accounts.md)。
+渠道在「设置 → 消息渠道」中按员工连接，流程在弹窗内完成。每两秒查询一次 Router 的连接任务，遇到临时网络错误、服务端错误或限流后继续轮询，并提供重试按钮；任务不存在或已过期时停止轮询。Router 返回的 `qr` 是终端字符画，控制台根据任务里的 `https` 链接自己生成二维码，同时提供打开链接。任务在 Router 内存中保留十分钟，过期或找不到时提示重新开始。飞书个人权限（以主人身份）在「设置 → 连接器 → 飞书」通过 Agent Connectors 授权，见 [connector-accounts.md](connector-accounts.md)。
+
+### 恢复已有飞书应用
+
+飞书连接失败后，点击「恢复连接」，填写开发者后台的原 App ID。控制台会保留已知的
+App ID 和区域，通过飞书官方页面重新授权；无需复制 App Secret。
+如果凭据已经保存，仅绑定失败，则直接复用凭据。失败任务在 Router 重启后仍可查看。
 
 ## 验证
 
@@ -72,54 +93,4 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 npm run test:web
 ```
 
-会构建控制台、运行连接层测试，并用 Chromium 操作测试用 Mau：密码登录（含密码错误）、新建员工、暂停与恢复、连接 Matrix、自检、销毁、切换语言、退出和登录失效。CI 设置 `MAU_WEB_E2E=1`，没有构建产物时直接失败而不是跳过。云端生命周期、Matrix 和渠道都是测试替身；扫码、真实 Matrix 登录和渠道授权需要在实际部署上验收。
-
-## 恢复已有飞书应用
-
-飞书连接失败后，点击「恢复连接」，填写开发者后台的原 App ID。控制台会保留已知的
-App ID 和区域，通过飞书官方页面重新授权；无需复制 App Secret。
-如果凭据已经保存，仅绑定失败，则直接复用凭据。失败任务在 Router 重启后仍可查看。
-
-
-## 公共前端与产品边界
-
-Mau 使用 `@olorinm/agent-ui/pages` 的布局、列表详情、登录表单外观和聊天组件。
-公共包只接收数据与回调，不依赖 Mau、Router、Host、Environment、Matrix 或 OpenGrove 接口。
-账号认证、导航、消息请求和环境/渠道流程都在 Mau 的 `web/src` 中组装。
-
-本轮不包含直接内核聊天、钱包和提现。应用、扩展及设置入口由 Mau 提供，缺少服务的入口明确显示“尚未接入”。
-账号消息通过 Matrix 与 Router 现有链路通信；发送失败保留草稿，重试复用事务 ID，避免重复投递。
-环境初始化会自动接通所有者的 Matrix 连接，用于内置聊天。Host 健康检查不代表消息链路已通过；线上验收必须从网页发送消息并确认收到 Agent 回复。
-导航分为“对话”和“通讯录”。与 OpenGrove 房间一致，每个员工只有一个单聊，标题为员工名：取只含所有者和该员工、最近活跃的房间；较早的重复房间留在服务器上并保留历史，所有者各渠道的私聊本来就共用 Router 主会话。单聊与群聊按最近活跃混排，群聊显示成员头像。发起单聊先等待首次房间同步并复用已有单聊。
-“发起群聊”使用恢复的 OpenGrove 建群对话框，由浏览器以所有者账号创建房间（`private_chat`），并写入 `ai.mau.room` 状态 `{kind: "group"}`，因此只有一个员工的群在 Mau 和 Router 中仍是群。群里只有被所有者 @ 的员工（Matrix `m.mentions`）或 @所有人 时才开始处理，每位员工的过程显示在该消息下方。群成员只有所有者和其自有员工时，员工获得所有者授权；有其他人在的群不获得。
-当前支持最近的文字/通知消息，以及通过 Router 公开接口读取的执行状态、增量正文、工具过程和审批/提问。历史消息分页和其他消息类型尚未接入。
-“文件”导航保留原有呈现，并明确说明尚未接入。共享工作区仍通过现有 Mau API 和 CLI 使用；本次集成不把工作台目录与预览零件重新拼成文件应用。
-浏览器验收使用明确的 Matrix 和云环境测试替身，不代表真实内核或线上服务验收。
-
-
-## 执行过程与交互
-
-网页通过 Router 的公开任务、运行、事件和调用结果接口关联 Matrix 消息，使用
-Agent Frontend 的原版 `RunMessage`、Agent UI 的公开事件投影／原生交互组件，以及 Host 的公开交互转换器。
-浏览器不持有 Host token，不直连执行环境。组件不依赖 Mau 的会话和页面类型。
-
-执行期间可以展开工具参数和结果、回答问题、允许或拒绝审批、停止当前任务。
-事件按 Host 游标续读；刷新后从保留的事件历史重建，历史被截断时明确提示。
-审批状态从 Host 读取；已处理、过期或运行结束的请求不可再次提交。
-频道中的独立消息仍保留，已呈现在运行区域的正文更新和审批文字通知按消息 ID 去重。
-
-集成测试使用可控 Host/Matrix 协议替身覆盖分段文字、工具结果、刷新恢复、
-允许/拒绝审批、提问回答和取消。它与真实模型的线上验收分别记录。
-
-
-### 原版前端接入修正
-
-执行记录使用 `MessageView.body`，由 `RunMessage` 保留原版执行过程与回答气泡的结构。
-Mau 将 Router 返回的 Host 事件交给 Agent UI 的 `projectHostMessage`；审批和问题用
-`projectHostInteraction` 提供显示数据，选择值与回答格式仍由 Host 的
-`describeInteraction`／`answerInteraction` 决定。Mau 不自定义内核审批选项。
-
-历史按页立即显示，结束状态后补读事件以避免末页竞态。展开状态在增量更新和完成后保持。
-构建版本检查在页面闲置时更新旧资源；执行中、待回应、未发消息、表单或弹窗打开时不自动刷新。
-文件、商店和扩展等尚未接入的产品服务继续明确显示不可用；这些界面已作为独立组件完整拆出，
-组件存在不等于 Mau 已实现对应后端服务。完整对照见 Agent UI 仓库的前端审计清单。
+会构建控制台、运行连接层测试，并用 Chromium 操作测试用 Mau：从 Access 会话打开、新建员工、暂停与恢复、连接渠道、自检、销毁、设置与连接器、对话、群聊、附件、执行过程与审批、切换语言、退出和登录失效。CI 设置 `MAU_WEB_E2E=1`，没有构建产物时直接失败而不是跳过。云端生命周期、Host、Access 和渠道都是测试替身；扫码、真实 Access 登录、渠道授权和模型回复需要在实际部署上验收。

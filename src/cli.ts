@@ -10,9 +10,8 @@ import { runSsh } from "./ssh-client.js";
 
 const help = `Mau — your agent product
 
-  mau login --url URL --token-file FILE
-  mau login --url URL --user MATRIX_ID --password-file FILE
-  mau login --url URL --edge   (Cloudflare Access; the default when the service has no Matrix login)
+  mau login --url URL                     (Cloudflare Access)
+  mau login --url URL --token-file FILE   (an account bearer token)
   mau options
   mau setup NAME --environment PROFILE
   mau agents | use NAME | status | check
@@ -21,14 +20,14 @@ const help = `Mau — your agent product
   mau environment-replace PROFILE | environment-rollback
   mau pause | resume | destroy | reconcile
   mau ssh NAME [-- COMMAND...]
-  mau channel-connect matrix|feishu|weixin|telegram|grove-mail
+  mau channel-connect feishu|weixin|telegram|grove-mail
   mau channel-jobs | channel-job ID | channel-pair ID --pairing-code-file FILE
 
 Options: --no-wait, --allow-http (loopback development only),
   --bot-token-file FILE, --domain feishu|lark,
   --app-id cli_... (authorize an existing Feishu/Lark app),
   --mail-service ID, --inbox ID, --owner-email EMAIL, --api-key-file FILE
-Edge login: run cloudflared access login URL first, or use an Access service token:
+Access login: run cloudflared access login URL first, or use an Access service token:
   --access-client-id-file FILE --access-client-secret-file FILE (or CF_ACCESS_CLIENT_ID[_FILE],
   CF_ACCESS_CLIENT_SECRET[_FILE]); --access-token-file FILE or CF_ACCESS_TOKEN[_FILE] pass a token.
   Access credentials are read on every call and never saved.
@@ -37,12 +36,12 @@ Router owns accounts and connections; Mau owns environment operations.
 `;
 const options = {
   help: { type: "boolean" }, version: { type: "boolean" }, url: { type: "string" },
-  user: { type: "string" }, "password-file": { type: "string" }, "token-file": { type: "string" },
+  "token-file": { type: "string" },
   environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
   "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, yes: { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
-  edge: { type: "boolean" }, "access-client-id-file": { type: "string" }, "access-client-secret-file": { type: "string" },
+  "access-client-id-file": { type: "string" }, "access-client-secret-file": { type: "string" },
   "access-token-file": { type: "string" },
 } as const;
 const stateFile = join(process.env.MAU_CONFIG_DIR ?? join(homedir(), ".config", "mau"), "session.json");
@@ -128,32 +127,14 @@ async function main() {
   if (command === "login") {
     if (!values.url) fail("url_required");
     const url = endpoint(values.url!, allowHTTP);
-    // Edge login: explicit, or the default when the service offers no Matrix login (Matrix off).
-    const edge = values.edge || !values["token-file"] && !values.user && !values["password-file"]
-      && (await request(url, "/_mau/v1/info", undefined).catch(() => ({}))).login === "edge";
-    if (edge) {
-      if (values["token-file"] || values.user || values["password-file"]) fail("choose_one_login_method");
+    if (!values["token-file"]) {
       const account = await request(url, "/_mau/v1/account", accessHeaders(url, values));
       if (typeof account.owner !== "string") fail("invalid_account_response");
       privateFile(stateFile, { url, token: "", owner: account.owner, login: "edge" });
       output({ owner: account.owner, url, login: "edge" }); return;
     }
-    if (accessOptions.some((name) => values[name])) fail("access_credentials_require_edge_login");
-    let token: string;
-    if (values["token-file"]) {
-      if (values.user || values["password-file"]) fail("choose_one_login_method");
-      token = secret(values["token-file"]);
-    } else {
-      if (!values.user || !values["password-file"]) fail("user_and_password_file_required");
-      const info = await request(url, "/_mau/v1/info", undefined);
-      const homeserver = endpoint(info.homeserver, allowHTTP);
-      const session = await request(homeserver, "/_matrix/client/v3/login", undefined, {
-        type: "m.login.password", identifier: { type: "m.id.user", user: values.user },
-        password: secret(values["password-file"]), initial_device_display_name: "Mau",
-      });
-      if (typeof session.access_token !== "string") fail("invalid_login_response");
-      token = session.access_token;
-    }
+    if (accessOptions.some((name) => values[name])) fail("choose_one_login_method");
+    const token = secret(values["token-file"]);
     const account = await request(url, "/_mau/v1/account", token);
     if (typeof account.owner !== "string") fail("invalid_account_response");
     privateFile(stateFile, { url, token, owner: account.owner });
@@ -275,7 +256,7 @@ async function main() {
     else if (kind === "telegram") body.token = secret(values["bot-token-file"]);
     else if (kind === "grove-mail") body = { kind, serviceId: values["mail-service"], inboxId: values.inbox,
       ownerEmail: values["owner-email"], apiKey: secret(values["api-key-file"]) };
-    else if (kind !== "matrix" && kind !== "weixin") fail("unknown_channel");
+    else if (kind !== "weixin") fail("unknown_channel");
     output(await pollConnection(await routing(path + "/connections", body))); return;
   }
 }

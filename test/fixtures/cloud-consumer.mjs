@@ -13,7 +13,6 @@ import { count, close } from "./cloud-driver.mjs";
 const root = await mkdtemp(join(tmpdir(), "cloud-bootstrap-"));
 const owner = "@alice:example.test";
 let service, mau, server;
-const delivered = [];
 const allocation = createServer().listen(0, "127.0.0.1");
 await new Promise((r) => allocation.once("listening", r));
 const port = allocation.address().port;
@@ -31,18 +30,13 @@ async function open() {
   const app = express();
   server = app.listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
-  const origin = "http://127.0.0.1:" + server.address().port;
-  const settings = JSON.parse(await readFile(options, "utf8"));
-  settings.publicHomeserver = origin;
-  await save(options, settings);
   mau = createMau(
     {
       serverName: "example.test",
-      homeserver: "https://matrix.fixture",
       publicUrl: "https://example.test/_agent-router/v1",
       stateDir: join(root, "router"),
-      asToken: "a".repeat(48),
-      hsToken: "h".repeat(48),
+      ledgerRead: true,
+      ledgerSend: true,
     },
     options,
     { router: {
@@ -50,32 +44,9 @@ async function open() {
         assert.equal(token, "fixture-owner");
         return owner;
       },
-      provision: async () => {},
-      transport: (agent) => ({
-        identity: async () => agent.matrixId,
-        sync: async (since) => {
-          await new Promise((r) => setTimeout(r, 10));
-          return { next_batch: since ?? "0" };
-        },
-        state: async () => [{ type: "m.room.member", state_key: owner, content: { membership: "join" } }],
-        history: async () => ({ events: [] }),
-        createRoom: async () => "!fixture:example.test",
-        join: async () => {},
-        send: async (...args) => { delivered.push(args); return "$fixture"; },
-        stop: () => {},
-      }),
     } },
   );
   service = mau.router.service;
-  // Existing owner session verification stays in the Matrix authentication boundary.
-  app.get("/_matrix/client/v3/account/whoami", (_req, res) =>
-    res.json({ user_id: owner }),
-  );
-  app.post("/_matrix/client/v3/login", express.json(), (req, res) => {
-    assert.equal(req.body.identifier.user, owner);
-    assert.equal(req.body.password, "fixture-password");
-    res.json({ access_token: "fixture-owner", user_id: owner });
-  });
   app.use(mau.app);
   await service.start();
   return "http://127.0.0.1:" + server.address().port;
@@ -106,6 +77,9 @@ try {
   });
   await save(provider, { root, directory, port });
   await save(options, {
+    // Owners sign in at the edge in production; this fixture's CLI and API calls use the bearer account below.
+    edgeIdentity: { provider: "cloudflare-access", teamDomain: "https://example-team.cloudflareaccess.com", audiences: ["fixture"],
+      owners: { "alice@example.test": owner } },
     nativeWork: { employeeTools: true },
     environments: {
       configFile: provider,
@@ -138,15 +112,11 @@ try {
     );
     return r.stdout ? JSON.parse(r.stdout) : null;
   };
-  const passwordFile = join(root, "password");
-  await writeFile(passwordFile, "fixture-password", { mode: 0o600 });
-  await cli("login", "--url", base, "--user", owner, "--password-file", passwordFile);
+  await cli("login", "--url", base, "--token-file", tokenFile);
   const result = await cli("setup", "helper", "--environment", "cloud");
   assert.equal(result.environment.state, "ready");
   assert.equal((await cli("check")).checks[0].status, "verified");
-  assert.deepEqual((await cli("status")).connections, [
-    { id: "matrix", kind: "matrix" },
-  ]);
+  assert.deepEqual((await cli("status")).connections, []);
   assert.equal(count(), 1);
   const agent = result.agent;
   async function turn(text, contextId) {
@@ -201,13 +171,24 @@ try {
   assert.equal((await api(`/agents/${agent.id}/native/skills`)).data[0].skills[0].name, "fixture-skill");
   assert.equal((await api(`/agents/${agent.id}/native/memory`)).state, "disabled");
   const runtime = await service.runtime(agent.id), sessions = runtime.extension.sessions;
-  const connection = sessions.communication.status().connections.find(value => value.kind === "matrix");
-  assert.ok(connection);
-  const incoming = sessions.communication.receive(connection.id, { externalId: "employee-main", sender: owner,
-    threadId: "!fixture:example.test", scope: "direct", text: "employee-orchestrate",
-    reply: { target: "!fixture:example.test", messageId: "employee-main", data: { sender: owner } } });
-  await sessions.communication.dispatch();
-  const mainTask = sessions.communication.status().inbox.find(value => value.id === incoming.id).taskId;
+  // The owner's message arrives as the console sends it: through Router's ledger web channel.
+  const web = async (path, body) => {
+    const response = await fetch(base + "/_agent-router/v1/web" + path, { method: body === undefined ? "GET" : "POST",
+      headers: { authorization: "Bearer fixture-owner", "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const value = await response.json(); assert.ok(response.ok, JSON.stringify(value)); return value;
+  };
+  const chat = await web("/chats/dm", { agentId: agent.id });
+  // Scheduled notices recorded in the owner's conversation (Router's ledger).
+  const recorded = async text => (await web(`/chats/${encodeURIComponent(chat.chatId)}/events?limit=200`)).events
+    .filter(event => event.kind === "notice" && event.text === text).length;
+  await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-1", text: "employee-orchestrate" });
+  let incoming;
+  for (let n = 0; n < 300 && !incoming; n++) {
+    incoming = sessions.communication.status().inbox.find(value => value.connectionId === "web" && value.taskId);
+    if (!incoming) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.ok(incoming, "the owner's web message was not dispatched");
+  const mainTask = incoming.taskId;
   let orchestrated;
   for (let n = 0; n < 300; n++) {
     const current = await runtime.connector.cli.get(mainTask);
@@ -224,7 +205,7 @@ try {
   assert.equal(sessions.get(forked.eventId).status, "completed");
   const rule = await api("/proactive", { agentId: agent.id, targetSessionId: incoming.conversationId, name: "Fixture schedule", goal: "Prepare a report",
     schedule: { type: "interval", minutes: 5 }, timeZone: "Asia/Shanghai", connections: [], notifications: "always", status: "active",
-    notify: { channel: connection.id },
+    notify: { channel: "web" },
     skills: [{ name: "fixture-skill", path: "/trusted/fixture/SKILL.md" }] });
   assert.equal((await cli("pause")).state, "paused");
   const trigger = await api(`/proactive/${rule.id}/run`, { requestId: "fixture-trigger" });
@@ -244,7 +225,7 @@ try {
   assert.equal((await api(`/proactive/${rule.id}/run`, { requestId: "fixture-trigger" })).id, trigger.id);
   await mau.proactive.tick();
   assert.equal(mau.proactive.runs(owner, rule.id).length, 1); assert.equal(count(), 1);
-  assert.equal(delivered.filter(value => JSON.stringify(value).includes("Scheduled fixture report")).length, 1);
+  assert.equal(await recorded("Scheduled fixture report"), 1);
   const allNative = (await readFile(logs, "utf8")).trim().split("\n").map(JSON.parse);
   const scheduled = allNative.find(value => value.method === "turn/start" && value.params.toolOutput?.name === "proactive_work");
   assert.ok(scheduled && !scheduled.params.input?.length);
@@ -270,9 +251,9 @@ try {
   }
   assert.equal(mau.proactive.notices(owner, direct.id)[0]?.status, "sent");
   assert.equal((await readFile(logs, "utf8")).trim(), beforeDirect);
-  // A rule without notify defaults to `web`: the reminder is recorded in the conversation and sent to no channel.
+  // A rule without notify defaults to `web`: the reminder is recorded in the conversation.
   assert.equal(mau.proactive.rule(owner, direct.id).notify.channel, "web");
-  assert.equal(delivered.filter(value => JSON.stringify(value).includes("Fixed fixture reminder")).length, 0);
+  assert.equal(await recorded("Fixed fixture reminder"), 1);
   assert.equal((await cli("destroy")).state, "deleted");
   console.log(
     "PASS: independent Mau/Router/Environment/Host archives, CLI setup, restart/resume, owner tool -> delegated task -> wait, narrowed fork, native skills/memory, frozen bounded memory, schedule held during manual pause -> explicit resume -> native toolOutput with current read-only memory -> stable outbox, trigger deduplication, and explicit destruction. Cloud lifecycle and Codex protocol are fixtures; no cloud/model acceptance is implied.",

@@ -50,16 +50,8 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
   );
   const setup = (await f.api(`/agents/${f.agent.id}`)).data;
   expect(setup.host.runtimeId).toBe("personal");
-  expect(setup.connections).toEqual([{ id: "matrix", kind: "matrix" }]);
-  const runtime = await f.service.runtime(f.agent.id);
-  const room = "!web-chat:example.test";
-  runtime.connector.store.set("rooms", room, { members: [alice, f.agent.matrixId], encrypted: false });
-  runtime.connector.ingest(room, {
-    event_id: "$web-hi", sender: alice, type: "m.room.message",
-    content: { msgtype: "m.text", body: "hi" }, origin_server_ts: Date.now() + 1,
-  });
-  expect(runtime.connector.store.entries<any>("communication_inbox").map(row => row.value))
-    .toContainEqual(expect.objectContaining({ connectionId: "matrix", source: expect.objectContaining({ text: "hi" }) }));
+  // Bootstrap binds the Host and adds no channel connection.
+  expect(setup.connections).toEqual([]);
   expect(setup.environment.operationId).toBe(ready.operationId);
   expect(JSON.stringify(setup)).not.toContain(String(files.get(dir + "token")));
   expect(JSON.stringify(setup)).not.toContain("private-traffic-token");
@@ -90,7 +82,7 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
 });
 it("Mau creates the Router identity under the same owner and Router no longer exposes provisioning", async () => {
   const f = await fixture();
-  expect((await f.api("/info")).data).toEqual({ login: "matrix", homeserver: "https://example.test", matrix: true });
+  expect((await f.api("/info")).data).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });
   const denied = await f.api("/agents", { name: "other", profileId: "cloud" }, "bob");
   expect(denied.status).toBe(403);
   expect(f.service.agents(bob)).toHaveLength(0);
