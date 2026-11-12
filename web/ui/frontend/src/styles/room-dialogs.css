@@ -18,7 +18,6 @@
   --employee-dialog-hover-bg: color-mix(in srgb, var(--c-text) 10%, var(--c-surface-grouped));
   --employee-dialog-control-border: transparent;
   --rooms-border-strong: var(--employee-dialog-control-border);
-  --room-dialog-kernel-option-border: var(--employee-dialog-control-border);
   --room-dialog-kernel-active-border: var(--c-link);
   gap: var(--sp-2);
   max-height: calc(100vh - 32px);

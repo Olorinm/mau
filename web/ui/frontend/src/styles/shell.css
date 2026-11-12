@@ -1,17 +1,8 @@
 :root {
-  --codex-bg: var(--c-bg);
-  --codex-sidebar: var(--c-surface);
   --codex-sidebar-hover: var(--c-surface-hover);
   --codex-sidebar-active: var(--c-surface-active);
-  --codex-text: var(--c-text);
-  --codex-muted: var(--c-muted);
-  --codex-faint: var(--c-faint);
-  --codex-line: var(--c-border);
-  --shadow: var(--shadow-lg);
   --opengrove-text: var(--c-text);
   --opengrove-muted: var(--c-muted);
-  --opengrove-border-soft: var(--c-border);
-  --opengrove-chat-column-width: min(780px, 100%);
 }
 
 body {

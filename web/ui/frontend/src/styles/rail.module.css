@@ -195,14 +195,12 @@
   background: color-mix(in srgb, var(--og-text) 5%, transparent);
   color: color-mix(in srgb, var(--og-text) 82%, transparent);
   outline: 0;
-  --pixel-icon-accent: currentColor;
 }
 
 .button[data-active="true"] {
   background: var(--c-panel);
   color: var(--og-text);
   box-shadow: none;
-  --pixel-icon-accent: currentColor;
 }
 
 .button[data-active="true"]::before {

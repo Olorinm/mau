@@ -19,11 +19,8 @@
   --rooms-border-strong: var(--c-border-strong);
   --rooms-text: var(--c-text);
   --rooms-muted: var(--c-muted);
-  --rooms-faint: var(--c-faint);
   --rooms-blue: var(--c-link);
   --rooms-blue-soft: var(--c-accent-soft);
-  --rooms-green: var(--c-success);
-  --rooms-amber: var(--c-warning);
   grid-column: 1;
   grid-row: 1 / -1;
   display: grid;
