@@ -315,7 +315,18 @@ body {
   box-shadow: var(--shadow-xs);
 }
 
-/* Chat: one column. The full list of conversations and the employee profile are cards laid beside it. */
+/* The brand sits above the navigation and pages start at the top of the window, with no empty row across it.
+   When the navigation is narrowed to icons or hidden, the brand keeps its own row so it and the toggle still fit. */
+.af-shell.app-shell[data-compact="false"]:has(> .app-navigation-slot[data-mode="full"]) > .app-titlebar {
+  grid-column: 1;
+}
+.af-shell.app-shell[data-compact="false"]:has(> .app-navigation-slot[data-mode="full"]) > .af-workspace {
+  grid-row: 1 / -1;
+  padding-top: 6px;
+}
+
+/* Chat: one column. The full list of conversations is a card laid beside it; the employee profile, a file or the
+   handed-over browser opens inside the conversation's own card. */
 .mau-stage {
   display: flex;
   height: 100%;
@@ -328,6 +339,12 @@ body {
 }
 .mau-stage > .rooms-view[data-members-open="true"] {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 0;
+}
+/* The two halves meet without a gap, so together they are one card. */
+.mau-stage > .rooms-view[data-members-open="true"] > .room-main-panel {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 .mau-stage .rooms-list-panel {
   display: none;
@@ -574,12 +591,12 @@ body {
   margin: 12px 8px;
 }
 
-/* The employee profile: a card to the right of the conversation. */
+/* The employee profile: the right-hand part of the conversation's card. */
 .mau-side-card {
   position: relative;
   min-width: 0;
   overflow: auto;
-  border-radius: var(--r-lg);
+  border-radius: 0 var(--r-lg) var(--r-lg) 0;
   background: var(--c-surface);
 }
 .mau-side-close {
@@ -664,7 +681,8 @@ body {
 @media (max-width: 900px) {
   .mau-side-card {
     position: fixed;
-    z-index: 30;
+    /* Above the title bar, which would otherwise cover the close button. */
+    z-index: 95;
     border-radius: 0;
     inset: 0;
   }

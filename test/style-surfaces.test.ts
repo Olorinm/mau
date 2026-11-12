@@ -65,6 +65,25 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
     const composer = page.getByPlaceholder("发送消息…"); await see(composer).toBeVisible();
     const prefix = `${mode}-${width}`;
     await capture(page, `${prefix}-chat`);
+    if (width === 1440) {
+      // The brand sits above the navigation, so the conversation card starts at the top of the window.
+      const top = await page.evaluate(() => ({ bar: document.querySelector(".app-titlebar")!.getBoundingClientRect().width,
+        card: document.querySelector(".room-main-panel")!.getBoundingClientRect().top }));
+      expect(top.bar).toBeLessThan(200); expect(top.card).toBeLessThan(16);
+      // The employee profile opens inside the conversation's card: the two halves meet without a gap.
+      await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+      const side = page.locator(".mau-side-card"); await see(side).toBeVisible(); await capture(page, `${prefix}-profile`);
+      const [chatRight, sideLeft] = await page.evaluate(() => [document.querySelector(".room-main-panel")!.getBoundingClientRect().right,
+        document.querySelector(".mau-side-card")!.getBoundingClientRect().left]);
+      expect(Math.abs(chatRight - sideLeft)).toBeLessThan(1);
+      await page.locator(".mau-side-close").click(); await see(side).toBeHidden();
+    }
+    if (width === 390) {
+      // On a phone the profile covers the page, title bar included, so its close button can be reached.
+      await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+      const side = page.locator(".mau-side-card"); await see(side).toBeVisible();
+      await page.locator(".mau-side-close").click(); await see(side).toBeHidden();
+    }
     await composer.fill("/"); await see(page.getByRole("listbox", { name: "斜杠命令" })).toBeVisible();
     expect(await composer.evaluate(el => el === document.activeElement && getComputedStyle(el).outlineStyle)).toBe("none");
     await capture(page, `${prefix}-commands`);
