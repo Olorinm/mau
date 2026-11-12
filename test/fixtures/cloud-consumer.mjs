@@ -130,13 +130,13 @@ try {
       },
       configuration: { returnImmediately: true },
     });
-    const task = await runtime.connector.cli.send(request, {
+    const task = await runtime.work.send(request, {
       sender: owner,
       room: "!fixture:example.test",
       approved: true,
     });
     for (let n = 0; n < 300; n++) {
-      const current = await runtime.connector.cli.get(task.id);
+      const current = await runtime.work.get(task.id);
       if (current.status.state === TaskState.TASK_STATE_COMPLETED)
         return current;
       await new Promise((r) => setTimeout(r, 50));
@@ -191,7 +191,7 @@ try {
   const mainTask = incoming.taskId;
   let orchestrated;
   for (let n = 0; n < 300; n++) {
-    const current = await runtime.connector.cli.get(mainTask);
+    const current = await runtime.work.get(mainTask);
     if (current.status.state === TaskState.TASK_STATE_COMPLETED) { orchestrated = current; break; }
     await new Promise(resolve => setTimeout(resolve, 50));
   }

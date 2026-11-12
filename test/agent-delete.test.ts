@@ -147,7 +147,7 @@ it("deletes an employee whose sandbox is already missing without rebuilding its 
   f.cloud.clear();
   // Rebuilding this runtime now throws a plain Error (host_binding_configuration_changed). Before the fix,
   // removeAgent rebuilt it after the cloud step: 500 operation_failed and needs_action/environment_lifecycle_unconfirmed.
-  (await f.service.runtime(f.agent.id)).connector.store.set("communication_host", "scope", "stale-scope");
+  (await f.service.runtime(f.agent.id)).store.set("communication_host", "scope", "stale-scope");
   f.provider.destroy = async () => { throw new Error("destroy_must_not_be_called"); };
   expect((await remove(f, f.agent.id)).status).toBe(204);
   expect((await f.api("/agents")).data.data).toEqual([]);

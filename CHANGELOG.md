@@ -4,6 +4,14 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.45] - 2026-11-12
+
+- Built on Agent Kit 0.9.0-alpha.1, whose Router has no Matrix: accounts and agents, channel
+  connections, the owner ledger and task delivery to Agent Host. No configuration change is
+  needed; `AGENT_MATRIX` and the homeserver settings are ignored, and a `matrix` connection left
+  on an employee is ignored.
+- Employee objects and `GET /web/me` features no longer carry a `matrix` member.
+
 ## [0.1.0-alpha.44] - 2026-11-12
 
 - Owners sign in through the edge identity only. The Matrix account login, the `publicHomeserver`

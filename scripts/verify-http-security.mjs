@@ -10,7 +10,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import express from "express";
 const require = createRequire(import.meta.url);
 const qs = require("qs");
-const { fetch: clientFetch } = require("undici");
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
@@ -20,7 +19,7 @@ app.use((error, _req, res, _next) => res.status(error.status ?? 500).json({ erro
 const server = app.listen(0, "127.0.0.1");
 await once(server, "listening");
 const origin = `http://127.0.0.1:${server.address().port}`;
-const versions = Object.fromEntries(["body-parser", "qs", "undici"].map(name => [name, require(`${name}/package.json`).version]));
+const versions = Object.fromEntries(["body-parser", "qs"].map(name => [name, require(`${name}/package.json`).version]));
 try {
   for (const [encoding, compress] of [["gzip", gzipSync], ["deflate", deflateSync]]) {
     const valid = await fetch(origin + "/echo", { method: "POST", headers: { "Content-Type": "application/json", "Content-Encoding": encoding }, body: compress('{"ok":true}') });
@@ -58,10 +57,8 @@ try {
   await once(upstream, "listening");
   try {
     const url = `http://127.0.0.1:${upstream.address().port}`;
-    for (const fetcher of [clientFetch, globalThis.fetch]) {
-      await assert.rejects(async () => { const response = await fetcher(url); await response.arrayBuffer(); });
-      await delay(60);
-    }
+    await assert.rejects(async () => { const response = await fetch(url); await response.arrayBuffer(); });
+    await delay(60);
   } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }
-  console.log(JSON.stringify({ status: "passed", node: process.version, bundledUndici: process.versions.undici, versions, checks: ["valid-compressed-json", "invalid-compressed-json", "trailing-compressed-data", "qs-comma-array", "undici-excess-encodings", "builtin-fetch-excess-encodings"] }));
+  console.log(JSON.stringify({ status: "passed", node: process.version, bundledUndici: process.versions.undici, versions, checks: ["valid-compressed-json", "invalid-compressed-json", "trailing-compressed-data", "qs-comma-array", "builtin-fetch-excess-encodings"] }));
 } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

@@ -90,8 +90,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // (Router refuses `ledgerRead` without `ledgerSend`).
   if (!edgeIdentity) throw new Error("edge_identity_required");
   if (!config.ledgerRead) throw new Error("ledger_read_required");
-  // Mau always runs Router with its Matrix switch off (agent-router ADR 0005 19.1): no homeserver is contacted.
-  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), matrix: { enabled: false },
+  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"),
     edgeIdentity };
   const router = createRouter(routerConfig, {
     dependencies: {

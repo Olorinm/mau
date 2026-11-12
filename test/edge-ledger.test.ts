@@ -4,8 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, expect as see } from "@playwright/test";
 import { alice, mauFixture, root } from "./fixtures/mau.js";
 
-// Mau runs Router with its Matrix switch off (agent-router ADR 0005 section 19), whatever the service config says:
-// owners sign in at the edge, chats come from the ledger and no homeserver is ever contacted.
+// Owners sign in at the edge and chats come from Router's ledger.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
@@ -32,15 +31,14 @@ it("refuses to start without the ledger: the console would have no chat source",
   await expect(mauFixture(cleanup, {}, {}, { ledgerRead: false })).rejects.toThrow("ledger_read_required");
 });
 
-it("creates, configures and deletes employees without Matrix and serves the edge-only info", async () => {
+it("creates, configures and deletes employees and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();
   expect(await (await fetch(f.base + root + "/info")).json()).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });
   const jwt = access.jwt();
   expect(await (await fetch(f.base + root + "/account", { headers: { "cf-access-jwt-assertion": jwt } })).json()).toMatchObject({ owner: alice, via: "edge" });
   const router = await (await fetch(`${f.base}/_agent-router/v1/agents/${f.agent.id}`, { headers: { "cf-access-jwt-assertion": jwt } })).json() as { matrix: unknown };
-  expect(router.matrix).toEqual({ state: "none", userId: null });
-  expect(f.service.matrixEnabled(f.agent.id)).toBe(false);
+  expect(router).not.toHaveProperty("matrix");
 
   // The environment becomes ready and binds the Host; no Matrix connection is added.
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -49,12 +47,12 @@ it("creates, configures and deletes employees without Matrix and serves the edge
   expect(summary.connections).toEqual([]);
   expect(summary.host).toMatchObject({ runtimeId: "personal" });
   // A Matrix connection cannot be added while Matrix is off.
-  expect((await f.api(`/agents/${f.agent.id}/connections`, { kind: "matrix" }, "alice", "/_agent-router/v1")).data).toEqual({ error: "matrix_disabled" });
+  expect((await f.api(`/agents/${f.agent.id}/connections`, { kind: "matrix" }, "alice", "/_agent-router/v1")).data).toEqual({ error: "invalid_request" });
 
   // A new employee through Mau, then deletion: no account is deactivated.
   const created = await f.api("/agents", { name: "writer", profileId: "cloud" });
   expect(created.status).toBe(202);
-  expect(created.data.agent).toMatchObject({ name: "writer", matrix: { state: "none", userId: null } });
+  expect(created.data.agent).toMatchObject({ name: "writer" });
   const removed = await fetch(`${f.base}${root}/agents/${created.data.agent.id}`, { method: "DELETE", headers: { authorization: "Bearer alice" } });
   expect(removed.status).toBe(204);
   expect(f.service.store.entries("matrix_orphans")).toEqual([]);
@@ -79,7 +77,7 @@ it.skipIf(!built)("runs the console without any Matrix code path", async () => {
   const { f, access } = await edgeMau({ webRoot, host, hostCapabilities: { runIdempotency: true } });
   const jwt = access.jwt();
   const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> } };
-  expect(me.limits?.features?.matrix).toBe(false);
+  expect(me.limits?.features).not.toHaveProperty("matrix");
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 

@@ -25,7 +25,7 @@ export function roomIdOf(chatId: string): string {
   return chatId.slice(roomPrefix.length);
 }
 
-/** Router refuses an empty or over-long title; an untitled group is named after its agents, as Matrix groups were. */
+/** Router refuses an empty or over-long title; an untitled group is named after its agents. */
 export function groupTitle(title: string, agentNames: readonly string[]): string {
   const chosen = title.trim() || agentNames.join("、");
   return [...chosen].slice(0, groupTitleMax).join("");

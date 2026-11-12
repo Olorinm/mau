@@ -82,7 +82,7 @@ function LedgerCardView({ client, api, chatId, card, answer, answerable }: {
   </div>;
 }
 
-/** One ledger turn rendered with the existing run surface, keyed by turnId instead of Matrix event ids. */
+/** One ledger turn rendered with the existing run surface, keyed by turnId. */
 function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
   controls?: RunControls | undefined;
