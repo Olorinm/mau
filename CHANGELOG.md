@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.39] - 2026-11-12
+
+- The list of all conversations opens inside the conversation's card, on its left, instead of as a
+  separate card that pushes the conversation aside. On a phone it takes the whole card while open.
+- An employee's profile, a file or the handed-over browser is a card beside the conversation
+  again, as before 0.1.0-alpha.38.
+
 ## [0.1.0-alpha.38] - 2026-11-12
 
 - The brand sits above the navigation and pages start at the top of the window; the empty row
