@@ -1,0 +1,44 @@
+import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
+import type { ReactElement, ReactNode } from "react";
+import { usePortalContainer } from "./portal.js";
+
+type TooltipSide = "top" | "bottom" | "left" | "right";
+type TooltipAlign = "start" | "center" | "end";
+
+export function TooltipProvider({ children }: { children: ReactNode }) {
+  return (
+    <TooltipPrimitive.Provider delay={450} closeDelay={0} timeout={300}>
+      {children}
+    </TooltipPrimitive.Provider>
+  );
+}
+
+export function Tooltip(props: {
+  children: ReactElement;
+  content: ReactNode;
+  side?: TooltipSide;
+  align?: TooltipAlign;
+  sideOffset?: number;
+  disabled?: boolean;
+}) {
+  const container = usePortalContainer();
+  return (
+    <TooltipPrimitive.Root disabled={props.disabled}>
+      <TooltipPrimitive.Trigger render={props.children} />
+      <TooltipPrimitive.Portal container={container}>
+        <TooltipPrimitive.Positioner
+          className="agent-ui-tooltip-positioner"
+          side={props.side ?? "top"}
+          align={props.align ?? "center"}
+          sideOffset={props.sideOffset ?? 8}
+          collisionPadding={12}
+        >
+          <TooltipPrimitive.Popup className="agent-ui-tooltip-popup" role="tooltip">
+            {props.content}
+            <TooltipPrimitive.Arrow className="agent-ui-tooltip-arrow" />
+          </TooltipPrimitive.Popup>
+        </TooltipPrimitive.Positioner>
+      </TooltipPrimitive.Portal>
+    </TooltipPrimitive.Root>
+  );
+}

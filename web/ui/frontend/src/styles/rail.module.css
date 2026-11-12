@@ -1,0 +1,538 @@
+.rail {
+  --app-rail-item-height: 36px;
+  --app-rail-icon-column: 38px;
+  /* Updated from rendered badge widths so sparse reminders do not reserve 99+ space. */
+  --app-rail-label-gap: 0px;
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  box-sizing: border-box;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: start;
+  align-items: start;
+  justify-items: stretch;
+  min-width: 0;
+  border-right: 0;
+  /* The rail is part of the app frame, not a panel on it: it stays transparent so
+     the frame shows through, and the panels to its right are the paper. That is
+     also why it has no border — there is no boundary to draw inside one surface. */
+  background: var(--app-rail-collapsed-bg);
+  padding: 0 10px 14px;
+  transition:
+    background-color var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    padding var(--motion-normal) var(--motion-ease);
+}
+
+:global(html[data-opengrove-desktop="true"]) .rail {
+  padding-top: 0;
+}
+
+.buttonLabel,
+.userButtonName {
+  display: none;
+}
+
+.nav {
+  grid-row: 1;
+  display: grid;
+  align-content: start;
+  min-height: 0;
+  gap: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.bottom {
+  grid-row: 2;
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.section {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.section + .section {
+  margin-top: 13px;
+}
+
+.sectionTitle {
+  display: block;
+  box-sizing: border-box;
+  height: 14px;
+  margin: 0 -6px;
+  width: calc(100% + 12px);
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  visibility: visible;
+  color: var(--og-text-muted);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-normal);
+  text-align: center;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sectionItems {
+  display: grid;
+  min-width: 0;
+}
+
+.sectionItems {
+  gap: 4px;
+}
+
+.rail:not([data-expanded="true"]) .nav {
+  overflow: visible;
+}
+
+.rail:not([data-expanded="true"]) .button,
+.rail:not([data-expanded="true"]) .userButton {
+  overflow: visible;
+}
+
+.rail:not([data-expanded="true"]) .button:hover,
+.rail:not([data-expanded="true"]) .button:focus-visible,
+.rail:not([data-expanded="true"]) .userButton:hover,
+.rail:not([data-expanded="true"]) .userButton:focus-visible {
+  z-index: 90;
+}
+
+.rail:not([data-expanded="true"]) .button[data-tooltip]::after,
+.rail:not([data-expanded="true"]) .userButton[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  z-index: 140;
+  max-width: 220px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--og-border-strong) 82%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--og-surface) 98%, transparent);
+  box-shadow: var(--shadow-md);
+  color: var(--og-text-strong);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  opacity: 0;
+  padding: 7px 9px;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  transform: translate(4px, -50%);
+  transition:
+    opacity var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+  white-space: nowrap;
+}
+
+.rail:not([data-expanded="true"]) .button[data-tooltip]:hover::after,
+.rail:not([data-expanded="true"]) .button[data-tooltip]:focus-visible::after,
+.rail:not([data-expanded="true"]) .userButton[data-tooltip]:hover::after,
+.rail:not([data-expanded="true"]) .userButton[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.button {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--app-rail-icon-column) minmax(0, 1fr);
+  align-items: center;
+  justify-content: start;
+  justify-items: stretch;
+  width: var(--app-rail-icon-column);
+  height: var(--app-rail-item-height);
+  border: 0;
+  border-radius: var(--r-app-rail-button);
+  background: transparent;
+  color: var(--app-rail-button-fg);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+
+.iconUnreadAnchor {
+  --unread-count-anchor-top: -3px;
+  --unread-count-center-right: 2px;
+  --unread-count-ring-color: var(--app-shell-bg);
+  grid-column: 1;
+  align-self: center;
+  justify-self: center;
+  width: 27px;
+  height: 27px;
+}
+
+.iconUnreadAnchor > svg {
+  grid-column: 1;
+  align-self: center;
+  justify-self: center;
+}
+
+.button svg {
+  stroke-width: 1.8;
+}
+
+.button:active,
+.userButton:active {
+  transform: none;
+}
+
+.button:hover,
+.button:focus-visible {
+  background: color-mix(in srgb, var(--og-text) 5%, transparent);
+  color: color-mix(in srgb, var(--og-text) 82%, transparent);
+  outline: 0;
+}
+
+.button[data-active="true"] {
+  background: var(--c-panel);
+  color: var(--og-text);
+  box-shadow: none;
+}
+
+.button[data-active="true"]::before {
+  display: none;
+}
+
+.userButton {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--app-rail-icon-column) minmax(0, 1fr);
+  align-items: center;
+  justify-items: stretch;
+  width: var(--app-rail-icon-column);
+  height: 36px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--og-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  overflow: hidden;
+  padding: 0;
+  box-shadow: none;
+}
+
+.userButton:hover,
+.userButton:focus-visible {
+  outline: 0;
+  background: color-mix(in srgb, var(--og-text) 4.5%, transparent);
+}
+
+.userButton[data-active="true"] {
+  outline: 0;
+  background: var(--c-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.userButtonAvatar,
+.userButtonAvatar img,
+.accountMenuAvatar img {
+  width: 100%;
+  height: 100%;
+}
+
+.userButtonAvatar {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  justify-self: center;
+  overflow: hidden;
+  border-radius: var(--app-navigation-avatar-radius);
+  background: color-mix(in srgb, var(--c-muted) 78%, var(--og-surface));
+  color: var(--og-white);
+}
+
+.userButtonAvatar {
+  grid-column: 1;
+  grid-row: 1;
+  width: 26px;
+  height: 26px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: 0;
+}
+
+.userButtonAvatar img,
+.accountMenuAvatar img {
+  object-fit: cover;
+}
+
+.accountMenu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 140;
+  display: grid;
+  box-sizing: border-box;
+  gap: 0;
+  border: 1px solid var(--c-line-06);
+  border-radius: var(--r-lg);
+  background: var(--c-popover-solid);
+  box-shadow: var(--shadow-md);
+  padding: 8px;
+}
+
+.accountMenuProfile,
+.accountMenuItem {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--og-text-strong);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.accountMenuProfile {
+  grid-template-columns: 30px minmax(0, 1fr) 16px;
+  gap: 8px;
+  min-height: 50px;
+  border-radius: var(--r-md);
+  padding: 0 8px;
+}
+
+.accountMenuProfile:hover,
+.accountMenuProfile:focus-visible,
+.accountMenuItem:hover,
+.accountMenuItem:focus-visible {
+  background: color-mix(in srgb, var(--og-text) 4.5%, transparent);
+  outline: 0;
+}
+
+.accountMenuAvatar {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  justify-self: center;
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--c-muted) 78%, var(--og-surface));
+  color: var(--og-white);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.accountMenuCopy {
+  display: grid;
+  align-self: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.accountMenuCopy strong,
+.accountMenuCopy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountMenuCopy strong {
+  color: var(--og-text-strong);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+.accountMenuCopy small {
+  color: var(--og-text-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-normal);
+  line-height: var(--lh-tight);
+}
+
+.accountMenuDivider {
+  height: 1px;
+  margin: 7px 8px;
+  background: var(--c-line-06);
+}
+
+.accountMenuItem {
+  grid-template-columns: 22px minmax(0, 1fr) 16px;
+  gap: 7px;
+  min-height: 38px;
+  border-radius: var(--r-md);
+  padding: 0 8px;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+  line-height: 1;
+}
+
+.accountMenuItem > span {
+  min-width: 0;
+  overflow: hidden;
+  align-self: center;
+  line-height: var(--lh-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountMenuItem svg {
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+.rail[data-expanded="true"] {
+  align-content: stretch;
+  justify-items: stretch;
+  padding-top: 0;
+  padding-inline: 10px;
+}
+
+.rail[data-expanded="true"] .nav,
+.rail[data-expanded="true"] .bottom,
+.rail[data-expanded="true"] .section,
+.rail[data-expanded="true"] .sectionItems {
+  width: 100%;
+}
+
+.rail[data-expanded="true"] .nav {
+  gap: 0;
+  padding-bottom: 16px;
+}
+
+.rail[data-expanded="true"] .section {
+  gap: 5px;
+}
+
+.rail[data-expanded="true"] .section + .section {
+  margin-top: 13px;
+}
+
+.rail[data-expanded="true"] .sectionTitle {
+  visibility: visible;
+  width: auto;
+  margin: 0;
+  padding: 0 6px;
+  text-align: left;
+  color: color-mix(in srgb, var(--og-text) 80%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 14px;
+  animation: railLabelIn var(--motion-normal) var(--motion-ease-out);
+}
+
+.rail[data-expanded="true"] .sectionItems {
+  gap: 4px;
+}
+
+.rail[data-expanded="true"] .button {
+  box-sizing: border-box;
+  grid-template-columns: var(--app-rail-icon-column) minmax(0, 1fr);
+  column-gap: var(--app-rail-label-gap);
+  justify-content: start;
+  justify-items: stretch;
+  width: 100%;
+  min-height: var(--app-rail-item-height);
+  height: var(--app-rail-item-height);
+  border-radius: var(--r-md);
+  color: var(--app-rail-button-fg);
+  overflow: visible;
+  padding: 0;
+}
+
+.rail[data-expanded="true"] .button:hover,
+.rail[data-expanded="true"] .button:focus-visible {
+  background: color-mix(in srgb, var(--og-text) 5%, transparent);
+  color: color-mix(in srgb, var(--og-text) 82%, transparent);
+}
+
+.rail[data-expanded="true"] .button[data-active="true"] {
+  border: 0;
+  background: var(--c-panel);
+  color: var(--og-text);
+  box-shadow: none;
+}
+
+.rail[data-expanded="true"] .button[data-active="true"]::before {
+  display: none;
+}
+
+.rail[data-expanded="true"] .buttonLabel {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: railLabelIn var(--motion-normal) var(--motion-ease-out);
+}
+
+.rail[data-expanded="true"] .userButton {
+  width: 100%;
+  column-gap: var(--app-rail-label-gap);
+}
+
+.rail[data-expanded="true"] .userButtonName {
+  display: block;
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: railLabelIn var(--motion-normal) var(--motion-ease-out);
+}
+
+@keyframes railLabelIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+@keyframes appRailMenuIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes appRailExpandedMenuIn {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+/* 回到被切换掉的那个账号。用的是同一个卡片外观，只多两处区别：跨满整行，
+   以及用中性色而不是品牌色 —— 它不是"又一个可选身份"，而是退出切换器的路。 */

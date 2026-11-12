@@ -1,0 +1,581 @@
+{
+  "reference": "8b365ed2babc6caccc588cab1fa2d08488fb67a7",
+  "note": "Source coverage classification, not a claim that every interaction is verified. See audit and test reports.",
+  "files": [
+    {
+      "source": "web/src/components/app-shell/app-chat-icon.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-chat-icon.tsx"
+    },
+    {
+      "source": "web/src/components/app-shell/app-gates.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/auth.tsx, frontend/src/presentation/titlebar-controls.tsx, frontend/src/auth-flows.tsx, frontend/src/startup-view.tsx"
+    },
+    {
+      "source": "web/src/components/app-shell/app-main-views.tsx",
+      "classification": "controller",
+      "destinationOrReason": "Product route composition; exported page components are independently available."
+    },
+    {
+      "source": "web/src/components/app-shell/app-navigation-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-navigation-panel.tsx"
+    },
+    {
+      "source": "web/src/components/app-shell/app-titlebar.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-titlebar.tsx, frontend/src/presentation/titlebar-controls.tsx"
+    },
+    {
+      "source": "web/src/components/app-shell/cloud-auth-constellation.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/artwork/constellation.tsx"
+    },
+    {
+      "source": "web/src/components/app-shell/compact-navigation-dialog.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/compact-navigation-dialog.tsx"
+    },
+    {
+      "source": "web/src/components/apps/app-create-wizard.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-create-wizard.tsx"
+    },
+    {
+      "source": "web/src/components/apps/app-icon-picker.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-icon-picker.tsx"
+    },
+    {
+      "source": "web/src/components/apps/app-identity-editor.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-identity-editor.tsx"
+    },
+    {
+      "source": "web/src/components/apps/app-settings-dialog.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/forms.tsx"
+    },
+    {
+      "source": "web/src/components/apps/mounted-app-chat-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/apps/chat-panel.tsx"
+    },
+    {
+      "source": "web/src/components/apps/mounted-app-dashboard-primitives.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/apps/dashboard-primitives.tsx"
+    },
+    {
+      "source": "web/src/components/apps/mounted-app-developer-layout.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/apps/developer-layout.tsx"
+    },
+    {
+      "source": "web/src/components/apps/mounted-app-workbench.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/apps/dashboard.tsx, frontend/src/apps/flow-list.tsx, frontend/src/apps/workbench.tsx"
+    },
+    {
+      "source": "web/src/components/apps/mounted-mcp-app-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/apps/mcp-app-frame.tsx"
+    },
+    {
+      "source": "web/src/components/chat/chat-composer.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/composer.tsx, frontend/src/presentation/room-composer.tsx"
+    },
+    {
+      "source": "web/src/components/chat/chat-markdown-renderer.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/chat-markdown-renderer.tsx"
+    },
+    {
+      "source": "web/src/components/chat/chat-resource-preview-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/resource-preview-panel.tsx"
+    },
+    {
+      "source": "web/src/components/chat/direct-kernel-runtime-picker.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel chat; agreed exclusion."
+    },
+    {
+      "source": "web/src/components/chat/disclosure.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/disclosure.tsx"
+    },
+    {
+      "source": "web/src/components/chat/message-activity.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/activity-presentation.tsx"
+    },
+    {
+      "source": "web/src/components/chat/message-list.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel chat controller; original run presentation restored in frontend/src/process/."
+    },
+    {
+      "source": "web/src/components/chat/message-markdown.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/message-markdown.tsx"
+    },
+    {
+      "source": "web/src/components/chat/resource-card.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/resource-card.tsx"
+    },
+    {
+      "source": "web/src/components/chat/resource-context-menu.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/resource-context-menu.tsx"
+    },
+    {
+      "source": "web/src/components/chat/resource-link.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/resource-link.tsx"
+    },
+    {
+      "source": "web/src/components/chat/shared-chat-provider.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/process/shared-chat-provider.tsx"
+    },
+    {
+      "source": "web/src/components/chat/skill-command-menu.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/slash-command-menu.tsx"
+    },
+    {
+      "source": "web/src/components/chat/thread-shell.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel chat shell; agreed exclusion. Shared chat renderers retained separately."
+    },
+    {
+      "source": "web/src/components/extensions/extensions-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/extensions.tsx, frontend/src/extension-workspaces.tsx"
+    },
+    {
+      "source": "web/src/components/knowledge/markdown-code-editor.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/code-editor.tsx"
+    },
+    {
+      "source": "web/src/components/knowledge/markdown-preview.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/markdown-presentation.tsx"
+    },
+    {
+      "source": "web/src/components/network/app-store-publish-page.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/publishing.tsx"
+    },
+    {
+      "source": "web/src/components/network/app-store-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/catalog.tsx, frontend/src/catalog-details.tsx"
+    },
+    {
+      "source": "web/src/components/network/app-version-management-page.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/versions.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/contacts-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/layout.tsx, frontend/src/people/contacts.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/employee-avatar-picker.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/employee-avatar-picker.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/employee-dialog.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/forms.tsx, frontend/src/people/employee-editor.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/employee-settings-surface.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/profile.tsx, frontend/src/people/employee-activity.tsx, frontend/src/people/employee-capabilities.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/member-avatar.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/member-avatar.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/member-name.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/member-name.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/network-authorization-provider.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/authorization-dialog.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/remote-agent-menu-item.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/remote-agent-menu-item.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/remote-agent-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/remote-agent-dialog.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-chat-surface.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/room-chat-surface.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-composer.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/room-composer.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-group-avatar.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/group-avatar.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-header-actions.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/room-header-actions.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-inline-select.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/room-inline-select.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-message-stream.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/room-message-stream.tsx, frontend/src/process/room-run-presentation.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-settings-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/people/group-settings.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/room-sidebar.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/layout.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/rooms-guide.tsx",
+      "classification": "controller",
+      "destinationOrReason": "Run/event lifecycle and member projection helpers, no rendered UI."
+    },
+    {
+      "source": "web/src/components/rooms/rooms-view-layout.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/layout.tsx"
+    },
+    {
+      "source": "web/src/components/rooms/rooms-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/use-room-composer-keyboard.ts"
+    },
+    {
+      "source": "web/src/components/rooms/use-network-authorization.tsx",
+      "classification": "controller",
+      "destinationOrReason": "Product authorization context; independent dialog extracted."
+    },
+    {
+      "source": "web/src/components/shared/adaptive-split-layout.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/layouts/adaptive-split-layout.tsx"
+    },
+    {
+      "source": "web/src/components/shared/compact-list-detail.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/layouts/compact-list-detail.tsx"
+    },
+    {
+      "source": "web/src/components/shared/directory-panel.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/files/directory-panel.tsx"
+    },
+    {
+      "source": "web/src/components/shared/directory-tree.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/files/directory-tree.tsx"
+    },
+    {
+      "source": "web/src/components/shared/file-conflict-editor.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/conflict-editor.tsx"
+    },
+    {
+      "source": "web/src/components/shared/file-preview-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/panel.tsx, frontend/src/files/selection.tsx, frontend/src/files/draft-notices.tsx"
+    },
+    {
+      "source": "web/src/components/shared/flow-preview.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/flow-preview.tsx"
+    },
+    {
+      "source": "web/src/components/shared/markdown-rich-editor.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/rich-editor.tsx"
+    },
+    {
+      "source": "web/src/components/shared/release-notes-markdown.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/release-notes-markdown.tsx"
+    },
+    {
+      "source": "web/src/components/shared/standard-file-editor.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/standard-file-editor.tsx"
+    },
+    {
+      "source": "web/src/components/shared/standard-file-preview.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/standard-file-preview.tsx"
+    },
+    {
+      "source": "web/src/components/shared/video-file-preview.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/files/video-file-preview.tsx"
+    },
+    {
+      "source": "web/src/components/shared/workspace-workbench-layout.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/layouts/workspace-workbench-layout.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/app-navigation.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/app-rail.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/conversation-sidebar-model.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel session model; agreed exclusion."
+    },
+    {
+      "source": "web/src/components/sidebar/conversation-sidebar.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel sessions sidebar; agreed exclusion. Product room navigation retained."
+    },
+    {
+      "source": "web/src/components/sidebar/settings-appearance-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-appearance-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-apps-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-apps-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-connectivity-panels.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-connectivity-panels.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-desktop-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-desktop-panel.tsx, frontend/src/presentation/settings-storage-panel.tsx, frontend/src/presentation/settings-native-desktop-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-dialog.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/settings.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-inline-select.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "frontend/src/ui/inline-select.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-kernel-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-kernel-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-mode-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-mode-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-provider-picker-dialog.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-provider-picker-dialog.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-provider-section.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-providers-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-update-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-update-panel.tsx"
+    },
+    {
+      "source": "web/src/components/sidebar/settings-voice-panel.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-voice-panel.tsx"
+    },
+    {
+      "source": "web/src/components/system/ops-center-view.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/settings-operations-panel.tsx"
+    },
+    {
+      "source": "web/src/components/system/system-views.tsx",
+      "classification": "controller",
+      "destinationOrReason": "Identifier helper, no rendered UI."
+    },
+    {
+      "source": "web/src/components/ui/agent-state-indicator.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/agent-state-indicator.tsx"
+    },
+    {
+      "source": "web/src/components/ui/avatar.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/avatar.tsx"
+    },
+    {
+      "source": "web/src/components/ui/button.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/button.tsx"
+    },
+    {
+      "source": "web/src/components/ui/confirm-dialog.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/confirm-dialog.tsx"
+    },
+    {
+      "source": "web/src/components/ui/dialog.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/dialog.tsx"
+    },
+    {
+      "source": "web/src/components/ui/employee-avatar.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/employee-avatar.tsx"
+    },
+    {
+      "source": "web/src/components/ui/empty-state.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/empty-state.tsx"
+    },
+    {
+      "source": "web/src/components/ui/entity-icons.tsx",
+      "classification": "adapted",
+      "destinationOrReason": "Kernel/provider brand selection policy replaced by explicit caller artwork; generic icons in src/app/product-icon.tsx."
+    },
+    {
+      "source": "web/src/components/ui/grove-app-icon.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/grove-app-icon.tsx"
+    },
+    {
+      "source": "web/src/components/ui/identity-image-trigger.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/identity-image-trigger.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/animated-background.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/animated-background.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/disclosure.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/disclosure.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/menu.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/menu.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/popover.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/popover.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/text-shimmer.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/text-shimmer.tsx"
+    },
+    {
+      "source": "web/src/components/ui/motion/text-transition.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/text-transition.tsx"
+    },
+    {
+      "source": "web/src/components/ui/name-avatar.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/name-avatar.tsx"
+    },
+    {
+      "source": "web/src/components/ui/object-settings.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/object-settings.tsx"
+    },
+    {
+      "source": "web/src/components/ui/opengrove-sapling-mark.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/artwork/sapling.tsx"
+    },
+    {
+      "source": "web/src/components/ui/pixel-illustration.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/pixel-illustration.tsx"
+    },
+    {
+      "source": "web/src/components/ui/product-icon.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/product-icon.tsx"
+    },
+    {
+      "source": "web/src/components/ui/resize-handle.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/resize-handle.tsx"
+    },
+    {
+      "source": "web/src/components/ui/switch.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/ui/switch.tsx"
+    },
+    {
+      "source": "web/src/components/ui/toast.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/toast.tsx"
+    },
+    {
+      "source": "web/src/components/ui/tooltip.tsx",
+      "classification": "extracted",
+      "destinationOrReason": "src/app/tooltip.tsx"
+    },
+    {
+      "source": "web/src/components/ui/unread-count.tsx",
+      "classification": "extracted/adapted",
+      "destinationOrReason": "frontend/src/presentation/unread-count.tsx"
+    },
+    {
+      "source": "web/src/components/workspace/overview-model.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Direct kernel chat inspector data projection."
+    },
+    {
+      "source": "web/src/components/workspace/workspace-views.tsx",
+      "classification": "excluded",
+      "destinationOrReason": "Inspector used only by direct kernel chat in app.tsx:2263."
+    }
+  ]
+}

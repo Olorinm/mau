@@ -1,0 +1,80 @@
+{
+  "name": "@olorinm/agent-ui",
+  "version": "0.1.0-alpha.16",
+  "description": "Reusable React chat and application components with caller-owned data, tools and interactions",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Olorinm/agent-ui.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agent-host": {
+      "types": "./dist/agent-host.d.ts",
+      "import": "./dist/agent-host.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./thread.css": "./dist/thread.css",
+    "./disclosure.css": "./dist/disclosure.css",
+    "./cards.css": "./dist/cards.css",
+    "./app": {
+      "types": "./dist/app/index.d.ts",
+      "import": "./dist/app/index.js"
+    },
+    "./app.css": "./dist/app/app.css"
+  },
+  "scripts": {
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\" && tsc -p tsconfig.json && node scripts/copy-styles.mjs",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:browser": "npm run build && node scripts/test-browser.mjs",
+    "test:package": "node scripts/test-package.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.8.0",
+    "@dicebear/core": "10.7.0",
+    "@dicebear/styles": "10.6.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@radix-ui/react-dialog": "1.2.0",
+    "@radix-ui/react-slot": "1.4.0",
+    "avvvatars-react": "0.4.2",
+    "clsx": "2.1.1",
+    "lucide-react": "1.8.0",
+    "motion": "12.42.2",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "thinking-orbs": "0.3.2"
+  },
+  "devDependencies": {
+    "@olorinm/agent-host": "https://github.com/Olorinm/agent-host/releases/download/v0.1.0-alpha.9/olorinm-agent-host-0.1.0-alpha.9.tgz",
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "5.9.3"
+  },
+  "homepage": "https://github.com/Olorinm/agent-ui#readme",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.16.0"
+}
