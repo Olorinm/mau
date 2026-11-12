@@ -4,6 +4,16 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.41] - 2026-11-12
+
+- An employee's profile is four sections behind a row of icons: status (the environment and
+  self-check), message channels, capabilities (the connectors it may use) and configuration
+  (kernel, environment profile, destroying the environment, deleting the employee). It uses the
+  same components as the settings pages, and the panel is 400px wide for it.
+- Removed from the profile: the message button, which did nothing; the second connect-channel
+  button; the summary card, which could not be opened; the update time; and the capabilities page
+  that only said it was not connected.
+
 ## [0.1.0-alpha.40] - 2026-11-12
 
 - People are in one panel on the left: the list of all conversations, and an employee's profile,

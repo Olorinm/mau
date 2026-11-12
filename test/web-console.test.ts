@@ -52,6 +52,11 @@ const agentChip = (page: Page, agentId: string) =>
 /** The employee profile in the people panel (the former contacts detail); the current employee's figure opens it. */
 const profileCard = (page: Page) =>
   page.getByRole("complementary", { name: "员工资料" });
+/** The profile's sections are icon tabs: 状态, 消息渠道, 能力 and 配置. */
+const profileTab = (page: Page, name: string) =>
+  profileCard(page).getByRole("group", { name: "员工资料分类" }).getByRole("button", { name, exact: true }).click();
+/** The environment state shown on the 状态 tab. */
+const profileState = (page: Page) => profileCard(page).locator(".agent-status-line").first();
 
 it.skipIf(!built)(
   "opens from the Access session, provisions an agent, controls its environment, connects a channel and signs out",
@@ -118,7 +123,7 @@ it.skipIf(!built)(
     await helper.click();
     const profile = profileCard(page);
     await see(profile.getByRole("heading", { name: "helper" })).toBeVisible();
-    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profileState(page)).toContainText(
       "未配置环境",
     );
 
@@ -144,23 +149,24 @@ it.skipIf(!built)(
     expect(await writer.getAttribute("data-chat-key")).toMatch(/^agent:.+/);
     await writer.click();
     await see(profile.getByRole("heading", { name: "writer" })).toBeVisible();
-    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profileState(page)).toContainText(
       "可用",
       { timeout: 10_000 },
     );
 
     await page.getByRole("button", { name: "暂停" }).click();
-    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profileState(page)).toContainText(
       "已暂停",
       { timeout: 10_000 },
     );
     await see(page.getByText("已手动暂停")).toBeVisible();
     await page.getByRole("button", { name: "恢复" }).click();
-    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
+    await see(profileState(page)).toContainText(
       "可用",
       { timeout: 10_000 },
     );
 
+    await profileTab(page, "消息渠道");
     await page
       .getByRole("button", { name: "连接渠道", exact: true })
       .first()
@@ -174,21 +180,24 @@ it.skipIf(!built)(
     await see(page.getByRole("dialog")).toHaveCount(0);
     await see(profile.getByText("Matrix", { exact: true })).toBeVisible();
 
+    await profileTab(page, "状态");
     await page.getByRole("button", { name: "运行自检" }).click();
     await see(page.getByRole("button", { name: "运行自检" })).toBeEnabled();
     // Router reports the Host check in its own words; the console shows it with a localized status.
-    const hostCheck = page.locator(".agent-ui-settings-row", {
+    const hostCheck = page.locator(".agent-list-row", {
       hasText: "HTTP service and runtime exist",
     });
     await see(hostCheck).toContainText("通过");
 
+    await profileTab(page, "配置");
     await page.getByRole("button", { name: "销毁环境" }).click();
     const destroy = page.getByRole("dialog", {
       name: "销毁 writer 的运行环境？",
     });
     await see(destroy).toContainText("无法恢复");
     await destroy.getByRole("button", { name: "销毁环境" }).click();
-    await see(profile.locator(".contacts-employee-runtime-card")).toContainText(
+    await profileTab(page, "状态");
+    await see(profileState(page)).toContainText(
       "已销毁",
       { timeout: 10_000 },
     );
@@ -247,8 +256,9 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
+    await profileTab(page, "消息渠道");
     await profileCard(page)
-      .locator(".agent-ui-settings-row", { hasText: "微信" })
+      .locator(".agent-list-row", { hasText: "微信" })
       .getByRole("button")
       .click();
     const dialog = page.getByRole("dialog");
@@ -290,8 +300,9 @@ it.skipIf(!built)(
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
+    await profileTab(page, "消息渠道");
     await profileCard(page)
-      .locator(".agent-ui-settings-row", { hasText: "微信" })
+      .locator(".agent-list-row", { hasText: "微信" })
       .getByRole("button")
       .click();
     await see(page.getByRole("dialog").getByRole("alert")).toContainText(
@@ -355,8 +366,9 @@ it.skipIf(!built)(
     // `?agent=` opens the conversation with that employee; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
+    await profileTab(page, "消息渠道");
     await profileCard(page)
-      .locator(".agent-ui-settings-row", { hasText: "飞书" })
+      .locator(".agent-list-row", { hasText: "飞书" })
       .getByRole("button")
       .click();
     const dialog = page.getByRole("dialog");
