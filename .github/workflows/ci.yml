@@ -40,12 +40,11 @@ jobs:
           const { readFileSync, accessSync, constants } = require('node:fs');
           const { createRequire } = require('node:module');
           const { driverVersion } = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
-          for (const manifest of ['package.json', 'web/package.json']) {
-            const playwright = createRequire(require('node:path').resolve(manifest));
-            assert.equal(driverVersion, playwright('@playwright/test/package.json').version,
+          // Playwright can be loaded once per process: compare both installed versions, then load one.
+          for (const manifest of ['package.json', 'web/package.json'])
+            assert.equal(driverVersion, createRequire(require('node:path').resolve(manifest))('@playwright/test/package.json').version,
               `Update the Playwright image and npm package together (${manifest})`);
-            accessSync(playwright('@playwright/test').chromium.executablePath(), constants.X_OK);
-          }
+          accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
           JS
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
