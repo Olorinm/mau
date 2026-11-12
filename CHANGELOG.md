@@ -4,6 +4,20 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.44] - 2026-11-12
+
+- Owners sign in through the edge identity only. The Matrix account login, the `publicHomeserver`
+  option, `mau login --user/--password-file/--edge` and `channel-connect matrix` are removed;
+  `/info` no longer reports `matrix`. Mau always runs Router with its Matrix switch off and
+  refuses to start without an edge identity and the ledger.
+- The one-time migration of schedule rules to a notification target is removed.
+- The console's component package (`web/ui`) contains only what the console uses: six entries
+  (`.`, `./agent-host`, `./app`, `./app.css`, `./pages`, `./pages.css`) instead of 26, without the
+  video player, merge editor and command menu dependencies. The console looks and behaves the same.
+- Built on Agent Kit 0.8.0-alpha.2. `scripts/pin-kit.mjs` refreshes both lockfiles; the console
+  takes Agent Host's types from the pinned archive.
+- Documentation describes the current product; dated verification records are removed.
+
 ## [0.1.0-alpha.43] - 2026-11-12
 
 - Built on one Agent Kit release (0.8.0-alpha.1), which carries Router, Host, Connectors and

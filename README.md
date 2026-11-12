@@ -49,7 +49,7 @@ archive. Bootstrap downloads the archives into `.packages/` and checks their byt
 another release:
 
 ```sh
-node scripts/pin-kit.mjs 0.8.0-alpha.1   # updates components.json, package.json and package-lock.json
+node scripts/pin-kit.mjs <version>   # updates components.json, package.json and both lockfiles
 node scripts/bootstrap.mjs
 ```
 
