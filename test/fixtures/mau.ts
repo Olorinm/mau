@@ -135,6 +135,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
           kernel: "codex",
           runtimeId: "personal",
           hostConfigFile,
+          instructions: "Work carefully.\nAnswer in the owner's language.",
           owners: [alice],
           ...(workspaceBackend ? { workspace: true } : {}),
         },

@@ -28,7 +28,7 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
-import { BrowserSideView, FileSideView, liveViewUrl } from "./side-views";
+import { BrowserSideView, DocumentSideView, type EmployeeDocument, FileSideView, liveViewUrl } from "./side-views";
 import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
@@ -196,7 +196,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [profile, setProfile] = useState<string>();
   const [creating, setCreating] = useState(false);
   // On the right of the conversation: a message's file, or the browser an employee handed over.
-  const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }>();
+  const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }
+    | { kind: "document"; agentId: string; name: EmployeeDocument }>();
   const dismissedHandoff = useRef<string | undefined>(undefined);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -243,7 +244,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (handoffCard && handoffUrl && dismissedHandoff.current !== handoffCard.cardId) { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }
     else if (!handoffCard) setSideView((view) => view?.kind === "browser" ? undefined : view);
   }, [handoffCard?.cardId, handoffUrl]);
-  useEffect(() => { setSideView((view) => view?.kind === "file" ? undefined : view); }, [current?.chatId]);
+  useEffect(() => { setSideView((view) => view?.kind === "file" || view?.kind === "document" ? undefined : view); }, [current?.chatId]);
   const room = useLedgerGroup({ token: session.token, chat: current, view, agents: agents.data ?? [] });
   const agentName = (agentId: string) => room.group ? room.nameOf(agentId) : names.get(agentId) ?? current?.title ?? agentId;
 
@@ -358,7 +359,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     // The panel floats over the conversation, so a press anywhere else puts it away. Dialogs, menus and toasts the
     // profile opens are outside it too, and do not.
     const outside = (event: PointerEvent) => {
-      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .agent-toast-region")) closePanel();
+      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, .mau-side-document, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .agent-toast-region")) closePanel();
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
@@ -610,13 +611,17 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
               open: (entry) => { setRosterOpen(true); setProfile(entry.key.slice(6)); } }}
             onBack={() => { setProfile(undefined); setRosterOpen(true); }}
             profile={profileSummary ? { label: zh ? "员工资料" : "Employee profile", backLabel: zh ? "全部对话" : "All conversations",
-              content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary} /> } : undefined} /> : null}
+              content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
+                document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
+                onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
             {...(sideView?.kind === "browser" && handoffUrl ? { inspector: (
               <BrowserSideView url={handoffUrl} onClose={() => { dismissedHandoff.current = sideView.cardId; setSideView(undefined); }} />
             ) } : sideView?.kind === "file" ? { inspector: (
               <FileSideView key={sideView.attachment.attachmentId} api={api} attachment={sideView.attachment} onClose={() => setSideView(undefined)}
                 onDownload={() => void saveAttachment(api, sideView.attachment).catch(setUploadError)} />
+            ) } : sideView?.kind === "document" ? { inspector: (
+              <DocumentSideView key={sideView.agentId + sideView.name} session={session} agentId={sideView.agentId} name={sideView.name} onClose={() => setSideView(undefined)} />
             ) } : {})}
             detail={current && view ? (
             // Files dropped anywhere on the conversation are attached (the composer handles its button and paste).

@@ -255,6 +255,16 @@ export class EnvironmentManager {
     this.service.owned(agentId, owner);
     return this.view(this.binding(agentId));
   }
+  /**
+   * The fixed instructions the Agent runs with, for its owner to read. They belong to the environment profile, so
+   * every Agent on that profile shares them; an Agent without an environment has none.
+   */
+  instructions(owner: string, agentId: string) {
+    this.service.owned(agentId, owner);
+    const record = this.binding(agentId);
+    const profile = record ? this.options.profiles.find((p) => p.id === record.profileId) : undefined;
+    return { text: profile?.instructions ?? "", shared: "environment_profile" as const };
+  }
   private view(record: Binding | undefined) {
     return record
       ? {

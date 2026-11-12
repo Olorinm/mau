@@ -325,9 +325,9 @@ body {
   padding-top: 6px;
 }
 
-/* Chat: one column. People are on the left and content on the right, both floating inside the conversation's card
-   without moving it: the people panel (the full list of conversations, or one employee's profile) and a file.
-   The handed-over browser needs room to be operated, so it is a card beside the conversation. */
+/* Chat: one column. The people panel (the full list of conversations, or one employee's profile) floats inside the
+   conversation's card, on its left, without moving it. Content opened from the conversation or the profile (a file,
+   a document, the handed-over browser) is a card beside the conversation, at the same level as it. */
 .mau-stage {
   position: relative;
   --mau-float-inset: 8px;
@@ -757,22 +757,20 @@ body {
   grid-template-columns: minmax(320px, 2fr) minmax(480px, 3fr);
 }
 
-/* A file floats over the right of the conversation, as the people panel does over the left. */
-@media (min-width: 901px) {
-  .mau-stage > .rooms-view[data-members-open="true"]:not(:has(.mau-side-frame)) {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .mau-side-view:not(:has(.mau-side-frame)) {
-    position: absolute;
-    z-index: 20;
-    top: calc(var(--app-page-top-inset, 0px) + var(--mau-float-inset));
-    right: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
-    bottom: calc(var(--app-page-bottom-inset, 0px) + var(--mau-float-inset));
-    width: min(400px, calc(100% - 2 * (var(--app-page-inline-inset, 0px) + var(--mau-float-inset))));
-    border-radius: 14px;
-    background: var(--c-panel-raised);
-    box-shadow: var(--mau-float-shadow);
-  }
+/* A document being edited gets more room than a file being read. */
+.mau-stage > .rooms-view[data-members-open="true"]:has(.mau-side-document) {
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 520px);
+}
+.mau-side-document .mau-side-body {
+  display: flex;
+  flex-direction: column;
+}
+.mau-side-document .af-file-editor {
+  flex: 1;
+  min-height: 0;
+}
+.mau-side-document:has(.mau-side-body[data-over]) .mau-side-head small {
+  color: var(--c-danger-text);
 }
 
 /* Phones: the people panel covers the whole card. */

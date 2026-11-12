@@ -275,6 +275,50 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
 );
 
 it.skipIf(!built)(
+  "the profile lists the employee's documents: instructions are read beside the conversation and memory is edited there",
+  async () => {
+    const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
+    await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+    const memory = `/agents/${f.agent.id}/memory`;
+    await f.api(memory, { action: "add", target: "user", content: "Prefers short answers." });
+    const { page, errors } = await browser(f);
+    await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await agentChip(page, f.agent.id).click();
+    await profileTab(page, "文档");
+    const profile = profileCard(page);
+    await see(profile.locator(".agent-list-row", { hasText: "USER.md" })).toContainText("22 / 1375");
+    // The instructions open as a card beside the conversation, at its level, and cannot be changed.
+    await profile.getByRole("button", { name: "AGENTS.md", exact: true }).click();
+    const document = page.getByRole("complementary", { name: "文档" });
+    await see(document).toContainText("Work carefully.");
+    await see(document.getByRole("button", { name: "保存" })).toHaveCount(0);
+    const [chat, card] = await page.evaluate(() => [".room-main-panel", ".mau-side-document"].map((q) => document.querySelector(q)!.getBoundingClientRect()).map((r) => [r.left, r.top, r.right, r.bottom]));
+    expect(card![0]!).toBeGreaterThan(chat![2]!); expect(Math.abs(card![1]! - chat![1]!)).toBeLessThan(1); expect(Math.abs(card![3]! - chat![3]!)).toBeLessThan(1);
+    // The people panel stays open while a document is used, so another one can be opened from it.
+    await see(profile).toBeVisible();
+    await profile.getByRole("button", { name: "USER.md", exact: true }).click();
+    const editor = document.locator(".cm-content");
+    await see(editor).toContainText("Prefers short answers.");
+    const save = document.getByRole("button", { name: "保存" });
+    await see(save).toBeDisabled();
+    // Entries are separated by a line with only §; saving adds the new entry and keeps the one already there.
+    await editor.click(); await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("\n§\nReplies in Chinese.");
+    await see(save).toBeEnabled();
+    await save.click();
+    await see(page.getByRole("region", { name: "通知" })).toContainText("已保存");
+    expect((await f.api(memory)).data.files.find((file: { target: string }) => file.target === "user").entries).toEqual(["Prefers short answers.", "Replies in Chinese."]);
+    await see(save).toBeDisabled();
+    await see(profile.locator(".agent-list-row", { hasText: "USER.md" })).toContainText("44 / 1375");
+    await document.getByRole("button", { name: "关闭", exact: true }).click();
+    await see(document).toHaveCount(0);
+    expect(errors).toEqual([]);
+  },
+  30_000,
+);
+
+it.skipIf(!built)(
   "an unknown channel setup job stops polling and asks to restart",
   async () => {
     const f = await edgeMauFixture(cleanup, { webRoot }, ledger);
