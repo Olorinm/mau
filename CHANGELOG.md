@@ -4,6 +4,14 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.38] - 2026-11-12
+
+- The brand sits above the navigation and pages start at the top of the window; the empty row
+  across the top is gone. It stays when the navigation is hidden or narrowed to icons.
+- An employee's profile, a file or the handed-over browser opens inside the conversation's card
+  instead of in a second card beside it.
+- On a phone the profile's close button is no longer covered by the title bar.
+
 ## [0.1.0-alpha.37] - 2026-11-12
 
 - Dialogs stand out in dark mode: the page behind them is dimmed more, confirmation dialogs
