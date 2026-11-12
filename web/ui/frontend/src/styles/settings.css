@@ -904,7 +904,7 @@ label.settings-list-row {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 34px;
+  min-height: var(--control-height);
   border: 0;
   border-color: var(--og-border);
   border-radius: var(--r-md);

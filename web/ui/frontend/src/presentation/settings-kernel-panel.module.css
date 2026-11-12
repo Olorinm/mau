@@ -175,7 +175,7 @@
 
 .detailRow input {
   min-width: 0;
-  height: 34px;
+  height: var(--control-height);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;

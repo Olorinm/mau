@@ -6,7 +6,7 @@
 .trigger {
   display: flex;
   width: 100%;
-  min-height: 34px;
+  min-height: var(--control-height);
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
@@ -162,7 +162,7 @@
 }
 
 :global([data-kernel-detail-row]) .trigger {
-  min-height: 34px;
+  min-height: var(--control-height);
   border: 1px solid var(--og-border);
   background: var(--og-surface);
   font-size: var(--fs-sm);

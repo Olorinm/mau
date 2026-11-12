@@ -261,7 +261,7 @@ export const presentationLabels: Record<string, Record<string, string>> = {
     "settings.extensionTableSource": "Source",
     "settings.reusableProviders": "Providers",
     "settings.reusableProvidersCopy":
-      "Only Providers added or connected in OpenGrove appear here. Use Add provider to connect another route.",
+      "Only Providers you have added or connected appear here. Use Add provider to connect another route.",
     "settings.addProvider": "Add provider",
     "settings.removeProvider": "Remove provider",
     "settings.baseConfig": "Base config",
@@ -558,7 +558,7 @@ export const presentationLabels: Record<string, Record<string, string>> = {
     "settings.extensionTableSource": "来源",
     "settings.reusableProviders": "Provider",
     "settings.reusableProvidersCopy":
-      "这里只显示在 OpenGrove 中添加或已连接的 Provider；点击「添加 Provider」可连接其他路由。",
+      "这里只显示已添加或已连接的 Provider；点击「添加 Provider」可连接其他路由。",
     "settings.addProvider": "添加 provider",
     "settings.removeProvider": "移除提供方",
     "settings.baseConfig": "基本配置",

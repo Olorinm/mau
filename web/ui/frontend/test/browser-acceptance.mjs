@@ -186,6 +186,25 @@ export async function checkBrowser(url) {
       .filter({ hasText: "Caller rejected this sign in" })
       .waitFor();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-auth.png" });
+    // The sign-in scene follows the theme: dark paper and light ink under a dark system theme.
+    const authShade = () =>
+      page.locator(".cloud-auth-shell").evaluate((element) => {
+        const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+        const light = (color) => {
+          canvas.clearRect(0, 0, 1, 1); canvas.fillStyle = color; canvas.fillRect(0, 0, 1, 1);
+          return Math.max(...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3));
+        };
+        const style = getComputedStyle(element);
+        return { paper: light(style.backgroundColor), ink: light(style.color) };
+      });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForFunction(() => document.querySelector(".cloud-auth-shell")?.closest(".af-scope")?.getAttribute("data-resolved-theme") === "dark");
+    const darkAuth = await authShade();
+    assert.ok(darkAuth.paper < 90 && darkAuth.ink > 160, `sign-in must be dark under a dark theme: ${JSON.stringify(darkAuth)}`);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.waitForFunction(() => document.querySelector(".cloud-auth-shell")?.closest(".af-scope")?.getAttribute("data-resolved-theme") === "light");
+    const lightAuth = await authShade();
+    assert.ok(lightAuth.paper > 240 && lightAuth.ink < 80, `sign-in must stay light under a light theme: ${JSON.stringify(lightAuth)}`);
     await page.getByRole("button", { name: "Close form" }).click();
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-desktop.png" });

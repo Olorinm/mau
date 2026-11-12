@@ -2040,7 +2040,7 @@
   grid-template-columns: 16px minmax(0, 1fr) 22px;
   gap: 8px;
   align-items: center;
-  min-height: 34px;
+  min-height: var(--control-height);
   border: 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--c-text) 3%, var(--c-surface));

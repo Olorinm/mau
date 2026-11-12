@@ -331,7 +331,7 @@
 }
 
 .app-create-icon-upload > button {
-  min-height: 34px;
+  min-height: var(--control-height);
   padding: 0 var(--sp-3);
   border: 0;
   border-radius: var(--r-pill);

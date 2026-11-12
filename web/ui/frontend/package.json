@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.13",
+  "version": "0.1.0-alpha.14",
   "type": "module",
   "license": "MIT",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
@@ -75,7 +75,7 @@
     "node": ">=24"
   },
   "peerDependencies": {
-    "@olorinm/agent-ui": "^0.1.0-alpha.6",
+    "@olorinm/agent-ui": "^0.1.0-alpha.15",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -106,7 +106,7 @@
     "remark-gfm": "4.0.1"
   },
   "devDependencies": {
-    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.6/olorinm-agent-ui-0.1.0-alpha.6.tgz?download=1",
+    "@olorinm/agent-ui": "https://github.com/Olorinm/agent-ui/releases/download/v0.1.0-alpha.15/olorinm-agent-ui-0.1.0-alpha.15.tgz?download=1",
     "@playwright/test": "1.63.0",
     "@types/node": "^24.13.3",
     "@types/react": "19.3.0",

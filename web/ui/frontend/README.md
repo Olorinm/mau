@@ -50,8 +50,8 @@ the draft, invent an assistant reply, or select a backend. Supply pending/error
 state and update the input after the product confirms its operation. A callback
 may use any service or local state; the component does not know which.
 
-Install React 19, React DOM 19 and the Agent UI alpha.6 archive in the consumer.
-Agent UI alpha.6 supplies the shared display records and native Host projection.
+Install React 19, React DOM 19 and the Agent UI alpha.15 archive in the consumer.
+Agent UI alpha.15 supplies the shared display records and native Host projection.
 Agent UI is a peer dependency so shared providers have a single context instance. Components require no mounting
 singleton and may be composed into an existing React tree or rendered separately.
 Use a viewport meta tag for compact layouts. `AppShell` fills its parent's height;

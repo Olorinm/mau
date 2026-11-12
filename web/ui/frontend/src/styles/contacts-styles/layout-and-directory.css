@@ -7,7 +7,6 @@
   --rooms-border-strong: var(--contacts-rooms-border-strong);
   --rooms-text: var(--contacts-rooms-text);
   --rooms-muted: var(--contacts-rooms-muted);
-  --rooms-faint: var(--contacts-rooms-faint);
   --rooms-blue: var(--contacts-rooms-blue);
   --rooms-blue-soft: var(--c-accent-soft);
   grid-column: 1;
@@ -299,7 +298,6 @@
   --rooms-border-strong: var(--c-border-strong);
   --rooms-text: var(--c-text);
   --rooms-muted: var(--c-muted);
-  --rooms-faint: var(--c-faint);
   --rooms-blue: var(--c-link);
   --rooms-blue-soft: var(--c-accent-soft);
   --contacts-overview-fill-bg: color-mix(in srgb, var(--c-surface-active) 46%, var(--c-surface));

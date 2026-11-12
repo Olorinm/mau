@@ -4,6 +4,19 @@ Notable changes to `@olorinm/agent-frontend`, newest first. Each version has a G
 (`frontend-v*` tags) with the same notes and the package archive. When releasing, add the new
 section here in the version-bump commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.14] - 2026-11-12
+
+- Bundle the Agent UI 0.1.0-alpha.15 styles instead of alpha.6: dialogs get the 20px radius and the
+  page surface, and a dark scrim in dark themes. Tokens that sheet defines are no longer repeated
+  here. The peer requirement is `@olorinm/agent-ui@^0.1.0-alpha.15`.
+- Sign-in, team access and startup scenes follow the dark theme.
+- Buttons, fields, search boxes and select triggers that were 34px tall are 36px
+  (`--control-height`).
+- Every label a component asks for has English and Chinese text, including release progress,
+  startup recovery and downloads, which showed their keys. Label text no longer names a product;
+  pass `presentationLabels` to use your own wording.
+- Remove style variables that nothing references.
+
 ## [0.1.0-alpha.13] - 2026-11-12
 
 - Remove duplicate and unreferenced styles from frontend bundles.
