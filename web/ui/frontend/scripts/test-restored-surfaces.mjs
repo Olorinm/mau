@@ -1,20 +1,28 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {createServer} from 'vite';
 import {chromium,expect} from '@playwright/test';
 const output=path.resolve('.restored-tests');await fs.mkdir(output,{recursive:true});
 const file=path.join(output,'fixture.html');await fs.writeFile(file,'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/test/restored-surfaces.jsx"></script></body></html>');
-const server=await createServer({configFile:false,root:process.cwd(),cacheDir:path.join(output,'vite-cache'),optimizeDeps:{include:['@codemirror/commands','@codemirror/lang-css','@codemirror/lang-html','@codemirror/lang-javascript','@codemirror/lang-json','@codemirror/lang-markdown','@codemirror/lang-yaml','@codemirror/language','@codemirror/state','@codemirror/view','@lezer/highlight','@milkdown/crepe','@milkdown/kit/core','@milkdown/kit/prose/state','@milkdown/kit/utils','@vidstack/react','@vidstack/react/player/layouts/default']},server:{watch:null,hmr:false,host:'127.0.0.1',port:0}});await server.listen();
-const browser=await chromium.launch();const report=[];let page;
+const server=await createServer({configFile:false,root:process.cwd(),cacheDir:path.join(output,'vite-cache'),optimizeDeps:{entries:['test/restored-surfaces.jsx'],include:['@codemirror/commands','@codemirror/lang-css','@codemirror/lang-html','@codemirror/lang-javascript','@codemirror/lang-json','@codemirror/lang-markdown','@codemirror/lang-yaml','@codemirror/language','@codemirror/state','@codemirror/view','@lezer/highlight','@milkdown/crepe','@milkdown/kit/core','@milkdown/kit/prose/state','@milkdown/kit/utils','@vidstack/react','@vidstack/react/player/layouts/default']},server:{watch:null,hmr:false,host:'127.0.0.1',port:0}});await server.listen();
+const browser=await chromium.launch();
 const cases=['employee','avatar','inline','capabilities','group','contacts','delete','flow','files','draft','providers','storage','extensions','publish','flowlist','workbench','appchat','create-group','delete-group','mcp','auth','team','startup','titlebar','notes'];
-try{
- for(const width of (process.env.RESTORED_INTERACTIONS_ONLY?[]:[1200,390]))for(const state of ['ready','busy','empty','error']){
-  page=await browser.newPage({viewport:{width,height:900},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  for(const name of cases){await page.goto(`${server.resolvedUrls.local[0]}.restored-tests/fixture.html?case=${name}&state=${state}&theme=${width===390?'dark':'light'}`);await expect(page.locator('[data-fixture]')).toBeVisible({timeout:30000});await page.evaluate(()=>document.fonts.ready);if(errors.length)throw new Error(name+': '+errors.join('\n'));await expect.poll(()=>page.locator('[data-fixture] > *,[role=dialog]').count(),{message:name+' '+state}).toBeGreaterThan(0);await page.screenshot({path:path.join(output,`${name}-${width}-${state}.png`)});report.push({name,width,state});}
-  await page.close();
- }
- page=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'reduce'});
- const go=async(name,state='ready')=>{await page.goto(`${server.resolvedUrls.local[0]}.restored-tests/fixture.html?case=${name}&state=${state}`);await expect(page.locator('[data-fixture]')).toBeVisible({timeout:30000});};
+const fixtureUrl=(name,state,theme)=>`${server.resolvedUrls.local[0]}.restored-tests/fixture.html?case=${name}&state=${state}${theme?`&theme=${theme}`:''}`;
+// Every width/state group and the interaction pass use their own page, so they can share the browser and the dev server.
+const workers=Math.max(1,Number(process.env.RESTORED_WORKERS)||os.availableParallelism());
+const renderGroup=async(width,state)=>{
+ const page=await browser.newPage({viewport:{width,height:900},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));const rendered=[];let name;
+ try{
+  for(name of cases){await page.goto(fixtureUrl(name,state,width===390?'dark':'light'));await expect(page.locator('[data-fixture]')).toBeVisible({timeout:30000});await page.evaluate(()=>document.fonts.ready);if(errors.length)throw new Error(name+': '+errors.join('\n'));await expect.poll(()=>page.locator('[data-fixture] > *,[role=dialog]').count(),{message:name+' '+state}).toBeGreaterThan(0);await page.screenshot({path:path.join(output,`${name}-${width}-${state}.png`)});rendered.push({name,width,state});}
+  return rendered;
+ }catch(error){throw new Error(`render ${name} width=${width} state=${state}: ${error.message}`,{cause:error});}
+ finally{await page.close();}
+};
+const interactions=async()=>{
+ const page=await browser.newPage({viewport:{width:1200,height:900},reducedMotion:'reduce'});let current='';
+ try{
+ const go=async(name,state='ready')=>{current=`${name} state=${state}`;await page.goto(fixtureUrl(name,state));await expect(page.locator('[data-fixture]')).toBeVisible({timeout:30000});};
  const interactionErrors=[];page.on('pageerror',error=>interactionErrors.push(error.message));
  const last=()=>page.evaluate(()=>window.actions.at(-1));
  await go('flowlist');await expect(page.locator('.mounted-app-flow-row')).toHaveCount(10);await page.locator('.mounted-app-flow-more-runs').click();await expect(page.locator('.mounted-app-flow-row')).toHaveCount(12);await page.locator('.mounted-app-flow-row').last().click();expect(await last()).toEqual(['flow','run-11']);await page.locator('.mounted-app-flow-expander').click();await expect(page.locator('.mounted-app-flow-row')).toHaveCount(0);
@@ -38,5 +46,19 @@ try{
  await go('video');await expect(page.locator('[data-media-player]')).toHaveCount(1);await expect(page.locator('video')).toHaveCount(1);
  await go('run-lifecycle');const lifecycleToggle=page.locator('.og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle');await lifecycleToggle.click();await expect(lifecycleToggle).toHaveAttribute('aria-expanded','true');await page.locator('.room-chat-agent-stack').evaluate(element=>{window.auditBody=element;});await page.getByRole('button',{name:'Toggle final reply'}).click();await expect(page.locator('.room-chat-message')).toHaveAttribute('tabindex','0');await expect(lifecycleToggle).toHaveAttribute('aria-expanded','true');expect(await page.locator('.room-chat-agent-stack').evaluate(element=>element===window.auditBody)).toBe(true);await page.getByRole('button',{name:'Toggle final reply'}).click();await expect(lifecycleToggle).toHaveAttribute('aria-expanded','true');expect(await page.locator('.room-chat-agent-stack').evaluate(element=>element===window.auditBody)).toBe(true);
  expect(interactionErrors).toEqual([]);
- await fs.writeFile(path.join(output,'report.json'),JSON.stringify({renders:report.length,cases,interactions:['flow history/select/collapse','group picker search/select','contacts profile','provider filter/disabled/detail','workbench keyboard resize','auth validation/normalization','release markup safety','employee tabs/draft/submit/pending','inline descriptions/danger/disabled','avatar upload/error retention','group rename/add member','pending form no duplicate submit','default rich editor','file selection/dirty toolbar','original video player','extension target intent','publish blocking/repair','streaming-to-final body identity and disclosure preservation']},null,2));console.log(JSON.stringify({renders:report.length,interactions:18,output}));
-}finally{await page?.close();await browser.close();await server.close();await fs.rm(file,{force:true})}
+ }catch(error){throw new Error(`interaction ${current}: ${error.message}`,{cause:error});}
+ finally{await page.close();}
+};
+const interactionNames=['flow history/select/collapse','group picker search/select','contacts profile','provider filter/disabled/detail','workbench keyboard resize','auth validation/normalization','release markup safety','employee tabs/draft/submit/pending','inline descriptions/danger/disabled','avatar upload/error retention','group rename/add member','pending form no duplicate submit','default rich editor','file selection/dirty toolbar','original video player','extension target intent','publish blocking/repair','streaming-to-final body identity and disclosure preservation'];
+try{
+ // Load one fixture before fanning out so dependency optimization and module transforms happen once.
+ const warm=await browser.newPage();await warm.goto(fixtureUrl(cases[0],'ready'));await expect(warm.locator('[data-fixture]')).toBeVisible({timeout:30000});await warm.close();
+ const tasks=[];
+ for(const width of (process.env.RESTORED_INTERACTIONS_ONLY?[]:[1200,390]))for(const state of ['ready','busy','empty','error'])tasks.push(()=>renderGroup(width,state));
+ tasks.push(interactions);
+ const results=new Array(tasks.length);let next=0;
+ // The first failure rejects right away; closing the browser below stops the remaining groups.
+ await Promise.all(Array.from({length:Math.min(workers,tasks.length)},async()=>{while(next<tasks.length){const index=next++;results[index]=await tasks[index]();}}));
+ const report=results.slice(0,-1).flat();
+ await fs.writeFile(path.join(output,'report.json'),JSON.stringify({renders:report.length,cases,interactions:interactionNames},null,2));console.log(JSON.stringify({renders:report.length,interactions:interactionNames.length,output,workers}));
+}finally{await browser.close();await server.close();await fs.rm(file,{force:true})}
