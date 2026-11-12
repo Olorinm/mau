@@ -8,7 +8,7 @@
         "owners": [
           "@alice:agents.example"
         ],
-        "provider": "volc",
+        "provider": "cloudflare",
         "template": "agent-host-tools",
         "kernel": "codex",
         "runtimeId": "personal",

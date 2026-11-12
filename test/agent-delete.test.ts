@@ -102,8 +102,8 @@ it("treats retained and retired environments of a removed provider as gone, but 
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   await f.settled();
   const store = environments(f), current = store.get<any>("environments", f.agent.id);
-  const gone = (operationId: string) => ({ ...current, operationId, provider: "volc-shanghai", phase: "paused",
-    ref: { provider: "volc-shanghai", id: "released-cluster-sandbox" }, previous: undefined });
+  const gone = (operationId: string) => ({ ...current, operationId, provider: "retired-provider", phase: "paused",
+    ref: { provider: "retired-provider", id: "released-cluster-sandbox" }, previous: undefined });
   store.set("environments", f.agent.id, { ...current, previous: gone("00000000-0000-4000-8000-000000000001") });
   store.set("retired_environments", "00000000-0000-4000-8000-000000000002", gone("00000000-0000-4000-8000-000000000002"));
   // The current environment's outcome is unknown: retained records are settled, the employee stays.
@@ -126,7 +126,7 @@ it("treats retained and retired environments of a removed provider as gone, but 
   expect((await g.api(g.path, { profileId: "cloud" })).status).toBe(202);
   await g.settled();
   const own = environments(g);
-  own.set("environments", g.agent.id, { ...own.get<any>("environments", g.agent.id), provider: "volc-shanghai" });
+  own.set("environments", g.agent.id, { ...own.get<any>("environments", g.agent.id), provider: "retired-provider" });
   expect(await remove(g, g.agent.id)).toEqual({ status: 503, data: { error: "environment_provider_unavailable" } });
   expect(g.service.agent(g.agent.id).status).toBe("active");
 });

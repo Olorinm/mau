@@ -1,13 +1,14 @@
 # Mau
 
-Mau is an agent product built from three independently reusable components:
+Mau is an agent product built on [Agent Kit](https://github.com/Olorinm/agent-kit):
 
 | Component | Responsibility |
 | --- | --- |
-| [Agent Router](https://github.com/Olorinm/agent-router) | Accounts, Agent identities, channels, conversation routing and task delivery |
-| [Agent Host](https://github.com/Olorinm/agent-host) | Native Agent execution, sessions, tools and approvals |
-| [Agent Environment](https://github.com/Olorinm/agent-environment) | Provision, pause, resume and destroy execution environments |
-| Mau | Product CLI/API, environment profiles, Host bootstrap and lifecycle coordination |
+| [Agent Router](https://github.com/Olorinm/agent-kit/tree/main/packages/router) | Accounts, Agent identities, channels, conversation routing and task delivery |
+| [Agent Host](https://github.com/Olorinm/agent-kit/tree/main/packages/host) | Native Agent execution, sessions, tools and approvals |
+| [Agent Connectors](https://github.com/Olorinm/agent-kit/tree/main/packages/connectors) | Access to external services, with credentials and write approvals outside the Agent |
+| [Agent Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment) | Provision, pause, resume and destroy execution environments |
+| Mau | Product CLI/API, web console, environment profiles, Host bootstrap and lifecycle coordination |
 
 User/platform → Router → Host → native kernel. Environment supplies the Host's
 execution environment. Mau assembles these components; it does not implement a
@@ -27,32 +28,35 @@ npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alp
 mau --version
 ```
 
-The client has no server or private component dependencies. See [CLI usage](docs/cli.md).
+The client has no server or Agent Kit dependencies. See [CLI usage](docs/cli.md).
 The build steps below are for running or developing the server.
 
 ## Build
 
-Package installation requires Node.js 24+, npm and an authenticated GitHub CLI (`gh auth login`). For the server, use the verified Node.js 24.22.2 runtime or a newer version that passes the unchanged HTTP security probe. That probe passes on 24.22.2 (matching Docker and CI) and 26.13.0; tested 24.21.0 fails it. The components are not assumed to be on npm.
-`components.json` pins exact archive integrity. This branch uses unpublished Router and Host working-tree builds plus the existing local Connectors build; their release version numbers alone do not identify these bytes. Local builds must be supplied explicitly and are not substituted with old releases.
-UI releases are public. Agent Environment 0.2.0-alpha.3 is a
-private OMA-derived release. Bootstrap downloads its pinned archive from the private repository.
-The signed-in GitHub account must have access to any private component source. Bootstrap verifies the actual archive bytes against the lockfile.
-Environment uses an uncompressed npm tar archive so CI can reproduce the same
-bytes across platforms without differences from gzip implementations.
+Requires Node.js 24+, npm and curl. For the server, use the verified Node.js 24.22.2 runtime or a newer version that passes the unchanged HTTP security probe. That probe passes on 24.22.2 (matching Docker and CI) and 26.13.0; tested 24.21.0 fails it.
 
 ```sh
-node scripts/bootstrap.mjs --router-archive /path/pinned-router.tgz \
-  --connectors-archive /path/pinned-connectors.tgz --host-archive /path/pinned-host.tgz
+node scripts/bootstrap.mjs   # downloads the pinned Agent Kit release, installs dependencies
 npm run build
 npm test
 node dist/cli.js --help
 ```
 
-Use `--router-archive /path/router.tgz --connectors-archive /path/connectors.tgz --environment-archive /path/environment.tar`
-when supplying the pinned archives locally. The web console's React components are in
-[`web/ui`](web/ui/README.md), installed and built with the console as one npm workspace.
-See [verification](docs/verification.md) for the shared-source acceptance.
-The optional `--host-archive` is integrity-checked and copied to `.packages/agent-host.tgz` for the execution image and independent consumer; Host is not installed into the Mau server process. The working-tree component changes must be published and pinned to their release artifacts before an ordinary remote release build can reproduce this branch without local archives.
+`components.json` pins one Agent Kit release: its version, source revision and the integrity of each package
+archive. Bootstrap downloads the archives into `.packages/` and checks their bytes before installing. Host is kept as
+`.packages/agent-host.tgz` for the execution image; it is not installed into the Mau server process. To move to
+another release:
+
+```sh
+node scripts/pin-kit.mjs 0.8.0-alpha.1   # updates components.json, package.json and package-lock.json
+node scripts/bootstrap.mjs
+```
+
+A release can be cut from any Agent Kit commit, so a change that spans both repositories can be pinned and tested
+here before either side is merged.
+
+The web console's React components are in [`web/ui`](web/ui/README.md), installed and built with the console as one
+npm workspace. See [verification](docs/verification.md) for the package acceptance.
 
 An independent consumer installs all required archives together:
 `npm install ./router.tgz ./environment.tgz ./connectors.tgz ./mau.tgz`. Host is installed in the
@@ -97,8 +101,7 @@ and [verification](docs/verification.md). Examples contain placeholders only.
 Production configuration, credentials, environment IDs and live state are private.
 
 License: [MIT](LICENSE) for Mau's project-owned code. Source attribution and
-third-party licensing boundaries, including OMA-derived Environment code:
-[NOTICE](NOTICE).
+third-party licensing boundaries: [NOTICE](NOTICE).
 
 Replacing an environment and composing server-side read tools:
 [environment migration](docs/environment-migration.md).

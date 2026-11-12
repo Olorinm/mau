@@ -4,6 +4,19 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.43] - 2026-11-12
+
+- Built on one Agent Kit release (0.8.0-alpha.1), which carries Router, Host, Connectors and
+  Environment. `components.json` pins that release: its version, source revision and the
+  integrity of each archive. `node scripts/pin-kit.mjs <version>` moves to another release.
+- `node scripts/bootstrap.mjs` needs no arguments and no GitHub sign-in: it downloads the pinned
+  archives and Host's protocol fixture, checks their bytes and installs dependencies.
+  `npm run verify:packages` needs no arguments either.
+- Environment is Cloudflare only and no longer brings the Alibaba, Volcengine and Kubernetes
+  client dependencies (96 fewer installed packages). No change to the Router, Host or Connectors
+  runtime code.
+- Browser uploads validate the workspace path and choose the media type in Mau.
+
 ## [0.1.0-alpha.42] - 2026-11-12
 
 - An employee's profile has a documents section: `AGENTS.md` (the fixed instructions of its

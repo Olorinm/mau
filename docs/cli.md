@@ -8,8 +8,7 @@ mau --version
 ```
 
 This package uses Node.js; SSH additionally requires local `ssh` and `ssh-keygen`.
-It does not install the Mau server, Router, Host,
-or the private Environment package. It is distributed through GitHub Releases;
+It does not install the Mau server or any Agent Kit package. It is distributed through GitHub Releases;
 `npm install -g @olorinm/mau-cli` from the npm registry is not available.
 
 Your operator supplies a service URL, an account, and access to an environment

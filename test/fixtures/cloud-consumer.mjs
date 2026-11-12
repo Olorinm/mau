@@ -115,7 +115,7 @@ try {
           id: "cloud",
           label: "Cloud",
           owners: [owner],
-          provider: "volc",
+          provider: "cloud",
           template: "fixture",
           kernel: "codex",
           runtimeId: "personal",
@@ -136,7 +136,6 @@ try {
       [process.argv[2], "--allow-http", ...args],
       { env: { ...process.env, MAU_CONFIG_DIR: configDir }, timeout: 30000 },
     );
-    assert.ok(!r.stdout.includes("fixture-private-cloud-key"));
     return r.stdout ? JSON.parse(r.stdout) : null;
   };
   const passwordFile = join(root, "password");

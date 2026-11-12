@@ -4,7 +4,7 @@
 
 Mau 负责产品开通、环境绑定、Host 初始化、续期、暂停恢复和操作恢复。Router 负责账号、渠道凭据、消息归属与投递；Host 保留原生内核；Environment 操作云资源。
 
-使用 Node.js 24+ 和已登录的 GitHub CLI。运行 `node scripts/bootstrap.mjs` 下载锁定的组件包；账号需要有私有 Environment 仓库的读取权限。也可以用 `--environment-archive /path/agent-environment.tar` 提供锁文件指定的本地包。随后运行 `npm run build`。Environment 0.2 基于 OMA 提取，尚未公开分发。
+使用 Node.js 24+。运行 `node scripts/bootstrap.mjs` 下载 `components.json` 锁定的 Agent Kit 发布包并安装依赖，随后运行 `npm run build`。
 
 运营者准备已有 Matrix Application Service、沙箱服务和模板。模板安装 Host 与原生内核，以 `serve --ready-file` 等待私有配置；Host 状态、原生会话和工作区需要持久化。
 
@@ -35,7 +35,7 @@ mau resume
 
 ## SSH
 
-SSH 复用 Environment 的公开命令执行、文件写入和应用端口接口，OMA 与 Host 无需修改。
+SSH 复用 Environment 的公开命令执行、文件写入和应用端口接口，Host 无需修改。
 在方案中添加 `"ssh": { "port": 37421 }` 开启；该端口须与 Host 端口不同。
 镜像需要 Node.js、OpenSSH server/client 和 `/run/sshd`，可参考
 [Dockerfile.ssh](../examples/cloud/Dockerfile.ssh)。不要在共享镜像中保留 SSH Host 私钥。
