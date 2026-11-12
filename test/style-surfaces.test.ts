@@ -70,19 +70,26 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
       const top = await page.evaluate(() => ({ bar: document.querySelector(".app-titlebar")!.getBoundingClientRect().width,
         card: document.querySelector(".room-main-panel")!.getBoundingClientRect().top }));
       expect(top.bar).toBeLessThan(200); expect(top.card).toBeLessThan(16);
-      // The employee profile opens inside the conversation's card: the two halves meet without a gap.
-      await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
-      const side = page.locator(".mau-side-card"); await see(side).toBeVisible(); await capture(page, `${prefix}-profile`);
-      const [chatRight, sideLeft] = await page.evaluate(() => [document.querySelector(".room-main-panel")!.getBoundingClientRect().right,
-        document.querySelector(".mau-side-card")!.getBoundingClientRect().left]);
-      expect(Math.abs(chatRight - sideLeft)).toBeLessThan(1);
-      await page.locator(".mau-side-close").click(); await see(side).toBeHidden();
+      // The list of conversations opens inside the conversation's card: same top and bottom, and no gap between them.
+      await page.locator(".mau-chip-more").click();
+      const roster = page.locator(".mau-roster"); await see(roster).toBeVisible();
+      // The list slides in; once it has settled its right edge is the conversation's left edge.
+      await see.poll(() => page.evaluate(() => { const [list, chat] = [".mau-roster", ".room-main-panel"].map(q => document.querySelector(q)!.getBoundingClientRect());
+        return Math.max(Math.abs(list!.right - chat!.left), Math.abs(list!.top - chat!.top), Math.abs(list!.bottom - chat!.bottom)); })).toBeLessThan(1);
+      await capture(page, `${prefix}-roster`);
+      await page.locator(".mau-roster-close").click(); await see(roster).toBeHidden();
     }
     if (width === 390) {
       // On a phone the profile covers the page, title bar included, so its close button can be reached.
       await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
       const side = page.locator(".mau-side-card"); await see(side).toBeVisible();
       await page.locator(".mau-side-close").click(); await see(side).toBeHidden();
+      // The list takes the whole card on a phone, and picking a conversation brings the conversation back.
+      await page.locator(".mau-chip-more").click();
+      const roster = page.locator(".mau-roster"); await see(roster).toBeVisible(); await capture(page, `${prefix}-roster`);
+      expect(await roster.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);
+      await roster.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
+      await see(roster).toBeHidden(); await see(composer).toBeVisible();
     }
     await composer.fill("/"); await see(page.getByRole("listbox", { name: "斜杠命令" })).toBeVisible();
     expect(await composer.evaluate(el => el === document.activeElement && getComputedStyle(el).outlineStyle)).toBe("none");

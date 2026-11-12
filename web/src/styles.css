@@ -325,8 +325,8 @@ body {
   padding-top: 6px;
 }
 
-/* Chat: one column. The full list of conversations is a card laid beside it; the employee profile, a file or the
-   handed-over browser opens inside the conversation's own card. */
+/* Chat: one column. The full list of conversations opens inside the conversation's own card, on its left; the
+   employee profile, a file or the handed-over browser is a card laid beside it. */
 .mau-stage {
   display: flex;
   height: 100%;
@@ -339,12 +339,14 @@ body {
 }
 .mau-stage > .rooms-view[data-members-open="true"] {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-  gap: 0;
 }
-/* The two halves meet without a gap, so together they are one card. */
-.mau-stage > .rooms-view[data-members-open="true"] > .room-main-panel {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+/* The list and the conversation meet without a gap, so together they are one card. */
+.mau-stage[data-roster-open] > .rooms-view {
+  padding-left: 0;
+}
+.mau-stage[data-roster-open] > .rooms-view > .room-main-panel {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 .mau-stage .rooms-list-panel {
   display: none;
@@ -487,12 +489,10 @@ body {
 /* The full list: a small card on the page, as tall as its rows. */
 .mau-roster {
   flex: none;
-  align-self: flex-start;
   width: 244px;
-  max-height: calc(100% - var(--app-page-top-inset, 0px) - var(--app-page-bottom-inset, 0px));
-  margin: var(--app-page-top-inset, 0px) 0 0 var(--app-page-inline-inset, 0px);
+  margin: var(--app-page-top-inset, 0px) 0 var(--app-page-bottom-inset, 0px) var(--app-page-inline-inset, 0px);
   overflow: auto;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
   background: var(--c-surface);
   padding: 8px 6px 10px;
   animation: mau-roster-in 0.2s ease-out;
@@ -591,12 +591,12 @@ body {
   margin: 12px 8px;
 }
 
-/* The employee profile: the right-hand part of the conversation's card. */
+/* The employee profile: a card to the right of the conversation. */
 .mau-side-card {
   position: relative;
   min-width: 0;
   overflow: auto;
-  border-radius: 0 var(--r-lg) var(--r-lg) 0;
+  border-radius: var(--r-lg);
   background: var(--c-surface);
 }
 .mau-side-close {
@@ -675,6 +675,19 @@ body {
 /* The handed-over browser needs room to be operated. */
 .mau-stage > .rooms-view[data-members-open="true"]:has(.mau-side-frame) {
   grid-template-columns: minmax(320px, 2fr) minmax(480px, 3fr);
+}
+
+/* Phones: the list takes the whole card while it is open, instead of squeezing the conversation beside it. */
+@media (max-width: 640px) {
+  .mau-roster {
+    flex: 1;
+    width: auto;
+    margin-right: var(--app-page-inline-inset, 0px);
+    border-radius: var(--r-lg);
+  }
+  .mau-stage[data-roster-open] > .rooms-view {
+    display: none;
+  }
 }
 
 /* Narrow screens: the profile covers the conversation instead of sitting beside it. */
