@@ -37,38 +37,43 @@
 :root[data-resolved-theme="dark"] {
   color-scheme: dark;
   --og-canvas: oklch(23.852% 0.0037 106.68);
+  --c-auth-entry-brand: var(--c-brand-green);
+  --c-auth-entry-error: var(--c-error);
+  --auth-paper: var(--c-bg);
+  --auth-pen: var(--c-text-strong);
 }
 /* Component-specific presentation tokens. */
 
 :root {
 /* ── Component semantic tokens ── */
 
-  /* Authentication entry scene. This is intentionally a light-only branded
-     entry surface and does not follow the signed-in workspace theme. */
-  --auth-canvas: var(--c-overlay-highlight);
-  --auth-ink: color-mix(in srgb, var(--c-overlay-ink) 91%, var(--c-overlay-highlight));
-  --auth-ink-hover: color-mix(in srgb, var(--c-overlay-ink) 86%, var(--c-overlay-highlight));
+  /* Authentication entry scene. Every colour is mixed from a paper and a pen colour, which swap in dark themes. */
+  --auth-paper: var(--c-overlay-highlight);
+  --auth-pen: var(--c-overlay-ink);
+  --auth-canvas: var(--auth-paper);
+  --auth-ink: color-mix(in srgb, var(--auth-pen) 91%, var(--auth-paper));
+  --auth-ink-hover: color-mix(in srgb, var(--auth-pen) 86%, var(--auth-paper));
   --auth-brand: var(--c-auth-entry-brand);
-  --auth-copy: color-mix(in srgb, var(--c-overlay-ink) 70%, var(--c-overlay-highlight));
-  --auth-language: color-mix(in srgb, var(--c-overlay-ink) 60%, var(--c-overlay-highlight));
-  --auth-muted: color-mix(in srgb, var(--c-overlay-ink) 50%, var(--c-overlay-highlight));
+  --auth-copy: color-mix(in srgb, var(--auth-pen) 70%, var(--auth-paper));
+  --auth-language: color-mix(in srgb, var(--auth-pen) 60%, var(--auth-paper));
+  --auth-muted: color-mix(in srgb, var(--auth-pen) 50%, var(--auth-paper));
   --auth-cloud-copy: color-mix(in srgb, var(--auth-brand) 18%, var(--auth-muted));
-  --auth-legal: color-mix(in srgb, var(--c-overlay-ink) 37%, var(--c-overlay-highlight));
-  --auth-placeholder: color-mix(in srgb, var(--c-overlay-ink) 36%, var(--c-overlay-highlight));
-  --auth-local-star-strong: color-mix(in srgb, var(--c-overlay-ink) 33%, var(--c-overlay-highlight));
-  --auth-disabled-copy: color-mix(in srgb, var(--c-overlay-ink) 32%, var(--c-overlay-highlight));
+  --auth-legal: color-mix(in srgb, var(--auth-pen) 37%, var(--auth-paper));
+  --auth-placeholder: color-mix(in srgb, var(--auth-pen) 36%, var(--auth-paper));
+  --auth-local-star-strong: color-mix(in srgb, var(--auth-pen) 33%, var(--auth-paper));
+  --auth-disabled-copy: color-mix(in srgb, var(--auth-pen) 32%, var(--auth-paper));
   --auth-error: var(--c-auth-entry-error);
-  --auth-disabled-surface: color-mix(in srgb, var(--c-overlay-ink) 12%, var(--c-overlay-highlight));
-  --auth-disabled-ink: color-mix(in srgb, var(--c-overlay-ink) 39%, var(--c-overlay-highlight));
-  --auth-cloud-dark: color-mix(in srgb, var(--auth-brand) 62%, var(--c-overlay-ink));
+  --auth-disabled-surface: color-mix(in srgb, var(--auth-pen) 12%, var(--auth-paper));
+  --auth-disabled-ink: color-mix(in srgb, var(--auth-pen) 39%, var(--auth-paper));
+  --auth-cloud-dark: color-mix(in srgb, var(--auth-brand) 62%, var(--auth-pen));
   --auth-cloud-label: color-mix(in srgb, var(--auth-brand) 46%, var(--auth-copy));
-  --auth-ink-04: oklch(from var(--c-overlay-ink) l c h / 0.04);
-  --auth-ink-13: oklch(from var(--c-overlay-ink) l c h / 0.13);
-  --auth-ink-25: oklch(from var(--c-overlay-ink) l c h / 0.25);
-  --auth-canvas-40: oklch(from var(--c-overlay-highlight) l c h / 0.4);
-  --auth-canvas-72: oklch(from var(--c-overlay-highlight) l c h / 0.72);
-  --auth-canvas-82: oklch(from var(--c-overlay-highlight) l c h / 0.82);
-  --auth-canvas-98: oklch(from var(--c-overlay-highlight) l c h / 0.98);
+  --auth-ink-04: oklch(from var(--auth-pen) l c h / 0.04);
+  --auth-ink-13: oklch(from var(--auth-pen) l c h / 0.13);
+  --auth-ink-25: oklch(from var(--auth-pen) l c h / 0.25);
+  --auth-canvas-40: oklch(from var(--auth-paper) l c h / 0.4);
+  --auth-canvas-72: oklch(from var(--auth-paper) l c h / 0.72);
+  --auth-canvas-82: oklch(from var(--auth-paper) l c h / 0.82);
+  --auth-canvas-98: oklch(from var(--auth-paper) l c h / 0.98);
   --auth-local-line-12: oklch(from var(--auth-ink) l c h / 0.12);
   --auth-local-line-22: oklch(from var(--auth-ink) l c h / 0.22);
   --auth-cloud-line-24: oklch(from var(--auth-brand) l c h / 0.24);
