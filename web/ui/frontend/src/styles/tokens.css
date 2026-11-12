@@ -17,7 +17,7 @@
   --border: var(--c-border);
   --letter-spacing: 0;
   --ease: var(--motion-ease);
-  --control-height: 34px;
+  --control-height: 36px;
   --overlay-surface-compact-min-width: 140px;
   --overlay-surface-compact-max-width: 200px;
   --overlay-surface-content-min-width: 160px;

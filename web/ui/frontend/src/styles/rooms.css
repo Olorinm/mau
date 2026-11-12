@@ -185,7 +185,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: var(--control-height);
   border: 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--c-text) 3%, var(--c-surface));
