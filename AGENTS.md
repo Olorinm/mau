@@ -1,6 +1,7 @@
 # Mau
 
-- Mau is the product composition of Agent Router, Agent Host and Agent Environment.
+- Mau is a product built on Agent Kit (Router, Host, Connectors, Environment; repository `Olorinm/agent-kit`).
+- `components.json` pins one Agent Kit release. Move to another with `node scripts/pin-kit.mjs <version>`; a release can be cut from an unmerged Agent Kit branch, so a change spanning both repositories is tested here before merging.
 - Router owns accounts, channel connections, conversation routing and delivery.
 - Mau owns environment profiles, Agent/environment binding, Host bootstrap and lifecycle coordination.
 - Use component public package exports; do not import another repository's implementation paths.

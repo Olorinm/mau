@@ -245,7 +245,7 @@ it("uploads only regular files inside the working directory, by path, up to 10 M
   expect(JSON.stringify(card!.input)).not.toContain(Buffer.from("%PDF-cv").toString("base64"));
   expect(JSON.stringify(card!.input)).toContain("Upload cv.pdf, notes.txt to https://upload.example");
   await f.host.resolve("run", card!.id, { choice: "once" }); await f.host.settled("run");
-  // The site is the browser's current origin; text files resolve to "text/plain; charset=utf-8" and are passed bare.
+  // The site is the browser's current origin; each file carries the bare MIME type of its extension.
   expect(f.executed).toEqual([{ tool: "agent_browser_read", input: { args: ["get", "url"] } }, { tool: "agent_browser_write", input: {
     args: ["--json", "upload", "input[type=file]", "cv.pdf", "notes.txt"], site: "https://upload.example", files: [
       { name: "cv.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("%PDF-cv").toString("base64") },

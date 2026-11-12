@@ -34,7 +34,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
   const provider: EnvironmentProvider = {
     async create(input) {
       creates++;
-      const ref = { provider: "volc", id: randomUUID() };
+      const ref = { provider: "cloud", id: randomUUID() };
       cloud.set(ref.id, {
         state: "running",
         metadata: input.metadata,
@@ -48,7 +48,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
         .filter(([, v]) =>
           Object.entries(metadata).every(([k, x]) => v.metadata[k] === x),
         )
-        .map(([id]) => ({ id, provider: "volc" }));
+        .map(([id]) => ({ id, provider: "cloud" }));
     },
     async info(id) {
       return { state: cloud.get(id)?.state ?? "missing" };
@@ -69,7 +69,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     async httpEndpoint(id) {
       return {
         url: `https://host.fixture/${id}`,
-        headers: { "e2b-traffic-access-token": "private-traffic-token" },
+        headers: { "x-environment-access": "private-traffic-token" },
       };
     },
     async *exec(id, argv, options) {
@@ -100,7 +100,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       expect(new Headers(init?.headers).get("authorization")).toBe(
         "Bearer " + instance.files.get("/home/user/.agent-host-service/token"),
       );
-      expect(new Headers(init?.headers).get("e2b-traffic-access-token")).toBe(
+      expect(new Headers(init?.headers).get("x-environment-access")).toBe(
         "private-traffic-token",
       );
       if (url.pathname.endsWith("/health"))
@@ -129,7 +129,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
         {
           id: "cloud",
           label: "Cloud",
-          provider: "volc",
+          provider: "cloud",
           template: "tools",
           kernel: "codex",
           runtimeId: "personal",
@@ -152,7 +152,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     },
     optionsFile,
     { environments: async () => ({ provider: (id: string) => {
-      if (id !== "volc") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
+      if (id !== "cloud") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
       return provider;
     } }),
       router: {

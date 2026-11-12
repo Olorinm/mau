@@ -8,8 +8,8 @@ channel authorization and delivery. Host owns native execution and sessions.
 
 ## Configure the server
 
-1. Prepare a Matrix Application Service identity using [Router deployment](https://github.com/Olorinm/agent-router/blob/main/docs/guides/managed-agents.md). Mau embeds Router; run only one consumer of that identity and its channels.
-2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-environment). Mau allocates sandboxes, not clusters or networks.
+1. Prepare a Matrix Application Service identity using [Router deployment](https://github.com/Olorinm/agent-kit/blob/main/packages/router/docs/guides/managed-agents.md). Mau embeds Router; run only one consumer of that identity and its channels.
+2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment). Mau allocates sandboxes, not clusters or networks.
 3. Install Host and the native kernel in the template. Start Host with `serve --ready-file ...`; preserve Host state, native sessions and workspace on durable paths.
 4. Copy [mau.json](../examples/mau.json) and [Host config](../examples/cloud/host-profile.json) outside the repository. Supply private Environment `providers.json` and API-key files. Paths resolve relative to `mau.json`; adjust them when moving files.
 The optional `publicHomeserver` in Mau configuration is the public Matrix login
@@ -116,7 +116,7 @@ image must contain Node.js, OpenSSH server/client and `/run/sshd`; see
 environment and must not be shared in an image.
 
 Mau uses Environment's existing exec, file and application-endpoint interfaces;
-OMA and Host are unchanged. It starts OpenSSH as the existing execution user.
+Host is unchanged. It starts OpenSSH as the existing execution user.
 Both setup and connection check account ownership. The CLI generates a temporary
 Ed25519 identity, checks the Host key returned over the authenticated API, and
 carries native SSH over an HTTPS `Upgrade: mau-ssh` tunnel. Front proxies and

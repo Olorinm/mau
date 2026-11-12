@@ -390,7 +390,7 @@ it("SSH requires an assigned owner, explicit profile support and a ready environ
     .rejects.toThrow("ssh_connection_rejected");
   const lease = await f.mau.environments.connectSsh(alice, f.agent.id, sshKeyId(key));
   expect(lease.url.pathname).toBe("/ssh");
-  expect(lease.headers["e2b-traffic-access-token"]).toBe("private-traffic-token");
+  expect(lease.headers["x-environment-access"]).toBe("private-traffic-token");
   expect((await f.api(f.path + "/pause", {})).data.error).toBe("environment_has_active_ssh");
   expect((await f.api(f.path + "/destroy", {})).data.error).toBe("environment_has_active_ssh");
   lease.release(); lease.release();

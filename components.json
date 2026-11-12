@@ -1,54 +1,11 @@
 {
-  "router": {
-    "repository": "Olorinm/agent-router",
-    "version": "0.7.0-alpha.14",
-    "integrity": "sha512-VtyZlKmpazVqeDewl+0RCKFgTN4GIfS4kBLQ9nJr56CmhEdZyBoTNlB9d/M9BX8U4zYvnZkFMFuuDsajxjiH/w==",
-    "distribution": "github-release",
-    "revision": "a879a413387db201096c8736ccf10afa145af019",
-    "archive": {
-      "repository": "Olorinm/agent-router",
-      "tag": "v0.7.0-alpha.14",
-      "asset": "agent-router-server-0.7.0-alpha.14.tgz"
-    }
-  },
-  "environment": {
-    "repository": "Olorinm/agent-environment",
-    "revision": "a65a154082df484afb714298549c17648c0206d6",
-    "version": "0.2.0-alpha.3",
-    "integrity": "sha512-Nv0rKkRhuiyZCvB4XQ4TA3o4ko6TYkfne7TTjfRgs5R5BL5jwcacfBaBl3LweEEnyMdIhSf6x4zl54PLdQXqCA==",
-    "distribution": "private-release",
-    "upstream": {
-      "repository": "BroZhong/open-managed-agents",
-      "revision": "e04695152219a91c2ecdff41955dfc3fab73b438"
-    },
-    "archive": {
-      "repository": "Olorinm/agent-environment",
-      "tag": "v0.2.0-alpha.3",
-      "asset": "olorinm-agent-environment-0.2.0-alpha.3.tar"
-    }
-  },
-  "host": {
-    "repository": "Olorinm/agent-host",
-    "version": "0.1.0-alpha.14",
-    "integrity": "sha512-X99VVkoOqiT7zzhSCVkmhuCEEy6nn/dlTwJbJ9AN8f76OqQy3tHXIA2Tf6glsK+cgzkPuLhHrIU5xemWY+2UWQ==",
-    "distribution": "github-release",
-    "revision": "66ec4d9f9895f955dbfffeabb49af386a0643243",
-    "archive": {
-      "repository": "Olorinm/agent-host",
-      "tag": "v0.1.0-alpha.14",
-      "asset": "olorinm-agent-host-0.1.0-alpha.14.tgz"
-    }
-  },
-  "connectors": {
-    "repository": "Olorinm/agent-connectors",
-    "version": "0.1.0-alpha.11",
-    "integrity": "sha512-dF63E6kfM9wSQ98o9YRyuxxWJSaJRzYbMSedr62qyNC0KSQR5qNIOkUJLGByyasgQBfhwZpRi8voe/G56crHlg==",
-    "distribution": "github-release",
-    "revision": "81b37a988e5e03b7f9d875705077b861332af0c6",
-    "archive": {
-      "repository": "Olorinm/agent-connectors",
-      "tag": "v0.1.0-alpha.11",
-      "asset": "olorinm-agent-connectors-0.1.0-alpha.11.tgz"
-    }
+  "repository": "Olorinm/agent-kit",
+  "version": "0.8.0-alpha.1",
+  "revision": "d8727a4a8c77cffe8fc15a99362c74b626985d7a",
+  "integrity": {
+    "host": "sha512-pQdlLidLuhwcS3lUKZIlqwCY7tycan3qPe+TmlFkvFRevXwB/zHccQeoon6NCaVl+IOb/pb+glM04Uviyn9F3Q==",
+    "router": "sha512-8p8/+aY/ucosXqxd+73egMlt69Qcu34vAlonwDWp7xRhyCPVrXj5L9NQE3hwZZjy+aTZsC/YaEBhDbNonGL6ow==",
+    "connectors": "sha512-qxBs6sLCYkb7xXSy8HlCir6u2yQs1qWmEGOGZPNxuHRrVa1FpD0T1uR/DsqeMr/mW5d6mLtv84f2HojoXZulvw==",
+    "environment": "sha512-5JGAYamA87Nj8d78Vb+C9l9fM6bFVqerRH+ZnQJzVSjrByl6dmvs5x6GuJeLX9pxtgWiXrOsfQ3/XLWRV8Tbkg=="
   }
 }

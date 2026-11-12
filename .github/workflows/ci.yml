@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 # Three jobs run side by side on separate runners: `test` (typechecks, console build,
-# tests with browser acceptance), `packages` (CLI, Host and archive verification) and `ui`
+# tests with browser acceptance), `packages` (CLI and archive verification) and `ui`
 # (the web/ui package's own checks). The preparation steps are shared through YAML anchors
 # so all use the same pinned toolchain.
 jobs:
@@ -27,73 +27,11 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.22.2
-      # Do not cache npm here: its file-package cache contains private Environment source.
       - &pin-npm
         run: npm install --global npm@11.16.0
-      - &install-gh
-        name: Install pinned GitHub CLI for component downloads
-        run: |
-          curl --fail --location --retry 3 \
-            --output "$RUNNER_TEMP/gh.tar.gz" \
-            https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
-          echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  $RUNNER_TEMP/gh.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/gh.tar.gz" -C "$RUNNER_TEMP" gh_2.103.3_linux_amd64/bin/gh
-          install "$RUNNER_TEMP/gh_2.103.3_linux_amd64/bin/gh" /usr/local/bin/gh
-          gh --version
-      - &read-pins
-        id: pins
-        run: |
-          node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
-          import fs from 'node:fs';
-          const pins=JSON.parse(fs.readFileSync('components.json'));
-          for (const name of ['router', 'host', 'connectors']) {
-            if (pins[name].distribution === 'local-build') throw new Error(name + ' is an unpublished local build; publish and pin its exact archive before remote release CI. Use the documented local archive verification meanwhile.');
-          }
-          // A component may live in a subdirectory (`path`) of its repository.
-          const source = name => {
-            const {repository, path = '.', revision} = pins[name];
-            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision) ||
-                !/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(path) || path.split('/').includes('..'))
-              throw new Error(name + ': invalid repository, revision or path in components.json');
-            return {repository, path};
-          };
-          const environment = source('environment'), host = source('host');
-          console.log('environment_repository='+environment.repository);
-          console.log('environment_path='+environment.path);
-          console.log('environment_revision='+pins.environment.revision);
-          console.log('environment_version='+pins.environment.version);
-          console.log('host_repository='+host.repository);
-          console.log('host_path='+host.path);
-          console.log('host_revision='+pins.host.revision);
-          console.log('host_version='+pins.host.version);
-          JS
-      - &environment-source
-        name: Read the pinned private Environment source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ${{ steps.pins.outputs.environment_repository }}
-          ref: ${{ steps.pins.outputs.environment_revision }}
-          path: .components/environment
-          ssh-key: ${{ secrets.ENVIRONMENT_READ_KEY }}
-          persist-credentials: false
-      - &environment-archive
-        name: Reproduce the immutable Environment archive
-        env:
-          ENVIRONMENT_VERSION: ${{ steps.pins.outputs.environment_version }}
-          ENVIRONMENT_PACKAGE: .components/environment/${{ steps.pins.outputs.environment_path }}
-        run: |
-          npm --prefix "$ENVIRONMENT_PACKAGE" ci --include=dev --ignore-scripts --no-audit --no-fund
-          (cd "$ENVIRONMENT_PACKAGE" && npm pack --pack-destination "$RUNNER_TEMP")
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          import {gunzipSync} from 'node:zlib';
-          const name=process.env.RUNNER_TEMP+'/olorinm-agent-environment-'+process.env.ENVIRONMENT_VERSION;
-          fs.writeFileSync(name+'.tar',gunzipSync(fs.readFileSync(name+'.tgz')));
-          JS
+      # Downloads the Agent Kit release pinned in components.json and installs dependencies.
       - &bootstrap
-        run: node scripts/bootstrap.mjs --environment-archive "$RUNNER_TEMP/olorinm-agent-environment-${{ steps.pins.outputs.environment_version }}.tar"
-        env:
-          GH_TOKEN: ${{ github.token }}
+        run: node scripts/bootstrap.mjs
       - name: Check preinstalled Playwright browser
         run: |
           node --input-type=commonjs <<'JS'
@@ -116,7 +54,7 @@ jobs:
   packages:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Same image as `test`, so the Host package and the archives are built with one toolchain.
+    # Same image as `test`, so the archives are built with one toolchain.
     container: *playwright-container
     defaults:
       run:
@@ -125,29 +63,12 @@ jobs:
       - *checkout
       - *setup-node
       - *pin-npm
-      - *install-gh
-      - *read-pins
-      - *environment-source
-      - *environment-archive
       - *bootstrap
       # The product package verified below ships the console build (web/dist).
       - *build-web
       - run: npm run verify:cli
-      - name: Build the pinned Host package
-        env:
-          HOST_SOURCE: ${{ runner.temp }}/host-source
-          HOST_PACKAGE: ${{ runner.temp }}/host-source/${{ steps.pins.outputs.host_path }}
-        run: |
-          git clone --filter=blob:none "https://github.com/${{ steps.pins.outputs.host_repository }}.git" "$HOST_SOURCE"
-          git -C "$HOST_SOURCE" checkout "${{ steps.pins.outputs.host_revision }}"
-          npm --prefix "$HOST_PACKAGE" ci --ignore-scripts --no-audit --no-fund
-          npm --prefix "$HOST_PACKAGE" run build
-          (cd "$HOST_PACKAGE" && npm pack --silent --pack-destination "$RUNNER_TEMP")
       - name: Verify independent archives and native session continuation
-        run: |
-          npm run verify:packages -- --environment-archive .packages/agent-environment.tar \
-            --host-archive "$RUNNER_TEMP/olorinm-agent-host-${{ steps.pins.outputs.host_version }}.tgz" \
-            --host-fixture "$RUNNER_TEMP/host-source/${{ steps.pins.outputs.host_path }}/test/fixtures/codex-server.mjs"
+        run: npm run verify:packages
   ui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -159,7 +80,7 @@ jobs:
       - *checkout
       - *setup-node
       - *pin-npm
-      # The UI package needs no private component: install the web workspace on its own.
+      # The UI package needs no Agent Kit package: install the web workspace on its own.
       - run: npm --prefix web ci --ignore-scripts --no-audit --no-fund
       - name: Check preinstalled Playwright browser
         working-directory: web

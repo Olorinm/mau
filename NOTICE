@@ -8,13 +8,9 @@ were extracted and adapted from Olorinm/agent-router at commit
 cff1bf2, originally distributed under Apache-2.0. That project-owned code is
 provided in Mau under MIT.
 
-Agent Router, Agent Host and Agent Environment remain separate projects,
-consumed through their public packages and protocols. Dependencies and separately
+Agent Router, Agent Host, Agent Connectors and Agent Environment are developed
+in Olorinm/agent-kit and consumed through their public packages and protocols. Dependencies and separately
 distributed components retain their respective licenses and notices.
-
-Agent Environment includes OMA-derived code whose licensing and redistribution
-status is described in its own LICENSE and NOTICE. Mau's MIT license does not
-apply to that code.
 
 Bounded employee memory and review behavior are adapted from Hermes Agent.
 Source references and the upstream MIT notice are in THIRD_PARTY_NOTICES.

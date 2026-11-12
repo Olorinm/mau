@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import { z } from "zod";
-import { resolveArtifactContentType, validateArtifactPath } from "@olorinm/agent-environment/workspace";
 import { browserToolName } from "./connected-apps.js";
 
 /** The Agent's own sandbox, as seen by Mau. Never handed to the model; paths are checked inside the sandbox. */
@@ -76,7 +75,26 @@ function workspacePath(files: SandboxFiles, path: string, cwd: string | undefine
     relative = posix.relative(files.directory, posix.resolve(cwd ?? files.directory, path));
     if (!relative || relative.startsWith("../") || relative === ".." || posix.isAbsolute(relative)) throw new RelayError("browser_upload_path_outside_workspace");
   }
-  try { return validateArtifactPath(relative); } catch { throw new RelayError("browser_upload_path_invalid"); }
+  // A literal relative path: no empty, "." or ".." segment, backslash or control character.
+  if (!relative || /[\\\u0000-\u001f\u007f]/.test(relative) || relative.split("/").some(part => !part || part === "." || part === ".."))
+    throw new RelayError("browser_upload_path_invalid");
+  return relative;
+}
+/** The bare MIME type a browser file input receives for an uploaded file, from its extension. */
+const MEDIA_TYPES: Record<string, string> = {
+  txt: "text/plain", md: "text/markdown", html: "text/html", css: "text/css", csv: "text/csv", js: "text/javascript",
+  json: "application/json", xml: "application/xml", yaml: "text/yaml", yml: "text/yaml",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif",
+  svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon", tif: "image/tiff", tiff: "image/tiff",
+  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska",
+  mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4", flac: "audio/flac", aac: "audio/aac",
+  pdf: "application/pdf", zip: "application/zip", gz: "application/gzip",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+function mediaType(name: string) {
+  return MEDIA_TYPES[posix.extname(name).slice(1).toLowerCase()] ?? "application/octet-stream";
 }
 async function readFile(files: SandboxFiles, relative: string) {
   const target = await contained(files, relative);
@@ -115,8 +133,7 @@ export async function prepareBrowser(tool: BrowserTool, args: Record<string, unk
     total += bytes.length;
     if (total > MAX_RELAY_BYTES) throw new RelayError("browser_upload_too_large");
     if (uploads.some(file => file.name === name)) throw new RelayError("browser_upload_duplicate_name");
-    // Browser file inputs take a bare MIME type; drop parameters such as "; charset=utf-8".
-    uploads.push({ name, mediaType: resolveArtifactContentType(name).split(";")[0]!.trim().toLowerCase(), contentBase64: Buffer.from(bytes).toString("base64") });
+    uploads.push({ name, mediaType: mediaType(name), contentBase64: Buffer.from(bytes).toString("base64") });
     rewritten[index] = name;
   }
   let site: string | undefined;
