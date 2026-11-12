@@ -5,25 +5,32 @@ on:
   pull_request:
 permissions:
   contents: read
+# Two jobs run side by side on separate runners: `test` (typechecks, console build,
+# tests with browser acceptance) and `packages` (CLI, Host and archive verification).
+# The preparation steps are shared through YAML anchors so both use the same pinned toolchain.
 jobs:
-  verify:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Keep this image in sync with @playwright/test in package-lock.json.
-    container:
+    container: &playwright-container
       image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
       options: --ipc=host
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - &setup-node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.22.2
       # Do not cache npm here: its file-package cache contains private Environment source.
-      - run: npm install --global npm@11.16.0
-      - name: Install pinned GitHub CLI for component downloads
+      - &pin-npm
+        run: npm install --global npm@11.16.0
+      - &install-gh
+        name: Install pinned GitHub CLI for component downloads
         run: |
           curl --fail --location --retry 3 \
             --output "$RUNNER_TEMP/gh.tar.gz" \
@@ -32,7 +39,8 @@ jobs:
           tar -xzf "$RUNNER_TEMP/gh.tar.gz" -C "$RUNNER_TEMP" gh_2.103.3_linux_amd64/bin/gh
           install "$RUNNER_TEMP/gh_2.103.3_linux_amd64/bin/gh" /usr/local/bin/gh
           gh --version
-      - id: pins
+      - &read-pins
+        id: pins
         run: |
           node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
           import fs from 'node:fs';
@@ -44,7 +52,8 @@ jobs:
           console.log('environment_version='+pins.environment.version);
           console.log('host_version='+pins.host.version);
           JS
-      - name: Read the pinned private Environment source
+      - &environment-source
+        name: Read the pinned private Environment source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Olorinm/agent-environment
@@ -52,7 +61,8 @@ jobs:
           path: .components/environment
           ssh-key: ${{ secrets.ENVIRONMENT_READ_KEY }}
           persist-credentials: false
-      - name: Reproduce the immutable Environment archive
+      - &environment-archive
+        name: Reproduce the immutable Environment archive
         env:
           ENVIRONMENT_VERSION: ${{ steps.pins.outputs.environment_version }}
         run: |
@@ -64,7 +74,8 @@ jobs:
           const name=process.env.RUNNER_TEMP+'/olorinm-agent-environment-'+process.env.ENVIRONMENT_VERSION;
           fs.writeFileSync(name+'.tar',gunzipSync(fs.readFileSync(name+'.tgz')));
           JS
-      - run: node scripts/bootstrap.mjs --environment-archive "$RUNNER_TEMP/olorinm-agent-environment-${{ steps.pins.outputs.environment_version }}.tar"
+      - &bootstrap
+        run: node scripts/bootstrap.mjs --environment-archive "$RUNNER_TEMP/olorinm-agent-environment-${{ steps.pins.outputs.environment_version }}.tar"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Check preinstalled Playwright browser
@@ -80,11 +91,31 @@ jobs:
       - run: node_modules/.bin/lark-cli --version
       - run: npm run typecheck
       - run: npm --prefix web run typecheck
-      - run: npm run build:web
+      - &build-web
+        run: npm run build:web
       - run: npm test
         env:
           # The browser acceptance must not skip silently when the console build is missing.
           MAU_WEB_E2E: "1"
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Same image as `test`, so the Host package and the archives are built with one toolchain.
+    container: *playwright-container
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - *checkout
+      - *setup-node
+      - *pin-npm
+      - *install-gh
+      - *read-pins
+      - *environment-source
+      - *environment-archive
+      - *bootstrap
+      # The product package verified below ships the console build (web/dist).
+      - *build-web
       - run: npm run verify:cli
       - name: Build the pinned Host package
         env:
