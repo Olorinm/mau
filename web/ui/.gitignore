@@ -2,6 +2,5 @@ node_modules/
 dist/
 .local/
 .browser-test-*/
-.restored-tests/
 .ssr-test-*
 .DS_Store

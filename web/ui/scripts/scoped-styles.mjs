@@ -56,7 +56,7 @@ export function scopeStyles(css, names = new Map()) {
   return root.toString();
 }
 
-/** Export one complete stylesheet per public entry, without relying on consumer CSS tooling. */
+/** Export one complete stylesheet for the page entry, without relying on consumer CSS tooling. */
 export function scopedStyles() {
   return {
     name: "frontend-scoped-styles",
@@ -74,31 +74,29 @@ export function scopedStyles() {
           );
       for (const file of styles)
         file.source = scopeStyles(String(file.source), names);
-      // Only the page entries carry stylesheets; the component entries' CSS files are copied as they are.
-      for (const entry of Object.values(bundle).filter(
-        (file) => file.type === "chunk" && file.isEntry && file.name.startsWith("pages/"),
-      )) {
-        const files = new Set();
-        const seen = new Set();
-        function collect(chunk) {
-          if (!chunk || chunk.type !== "chunk" || seen.has(chunk.fileName))
-            return;
-          seen.add(chunk.fileName);
-          for (const imported of [...chunk.imports, ...chunk.dynamicImports])
-            collect(bundle[imported]);
-          for (const css of chunk.viteMetadata?.importedCss ?? [])
-            files.add(css);
-        }
-        collect(entry);
-        const css = [...files]
-          .map((name) => String(bundle[name]?.source ?? ""))
-          .join("\n");
-        this.emitFile({
-          type: "asset",
-          fileName: entry.name === "pages/index" ? "pages/pages.css" : `${entry.name}.css`,
-          source: css,
-        });
+      // Only the page entry carries a stylesheet; the application CSS files are copied as they are.
+      const entry = Object.values(bundle).find(
+        (file) => file.type === "chunk" && file.isEntry && file.name === "pages/index",
+      );
+      const files = new Set();
+      const seen = new Set();
+      function collect(chunk) {
+        if (!chunk || chunk.type !== "chunk" || seen.has(chunk.fileName))
+          return;
+        seen.add(chunk.fileName);
+        for (const imported of [...chunk.imports, ...chunk.dynamicImports])
+          collect(bundle[imported]);
+        for (const css of chunk.viteMetadata?.importedCss ?? [])
+          files.add(css);
       }
+      collect(entry);
+      this.emitFile({
+        type: "asset",
+        fileName: "pages/pages.css",
+        source: [...files]
+          .map((name) => String(bundle[name]?.source ?? ""))
+          .join("\n"),
+      });
     },
   };
 }

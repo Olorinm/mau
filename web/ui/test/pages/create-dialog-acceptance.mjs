@@ -6,8 +6,8 @@ export const createDialogHtml =
 export const createDialogEntry = `
 import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {FrontendProvider,AppCreateDialog} from '@olorinm/agent-ui/catalog';
-import '@olorinm/agent-ui/catalog.css';
+import {FrontendProvider,AppCreateDialog} from '@olorinm/agent-ui/pages';
+import '@olorinm/agent-ui/pages.css';
 function Example() {
  const [open,setOpen]=useState(false), [name,setName]=useState(''), [description,setDescription]=useState(''), [source,setSource]=useState('');
  return <FrontendProvider language="zh-CN" theme="dark"><button onClick={()=>setOpen(true)}>Open create dialog</button><AppCreateDialog open={open} onOpenChange={setOpen} title={name} description={description} source={source} onTitleChange={setName} onDescriptionChange={setDescription} onSourceChange={setSource} onCancel={()=>setOpen(false)} onOpenStore={()=>{}} onChooseLocalFolder={()=>setSource('/example')} canRequestAgent onRequestAgent={()=>setOpen(false)} notice={<div className="af-notice">Caller supplied notice</div>}/></FrontendProvider>;
@@ -87,7 +87,7 @@ export async function checkCreateDialog(base) {
       await page.close();
     }
     console.log(
-      "Catalog feature imports preserve desktop actions and keep 390/320px dialog content and buttons inside the viewport.",
+      "The create dialog preserves desktop actions and keeps 390/320px dialog content and buttons inside the viewport.",
     );
   } finally {
     await browser.close();

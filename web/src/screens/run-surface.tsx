@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
-import { RunMessage } from "@olorinm/agent-ui/conversation";
+import { RunMessage } from "@olorinm/agent-ui/pages";
 import { Button } from "@olorinm/agent-ui/app";
 import { Disclosure } from "@olorinm/agent-ui";
 import { mauApi } from "../api/client";

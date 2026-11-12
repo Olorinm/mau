@@ -50,6 +50,4 @@ export type * from "./parts";
 export type * from "./resource-model";
 export type { ActivityItem, ActivityEntry, ActivityArtifactCard } from "./activity-model";
 
-export * from "./resource-preview-panel";
-
 export type {ResourceOperations} from "./resource-operations";

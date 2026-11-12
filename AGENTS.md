@@ -5,7 +5,9 @@
 - Router owns accounts, channel connections, conversation routing and delivery.
 - Mau owns environment profiles, Agent/environment binding, Host bootstrap and lifecycle coordination.
 - Use component public package exports; do not import another repository's implementation paths.
-- The console's React components live in `web/ui` (`@olorinm/agent-ui`, private, part of the `web` npm workspace); the console imports only its package exports.
+- The console's React components live in `web/ui` (`@olorinm/agent-ui`, private, part of the `web` npm workspace); the console imports only its package exports (`.`, `./agent-host`, `./app`, `./app.css`, `./pages`, `./pages.css`).
+- `web/ui` serves only this console: it keeps what `web/src` reaches through those exports. Delete a module, stylesheet, label or dependency when the console stops using it; do not add entries or components for other products.
+- The console installs Agent Host from `.packages/agent-host.tgz` (`web/package.json`) for its types; `pin-kit` refreshes both lockfiles.
 - Preserve native execution, sessions, tools and approvals in Host and its kernels.
 - Keep credentials, production addresses, environment IDs and operational state outside this repository.
 - There are no Router provisioning aliases or compatibility routes.

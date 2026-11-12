@@ -1,6 +1,5 @@
 @import "./thread.css";
 @import "./disclosure.css";
-@import "./cards.css";
 /* Optional default theme. Existing products may import only the component CSS. */
 .agent-chat {
   --opengrove-text: var(--c-text);

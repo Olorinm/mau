@@ -2,7 +2,7 @@
 
 [简体中文](web.zh-CN.md)
 
-The console (`web/src`) composes the page layouts (`@olorinm/agent-ui/pages` and its feature entries) with the
+The console (`web/src`) composes the page layouts (`@olorinm/agent-ui/pages`) with the
 lower-level components (`@olorinm/agent-ui`, `@olorinm/agent-ui/app`) of the UI package in
 [`web/ui`](../web/ui/README.md). The package receives data, React content and callbacks; it has
 no Mau, Router, Host or Environment dependency. Authentication, navigation, requests and the

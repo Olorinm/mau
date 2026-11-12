@@ -5,10 +5,10 @@ on:
   pull_request:
 permissions:
   contents: read
-# Three jobs run side by side on separate runners: `test` (typechecks, console build,
-# tests with browser acceptance), `packages` (CLI and archive verification) and `ui`
-# (the web/ui package's own checks). The preparation steps are shared through YAML anchors
-# so all use the same pinned toolchain.
+# Two jobs run side by side on separate runners: `test` (typechecks, console build, server and
+# console tests with browser acceptance, then the web/ui package's own tests) and `packages` (CLI and
+# archive verification). The preparation steps are shared through YAML anchors so both use the same
+# pinned toolchain.
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -32,14 +32,18 @@ jobs:
       # Downloads the Agent Kit release pinned in components.json and installs dependencies.
       - &bootstrap
         run: node scripts/bootstrap.mjs
+      # The server tests (package-lock.json) and the UI package's tests (web/package-lock.json) both drive this browser.
       - name: Check preinstalled Playwright browser
         run: |
           node --input-type=commonjs <<'JS'
           const assert = require('node:assert/strict');
           const { readFileSync, accessSync, constants } = require('node:fs');
+          const { createRequire } = require('node:module');
           const { driverVersion } = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
-          assert.equal(driverVersion, require('@playwright/test/package.json').version,
-            'Update the Playwright image and npm package together');
+          // Playwright can be loaded once per process: compare both installed versions, then load one.
+          for (const manifest of ['package.json', 'web/package.json'])
+            assert.equal(driverVersion, createRequire(require('node:path').resolve(manifest))('@playwright/test/package.json').version,
+              `Update the Playwright image and npm package together (${manifest})`);
           accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
           JS
       - run: node_modules/.bin/lark-cli --version
@@ -51,6 +55,9 @@ jobs:
         env:
           # The browser acceptance must not skip silently when the console build is missing.
           MAU_WEB_E2E: "1"
+      # The UI package's unit and browser tests run against the web/ui build made by build:web.
+      - run: npm --prefix web --workspace ui test
+      - run: npm --prefix web --workspace ui run test:browser
   packages:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -69,32 +76,3 @@ jobs:
       - run: npm run verify:cli
       - name: Verify independent archives and native session continuation
         run: npm run verify:packages
-  ui:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container: *playwright-container
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - *checkout
-      - *setup-node
-      - *pin-npm
-      # The UI package needs no Agent Kit package: install the web workspace on its own.
-      - run: npm --prefix web ci --ignore-scripts --no-audit --no-fund
-      - name: Check preinstalled Playwright browser
-        working-directory: web
-        run: |
-          node --input-type=commonjs <<'JS'
-          const assert = require('node:assert/strict');
-          const { readFileSync, accessSync, constants } = require('node:fs');
-          const { driverVersion } = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
-          assert.equal(driverVersion, require('@playwright/test/package.json').version,
-            'Update the Playwright image and npm package together');
-          accessSync(require('@playwright/test').chromium.executablePath(), constants.X_OK);
-          JS
-      - run: npm --prefix web --workspace ui run typecheck
-      - run: npm --prefix web --workspace ui run build
-      - run: npm --prefix web --workspace ui test
-      - run: npm --prefix web --workspace ui run test:browser
-      - run: npm --prefix web --workspace ui run test:restored

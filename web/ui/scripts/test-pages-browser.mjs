@@ -1,9 +1,7 @@
 import { mkdtemp, writeFile, rm, copyFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createServer } from "vite";
-import { checkStories } from "../test/pages/stories-acceptance.mjs";
 import { checkBrowser } from "../test/pages/browser-acceptance.mjs";
-import { consumerEntry, consumerHtml } from "../test/pages/consumer-entry.mjs";
 import {
   isolationEntry,
   isolationHtml,
@@ -14,18 +12,19 @@ import {
   createDialogEntry,
   checkCreateDialog,
 } from "../test/pages/create-dialog-acceptance.mjs";
+const pagesHtml =
+  '<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#root{height:100%;margin:0}*{box-sizing:border-box}</style></head><body><div id="root"></div><script type="module" src="/main.jsx"></script></body></html>';
 const root = await mkdtemp(resolve(".browser-test-"));
 let server;
 try {
-  await writeFile(resolve(root, "index.html"), consumerHtml);
-  await writeFile(resolve(root, "main.jsx"), consumerEntry);
+  await writeFile(resolve(root, "index.html"), pagesHtml);
+  await copyFile("test/pages/fixtures/console-pages.jsx", resolve(root, "main.jsx"));
+  await copyFile("test/pages/fixtures/run-parts.mjs", resolve(root, "run-parts.mjs"));
   await writeFile(resolve(root, "isolation.html"), isolationHtml);
   await writeFile(resolve(root, "isolation.jsx"), isolationEntry);
   await copyFile("dist/pages/pages.css", resolve(root, "style.css"));
   await writeFile(resolve(root, "create-dialog.html"), createDialogHtml);
   await writeFile(resolve(root, "create-dialog.jsx"), createDialogEntry);
-  await copyFile("demo/stories.html", resolve(root, "stories.html"));
-  await copyFile("demo/stories.jsx", resolve(root, "stories.jsx"));
   server = await createServer({
     configFile: false,
     root,
@@ -34,7 +33,6 @@ try {
   await server.listen();
   await checkIsolation(server.resolvedUrls.local[0]);
   await checkBrowser(server.resolvedUrls.local[0]);
-  await checkStories(server.resolvedUrls.local[0]);
   await checkCreateDialog(server.resolvedUrls.local[0]);
 } finally {
   await server?.close();
