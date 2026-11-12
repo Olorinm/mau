@@ -15,8 +15,7 @@
     grid-template-rows: var(--app-titlebar-height) minmax(0, 1fr);
   }
 
-  & .sidebar,
-  & .sidebar-resize-handle {
+  & .sidebar {
     display: none;
   }
 

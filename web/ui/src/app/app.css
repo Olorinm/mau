@@ -36,6 +36,8 @@ p {
   }
 }
 
+:root[data-resolved-theme="dark"],
+[data-resolved-theme="dark"],
 :root[data-theme="dark"] {
   /* OpenGrove derives this from a white highlight in both themes; dark ghost buttons need a dark surface. */
   --dialog-ghost-bg: var(--c-surface);

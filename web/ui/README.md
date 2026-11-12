@@ -53,7 +53,7 @@ export function Chat({answer, send}: {
 
 There are no network calls, product stores, backend startup or credential discovery in this package. React is a peer dependency of this package only, not a dependency of Agent Host.
 
-Application components use `@olorinm/agent-ui/app.css`: tokens on `:root`, `data-theme="dark"` on the root element for dark mode, a small base reset, and `.agent-app` for the container. Confirm and toast copy uses the same `ChatProvider` translation.
+Application components use `@olorinm/agent-ui/app.css`: tokens on `:root`, `data-theme="dark"` on the root element or `data-resolved-theme="dark"` on a theme boundary for dark mode, a small base reset, and `.agent-app` for the container. Confirm and toast copy uses the same `ChatProvider` translation.
 
 Use `data-theme="dark"` on `.agent-chat` for the dark theme. Override CSS variables for colors, typography and spacing, or import only `thread.css`, `disclosure.css` and `cards.css` and supply your own theme. These styles use compatibility class names; importing them is explicit and opt-in.
 
@@ -64,6 +64,10 @@ The composer accepts `attachments`, `before`, `inputPrefix`, `footerLeft` and `f
 The optional Host adapter shows native approvals without renaming IDs or adding choices. Questions preserve multiple values and secret fields. Forms and unknown native requests have an explicit JSON editor with a `renderNative` replacement slot; it is not a complete JSON Schema form generator. URL elicitation requires explicit user completion. Provide `labels` for adapter copy and `ChatProvider.translate` for common controls.
 
 See the [guide](docs/guide.md) and Agent Host's [independent editor](https://github.com/Olorinm/agent-host/tree/main/examples/react-editor). Verify with `npm test`, `npm run test:browser` and `npm run test:package`.
+
+Build release archives with Node 24.22.2 and npm 11.16.0, matching CI.
+Both the root package and `frontend` declare the same npm version; `.node-version`
+pins Node for local builds.
 
 Linux browser checks run in the official Playwright container pinned in
 `.github/workflows/ci.yml`; native unit checks still run on Linux, macOS, and

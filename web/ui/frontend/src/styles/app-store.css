@@ -113,58 +113,10 @@
   gap: var(--sp-2);
 }
 
-.app-store-version-status-badge {
-  width: fit-content;
-  padding: var(--sp-1) var(--sp-2);
-  border: 1px solid var(--og-border);
-  border-radius: var(--r-pill);
-  background: var(--og-surface-muted);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  color: var(--og-text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-}
-
-.app-store-version-status-badge[data-tone="active"] {
-  border-color: color-mix(in srgb, var(--og-success) 28%, transparent);
-  background: color-mix(in srgb, var(--og-success) 9%, transparent);
-  color: var(--og-success);
-}
-
-.app-store-version-status-badge[data-tone="warning"] {
-  border-color: color-mix(in srgb, var(--c-warning) 28%, transparent);
-  background: color-mix(in srgb, var(--c-warning) 9%, transparent);
-  color: var(--c-warning);
-}
-
-.app-store-version-alert,
 .app-store-version-blocker {
   width: min(520px, calc(100vw - var(--sp-8)));
   margin: 0;
   border-radius: var(--r-lg);
-}
-
-.app-store-version-alert {
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--og-border);
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  color: var(--og-text-muted);
-  font-size: var(--fs-base);
-}
-
-.app-store-version-alert[data-tone="warning"] {
-  border-color: color-mix(in srgb, var(--c-warning) 28%, transparent);
-  background: color-mix(in srgb, var(--c-warning) 8%, transparent);
-}
-
-.app-store-version-alert[data-tone="error"] {
-  border-color: color-mix(in srgb, var(--c-error) 28%, transparent);
-  background: color-mix(in srgb, var(--c-error) 8%, transparent);
-  color: var(--c-error);
 }
 
 .app-store-version-blocker {
@@ -261,11 +213,6 @@
   background: transparent;
   box-shadow: none;
   padding: var(--sp-6) var(--sp-8) var(--sp-10);
-}
-
-.app-store-page--publish {
-  width: min(1440px, 100%);
-  padding: 0;
 }
 
 .app-store-publish-page {
@@ -491,12 +438,6 @@
   color: var(--og-text-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
-}
-
-.app-store-publish-two-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .app-store-publish-field {
@@ -819,25 +760,6 @@
   overflow-wrap: anywhere;
 }
 
-.app-store-publish-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 240px;
-  color: var(--og-text-muted);
-  font-size: var(--fs-base);
-}
-
-.app-store-publish-state--error {
-  color: var(--c-error);
-}
-
-.app-store-publish-state p {
-  margin: 4px 0 0;
-  color: var(--og-text-muted);
-}
-
 .app-store-publish-spinner {
   animation: app-store-publish-spin 900ms linear infinite;
 }
@@ -868,7 +790,6 @@
     padding-inline: 16px;
   }
 
-  .app-store-publish-two-columns,
   .app-store-publish-identity {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -954,37 +875,6 @@
   border-color: var(--app-store-primary-hover-border);
   background: var(--app-store-primary-hover-bg);
   color: var(--app-store-primary-hover-fg);
-}
-
-.app-store-upload-input {
-  display: none;
-}
-
-.app-store-upload-button {
-  gap: 6px;
-  height: 28px;
-  font-size: var(--fs-sm);
-  padding: 0 10px;
-}
-
-.app-store-publish-menu-anchor {
-  position: relative;
-}
-
-.app-store-publish-menu {
-  position: relative;
-  z-index: 60;
-  box-sizing: border-box;
-  display: grid;
-  gap: 2px;
-  min-width: 260px;
-  max-height: 320px;
-  overflow: auto;
-  border: 1px solid var(--c-line-06);
-  border-radius: var(--r-md);
-  background: var(--c-popover-solid);
-  padding: 6px;
-  box-shadow: var(--shadow-md);
 }
 
 .app-store-publish-visibility {
@@ -1112,101 +1002,6 @@
   grid-column: 1 / -1;
 }
 
-.app-store-publish-menu-heading {
-  padding: 4px 8px 2px;
-  font-size: var(--fs-xs);
-  color: var(--og-text-muted);
-}
-
-.app-store-publish-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--og-text);
-  font-size: var(--fs-sm);
-  text-align: left;
-  padding: 6px 8px;
-  cursor: pointer;
-}
-
-.app-store-publish-menu-item:hover {
-  background: var(--c-neutral-100);
-}
-
-.app-store-publish-menu-empty {
-  padding: 6px 8px;
-  font-size: var(--fs-sm);
-  color: var(--og-text-muted);
-}
-
-.app-store-publish-menu-divider {
-  height: 1px;
-  margin: 4px 0;
-  background: var(--c-line-12);
-}
-
-.app-store-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  min-width: 0;
-}
-
-.app-store-filter-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  border: 1px solid var(--c-line-08);
-  border-radius: var(--r-sm);
-  background: var(--c-surface-sunken);
-  padding: 3px;
-}
-
-.app-store-filter-tabs button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  height: 30px;
-  border: 0;
-  border-radius: var(--app-store-tab-radius);
-  background: transparent;
-  color: var(--c-neutral-600);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  padding: 0 10px;
-  white-space: nowrap;
-}
-
-.app-store-filter-tabs button[data-active="true"] {
-  background: var(--c-surface);
-  color: var(--c-neutral-900);
-  box-shadow: var(--app-store-tab-active-shadow);
-}
-
-.app-store-filter-tabs button:hover,
-.app-store-filter-tabs button:focus-visible {
-  background: var(--c-surface);
-  color: var(--c-neutral-900);
-  outline: 0;
-}
-
-.app-store-control-tools {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-}
-
 .app-store-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1236,28 +1031,6 @@
 
 .app-store-search input::placeholder {
   color: var(--c-neutral-500);
-}
-
-.app-store-upload-button:hover,
-.app-store-upload-button:focus-visible {
-  outline: 0;
-}
-
-.app-store-upload-button:hover,
-.app-store-upload-button:focus-visible {
-  background: var(--app-store-primary-hover-bg);
-  color: var(--app-store-primary-hover-fg);
-}
-
-.app-store-upload-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-.app-store-catalog {
-  display: grid;
-  gap: 12px;
-  margin-top: 2px;
 }
 
 .app-store-catalog-grid {
@@ -1380,16 +1153,6 @@
   border-radius: var(--r-lg);
 }
 
-.app-store-employee-card-avatar {
-  --avatar-size: calc(var(--sp-10) * 2);
-  grid-column: 1;
-  grid-row: 1 / 3;
-  align-self: center;
-  justify-self: center;
-  width: var(--avatar-size);
-  height: var(--avatar-size);
-}
-
 .app-store-package-footer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1460,17 +1223,6 @@
   color: var(--c-faint);
 }
 
-.app-store-package-action {
-  /* Look comes from .og-button--primary; this keeps only layout sizing. */
-  gap: 5px;
-  min-width: 72px;
-  height: 34px;
-}
-
-.app-store-package-action span {
-  font-size: var(--fs-sm);
-}
-
 .app-store-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1479,51 +1231,6 @@
   place-items: center;
   background: var(--c-overlay-scrim);
   padding: 32px;
-}
-
-.app-store-publish-confirm-panel {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 2px;
-}
-
-.app-store-publish-confirm-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.app-store-publish-confirm-heading h2 {
-  margin: 0;
-  color: var(--c-neutral-900);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  line-height: var(--lh-tight);
-}
-
-.app-store-publish-confirm-heading p {
-  overflow: hidden;
-  margin: 3px 0 0;
-  color: var(--c-neutral-500);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-store-publish-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.app-store-publish-confirm-actions .og-button {
-  height: 30px;
-  font-size: var(--fs-sm);
-  padding: 0 10px;
 }
 
 .app-store-dialog {
@@ -1612,13 +1319,6 @@
 
 .app-store-dialog-heading .app-store-agent-stack > .rooms-avatar {
   outline: 2px solid var(--c-surface);
-}
-
-.app-store-dialog-employee-avatar {
-  --avatar-size: calc(var(--sp-10) + var(--sp-6));
-  margin: 0 auto;
-  width: var(--avatar-size);
-  height: var(--avatar-size);
 }
 
 .app-store-dialog-summary {
@@ -1732,63 +1432,14 @@
 
 /* Look comes from .og-button--primary; keep layout + the larger r-md radius
    and full-width size specific to this modal CTA. */
-.app-store-dialog-action {
-  gap: 10px;
-  width: 100%;
-  height: 44px;
-  border-radius: var(--r-md);
-  font-size: var(--fs-lg);
-  padding: 0 18px;
-}
 
-.app-store-empty,
-.app-store-install-message {
+.app-store-empty {
   color: var(--og-text-muted);
   font-size: var(--fs-md);
   line-height: var(--lh-normal);
 }
 
-.app-store-install-message {
-  position: sticky;
-  top: 10px;
-  z-index: 12;
-  border-radius: var(--r-lg);
-  background: var(--c-success-soft);
-  color: var(--c-success);
-  padding: 12px 14px;
-}
-
-.app-store-install-message[data-tone="error"] {
-  background: var(--c-error-soft);
-  color: var(--c-error);
-}
-
-.app-store-install-message[data-tone="warning"] {
-  background: var(--c-warning-soft);
-  color: var(--c-warning);
-}
-
-.app-store-install-message[data-tone="info"] {
-  background: var(--c-accent-soft);
-  color: var(--c-accent);
-}
-
 @media (max-width: 1080px) {
-  .app-store-controls {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .app-store-filter-tabs {
-    overflow-x: auto;
-    padding-bottom: 2px;
-    width: 100%;
-  }
-
-  .app-store-control-tools {
-    justify-content: stretch;
-    width: 100%;
-  }
 
   .app-store-search {
     width: 100%;
@@ -1816,10 +1467,6 @@
 
   .app-store-title-actions {
     width: 100%;
-  }
-
-  .app-store-upload-button {
-    flex: 1;
   }
 
   .app-store-dialog-backdrop {

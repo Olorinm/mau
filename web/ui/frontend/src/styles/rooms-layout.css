@@ -23,64 +23,6 @@
   padding: 0 8px;
 }
 
-.rooms-pinboard {
-  display: grid;
-  gap: 8px;
-  border-bottom: 1px solid var(--rooms-border);
-  padding-bottom: 12px;
-}
-
-.rooms-pinned-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.rooms-pin-item {
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-  min-width: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--rooms-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-xs);
-  padding: 6px 4px;
-}
-
-.rooms-pin-item:hover,
-.rooms-pin-item:focus-visible,
-.rooms-pin-item[data-active="true"] {
-  background: var(--rooms-blue-soft);
-  color: var(--rooms-text);
-}
-
-.rooms-pin-item > span:last-child {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rooms-pin-unread-anchor {
-  --unread-count-anchor-top: -3px;
-  --unread-count-center-right: 5px;
-  --unread-count-ring-color: var(--c-surface);
-}
-
-.rooms-pin-avatar {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--rooms-pin-avatar-radius);
-  background: var(--rooms-pin-avatar-bg);
-  color: var(--rooms-pin-avatar-fg);
-}
-
 .rooms-chat-list {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -134,21 +76,13 @@
   color: var(--og-section-icon);
 }
 
-.rooms-list-item .pixel-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.rooms-list-time,
-.rooms-list-preview,
-.rooms-list-meta {
+.rooms-list-preview {
   color: var(--og-section-muted);
   font-size: var(--fs-sm);
   font-weight: var(--fw-normal);
 }
 
-.rooms-list-preview,
-.rooms-room-badge {
+.rooms-list-preview {
   display: none;
 }
 
@@ -170,23 +104,13 @@
   white-space: nowrap;
 }
 
-.rooms-list-copy,
-.rooms-list-meta {
+.rooms-list-copy {
   display: grid;
   min-width: 0;
 }
 
 .rooms-list-copy {
   gap: 0;
-}
-
-.rooms-list-meta {
-  justify-items: end;
-  gap: 0;
-}
-
-.rooms-room-badge {
-  flex: 0 0 auto;
 }
 
 .room-header-copy {

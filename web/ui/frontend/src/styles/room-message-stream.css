@@ -30,17 +30,6 @@
   user-select: none;
 }
 
-.room-storage-warning {
-  justify-self: center;
-  max-width: min(620px, 92%);
-  border-radius: var(--r-sm);
-  background: var(--room-stream-warning-bg);
-  color: var(--room-stream-warning-fg);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  padding: 7px 10px;
-}
-
 .room-chat-message {
   display: flex;
   align-items: flex-start;
@@ -52,14 +41,6 @@
 
 .room-chat-message.from-user {
   justify-content: flex-end;
-}
-
-.room-chat-avatar {
-  --avatar-badge-size: var(--sp-2-5);
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  font-size: var(--fs-sm);
 }
 
 /* A continued message keeps the avatar column and sits closer to the one before. */
@@ -365,9 +346,7 @@
   white-space: normal;
 }
 
-.room-chat-bubble .thread-md-p,
-.room-chat-bubble .thread-md-list,
-.room-chat-bubble .thread-md-heading {
+.room-chat-bubble .thread-md-p {
   margin: 0;
 }
 
@@ -645,9 +624,7 @@
   overflow: visible;
 }
 
-.room-run-commentary .thread-md-p,
-.room-run-commentary .thread-md-list,
-.room-run-commentary .thread-md-heading {
+.room-run-commentary .thread-md-p {
   line-height: var(--lh-relaxed);
 }
 
@@ -702,34 +679,6 @@
   justify-content: flex-end;
 }
 
-.room-message-attachment {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: min(280px, 100%);
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-sm);
-  background: var(--room-stream-attachment-bg);
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  padding: 7px 9px;
-}
-
-.room-message-attachment span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.room-message-attachment.image {
-  display: grid;
-  place-items: center;
-  width: 120px;
-  height: 88px;
-  overflow: hidden;
-  padding: 0;
-}
-
 /* A file in a message: type icon, name and kind, in the bubble's own colours. */
 .room-message-file {
   display: grid;
@@ -779,10 +728,4 @@
   line-height: var(--lh-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.room-message-attachment.image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }

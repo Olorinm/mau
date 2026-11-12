@@ -7,11 +7,6 @@
   --codex-muted: var(--c-muted);
   --codex-faint: var(--c-faint);
   --codex-line: var(--c-border);
-  --codex-accent: var(--c-accent);
-  --text: var(--c-text);
-  --text-2: var(--c-text-2);
-  --muted: var(--c-muted);
-  --border: var(--c-border);
   --shadow: var(--shadow-lg);
   --opengrove-text: var(--c-text);
   --opengrove-muted: var(--c-muted);
@@ -388,14 +383,4 @@ body:has(.resize-handle[data-resizing="true"]) .app-shell {
 .app-shell[data-view="chat"] .sidebar {
   border-color: transparent;
   background: var(--c-surface);
-}
-
-.sidebar-resize-handle {
-  grid-column: 2;
-  grid-row: 2;
-  align-self: stretch;
-  justify-self: end;
-  width: 10px;
-  margin-right: -10px;
-  z-index: 80;
 }

@@ -483,7 +483,6 @@
 }
 
 .badge.readonly,
-.badge.managed,
 .badge.system {
   background: var(--extensions-badge-bg);
   color: var(--extensions-badge-fg);
@@ -571,18 +570,6 @@
 .targetIcon:disabled {
   cursor: default;
   opacity: 1;
-}
-
-.targetIcon :global(.entity-icon) {
-  width: 27px;
-  height: 27px;
-  border: 0;
-  background: transparent;
-  color: var(--extensions-target-entity-fg);
-}
-
-.targetIcon[data-enabled="false"] :global(.entity-icon) {
-  opacity: 0.72;
 }
 
 .targetTooltip {

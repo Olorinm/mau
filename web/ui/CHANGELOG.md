@@ -5,6 +5,11 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.14] - 2026-11-12
+
+- Dialogs and settings use a dark page surface in dark mode.
+- Resolved dark themes apply the same dialog button, shadow and avatar styles as explicit dark themes.
+
 ## [0.1.0-alpha.13] - 2026-11-11
 
 - `EmployeeAvatar` draws a pixel-art animal by default: the seed picks one of twenty animals and a
