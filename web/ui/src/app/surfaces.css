@@ -301,6 +301,27 @@ button.agent-list-row-main:focus-visible {
   box-shadow: 0 0 0 0.5px oklch(0% 0 0 / 0.04), 0 1px 3px oklch(0% 0 0 / 0.1);
   font-weight: var(--fw-medium);
 }
+/* Icon segments: a compact control as wide as its segments, with an optional divider before a segment. */
+.agent-segmented[data-display="icon"] {
+  width: fit-content;
+  max-width: 100%;
+  align-items: stretch;
+}
+.agent-segmented[data-display="icon"] button {
+  flex: 0 1 52px;
+  width: 52px;
+  color: var(--c-text-secondary);
+}
+.agent-segmented[data-display="icon"] button[aria-pressed="true"] {
+  color: var(--c-text);
+}
+.agent-segmented-divider {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 14px;
+  background: var(--c-border-strong);
+}
 .agent-segmented-badge {
   color: var(--c-text-secondary);
   font-size: var(--fs-caption);

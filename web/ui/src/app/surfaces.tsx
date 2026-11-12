@@ -2,6 +2,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Select } from "@base-ui/react/select";
 import clsx from "clsx";
 import {
+  Fragment,
   createContext,
   useContext,
   useEffect,
@@ -13,6 +14,7 @@ import {
   type Ref,
 } from "react";
 import { ProductIcon } from "./product-icon.js";
+import { Tooltip } from "./tooltip.js";
 import { PortalProvider, usePortalContainer } from "./portal.js";
 
 /** Standard: settings, connectors and channels. Compact: run details, events, approvals and logs. */
@@ -254,35 +256,53 @@ export interface SegmentedOption<T extends string = string> {
   label: string;
   /** For example a count shown after the label. */
   badge?: ReactNode | undefined;
+  /** Shown in place of the label when the control displays icons; the label is then its name and tooltip. */
+  icon?: ReactNode | undefined;
+  /** Draws a divider before this segment, to set it apart from the ones before it. */
+  divided?: boolean | undefined;
 }
 
-/** A fully rounded segmented control; the selected segment is a white pill. */
+/**
+ * A fully rounded segmented control; the selected segment is a white pill. With `display="icon"` it is a compact
+ * row of icon segments, for switching the sections of a narrow panel.
+ */
 export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
   label,
+  display = "label",
   className,
 }: {
   options: readonly SegmentedOption<T>[];
   value: T;
   onChange(value: T): void;
   label: string;
+  display?: "label" | "icon" | undefined;
   className?: string | undefined;
 }) {
   return (
-    <div className={clsx("agent-segmented", className)} role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-        >
-          <span>{option.label}</span>
-          {option.badge !== undefined ? <span className="agent-segmented-badge">{option.badge}</span> : null}
-        </button>
-      ))}
+    <div className={clsx("agent-segmented", className)} data-display={display} role="group" aria-label={label}>
+      {options.map((option) => {
+        const icon = display === "icon" && option.icon !== undefined;
+        const segment = (
+          <button
+            type="button"
+            aria-pressed={option.value === value}
+            {...(icon ? { "aria-label": option.label } : {})}
+            onClick={() => onChange(option.value)}
+          >
+            {icon ? option.icon : <span>{option.label}</span>}
+            {option.badge !== undefined ? <span className="agent-segmented-badge">{option.badge}</span> : null}
+          </button>
+        );
+        return (
+          <Fragment key={option.value}>
+            {option.divided ? <span className="agent-segmented-divider" aria-hidden="true" /> : null}
+            {icon ? <Tooltip content={option.label}>{segment}</Tooltip> : segment}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
