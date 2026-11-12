@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppCreateDialog, Catalog, InlineNotice } from "@olorinm/agent-frontend";
+import { AppCreateDialog, Catalog, InlineNotice } from "@olorinm/agent-ui/pages";
 import { useI18n } from "../i18n";
 
 function Unconnected({ name }: { name: string }) {

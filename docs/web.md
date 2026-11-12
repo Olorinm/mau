@@ -2,10 +2,10 @@
 
 [简体中文](web.zh-CN.md)
 
-Mau composes layouts extracted from the original OpenGrove presentation source in `@olorinm/agent-frontend` with the
-lower-level `@olorinm/agent-ui` components. The frontend package receives data,
-React content and callbacks; it has no Mau, Router, Host, Environment, Matrix or
-OpenGrove backend dependency. Mau owns authentication, routes, navigation,
+Mau composes the page layouts (`@olorinm/agent-ui/pages` and its feature entries) with the
+lower-level components (`@olorinm/agent-ui`, `@olorinm/agent-ui/app`) of the UI package in
+[`web/ui`](../web/ui/README.md). The package receives data, React content and callbacks; it has
+no Mau, Router, Host, Environment or Matrix backend dependency. Mau owns authentication, routes, navigation,
 requests, account messaging and environment/channel workflows in `web/src`.
 
 The UI covers account sign-in, Agent creation and management, environment
@@ -31,19 +31,20 @@ The original navigation, conversation input/search, profile, appearance settings
 app forms and extension workspace are reused. Extension navigation retains Skills,
 MCP, kernel plugins, Hooks, Tools and CLI. Unavailable operations are disabled.
 The original form layout and optional sapling artwork are reused; Router account
-credentials and session verification remain in Mau. Neither the frontend package
+credentials and session verification remain in Mau. Neither the UI package
 nor Mau implements OpenGrove Bridge compatibility endpoints.
 
-`components.json` pins both UI archives. Bootstrap downloads the exact release
-bytes and verifies them against `web/package-lock.json`. Agent UI is a peer of
-Agent Frontend so translations and shared providers use one context instance.
+`web/` is an npm workspace: `web/package-lock.json` locks the console and `web/ui` together, and
+the console depends on the workspace package directly. `npm run build:web` builds `web/ui` first.
+The page and component entries come from one build, so translations and shared providers use one
+context instance.
 
 ## Develop
 
 ```sh
 node scripts/bootstrap.mjs            # also installs web/ dependencies
 MAU_CONFIG_FILE=/private/mau.json npm start
-npm run dev:web                        # Vite on :5173, proxies /_mau and /_agent-router to :8790
+npm run dev:web                        # builds web/ui, then Vite on :5173, proxying /_mau and /_agent-router to :8790
 ```
 
 Set `MAU_DEV_BACKEND_URL` to proxy to another server.

@@ -22,8 +22,8 @@ import {
   type ChatTranslate,
 } from "@olorinm/agent-ui";
 import { ConfirmProvider, ToastProvider } from "@olorinm/agent-ui/app";
-import { FrontendProvider } from "@olorinm/agent-frontend";
-import "@olorinm/agent-frontend/style.css";
+import { FrontendProvider } from "@olorinm/agent-ui/pages";
+import "@olorinm/agent-ui/pages.css";
 // The design-system tokens and components; after the frontend bundle so the shared surfaces use this version.
 import "@olorinm/agent-ui/app.css";
 import "./styles.css";

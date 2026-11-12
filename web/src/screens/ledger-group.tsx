@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreateGroupForm } from "@olorinm/agent-frontend";
+import { CreateGroupForm } from "@olorinm/agent-ui/pages";
 import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar } from "@olorinm/agent-ui/app";
 import type { AgentSummary } from "../api/client";
 import { ApiError } from "../api/http";

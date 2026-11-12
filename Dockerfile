@@ -16,6 +16,7 @@ COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 COPY web/package.json web/package-lock.json web/
+COPY web/ui/package.json web/ui/
 RUN npm --prefix web ci --ignore-scripts --no-audit --no-fund
 COPY web/ web/
 RUN npm run build:web

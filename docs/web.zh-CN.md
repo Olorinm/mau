@@ -5,9 +5,9 @@
 Mau 复用从 OpenGrove 原源码提取的页面结构、样式和交互，提供账号登录、员工管理、环境生命周期、渠道连接、账号消息。
 账号消息经过 Matrix 与 Router；不包含直接内核聊天、钱包和提现。
 
-公共组件来自 `@olorinm/agent-frontend` 与 `@olorinm/agent-ui`，仅接收数据和回调。
-认证、接口请求、导航和业务流程由 Mau 的 `web/src` 负责；公共包不依赖这些服务。
-`components.json` 固定两个 UI 发布包，bootstrap 下载后按锁文件校验字节。
+公共组件来自 [`web/ui`](../web/ui/README.md) 里的 `@olorinm/agent-ui`（页面布局在 `./pages` 及各功能入口，底层组件在 `.` 与 `./app`），仅接收数据和回调。
+认证、接口请求、导航和业务流程由 Mau 的 `web/src` 负责；组件包不依赖这些服务。
+`web/` 是 npm workspace，`web/package-lock.json` 同时锁定控制台与 `web/ui`；`npm run build:web` 先构建 `web/ui`。
 应用创建、商店、扩展和设置入口保留；Mau 没有接入的服务明确显示“尚未接入”，操作不可提交。
 外观设置、消息输入与搜索、资料页、移动端导航使用提取包中的原组件。
 图形化扩展保留 Skills、MCP、内核插件、Hooks、Tools 和 CLI 六类入口。
@@ -83,7 +83,7 @@ App ID 和区域，通过飞书官方页面重新授权；无需复制 App Secre
 
 ## 公共前端与产品边界
 
-Mau 使用 `@olorinm/agent-frontend` 的布局、列表详情、登录表单外观和聊天组件。
+Mau 使用 `@olorinm/agent-ui/pages` 的布局、列表详情、登录表单外观和聊天组件。
 公共包只接收数据与回调，不依赖 Mau、Router、Host、Environment、Matrix 或 OpenGrove 接口。
 账号认证、导航、消息请求和环境/渠道流程都在 Mau 的 `web/src` 中组装。
 

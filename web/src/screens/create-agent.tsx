@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ProfileDialog } from "@olorinm/agent-frontend";
+import { ProfileDialog } from "@olorinm/agent-ui/pages";
 import { Button, EmployeeAvatar } from "@olorinm/agent-ui/app";
 import { mauApi } from "../api/client";
 import { ApiError } from "../api/http";

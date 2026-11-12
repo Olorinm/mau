@@ -49,11 +49,8 @@ node dist/cli.js --help
 ```
 
 Use `--router-archive /path/router.tgz --connectors-archive /path/connectors.tgz --environment-archive /path/environment.tar`
-when supplying the pinned archives locally. The web console's
-[Agent UI](https://github.com/Olorinm/agent-ui) release is public too;
-`--ui-archive /path/agent-ui.tgz` supplies it locally. The separate product-neutral
-page package uses `--frontend-archive /path/agent-frontend.tgz`; it contains no
-backend adapter. Both UI archives are pinned and checked against the web lockfile.
+when supplying the pinned archives locally. The web console's React components are in
+[`web/ui`](web/ui/README.md), installed and built with the console as one npm workspace.
 See [verification](docs/verification.md) for the shared-source acceptance.
 The optional `--host-archive` is integrity-checked and copied to `.packages/agent-host.tgz` for the execution image and independent consumer; Host is not installed into the Mau server process. The working-tree component changes must be published and pinned to their release artifacts before an ordinary remote release build can reproduce this branch without local archives.
 

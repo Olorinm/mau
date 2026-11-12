@@ -9,7 +9,7 @@ import {
   RoomHeaderActions,
   type ConversationComposer,
   type MessageView,
-} from "@olorinm/agent-frontend";
+} from "@olorinm/agent-ui/pages";
 import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState, PixelAvatarGroup, ProductIcon, TextButton } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";

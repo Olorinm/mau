@@ -7,25 +7,24 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 const { values } = parseArgs({ options: {
-  "router-archive": { type: "string" }, "host-archive": { type: "string" }, "environment-archive": { type: "string" }, "connectors-archive": { type: "string" }, "ui-archive": { type: "string" }, "frontend-archive": { type: "string" },
+  "router-archive": { type: "string" }, "host-archive": { type: "string" }, "environment-archive": { type: "string" }, "connectors-archive": { type: "string" },
 } });
 const root = new URL("../", import.meta.url);
 const packages = new URL(".packages/", root);
 await mkdir(packages, { recursive: true });
 const pins = JSON.parse(await readFile(new URL("components.json", root), "utf8"));
 const lock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
-const webLock = JSON.parse(await readFile(new URL("web/package-lock.json", root), "utf8"));
 async function verifyArchive(name, path) {
-  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", connectors: "@olorinm/agent-connectors", ui: "@olorinm/agent-ui", frontend: "@olorinm/agent-frontend" }[name];
-  const expected = (["ui", "frontend"].includes(name) ? webLock : lock).packages[`node_modules/${packageName}`]?.integrity;
+  const packageName = { router: "@agent-router/server", environment: "@olorinm/agent-environment", connectors: "@olorinm/agent-connectors" }[name];
+  const expected = lock.packages[`node_modules/${packageName}`]?.integrity;
   const actual = "sha512-" + createHash("sha512").update(await readFile(path)).digest("base64");
   // npm ci may satisfy a file: dependency from its integrity cache without
   // opening the supplied archive. Check the actual bytes before invoking npm.
   if (actual !== expected || pins[name].integrity && pins[name].integrity !== expected)
     throw new Error(`component_archive_integrity_mismatch: ${name}`);
 }
-const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", connectors: "agent-connectors.tgz", ui: "agent-ui.tgz", frontend: "agent-frontend.tgz" };
-for (const name of ["router", "environment", "connectors", "ui", "frontend"]) {
+const archives = { router: "agent-router.tgz", environment: "agent-environment.tar", connectors: "agent-connectors.tgz" };
+for (const name of ["router", "environment", "connectors"]) {
   const destination = new URL(archives[name], packages);
   if (values[`${name}-archive`]) {
     await copyFile(resolve(values[`${name}-archive`]), destination);
@@ -57,6 +56,7 @@ if (values["host-archive"]) {
   await copyFile(source, new URL("agent-host.tgz", packages));
 }
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, stdio: "inherit" });
+// The console and its UI package (web/ui) install together as one npm workspace.
 execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: new URL("web/", root), stdio: "inherit" });
 // Agent Connectors' Feishu connection runs the official Lark CLI, which needs its platform binary.
 execFileSync("npm", ["rebuild", "@larksuite/cli", "--ignore-scripts=false"], { cwd: root, stdio: "inherit" });
