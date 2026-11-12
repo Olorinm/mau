@@ -326,10 +326,12 @@
   --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
   --c-panel-raised: oklch(33.640% 0.0070 95.27);
   --c-action: var(--c-link);
-  --c-scrim: oklch(0% 0 0 / 0.45);
+  /* A dialog has the page colour, so the scrim and a light edge are what lift it off a dark page. */
+  --c-scrim: oklch(0% 0 0 / 0.6);
+  --modal-overlay-bg: var(--c-scrim);
   --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
   --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
-  --shadow-modal: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 24px 64px oklch(0% 0 0 / 0.5);
+  --shadow-modal: 0 0 0 1px oklch(100% 0 0 / 0.14), 0 24px 64px oklch(0% 0 0 / 0.6);
   --c-page: oklch(23.852% 0.0037 106.68);
 }
 

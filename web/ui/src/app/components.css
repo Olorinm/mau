@@ -152,7 +152,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid transparent;
   border-radius: var(--r-md);
   padding: 0 var(--sp-3);

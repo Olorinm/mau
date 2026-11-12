@@ -1938,7 +1938,7 @@
 
 .thread-question-custom-answer input {
   min-width: 0;
-  height: 34px;
+  height: 36px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   background: var(--c-surface-sunken);
