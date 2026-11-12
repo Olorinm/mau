@@ -118,7 +118,7 @@ it("active or uncertain runs prevent pause before any cloud mutation and leave t
   await f.api(f.path, { profileId: "cloud" });
   await f.settled();
   const runtime = await f.service.runtime(f.agent.id);
-  runtime.connector.store.set("communication_runs", "fixture-run", {
+  runtime.store.set("communication_runs", "fixture-run", {
     phase: "unknown",
   });
   await f.api(f.path + "/pause", {});
@@ -319,7 +319,7 @@ it("active or unresolved runs keep an idle environment awake without recording a
     await f.api(f.path, { profileId: "cloud" });
     await f.settled();
     const runtime = await f.service.runtime(f.agent.id);
-    runtime.connector.store.set("communication_runs", "fixture-run", { phase: "unknown" });
+    runtime.store.set("communication_runs", "fixture-run", { phase: "unknown" });
     (f.mau.environments as any).activity.set(f.agent.id, Date.now() - 601_000);
     await vi.advanceTimersByTimeAsync(30_000);
     const state = await f.settled();

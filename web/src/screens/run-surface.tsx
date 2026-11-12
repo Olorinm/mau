@@ -21,7 +21,7 @@ function sameNativeAnswer(left: unknown, right: unknown): boolean {
 
 /**
  * Optional owner controls of a run surface. The ledger console (ADR 0005 16.7) answers through the card endpoint and
- * cancels and steers through the turn endpoints; without them the run API is used, as in Matrix mode.
+ * cancels and steers through the turn endpoints; without them the run API is used.
  */
 export interface RunControls {
   answer?(callId: string, request: HostRequest, answer: InteractionAnswer): Promise<unknown>;

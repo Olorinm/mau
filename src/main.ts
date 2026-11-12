@@ -4,8 +4,7 @@ import { createMau, startFailure } from "./app.js";
 
 const optionsFile = process.env.MAU_CONFIG_FILE;
 if (!optionsFile) throw new Error("MAU_CONFIG_FILE_required");
-// Mau runs Router without Matrix: no homeserver or Application Service settings are read.
-const mau = createMau({ ...loadServiceConfig({ ...process.env, AGENT_MATRIX: "off" }), stateDir: process.env.MAU_STATE ?? "state/mau" }, optionsFile, {},
+const mau = createMau({ ...loadServiceConfig(), stateDir: process.env.MAU_STATE ?? "state/mau" }, optionsFile, {},
   process.env.MAU_WEB_ROOT ? { webRoot: process.env.MAU_WEB_ROOT } : {});
 const server = mau.app.listen(Number(process.env.PORT ?? "8790"), process.env.HOST ?? "127.0.0.1");
 mau.attach(server);

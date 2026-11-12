@@ -4,7 +4,7 @@ import { ApiError, request } from "./http";
  * Router owner-ledger web channel (agent-router ADR 0005, section 8).
  * HTTP carries every command and history read; one WebSocket per tab carries events.
  * Durable events are ordered per chat by (generation, seq); gaps are repaired from history.
- * This module has no React or Matrix dependency so the state machine is testable on its own.
+ * This module has no React dependency so the state machine is testable on its own.
  */
 
 export const ledgerBase = "/_agent-router/v1/web";

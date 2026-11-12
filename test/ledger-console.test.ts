@@ -47,7 +47,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
 
   // An unknown turn's Router card (ADR 6.2.4), written into the agent ledger as the Host worker would.
   const runtime = await f.service.runtime(f.agent.id);
-  const db = (runtime.connector.store as unknown as { db: import("node:sqlite").DatabaseSync }).db;
+  const db = (runtime.store as unknown as { db: import("node:sqlite").DatabaseSync }).db;
   const session = db.prepare("SELECT session_key, window, last_seq FROM ledger_sessions WHERE kind='owner_main'").get() as { session_key: string; window: number; last_seq: number };
   const now = Date.now(), seq = Number(session.last_seq) + 1, cardId = "cd_console_retry", turnId = "t-console";
   const card = { cardId, agentId: f.agent.id, turnId, claimId: "claim-console", callId: `router-retry:${turnId}`, kind: "question", source: "router",

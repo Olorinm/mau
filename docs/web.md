@@ -54,7 +54,7 @@ every `/_mau/v1` and `/_agent-router/v1` owner request and on the SSH upgrade, a
 configured service token) to an owner. The plain email header and the `CF_Authorization` cookie are never
 trusted. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
 Mau does not start without `edgeIdentity` (`edge_identity_required`) or without Router's ledger
-(`ledger_read_required`), and it always runs Router with Matrix off: no homeserver is configured or contacted.
+(`ledger_read_required`).
 
 - Boot reads `GET /_mau/v1/account` with the same-origin Access cookie; Cloudflare adds the JWT.
 - An account that is not mapped gets a full page naming its email, with "Switch account" (Access logout).
