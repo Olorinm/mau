@@ -45,6 +45,7 @@ function SettingsFixture() {
   const [detail, setDetail] = useState(false);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"available" | "connected">("available");
+  const [part, setPart] = useState<"overview" | "advanced">("overview");
   const [setting, setSetting] = useState<"allow" | "ask" | "deny">("ask");
   const [consent, setConsent] = useState(false);
   const [connected, setConnected] = useState("no");
@@ -73,6 +74,10 @@ function SettingsFixture() {
             <SearchField value={query} onChange={setQuery} placeholder="Search" clearLabel="Clear search" />
             <SegmentedControl label="Connector categories" value={tab} onChange={setTab}
               options={[{ value: "available", label: "Available" }, { value: "connected", label: "Connected", badge: 1 }]} />
+            <SegmentedControl label="Detail sections" display="icon" value={part} onChange={setPart}
+              options={[{ value: "overview", label: "Overview", icon: <ProductIcon name="ops" size={18} /> },
+                { value: "advanced", label: "Advanced", icon: <ProductIcon name="settings" size={18} />, divided: true }]} />
+            <output aria-label="Detail section">{part}</output>
             <SettingsSection title="Featured" panel={false}>
               <FeaturedGrid><FeaturedCard icon={icon} title="Browser" description="Open pages" onClick={() => setDetail(true)} /></FeaturedGrid>
             </SettingsSection>

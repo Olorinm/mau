@@ -5,6 +5,12 @@ Notable changes to `@olorinm/agent-ui`, newest first. `@olorinm/agent-frontend` 
 the same notes and the package archive. When releasing, add the new section here in the version-bump
 commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.16] - 2026-11-12
+
+- `SegmentedControl` can display icons: `display="icon"` with an `icon` on each option gives a
+  compact control as wide as its segments. The option's label is its accessible name and tooltip,
+  and `divided` draws a divider before a segment.
+
 ## [0.1.0-alpha.15] - 2026-11-12
 
 - Dialogs stand out in dark mode: a deeper scrim behind them, on the standard `Dialog` as well, and

@@ -154,6 +154,13 @@ async function checkSettingsBrowser(page) {
   await settings.getByRole("button", { name: "Clear search" }).click();
   await settings.getByRole("button", { name: "Connected 1" }).click();
   await expect(settings.getByRole("button", { name: "Connected 1" })).toHaveAttribute("aria-pressed", "true");
+  // Icon segments: named by their label, as wide as their icons, with a divider before a set-apart segment.
+  const sections = settings.getByRole("group", { name: "Detail sections" });
+  await sections.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(settings.getByLabel("Detail section", { exact: true })).toHaveText("advanced");
+  await expect(sections.getByRole("button", { name: "Overview", exact: true })).toHaveAttribute("aria-pressed", "false");
+  assert.ok((await sections.boundingBox()).width < 140, "icon segments must not stretch across the page");
+  await expect(sections.locator(".agent-segmented-divider")).toHaveCount(1);
   await settings.getByRole("button", { name: "Connect", exact: true }).click();
   const consent = page.getByRole("dialog", { name: "Browser" });
   await expect(consent).toContainText("What it can read");
