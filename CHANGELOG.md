@@ -4,6 +4,15 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.40] - 2026-11-12
+
+- People are in one panel on the left: the list of all conversations, and an employee's profile,
+  opened from the employee's row in the list or from the current employee's figure in the header.
+  The profile card on the right and its header button are gone.
+- The panel floats inside the conversation's card and no longer moves or narrows the conversation.
+  A file opened from a message floats on the right in the same way. Pressing on the conversation,
+  or Escape, puts the people panel away.
+
 ## [0.1.0-alpha.39] - 2026-11-12
 
 - The list of all conversations opens inside the conversation's card, on its left, instead of as a
