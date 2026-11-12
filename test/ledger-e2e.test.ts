@@ -45,7 +45,7 @@ it("serves a Matrix-ingested message through /web history and the event socket t
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, undefined, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerAttachments: true });
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerAttachments: true });
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
   if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);

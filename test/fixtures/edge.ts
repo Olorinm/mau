@@ -10,7 +10,7 @@ export async function edgeMauFixture(cleanup: Array<() => unknown>, serving: Par
   /** Extra Router service settings, for example the ledger flags. */
   routerConfig: Record<string, unknown> = {}) {
   const access = await accessIssuer(cleanup);
-  const f = await mauFixture(cleanup, serving, undefined, { edgeIdentity: access.config({ [aliceEmail]: alice }) }, routerConfig,
+  const f = await mauFixture(cleanup, serving, { edgeIdentity: access.config({ [aliceEmail]: alice }) }, routerConfig,
     { edgeIdentityCerts: access.certsUrl });
   return Object.assign(f, { access,
     edgeHeaders: (claims: Record<string, unknown> = {}) => ({ "cf-access-jwt-assertion": access.jwt(claims) }) });

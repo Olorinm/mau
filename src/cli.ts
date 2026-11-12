@@ -14,11 +14,10 @@ const help = `Mau — your agent product
   mau login --url URL --user MATRIX_ID --password-file FILE
   mau login --url URL --edge   (Cloudflare Access; the default when the service has no Matrix login)
   mau options
-  mau setup NAME --environment PROFILE [--workspace ID]
-  mau workspaces | workspace-create NAME
+  mau setup NAME --environment PROFILE
   mau agents | use NAME | status | check
   mau delete NAME --yes   (permanently deletes the employee, its environment and memory)
-  mau environment-create PROFILE [--workspace ID]
+  mau environment-create PROFILE
   mau environment-replace PROFILE | environment-rollback
   mau pause | resume | destroy | reconcile
   mau ssh NAME [-- COMMAND...]
@@ -40,7 +39,6 @@ const options = {
   help: { type: "boolean" }, version: { type: "boolean" }, url: { type: "string" },
   user: { type: "string" }, "password-file": { type: "string" }, "token-file": { type: "string" },
   environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
-  workspace: { type: "string" },
   "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, yes: { type: "boolean" },
   "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
   "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
@@ -118,11 +116,9 @@ async function main() {
     use: [1, 1], delete: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
     destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1] };
   arity["environment-replace"] = [1, 1]; arity["environment-rollback"] = [0, 0];
-  arity.workspaces = [0, 0]; arity["workspace-create"] = [1, 1];
   const count = arity[command];
   if (!count || args.length < count[0] || args.length > count[1]) fail("invalid_command_arguments");
   if (values.environment && command !== "setup") fail("environment_option_requires_setup");
-  if (values.workspace && !["setup", "environment-create"].includes(command)) fail("workspace_option_requires_environment");
   if (values["app-id"] !== undefined) {
     if (command !== "channel-connect" || args[0] !== "feishu") fail("app_id_requires_feishu_channel_connect");
     if (!/^cli_[a-zA-Z0-9_]{1,128}$/.test(values["app-id"])) fail("invalid_feishu_app_id");
@@ -186,8 +182,6 @@ async function main() {
     return status;
   };
   if (command === "options") { output(await product("/options")); return; }
-  if (command === "workspaces") { output(await product("/workspaces")); return; }
-  if (command === "workspace-create") { output(await product("/workspaces", { name: args[0] })); return; }
   if (command === "agents") { output(await product("/agents")); return; }
   if (command === "ssh") {
     const list = await product("/agents");
@@ -214,7 +208,7 @@ async function main() {
   }
   if (command === "setup") {
     if (!values.environment) fail("environment_profile_required");
-    const result = await product("/agents", { name: args[0], profileId: values.environment, ...(values.workspace ? { workspaceId: values.workspace } : {}) });
+    const result = await product("/agents", { name: args[0], profileId: values.environment });
     select(result.agent.id);
     await pollEnvironment(result.agent.id, result.environment);
     output(await product(`/agents/${encodeURIComponent(result.agent.id)}`)); return;
@@ -232,7 +226,7 @@ async function main() {
   }
   if (["environment-create", "pause", "resume", "destroy", "reconcile"].includes(command)) {
     const target = command === "environment-create" ? "" : "/" + command;
-    const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0], ...(values.workspace ? { workspaceId: values.workspace } : {}) } : {});
+    const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0] } : {});
     output(await pollEnvironment(session.agentId!, status)); return;
   }
   const pollConnection = async (job: any) => {

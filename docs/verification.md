@@ -125,28 +125,6 @@ are recorded as unverified and cannot advance source cursors. The native memory
 management endpoints retain actual runtime errors; enabling the management
 allowlist does not enable native memory generation.
 
-## Shared workspaces — 2026-10-14
-
-Mau 0.1.0-alpha.4 with Environment 0.2.0-alpha.2 was deployed and checked against
-real Volcengine VKE/VCI and TOS. The authenticated product API created an owned
-workspace and two Agents using the same workspace. API-uploaded binary bytes
-with Unicode/percent-literal filenames were visible in both containers. A write
-from one container was read by the other and returned through the product's
-file list and signed download APIs.
-
-Product pause/resume reused the original environment ID, reverified the mount,
-and preserved both private container state and shared bytes. Destroying both
-environments left the workspace downloadable. The temporary environments were
-removed. Existing environment profiles and bindings remained ready. This
-acceptance exercised actual Host bootstrap/readiness and storage; it did not run
-an additional LLM turn. Raw reports, credentials and production IDs remain in
-private operational state.
-
-Local validation passed the 21 Mau tests, independent CLI installation and the
-four-package Mau/Router/Environment/Host consumer. Environment separately passed
-119 original OMA tests and 35 provider/workspace checks. See
-[shared workspaces](workspaces.md) for configuration and API semantics.
-
 ## Initial frontend isolation and source comparison (2026-10-15)
 
 The initial frontend integration used Agent UI and Agent Frontend `0.1.0-alpha.3`
@@ -175,7 +153,6 @@ pins; other dependencies and Mau’s `0.1.0-alpha.6` version are unchanged.
 The review retains the existing Mau API, account authorization, Environment
 lifecycle and Feishu recovery paths. The new assembled Files screen is omitted;
 its navigation entry explicitly reports that file browsing is not connected.
-Shared workspaces remain available through the existing API and CLI.
 
 Opening a direct conversation now waits for the first Matrix room inventory.
 Concurrent initial reads share one request; a failed sync does not create a room,
