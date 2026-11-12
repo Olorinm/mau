@@ -21,8 +21,8 @@ Source: https://github.com/open-grove/opengrove/tree/8b365ed
 See source-manifest.json for the adapted visual/editor source files.
 
 No OpenGrove application, service implementation, protocol client or compatibility
-layer is included. Optional sapling and constellation artwork is retained as
-replaceable placeholder art with its original attribution.
+layer is included. The sapling artwork is retained as replaceable placeholder
+art with its original attribution.
 
 See THIRD_PARTY_NOTICES.md and licenses/ for the page components' third-party notices.
 

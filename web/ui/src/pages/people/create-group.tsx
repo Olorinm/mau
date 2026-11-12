@@ -6,7 +6,7 @@ import { RoomMemberName } from "./member-name";
 import type { MemberIdentity as RoomMember } from "./identity";
 import "../styles/room-dialogs.css";
 
-// Presentation restored from OpenGrove rooms-view-layout.tsx (CreateGroupDialog / CreateGroupForm);
+// Presentation extracted from OpenGrove rooms-view-layout.tsx (CreateGroupDialog / CreateGroupForm);
 // caller owns the selected members and the create operation.
 export type CreateGroupDialogProps = {
   open: boolean;

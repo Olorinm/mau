@@ -11,21 +11,9 @@
       "source": "web/src/components/shared/markdown-rich-editor.tsx",
       "sourceSha256": "51fb6c7051552ea16dea1b8d8dbd19bd415175c099d16c5d8f39b9f2cfdfc55a"
     },
-    "files/conflict-editor.tsx": {
-      "source": "web/src/components/shared/file-conflict-editor.tsx",
-      "sourceSha256": "818aea9e0237f0a86b7434ed161378344980faf98399230ed1cf4f1b2ea91c1a"
-    },
     "artwork/sapling.tsx": {
       "source": "web/src/components/ui/opengrove-sapling-mark.tsx",
       "sourceSha256": "461d6690bde02255bd8db59ecb9c446b2c9feea0cd0c9b7fa75eaef80ec1d0c5"
-    },
-    "artwork/constellation.tsx": {
-      "source": "web/src/components/app-shell/cloud-auth-constellation.tsx",
-      "sourceSha256": "2e340f5b8cc0d1b2eefbce9fe4aab587c67fcbc85196e420341515d42a9284ad"
-    },
-    "styles/auth.css": {
-      "source": "web/src/components/app-shell/app-gates.css",
-      "sourceSha256": "847501db58172a23d9772096def1795233ec416eed58d692072033d35fc982b3"
     },
     "styles/shell.css": {
       "source": "web/src/app-shell.css",
@@ -116,14 +104,6 @@
       "source": "web/src/components/app-shell/app-navigation-panel.module.css",
       "sourceSha256": "e88603f480345c7efb71968a2c77d79696e8138b0dd032e41cccd27f0c45e441"
     },
-    "styles/settings.module.css": {
-      "source": "web/src/components/sidebar/settings-dialog.module.css",
-      "sourceSha256": "0eccf88af0ebd39fc2d5ed65c3fb9aed62e8008af58b956a2a57c5ec59f634d9"
-    },
-    "styles/extensions.module.css": {
-      "source": "web/src/components/extensions/extensions-view.module.css",
-      "sourceSha256": "0ef5256aa5db62deb8044e26286deea30de421ef24fc44ddb6073e56b94556af"
-    },
     "styles/resize.module.css": {
       "source": "web/src/components/ui/resize-handle.module.css",
       "sourceSha256": "0721bee7553123560ac095d2eebca047f0cc97069d1cdc16bcc98e7817641d6c"
@@ -144,21 +124,9 @@
       "source": "web/src/components/apps/mounted-app-workbench.css",
       "sourceSha256": "14aa3d789b0e52ab7968369e14b44c9ca89de96a00363d13fac990e796a74030"
     },
-    "styles/contacts-styles/detail-controls.css": {
-      "source": "web/src/components/rooms/contacts-styles/detail-controls.css",
-      "sourceSha256": "5f8ce6ef0c5cf65a55a351400bad7210820256b5b2e35411a120674f7fe99636"
-    },
-    "styles/contacts-styles/console-and-forms.css": {
-      "source": "web/src/components/rooms/contacts-styles/console-and-forms.css",
-      "sourceSha256": "a1e0a4daa320c4849aac3f2e4ee41237699f0acc88d520e8c1dbde16533caf6a"
-    },
     "styles/contacts-styles/layout-and-directory.css": {
       "source": "web/src/components/rooms/contacts-styles/layout-and-directory.css",
       "sourceSha256": "b84f4e733a9447659b177ffd821a4bdbfb858cf898b7a1f73962a8750c9fa725"
-    },
-    "styles/contacts-styles/skills-and-detail.css": {
-      "source": "web/src/components/rooms/contacts-styles/skills-and-detail.css",
-      "sourceSha256": "85e2a3beb410b69188d698bd5126ecb24aff4cfa341b4e805a746778da45ca65"
     },
     "ui/menu.tsx": {
       "source": "web/src/components/ui/motion/menu.tsx",
@@ -220,16 +188,6 @@
       "sourceSha256": "da79e10fa259b6b6e7dd405d16464139edcd55a8090e629ab6dc6d95582bc2dd",
       "changes": "Original titlebar JSX. Brand/artwork and extra actions supplied by caller; remove product updater/account/developer controllers."
     },
-    "auth.tsx": {
-      "source": "web/src/components/app-shell/app-gates.tsx",
-      "sourceSha256": "4b99f30de0541545f210734c61de27fbef59a710dd4ebeb02b8e5ab876eaeb2f",
-      "changes": "Retain CloudAuthScreen page/form markup and original field, language and submit controls. Replace email-code/country/invite workflow with caller-provided fields, state and actions; configurable brand."
-    },
-    "settings.tsx": {
-      "source": "web/src/components/sidebar/settings-dialog.tsx",
-      "sourceSha256": "81d2a68e7dd8a73fbe0ec8b895606b28b5a74e203a2d3af105fcf9aabedf60c1",
-      "changes": "Retain original settings screen, navigation, back action, headings and section container. Product provides sections and panels; omit Bridge settings load/save and product mode policy."
-    },
     "presentation/room-composer.tsx": {
       "source": "web/src/components/rooms/room-composer.tsx",
       "sourceSha256": "2f83c87338b4ef536f332921c8119cb8332f519a553e6d8e9b5be3410c789cc0",
@@ -259,11 +217,6 @@
       "source": "web/src/components/sidebar/app-navigation.tsx",
       "sourceSha256": "573856c32e6ea9e9e59dbc33b698679c0b379be5b8681a45bd2eb3e936531691",
       "changes": "Original rail, group/button markup, unread badges and account surface. Product supplies navigation groups and account actions. Wallet, withdrawal, cloud profile and fixture-account controllers excluded."
-    },
-    "profile.tsx": {
-      "source": "web/src/components/rooms/employee-settings-surface.tsx",
-      "sourceSha256": "c404f503c53271d9c44ef80d39a065a9ea59e21aa6365d69114a5c25c70613d0",
-      "changes": "Original EmployeeSettingsSurface JSX, profile identity editing including Escape cancellation, tooltips, action layout, overview and subpage navigation. Replace RoomMember/Bridge/autosave business with caller-owned identity, metrics, fields, pages and save callbacks."
     },
     "layouts/compact-list-detail.tsx": {
       "source": "web/src/components/shared/compact-list-detail.tsx",
@@ -329,11 +282,6 @@
       "sourceSha256": "36ed532cbbc63e490dcf0cd13ab0870f85a3429fe7c3824616d3472e864bfea5",
       "changes": "Original application creation form, icon picker, local draft and validation. All create/open/folder operations already use callbacks; no service client included."
     },
-    "presentation/app-identity-editor.tsx": {
-      "source": "web/src/components/apps/app-identity-editor.tsx",
-      "sourceSha256": "9b019663d93a01d7dbb33f8e68104b01155323c73c2716fdab080cb5604e97b9",
-      "changes": "Original presentation implementation; local imports only."
-    },
     "forms.tsx": {
       "source": "web/src/components/rooms/employee-dialog.tsx",
       "sourceSha256": "f3376222a4fd4c6cb4b8e46a8c2a796cf9fe163734885ddf5824624441bc94cb",
@@ -344,90 +292,15 @@
       "sourceSha256": "0666f7474c818db2e57d7da1de21b0cf9de33fb034f7e8c3d93dc5a38f0ca2fc",
       "changes": "Original catalogue title/search, card structure, loading skeleton and detail modal. Replace registry/package API and install/update policy with caller-owned records, action nodes and detail content."
     },
-    "extensions.tsx": {
-      "source": "web/src/components/extensions/extensions-view.tsx",
-      "sourceSha256": "b712479b3da0381e313a7cd43895f668c1d1a11ba5dee04f62aac3f685bb9932",
-      "changes": "Original extension workspace navigation, toolbar/filter controls, result count, skill table, management rows and loading state. Replace SDK actions and deployment protocol interpretation with caller-owned display rows, target nodes and callbacks."
-    },
-    "ui/animated-background.tsx": {
-      "source": "web/src/components/ui/motion/animated-background.tsx",
-      "sourceSha256": "c701f8e1d50bc58dca4c431793f0841b42f5a1d34d7cc1ec6d9d4bb3fbbca280",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "ui/animated-background.module.css": {
-      "source": "web/src/components/ui/motion/animated-background.module.css",
-      "sourceSha256": "3fbc253362501f9e6beaa552ed5195c3b1c4c2b46284b583b09172e864c3dca8",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "files/panel.tsx": {
-      "source": "web/src/components/shared/file-preview-panel.tsx",
-      "sourceSha256": "d1a871d970f5e14296bb70a31454c1de2c3ffcfa2a22195b5e1bb9bbcbb2a79a",
-      "changes": "Original file surface, toolbar, animated mode tabs, loading skeleton and save status. Remove file/Bridge loading, download and persistence; content, errors and operations supplied by caller."
-    },
-    "presentation/settings-appearance-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-appearance-panel.tsx",
-      "sourceSha256": "6a8bc63030456443ddca15ed6baf5b8d02347c3c9f6ca43d91820cee93777b9f",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/settings-mode-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-mode-panel.tsx",
-      "sourceSha256": "a9c8d531c0d744b34b24a6d534ba81af21fd50c95683a014684ce126f58314b5",
-      "changes": "Original mode control. Remove the explicitly excluded direct-kernel-chat setting."
-    },
-    "presentation/settings-apps-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-apps-panel.tsx",
-      "sourceSha256": "fabeb55a0064461dd85952d97195bc0c2c4a501e99af0c0809422332367b5b6c",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/settings-kernel-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-kernel-panel.tsx",
-      "sourceSha256": "3471f3d51e6bdf6c6b8af57284d3a66d9060afd0d7dd9cd759f29a34245fb477",
-      "changes": "Original kernel list, expansion and path controls. Product supplies display status, icon and available install action; omit executable commands and capability reports."
-    },
-    "presentation/settings-kernel-panel.module.css": {
-      "source": "web/src/components/sidebar/settings-kernel-panel.module.css",
-      "sourceSha256": "86be9d31a4f5e8901a4542debbafdbefee67f9d3929062d5e0651016a9efbfbf",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/settings-connectivity-panels.tsx": {
-      "source": "web/src/components/sidebar/settings-connectivity-panels.tsx",
-      "sourceSha256": "b0277bd825a413feb9c5b4763fabc40935ab36de6e3fe4a15483e00f31e290fd",
-      "changes": "Original network forms. Rename product Router binding to a caller-owned service address; preserve proxy fields and callbacks without service requests."
-    },
-    "presentation/settings-voice-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-voice-panel.tsx",
-      "sourceSha256": "2595ad10e972acf2c08d8f06473751aaba0679bca3a811a7cf37b0618526cbee",
-      "changes": "Original voice configuration fields and validation interactions. Provider options and values supplied by caller; omit backend defaults and Bridge settings schema."
-    },
-    "presentation/settings-view-model.ts": {
-      "source": "web/src/bridge-settings-types.ts",
-      "sourceSha256": "3733a3a2900f13bd786a27c3699cb3c08dee4cbb4652f5fbd6a0e3b3b3c3a0f2",
-      "changes": "Only fields read by the extracted settings controls. No complete backend settings schema, defaults, compatibility or command payloads."
-    },
     "presentation/use-room-composer-keyboard.ts": {
       "source": "web/src/components/rooms/rooms-view.tsx",
       "sourceSha256": "1a1b3bd4c8b454035c352cd3998655f770fac04d5528dcae17c5c28f87e02436",
       "changes": "Original IME composition guard and Enter/Tab/arrow mention behavior. Only sendDraft is supplied by caller; no message delivery logic."
     },
-    "presentation/settings-update-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-update-panel.tsx",
-      "sourceSha256": "9efb7455f95bda8c479b1e5c58988ab60eaf4194fc46abfa7116b2e04d0492ff",
-      "changes": "Original update-page JSX; updater IPC, release protocol parsing, polling, package version probes and install confirmation controllers replaced with presentation values and callbacks."
-    },
-    "presentation/settings-desktop-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-desktop-panel.tsx",
-      "sourceSha256": "9c726a3ed76ff07d4a308ff868e6d1931c8d9f01acb6eead23fef3ec0eb18ffa",
-      "changes": "Original browser desktop/runtime overview and action/info rows. Runtime diagnostics, destructive storage cleanup, desktop IPC and polling are product controllers; receive values, actions and storage section from caller."
-    },
     "presentation/room-header-actions.tsx": {
       "source": "web/src/components/rooms/room-header-actions.tsx",
       "sourceSha256": "fdce247e7a177960bde5d326a860057dab405355d086a04c983a5cd1f4eca8fb",
       "changes": "Original search, rename and overflow menu JSX and interaction state. Message protocol normalization/member lookup/date formatting removed; caller supplies searchable display records and a scoped locate-message callback."
-    },
-    "versions.tsx": {
-      "source": "web/src/components/network/app-version-management-page.tsx",
-      "sourceSha256": "ef786360b28560e66c77bc5d723e00e5b8dd9648fdf2c28b700ca765202bb2bb",
-      "changes": "Original page header, version row, overview row and switch-confirmation dialog presentation. Status decisions, hashing, version protocols, date formatting, queries and mutation handling stay with the product; section collections and display rows are supplied."
     },
     "presentation/labels.ts": {
       "sources": [
@@ -435,11 +308,6 @@
         "web/src/locales/zh-CN.ts"
       ],
       "changes": "Only keys referenced by extracted UI; service names and product-specific explanations replaced with neutral copy."
-    },
-    "ui/inline-select.module.css": {
-      "source": "web/src/components/shared/inline-select.module.css",
-      "sourceSha256": "6cd3d18a69ebd7117d5e266e9f5f841a266eb468ed71ebee7fd6fc6115c93091",
-      "changes": "Removed selectors unused by this package."
     },
     "styles/section-sidebar.css": {
       "source": "web/src/components/sidebar/section-sidebar.css",
@@ -455,31 +323,6 @@
       "source": "web/src/components/shared/adaptive-split-layout.module.css",
       "sourceSha256": "60154e5382ec5122a73916b37ba1139b5def193d148a346bdf0065ea55ca57be",
       "changes": "Unchanged source stylesheet or presentation helper."
-    },
-    "files/directory-tree.module.css": {
-      "source": "web/src/components/shared/directory-tree.module.css",
-      "sourceSha256": "85a22053382f67c2d1914a63152b7f4610b06f6e831a56200be4b3c2e0642a68",
-      "changes": "Unchanged source stylesheet or presentation helper."
-    },
-    "files/directory-panel.module.css": {
-      "source": "web/src/components/shared/directory-panel.module.css",
-      "sourceSha256": "e0ca8063fbc473ed0d5f2c5e956bbd7625390da004b4fbf6aaa54cb4db8ec224",
-      "changes": "Removed selectors unused by this package."
-    },
-    "presentation/settings-providers-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-provider-section.tsx",
-      "sourceSha256": "04a19e879998b00cd856e9198c1b4cddcd5ea23ae37c651b5a7571abcb92f1b3",
-      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
-    },
-    "presentation/settings-operations-panel.tsx": {
-      "source": "web/src/components/system/ops-center-view.tsx",
-      "sourceSha256": "64431f0fbd93511177e50bbad943d37a929a4a6cf3a3a548cf8261dff170e1aa",
-      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
-    },
-    "styles/operations.css": {
-      "source": "web/src/components/system/ops-center-view.css",
-      "sourceSha256": "a22fe458d29e82c74decc49fb79083a76feb8176dc64bfd2f083ac75a7abe82f",
-      "changes": "Preserve presentation markup and styles; replace product records and policy decisions with explicit view data and callbacks. Old standalone operations page/sidebar and provider routing/login controllers excluded."
     },
     "presentation/app-create-dialog.tsx": {
       "source": "web/src/app.tsx",
@@ -581,35 +424,10 @@
       "sourceSha256": "0e640bccdeb2dae802641981954ef27bd6bc73cb245b370fa623e408b6f9dbf0",
       "changes": "Original link/resource rendering. URL resolution and image downloads supplied by caller; no API-origin conversion or authenticated download implementation."
     },
-    "files/markdown-presentation.tsx": {
-      "source": "web/src/components/knowledge/markdown-preview.tsx",
-      "sourceSha256": "fab33c1744303173c01dacd0ec18bbafbb90a900b4830bda81f4ce3aa8483161",
-      "changes": "Original Markdown preview, metadata and image UI. Downloads and resource resolution supplied by caller; instance-local locale."
-    },
     "files/standard-file-capabilities.ts": {
       "source": "web/src/components/shared/standard-file-capabilities.ts",
       "sourceSha256": "84098e0f5ee18ca76462e377b4bfb42d5a1d5aedaeab161223058c76c006889f",
       "changes": "Original capability classification; explicit locale instead of application preference."
-    },
-    "files/flow-preview.tsx": {
-      "source": "web/src/components/shared/flow-preview.tsx",
-      "sourceSha256": "97634f9544aa70b53c24de2a44a9bd51a9d983f2a9026c5b88d6cc9ec85f50ba",
-      "changes": "Original flow parsing and presentation. Caller supplies per-step live todo/loading/error display values; event fetching and kernel event interpretation removed."
-    },
-    "files/flow-types.ts": {
-      "source": "web/src/bridge-inventory-types.ts",
-      "sourceSha256": "6d1fdfb5afc024a605fcecaea213f3afe8944d721aaa75d25f751766e5248af8",
-      "changes": "Flow display records only. Live activity supplied by caller."
-    },
-    "files/standard-file-preview.tsx": {
-      "source": "web/src/components/shared/standard-file-preview.tsx",
-      "sourceSha256": "e5d14012a27ffcd0c646e96ee591b0d33804202066e5a04f57576f26b0b63dcd",
-      "changes": "Original frames, lazy player, empty/truncated/unsupported states. URLs and operations supplied by caller."
-    },
-    "files/video-file-preview.tsx": {
-      "source": "web/src/components/shared/video-file-preview.tsx",
-      "sourceSha256": "9b3a048d2bade967e3ea293a7ebfcdc943f574957d3a33c771454a0d35d2b523",
-      "changes": "Original Vidstack player and controls."
     },
     "files/standard-file-editor.tsx": {
       "source": "web/src/components/shared/standard-file-editor.tsx",
@@ -620,16 +438,6 @@
       "source": "web/src/components/rooms/member-avatar.tsx",
       "sourceSha256": "fe800102fb1ae5fd6a08ef59c931b8b93affe17bae9e20cef361c720e626ce1a",
       "changes": "Original avatar markup, image fallback and status badge. Product/kernel logo selection is caller-provided artwork; identity display records replace room protocol."
-    },
-    "people/employee-avatar-picker.tsx": {
-      "source": "web/src/components/rooms/employee-avatar-picker.tsx",
-      "sourceSha256": "8118771fd0b5976603e50f1483c3e7f66d5d60e952fc040370da53bc45c08f59",
-      "changes": "Original generated/initials/upload picker, keyboard navigation and save/error handling. Display-only member identity and public primitives."
-    },
-    "people/avatar-data-url.ts": {
-      "source": "src/rooms/avatar-data-url.ts",
-      "sourceSha256": "88b0d05d6aee0b7866c6554145aaebbeb4eab248f2a6bd1cd7f6d0a3ef857f92",
-      "changes": "Original local upload validation, no backend imports."
     },
     "people/member-name.tsx": {
       "source": "web/src/components/rooms/member-name.tsx",
@@ -645,194 +453,6 @@
       "source": "web/src/components/rooms/room-group-avatar.tsx",
       "sourceSha256": "3b4c706ebb9ce7bcb4f26493cc3ceff79e8e3bc320641098958f329ef7b9179d",
       "changes": "Original member stack/count and default icon. Product artwork is supplied by caller, never selected by a hardcoded room name."
-    },
-    "people/group-settings.tsx": {
-      "source": "web/src/components/rooms/room-settings-panel.tsx",
-      "sourceSha256": "28850a2bb07259d8e400a9b5a6007f71add1413b27a84d6cfbd8b1203c20033f",
-      "changes": "Original group/member settings and callbacks. Caller owns membership, ownership, capability descriptions and product artwork."
-    },
-    "ui/switch.tsx": {
-      "source": "web/src/components/ui/switch.tsx",
-      "sourceSha256": "76dfc7fab6e2cb0b4063618bd2375bb7592aca1fef59c030427d9420bfe8f34d",
-      "changes": "Original switch."
-    },
-    "ui/switch.module.css": {
-      "source": "web/src/components/ui/switch.module.css",
-      "sourceSha256": "d80511c6c6400a8c89483c56cf2eb4da2cc08c31f80266e25cf07340877568f6",
-      "changes": "Original switch."
-    },
-    "people/employee-editor.tsx": {
-      "source": "web/src/components/rooms/employee-dialog.tsx",
-      "sourceSha256": "f3376222a4fd4c6cb4b8e46a8c2a796cf9fe163734885ddf5824624441bc94cb",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/employee-activity.tsx": {
-      "source": "web/src/components/rooms/employee-settings-surface.tsx",
-      "sourceSha256": "c404f503c53271d9c44ef80d39a065a9ea59e21aa6365d69114a5c25c70613d0",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/employee-capabilities.tsx": {
-      "source": "web/src/components/rooms/employee-settings-surface.tsx",
-      "sourceSha256": "c404f503c53271d9c44ef80d39a065a9ea59e21aa6365d69114a5c25c70613d0",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/room-inline-select.tsx": {
-      "source": "web/src/components/rooms/room-inline-select.tsx",
-      "sourceSha256": "e5dd3808ea8eebea187cbb5e70e694ceadf072b156e21ac8186aa3b203cca360",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/contacts.tsx": {
-      "source": "web/src/components/rooms/contacts-view.tsx",
-      "sourceSha256": "f9f73b16afc2aed8854ac51442bcc530c59ea8bcc49b0cbc1e2187c32c7fd745",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/remote-agent-dialog.tsx": {
-      "source": "web/src/components/rooms/remote-agent-panel.tsx",
-      "sourceSha256": "2e1bf72cb670ecd4effa4159fa82a6794d2f8447dbf82869b8a77d87c2ecae67",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/remote-agent-panel.module.css": {
-      "source": "web/src/components/rooms/remote-agent-panel.module.css",
-      "sourceSha256": "533371ac4d6ecdbc44e47038eb28373b6e42e96df65ab71b87d863d05dede449",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/remote-agent-menu-item.tsx": {
-      "source": "web/src/components/rooms/remote-agent-menu-item.tsx",
-      "sourceSha256": "e8463417d323a20d2da08025ca5bd355635b35e689fcb39ef0bc3de994e667bb",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/remote-agent-menu-item.module.css": {
-      "source": "web/src/components/rooms/remote-agent-menu-item.module.css",
-      "sourceSha256": "e659485690d8d4cffa37e2f98b917f1ec0c6d7332a042a4f971900e914ab5d32",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "people/authorization-dialog.tsx": {
-      "source": "web/src/components/rooms/network-authorization-provider.tsx",
-      "sourceSha256": "94c289a5da196b4925e3910ec08a4d901eeba133dbbab01078244976c7b7e109",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "files/selection.tsx": {
-      "source": "web/src/components/shared/file-preview-panel.tsx",
-      "sourceSha256": "d1a871d970f5e14296bb70a31454c1de2c3ffcfa2a22195b5e1bb9bbcbb2a79a",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "files/draft-notices.tsx": {
-      "source": "web/src/components/shared/file-preview-panel.tsx",
-      "sourceSha256": "d1a871d970f5e14296bb70a31454c1de2c3ffcfa2a22195b5e1bb9bbcbb2a79a",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "process/resource-preview-panel.tsx": {
-      "source": "web/src/components/chat/chat-resource-preview-panel.tsx",
-      "sourceSha256": "c3684ac85f0237904fbf3ed72b1d0f69b1f778bbab209a193cd228817b11ded4",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "extension-workspaces.tsx": {
-      "source": "web/src/components/extensions/extensions-view.tsx",
-      "sourceSha256": "b712479b3da0381e313a7cd43895f668c1d1a11ba5dee04f62aac3f685bb9932",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "publishing.tsx": {
-      "source": "web/src/components/network/app-store-publish-page.tsx",
-      "sourceSha256": "cc694e1b2872e8c5ed03932bada1fd5d968a42f50d8140bc9ea0d5bfd21106ce",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "catalog-details.tsx": {
-      "source": "web/src/components/network/app-store-view.tsx",
-      "sourceSha256": "0666f7474c818db2e57d7da1de21b0cf9de33fb034f7e8c3d93dc5a38f0ca2fc",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/dashboard.tsx": {
-      "source": "web/src/components/apps/mounted-app-workbench.tsx",
-      "sourceSha256": "9ce5bcb4783987b02e492a5944c1093089090fb5cb7a7933297017d0c1652e79",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/flow-list.tsx": {
-      "source": "web/src/components/apps/mounted-app-workbench.tsx",
-      "sourceSha256": "9ce5bcb4783987b02e492a5944c1093089090fb5cb7a7933297017d0c1652e79",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/workbench.tsx": {
-      "source": "web/src/components/apps/mounted-app-workbench.tsx",
-      "sourceSha256": "9ce5bcb4783987b02e492a5944c1093089090fb5cb7a7933297017d0c1652e79",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/workbench-controls.module.css": {
-      "source": "web/src/components/apps/mounted-app-workbench-controls.module.css",
-      "sourceSha256": "309c282db9bc1f1386325b59f689df01f658de96095c5b119f7cecfbce1131e3",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/chat-panel.tsx": {
-      "source": "web/src/components/apps/mounted-app-chat-panel.tsx",
-      "sourceSha256": "1ba90ad5b7b0dbc7a0cdd1566fb60e06e0cc96f423122deea3641e76cd61d8e6",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/dashboard-primitives.tsx": {
-      "source": "web/src/components/apps/mounted-app-dashboard-primitives.tsx",
-      "sourceSha256": "5b85c288b106d16b9b0947b7a9d2ab0da71d331ab34e9ba35358e45cbe87182c",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/developer-layout.tsx": {
-      "source": "web/src/components/apps/mounted-app-developer-layout.tsx",
-      "sourceSha256": "1b5ece1783b813829839b79f25196dfe73a71d921dac6797313ad1c0bafc7ab4",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "apps/mcp-app-frame.tsx": {
-      "source": "web/src/components/apps/mounted-mcp-app-view.tsx",
-      "sourceSha256": "8d87db589b25d03a21ae792bc07ba929e838839c5b0bba255ccae718ba308708",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/settings-storage-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-desktop-panel.tsx",
-      "sourceSha256": "9c726a3ed76ff07d4a308ff868e6d1931c8d9f01acb6eead23fef3ec0eb18ffa",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/settings-native-desktop-panel.tsx": {
-      "source": "web/src/components/sidebar/settings-desktop-panel.tsx",
-      "sourceSha256": "9c726a3ed76ff07d4a308ff868e6d1931c8d9f01acb6eead23fef3ec0eb18ffa",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/settings-provider-picker-dialog.tsx": {
-      "source": "web/src/components/sidebar/settings-provider-picker-dialog.tsx",
-      "sourceSha256": "1c1d7781331ebdbd40cd28baab147f02696634fe7e41f27cbfe0cc1c5a5adf63",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/release-notes-markdown.tsx": {
-      "source": "web/src/components/shared/release-notes-markdown.tsx",
-      "sourceSha256": "e2c05028262c9444ddbf3cee58b5fa69aa7a1e14ce3c6909e812b4afbe5247d2",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/slash-command-menu.tsx": {
-      "source": "web/src/components/chat/skill-command-menu.tsx",
-      "sourceSha256": "8c81455d1a755ce1fc862c9079c7d11c7c3380e2674adc0cbbd729f388f009c6",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "styles/skill-command-menu.css": {
-      "source": "web/src/components/chat/skill-command-menu.css",
-      "sourceSha256": "ab777e62004ab9422103da005e58307feb61d7063036d665026e22cb8006b474",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "presentation/titlebar-controls.tsx": {
-      "source": "web/src/components/app-shell/app-titlebar.tsx",
-      "sourceSha256": "da79e10fa259b6b6e7dd405d16464139edcd55a8090e629ab6dc6d95582bc2dd",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation.",
-      "additionalSources": [
-        "web/src/components/app-shell/app-gates.tsx"
-      ]
-    },
-    "presentation/app-chat-icon.tsx": {
-      "source": "web/src/components/app-shell/app-chat-icon.tsx",
-      "sourceSha256": "d3311ddea186591c77a79058c0a7c6b84953acba527b83710bd0eac7a92d38d3",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "auth-flows.tsx": {
-      "source": "web/src/components/app-shell/app-gates.tsx",
-      "sourceSha256": "4b99f30de0541545f210734c61de27fbef59a710dd4ebeb02b8e5ab876eaeb2f",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
-    },
-    "startup-view.tsx": {
-      "source": "web/src/components/app-shell/app-gates.tsx",
-      "sourceSha256": "4b99f30de0541545f210734c61de27fbef59a710dd4ebeb02b8e5ab876eaeb2f",
-      "changes": "Retain original presentation and UI interactions. Replace product state, policy, transport and persistence with caller-owned display values and callbacks. See audit ledger for component-level scope and validation."
     }
   },
   "assemblies": {
