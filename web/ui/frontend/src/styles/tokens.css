@@ -1,14 +1,14 @@
-/* Frontend-specific tokens and overrides for the bundled application stylesheet.
- * Shared application tokens are supplied by @olorinm/agent-ui/app.css.
+/* Frontend-specific tokens. The palette, type scale, spacing, radii and surfaces come from the bundled
+ * @olorinm/agent-ui/app.css, in both themes; a token is declared here only when that sheet has no such
+ * token, or when the frontend deliberately uses another value.
  */
 :root {
   color-scheme: light;
   --og-canvas: oklch(98.781% 0.0013 106.42);
   --og-sidebar-bg: var(--c-surface);
   --c-auth-entry-brand: oklch(55.966% 0.1292 156.01);
-  /* Preserve the published frontend palette over the older bundled root stylesheet. */
-  --c-muted: oklch(45.238% 0.0055 258.34);
   --c-auth-entry-error: oklch(50.034% 0.1821 29.51);
+  /* Section titles use the secondary text colour here, not the root package's lighter mix. */
   --og-section-title: var(--c-text-secondary);
   --og-section-muted: var(--c-text-secondary);
   --text: var(--c-text);
@@ -31,110 +31,12 @@
   --focus-ring: 0 0 0 3px var(--c-focus-ring);
   --input-focus-ring: var(--focus-ring);
   --state-disabled-opacity: 0.45;
-  /* Design-system surfaces, type and radii shared with @olorinm/agent-ui/app. The released root package this build bundles does not define them yet, so they are defined here. */
-  --c-page: oklch(99.107% 0 0);
-  --c-panel: oklch(95.213% 0 0);
-  --c-panel-hover: oklch(92.797% 0 0);
-  --c-panel-line: oklch(92.191% 0 0);
-  --c-panel-raised: oklch(100% 0 0);
-  --c-text-secondary: var(--c-muted);
-  --c-action: var(--c-accent-solid);
-  --shadow-float: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 14px oklch(0% 0 0 / 0.08);
-  --fs-page-title: 21px;
-  --r-panel: 16px;
-  --r-nav-item: 10px;
   --r-bubble: 20px;
 }
 
 :root[data-resolved-theme="dark"] {
   color-scheme: dark;
-  --og-white: oklch(100% 0 0);
   --og-canvas: oklch(23.852% 0.0037 106.68);
-  --og-sidebar-bg: var(--c-surface);
-  --c-brand-green: oklch(73.422% 0.1336 145.14);
-  --c-auth-entry-brand: oklch(55.966% 0.1292 156.01);
-  --c-interaction-blue: oklch(73.853% 0.1333 252.97);
-  --og-sapling-green: oklch(68.791% 0.1625 139.68);
-  --og-sapling-highlight: oklch(76.545% 0.1708 137.07);
-  --og-sapling-shade: oklch(63.657% 0.1618 143.38);
-  --og-sapling-trunk: oklch(25.625% 0.0058 196.79);
-  --og-sapling-trunk-highlight: oklch(34.205% 0.0088 173.82);
-  --c-bg: oklch(23.852% 0.0037 106.68);
-  --c-surface: oklch(28.019% 0.0036 106.63);
-  --c-surface-hover: oklch(31.708% 0.0054 91.55);
-  --c-surface-active: oklch(33.640% 0.0070 95.27);
-  --c-surface-grouped: oklch(33.640% 0.0070 95.27);
-  --c-surface-raised: oklch(28.019% 0.0036 106.63);
-  --c-surface-sunken: oklch(21.700% 0.0038 106.71);
-  --c-popover: var(--c-surface-raised);
-  --c-popover-solid: var(--c-surface-raised);
-  --c-fill: oklch(from var(--c-text) l c h / 0.07);
-  --c-fill-strong: oklch(from var(--c-text) l c h / 0.12);
-  --c-text-strong: oklch(93.110% 0.0153 90.24);
-  --c-text: oklch(87.287% 0.0126 91.53);
-  --c-text-2: oklch(82.384% 0.0145 88.70);
-  --c-text-3: var(--c-muted);
-  --c-muted: oklch(72.587% 0.0136 86.85);
-  --c-faint: oklch(66.000% 0.0129 84.59);
-  --c-border: oklch(from var(--c-text-strong) l c h / 0.12);
-  --c-border-strong: oklch(from var(--c-text-strong) l c h / 0.2);
-  --c-overlay-ink: oklch(0% 0 0);
-  --c-overlay-highlight: oklch(100% 0 0);
-  --c-accent: var(--c-interaction-blue);
-  --c-accent-hover: oklch(79.968% 0.1039 252.12);
-  --c-accent-solid: oklch(56.000% 0.1600 250.73);
-  --c-accent-soft: color-mix(in srgb, var(--c-accent) 16%, var(--c-bg));
-  --c-focus-ring: oklch(from var(--c-text) l c h / 0.25);
-  --c-success: oklch(73.422% 0.1336 145.14);
-  --c-unread-solid: #4EB279;
-  --c-unread-ink: #081015;
-  --c-warning: oklch(80.665% 0.1258 74.03);
-  --c-error: oklch(74.172% 0.1312 34.58);
-  --c-auth-entry-error: oklch(50.034% 0.1821 29.51);
-  --c-error-solid: oklch(58.000% 0.2000 25.33);
-  --c-link: oklch(73.853% 0.1333 252.97);
-  --c-link-strong: oklch(79.968% 0.1039 252.12);
-  --c-violet: oklch(73.680% 0.1420 299.36);
-  --c-success-soft: color-mix(in srgb, var(--c-success) 16%, var(--c-bg));
-  --c-error-soft: color-mix(in srgb, var(--c-error) 16%, var(--c-bg));
-  --c-warning-soft: color-mix(in srgb, var(--c-warning) 16%, var(--c-bg));
-  --og-section-text: color-mix(in srgb, var(--c-text) 92%, var(--c-bg));
-  --og-section-title: color-mix(in srgb, var(--c-text) 50%, var(--c-bg));
-  --og-section-muted: var(--og-section-title);
-  --og-section-icon: color-mix(in srgb, var(--c-text) 70%, var(--c-bg));
-  --og-section-hover: var(--c-fill);
-  --og-section-active: var(--c-fill-strong);
-  --og-section-border: oklch(from var(--c-text) l c h / 0.12);
-  --c-neutral-100: color-mix(in srgb, var(--c-text) 8.85%, var(--c-bg));
-  --c-neutral-200: color-mix(in srgb, var(--c-text) 13.11%, var(--c-bg));
-  --c-neutral-300: color-mix(in srgb, var(--c-text) 20.12%, var(--c-bg));
-  --c-neutral-400: color-mix(in srgb, var(--c-text) 30.66%, var(--c-bg));
-  --c-neutral-500: color-mix(in srgb, var(--c-text) 51.13%, var(--c-bg));
-  --c-neutral-600: color-mix(in srgb, var(--c-text) 74.19%, var(--c-bg));
-  --c-neutral-700: color-mix(in srgb, var(--c-text) 91.16%, var(--c-bg));
-  --c-neutral-800: color-mix(in srgb, var(--c-text) 100%, var(--c-bg));
-  --c-neutral-900: oklch(93.110% 0.0153 90.24);
-  --c-line-04: oklch(from var(--c-text) l c h / 0.04);
-  --c-line-06: oklch(from var(--c-text) l c h / 0.06);
-  --c-line-08: oklch(from var(--c-text) l c h / 0.1);
-  --c-line-12: oklch(from var(--c-text) l c h / 0.16);
-  --c-overlay-scrim: oklch(0% 0 0 / 0.55);
-  --shadow-border-opacity: 0.15;
-  --shadow-blur-opacity: 0.12;
-  --shadow-hairline: 0 0 0 1px rgba(236,232,221,0.06);
-  --shadow-sm: 0 0 0 1px rgba(236,232,221,0.15), 0 1px 1px -0.5px rgba(0,0,0,0.12), 0 3px 3px -1.5px rgba(0,0,0,0.12);
-  --shadow-md: 0 0 0 1px rgba(236,232,221,0.15), 0 1px 1px -0.5px rgba(0,0,0,0.08), 0 3px 3px rgba(0,0,0,0.08), 0 6px 6px rgba(0,0,0,0.04), 0 12px 12px rgba(0,0,0,0.04);
-  --shadow-lg: 0 0 0 1px rgba(236,232,221,0.15), 0 1px 2px rgba(0,0,0,0.10), 0 6px 12px rgba(0,0,0,0.08), 0 12px 24px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.06);
-  --shadow-flat: 0 0 0 1px rgba(236,232,221,0.15);
-  --state-disabled-opacity: 0.45;
-  /* Design-system surfaces (dark). */
-  --c-panel: oklch(28.019% 0.0036 106.63);
-  --c-panel-hover: oklch(31.708% 0.0054 91.55);
-  --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
-  --c-panel-raised: oklch(33.640% 0.0070 95.27);
-  --c-action: var(--c-link);
-  --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
-  --c-page: oklch(23.852% 0.0037 106.68);
 }
 /* Component-specific presentation tokens. */
 
