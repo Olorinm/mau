@@ -373,15 +373,3 @@ it("delivers notices to the rule's notify channel and maps web and suppressed re
   await f.service.runNow("alice", other.id, "two"); await f.service.tick();
   expect(f.service.notices("alice", other.id)[0]).toMatchObject({ status: "failed", error: "no_conversation_on_connection" });
 });
-
-it("migrates rules saved before notify to their session's current connection, keeping their version", async () => {
-  const f = fixture(), saved = await f.service.save("alice", f.input), legacy = await f.service.save("alice", { ...f.input, name: "Unresolved" });
-  for (const rule of [saved, legacy]) { const { notify: _notify, ...old } = f.store.get<any>("rules", rule.id); f.store.set("rules", rule.id, old); }
-  f.port.deliveryConnection = async (rule) => { if (rule.id === legacy.id) throw new Error("host_sessions_unavailable"); return "feishu"; };
-  await f.service.migrateNotify();
-  expect(f.service.rule("alice", saved.id)).toMatchObject({ notify: { channel: "feishu" }, version: saved.version });
-  // Unresolved now: left as is (its notices follow the newest conversation) and retried on the next start.
-  expect(f.service.rule("alice", legacy.id).notify).toBeUndefined();
-  await f.service.runNow("alice", legacy.id, "legacy"); await f.service.tick();
-  expect(f.notifications.at(-1)).not.toHaveProperty("connectionId");
-});

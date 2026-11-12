@@ -86,7 +86,7 @@ export class BusinessTools {
 }
 export interface CompletedEmployeeTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
 /** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
-export interface ConnectedAppHosting {
+interface ConnectedAppHosting {
   connections: string[];
   browser: string[];
   approvals?: ApprovalPort;
@@ -99,7 +99,7 @@ const handoffCancel = "取消接管";
 // A structured single-choice question both Router's chat cards and the web console render with buttons.
 const handoffMethod = "item/tool/requestUserInput";
 /** Scheduled and delegated work cannot ask the owner, so an operation set to ask is refused there with this explanation. */
-export const APPROVAL_UNAVAILABLE_HERE = "owner_approval_unavailable_here";
+const APPROVAL_UNAVAILABLE_HERE = "owner_approval_unavailable_here";
 const approvalUnavailableHere = (refusal: Record<string, unknown>) => {
   const detail = z.object({ operation: z.string().max(100).nullable().optional(), label: z.string().max(200).optional() }).passthrough().safeParse(refusal.detail).data;
   return { status: "failed", error: APPROVAL_UNAVAILABLE_HERE, ...(detail?.operation ? { operation: detail.operation } : {}), ...(detail?.label ? { label: detail.label } : {}),

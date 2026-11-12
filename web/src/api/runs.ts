@@ -1,16 +1,13 @@
-import type { CommunicationTask, RunObservation } from "@agent-router/server";
+import type { RunObservation } from "@agent-router/server";
 import { createRunView, appendRunEvent, type HostEvent, type RunView } from "@olorinm/agent-ui/agent-host";
 import { ApiError, request } from "./http";
 
-export type { CommunicationTask };
 export type RunDetail = Awaited<ReturnType<RunObservation["run"]>>;
 type EventPage = Awaited<ReturnType<RunObservation["events"]>>;
 const root = (agentId: string) => `/_agent-router/v1/agents/${encodeURIComponent(agentId)}/communication`;
 export function runApi(token: string, agentId: string) {
   const base = root(agentId), run = (claimId: string) => base + "/runs/" + encodeURIComponent(claimId);
   return {
-    tasks: (target: string, signal?: AbortSignal) => request<{ data: CommunicationTask[]; next: string | null }>(
-      base + "/tasks?" + new URLSearchParams({ connectionId: "matrix", target, limit: "100" }), { token, ...(signal ? { signal } : {}) }),
     run: (claimId: string, signal?: AbortSignal) => request<RunDetail>(run(claimId), { token, ...(signal ? { signal } : {}) }),
     events: (claimId: string, after: number, signal?: AbortSignal) => request<EventPage>(run(claimId) + "/events?" + new URLSearchParams({ after: String(after), limit: "200" }), { token, ...(signal ? { signal } : {}) }),
     answer: (claimId: string, callId: string, result: unknown) => request(run(claimId) + "/calls/" + encodeURIComponent(callId) + "/result", { token, body: { result } }),

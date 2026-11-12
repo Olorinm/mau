@@ -62,6 +62,26 @@ Notifications use Router's stable outbox identity and receipt query. Quiet hours
 
 Router supplies `HostAdmission` through the embedding interface for owner, delegated or scheduled work. Mau consumes it before public Host HTTP submission. Tool names and model text do not establish authorization. Mau validates owner/employee, current rule state, expiry, call budget and connector operation intersection on every call. The stable tool catalog is retained for the native session and inherited by forks, while each child's calls use its own run grants. Revoked grants stop actual execution immediately. Persisted run requests restore grants after lost start responses and preserve the exact context on retries. Persisted call receipts prevent duplicate execution after worker recreation; ambiguous calls remain uncertain.
 
+## Trusted read tools
+
+Optional `feishuBotReaders` entries in the server configuration select an exact
+`agentId` and `owner` with a Feishu bot identity (`appId`, `appSecretFile`, `domain`,
+`directory`), or a Cloudflare read broker (`mode: "cloudflare"`, `endpoint`,
+`tokenFile`). Mau exposes `feishu_bot_read` through Host's native dynamic tools,
+running the official CLI outside the Agent environment. Only CLI-declared reads
+whose dry-run plans are read-only may execute. Shell access, identity overrides and
+local file paths are not accepted.
+
+The tool is provided only to conversations admitted by Router's channel policy;
+unadmitted runs and other Agents receive no grant. The Feishu bot's permissions
+still define which records can be read. This is not a per-person authorization
+system. Configure channel access accordingly.
+
+The reader reuses existing credentials from private server files. It does not
+deploy an OAuth vault or KMS. Personal Feishu authorization and writes require the
+separate ConnectorService flow. Model authentication is also separate from this
+reader and may still be present in the sandbox.
+
 ## Verification
 
 `npm test`, `npm run typecheck`, and the independent package consumer test cover implementation and protocol fixtures. Proactive tests cover lost submission/restart, source isolation, missing and forged cursor proofs, cursor regression, atomic notifications, daily limits, overlap, cancellation during submission, pause, quiet hours, invalid authorization, and DST. These are distinct from real model, cloud wakeup, account access and provider delivery acceptance, which require separate evidence.

@@ -1,6 +1,6 @@
 # Bounded employee memory
 
-Mau adopts Hermes' curated two-file memory design. This replaces the previous keyword-ranked product facts; it does not replace the native Codex execution loop, skills, or native memory APIs. Upstream version and behavior checks are recorded in [the source audit](hermes-memory-source.md). License attribution ships in [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES).
+Mau adopts Hermes' curated two-file memory design. This replaces the previous keyword-ranked product facts; it does not replace the native Codex execution loop, skills, or native memory APIs. License attribution ships in [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES).
 
 ## Files and session snapshots
 

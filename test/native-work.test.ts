@@ -122,10 +122,6 @@ it("product native and memory APIs enforce owner identity before touching the Ho
   expect(await f.api(`${base}/native/memory`)).toMatchObject({ status: 409, data: { error: "native_method_unsupported", nativeError: { code: -32601 } } });
   expect((await f.api(`${base}/memory`, { action: "add", target: "user", content: "Prefers short reports" })).status).toBe(200);
   expect((await f.api(`${base}/memory`)).data.files).toMatchObject([{ target: "memory", entries: [] }, { target: "user", entries: ["Prefers short reports"] }]);
-  for (const path of [`${base}/memory/facts`, `${base}/memory/facts/old-id`, `${base}/memory/migrate`]) {
-    expect((await f.api(path)).status).toBe(404);
-    expect((await f.api(path, {})).status).toBe(404);
-  }
   expect((await f.api(`${base}/memory`, { action: "add", content: "Foreign note" }, "bob")).status).toBe(404);
   expect((await f.api("/proactive", undefined, "bob")).data).toEqual({ data: [] });
 });

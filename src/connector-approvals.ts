@@ -14,7 +14,7 @@ export interface ApprovalPort {
 export const APPROVAL_PREFIX = "mau-approval:";
 const collection = "connector_approvals";
 type Phase = "pending" | "approved" | "denied" | "expired" | "resolving" | "settled";
-export interface ApprovalRecord {
+interface ApprovalRecord {
   status: Phase;
   runId: string; callId: string; owner: string; agentId: string;
   /** Connector tool name the model asked connected_apps to call (`<connection>__<tool>`). */

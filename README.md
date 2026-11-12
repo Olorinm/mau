@@ -21,10 +21,11 @@ communication routes use `/_agent-router/v1`.
 
 ## Install the CLI
 
-With Node.js 24+, install the client from the public release:
+With Node.js 24+, install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a release on the
+[Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.43:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.35/olorinm-mau-cli-0.1.0-alpha.35.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.43/olorinm-mau-cli-0.1.0-alpha.43.tgz
 mau --version
 ```
 
@@ -56,7 +57,7 @@ A release can be cut from any Agent Kit commit, so a change that spans both repo
 here before either side is merged.
 
 The web console's React components are in [`web/ui`](web/ui/README.md), installed and built with the console as one
-npm workspace. See [verification](docs/verification.md) for the package acceptance.
+npm workspace.
 
 An independent consumer installs all required archives together:
 `npm install ./router.tgz ./environment.tgz ./connectors.tgz ./mau.tgz`. Host is installed in the
@@ -72,15 +73,17 @@ and background permission are separate. [Native work integration](docs/native-wo
 provides owner-scoped session tools, bounded Hermes-style memory, native skill/memory management,
 and persisted proactive rules. Product tools require explicit configuration; no
 rules or new account authorizations are created by enabling the integration.
-The console's Files entry is not connected yet.
 
-The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
-account; Mau does not register a second identity. Password/token files are local
-private files, not positional command-line secrets.
+Mau sits behind Cloudflare Access. The operator supplies the Mau URL and maps your Access email (or an Access
+service token) to an owner; Mau does not register a second identity. The CLI stores no Access credential: it reads
+one on every call, from `cloudflared` or from private files, never from positional command-line arguments.
 
 ```sh
-mau login --url https://mau.example --user '@alice:agents.example' \
-  --password-file /private/account-password
+cloudflared access login https://mau.example
+mau login --url https://mau.example --edge
+# automation: an Access service token mapped by the operator
+mau login --url https://mau.example \
+  --access-client-id-file /private/id --access-client-secret-file /private/secret
 mau options
 mau setup helper --environment cloud-codex
 mau channel-connect feishu
@@ -90,18 +93,17 @@ mau pause
 mau resume
 ```
 
-Existing account bearer tokens can be supplied using `login --token-file FILE`.
+See [CLI usage](docs/cli.md) for the other Access credential sources.
 Use `agents` and `use NAME` to switch Agents. `--no-wait` returns durable progress;
 closing the CLI does not cancel provisioning. `reconcile` resolves an interrupted
 operation without allocating a replacement; `destroy` explicitly removes an
 environment. Channel pairing/authorization remains implemented by Router.
 
-See [environment setup](docs/environments.md) · [中文部署说明](docs/environments.zh-CN.md)
-and [verification](docs/verification.md). Examples contain placeholders only.
+See [environment setup](docs/environments.md) · [中文部署说明](docs/environments.zh-CN.md).
+Examples contain placeholders only.
 Production configuration, credentials, environment IDs and live state are private.
 
 License: [MIT](LICENSE) for Mau's project-owned code. Source attribution and
 third-party licensing boundaries: [NOTICE](NOTICE).
 
-Replacing an environment and composing server-side read tools:
-[environment migration](docs/environment-migration.md).
+Replacing an Agent's environment: [environment replacement](docs/environment-replacement.md).

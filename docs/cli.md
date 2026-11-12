@@ -1,9 +1,10 @@
 # Mau CLI
 
-Install Node.js 24 or later, then install the public client archive directly:
+Install Node.js 24 or later, then install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a release
+on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.43:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.35/olorinm-mau-cli-0.1.0-alpha.35.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.43/olorinm-mau-cli-0.1.0-alpha.43.tgz
 mau --version
 ```
 
