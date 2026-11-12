@@ -170,8 +170,7 @@ avoid duplicate delivery; dismissing retry is an explicit user action. A server
 acknowledgment confirms sending, while Agent replies appear only after sync.
 The browser tests simulate Matrix and do not establish live model acceptance.
 
-The Files navigation entry is explicitly unavailable. Shared workspace operations
-remain available through the existing Mau API and CLI. This integration does not
+The Files navigation entry is explicitly unavailable. This integration does not
 assemble a replacement file application from the frontend package’s workbench
 components.
 

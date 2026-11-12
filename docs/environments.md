@@ -63,7 +63,7 @@ environments; records already confirmed `deleted` are not contacted again, so an
 Agent whose provider was removed from configuration can still be deleted. A
 cloud failure leaves the Agent and its binding in place (`needs_action`). After
 Router deactivates the Agent, Mau removes its bindings, tokens, memory files,
-history, schedules and product records. Workspaces belong to the owner and stay.
+history, schedules and product records.
 
 Ready environments renew every 30 seconds. `lifetimeSeconds` must be at least 600.
 A renewal request may fail twice; the third consecutive failure, or a confirmed
@@ -129,5 +129,3 @@ Resume a paused environment before connecting. Client authentication expires aft
 ten minutes and established sessions after eight hours. Shell access exposes the
 execution user's existing files and credentials; it does not change the existing
 network or model-credential policy.
-
-See [shared workspaces](workspaces.md).

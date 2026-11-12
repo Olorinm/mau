@@ -11,7 +11,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 
 async function accessFixture() {
   const access = await accessIssuer(cleanup);
-  const f = await mauFixture(cleanup, {}, undefined, { edgeIdentity: access.config({ "alice@example.test": alice }) }, {},
+  const f = await mauFixture(cleanup, {}, { edgeIdentity: access.config({ "alice@example.test": alice }) }, {},
     { edgeIdentityCerts: access.certsUrl });
   const jwt = access.jwt;
   const call = async (path: string, headers: Record<string, string>, body?: unknown) => {

@@ -49,15 +49,29 @@ jobs:
           for (const name of ['router', 'host', 'connectors']) {
             if (pins[name].distribution === 'local-build') throw new Error(name + ' is an unpublished local build; publish and pin its exact archive before remote release CI. Use the documented local archive verification meanwhile.');
           }
+          // A component may live in a subdirectory (`path`) of its repository.
+          const source = name => {
+            const {repository, path = '.', revision} = pins[name];
+            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision) ||
+                !/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(path) || path.split('/').includes('..'))
+              throw new Error(name + ': invalid repository, revision or path in components.json');
+            return {repository, path};
+          };
+          const environment = source('environment'), host = source('host');
+          console.log('environment_repository='+environment.repository);
+          console.log('environment_path='+environment.path);
           console.log('environment_revision='+pins.environment.revision);
           console.log('environment_version='+pins.environment.version);
+          console.log('host_repository='+host.repository);
+          console.log('host_path='+host.path);
+          console.log('host_revision='+pins.host.revision);
           console.log('host_version='+pins.host.version);
           JS
       - &environment-source
         name: Read the pinned private Environment source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Olorinm/agent-environment
+          repository: ${{ steps.pins.outputs.environment_repository }}
           ref: ${{ steps.pins.outputs.environment_revision }}
           path: .components/environment
           ssh-key: ${{ secrets.ENVIRONMENT_READ_KEY }}
@@ -66,9 +80,10 @@ jobs:
         name: Reproduce the immutable Environment archive
         env:
           ENVIRONMENT_VERSION: ${{ steps.pins.outputs.environment_version }}
+          ENVIRONMENT_PACKAGE: .components/environment/${{ steps.pins.outputs.environment_path }}
         run: |
-          npm --prefix .components/environment ci --include=dev --ignore-scripts --no-audit --no-fund
-          (cd .components/environment && npm pack --pack-destination "$RUNNER_TEMP")
+          npm --prefix "$ENVIRONMENT_PACKAGE" ci --include=dev --ignore-scripts --no-audit --no-fund
+          (cd "$ENVIRONMENT_PACKAGE" && npm pack --pack-destination "$RUNNER_TEMP")
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import {gunzipSync} from 'node:zlib';
@@ -121,17 +136,18 @@ jobs:
       - name: Build the pinned Host package
         env:
           HOST_SOURCE: ${{ runner.temp }}/host-source
+          HOST_PACKAGE: ${{ runner.temp }}/host-source/${{ steps.pins.outputs.host_path }}
         run: |
-          git clone --filter=blob:none https://github.com/Olorinm/agent-host.git "$HOST_SOURCE"
-          git -C "$HOST_SOURCE" checkout "$(node -p 'JSON.parse(require("fs").readFileSync("components.json")).host.revision')"
-          npm --prefix "$HOST_SOURCE" ci --ignore-scripts --no-audit --no-fund
-          npm --prefix "$HOST_SOURCE" run build
-          (cd "$HOST_SOURCE" && npm pack --silent --pack-destination "$RUNNER_TEMP")
+          git clone --filter=blob:none "https://github.com/${{ steps.pins.outputs.host_repository }}.git" "$HOST_SOURCE"
+          git -C "$HOST_SOURCE" checkout "${{ steps.pins.outputs.host_revision }}"
+          npm --prefix "$HOST_PACKAGE" ci --ignore-scripts --no-audit --no-fund
+          npm --prefix "$HOST_PACKAGE" run build
+          (cd "$HOST_PACKAGE" && npm pack --silent --pack-destination "$RUNNER_TEMP")
       - name: Verify independent archives and native session continuation
         run: |
           npm run verify:packages -- --environment-archive .packages/agent-environment.tar \
             --host-archive "$RUNNER_TEMP/olorinm-agent-host-${{ steps.pins.outputs.host_version }}.tgz" \
-            --host-fixture "$RUNNER_TEMP/host-source/test/fixtures/codex-server.mjs"
+            --host-fixture "$RUNNER_TEMP/host-source/${{ steps.pins.outputs.host_path }}/test/fixtures/codex-server.mjs"
   ui:
     runs-on: ubuntu-latest
     timeout-minutes: 15

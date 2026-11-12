@@ -9,8 +9,6 @@ import type { EnvironmentProvider as ComponentProvider, EnvironmentRef as Ref } 
 import { DurableStore } from "./store.js";
 import { privateFile } from "./files.js";
 import { prepareSsh, type SshConnection } from "./ssh.js";
-import { Workspaces } from "./workspaces.js";
-import type { WorkspaceBackend, WorkspaceBinding } from "@olorinm/agent-environment/workspace";
 import type { SandboxFiles } from "./browser-relay.js";
 
 const key = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
@@ -28,7 +26,6 @@ export const environmentOptionsSchema = z
   .object({
     configFile: z.string().min(1),
     modulePath: z.string().min(1).optional(),
-    workspaceConfigFile: z.string().min(1).optional(),
     profiles: z
       .array(
         z
@@ -41,7 +38,6 @@ export const environmentOptionsSchema = z
             kernel: z.string().min(1).max(48),
             runtimeId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/),
             hostConfigFile: z.string().min(1),
-            workspace: z.boolean().optional(),
             instructions: z.string().max(200_000).optional(),
             directory: remotePath.default("/home/user/.agent-host-service"),
             port: z.number().int().min(1).max(65535).default(37420),
@@ -94,8 +90,6 @@ interface Binding {
   ref?: Ref;
   error?: string;
   updatedAt: string;
-  workspaceId?: string;
-  workspace?: WorkspaceBinding;
   tokenPerOperation?: boolean;
   previous?: Binding;
 }
@@ -106,7 +100,7 @@ const collection = "environments";
 // instructions, lifetime and bootstrap sources may change without stranding existing Agents.
 const profileHash = (p: Profile) =>
   hash(
-    JSON.stringify([p.provider, p.template, p.kernel, p.runtimeId, p.directory, p.port, ...(p.workspace ? [true] : [])]),
+    JSON.stringify([p.provider, p.template, p.kernel, p.runtimeId, p.directory, p.port]),
   );
 // One failed renewal request is not evidence the environment stopped. Three 30-second
 // attempts stay well inside the shortest 600-second lifetime.
@@ -118,8 +112,6 @@ const logUnexpected = (event: string, agentId: string, error: unknown) =>
 
 /** Product-owned provisioning journal; the external module alone operates cloud resources. */
 export class EnvironmentManager {
-  readonly workspaces: Workspaces;
-  private readonly verifiedWorkspaces = new Set<string>();
   private readonly sshActive = new Map<string, number>();
   private readonly sshPreparing = new Map<string, Promise<unknown>>();
   readonly options: z.infer<typeof environmentOptionsSchema>;
@@ -143,7 +135,6 @@ export class EnvironmentManager {
     base: string,
     readonly directory: string,
     private readonly load?: () => Promise<Environments>,
-    workspaceLoad?: () => Promise<WorkspaceBackend>,
   ) {
     this.options = structuredClone(options);
     this.options.configFile = resolve(base, options.configFile);
@@ -163,9 +154,6 @@ export class EnvironmentManager {
       join(directory, "environments.sqlite"),
       service.config.serverName,
     );
-    this.workspaces = new Workspaces(this.store,
-      options.workspaceConfigFile ? resolve(base, options.workspaceConfigFile) : undefined,
-      () => this.assertOpen(), workspaceLoad);
     try {
       this.store.acquireLease(this.lease);
     } catch (error) {
@@ -273,24 +261,19 @@ export class EnvironmentManager {
           state: record.phase,
           busy: this.jobs.has(record.agentId),
           updatedAt: record.updatedAt,
-          ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
           ...(record.error ? { error: record.error } : {}),
           ...(record.previous ? { previousEnvironment: { profileId: record.previous.profileId, state: record.previous.phase } } : {}),
         }
       : null;
   }
-  async begin(owner: string, agentId: string, profileId: string, workspaceId?: string) {
+  async begin(owner: string, agentId: string, profileId: string) {
     this.assertOpen();
     const agent = this.service.owned(agentId, owner);
     const profile = this.profiles(owner).find((p) => p.id === profileId);
     if (!profile) throw new WorkError("environment_profile_not_assigned", 403);
-    if (workspaceId) {
-      if (!profile.workspace) throw new WorkError("environment_workspace_not_supported", 409);
-      this.workspaces.owned(owner, workspaceId);
-    }
     const existing = this.binding(agentId);
     if (existing) {
-      if (existing.profileId !== profileId || workspaceId && existing.workspaceId !== workspaceId)
+      if (existing.profileId !== profileId)
         throw new WorkError("environment_already_bound", 409);
       return this.view(existing);
     }
@@ -298,7 +281,6 @@ export class EnvironmentManager {
       throw new WorkError("host_already_bound", 409);
     // Validate private local inputs before making a billable request.
     this.bundle(profile);
-    if (profile.workspace) await this.workspaces.backend();
     const record: Binding = {
       agentId,
       operationId: randomUUID(),
@@ -308,32 +290,25 @@ export class EnvironmentManager {
       phase: "creating",
       updatedAt: new Date().toISOString(),
       tokenPerOperation: true,
-      ...(workspaceId ? { workspaceId } : {}),
     };
     const provider = await this.provider(record);
     this.assertOpen();
     const inserted = this.store.transaction(() => {
       if (this.binding(agentId)) return false;
-      if (profile.workspace && !record.workspaceId) record.workspaceId = this.workspaces.create(owner, agent.name).id;
       return this.store.insert(collection, agentId, record);
     });
     if (!inserted) {
       const winner = this.binding(agentId)!;
-      if (winner.profileId !== profileId || workspaceId && winner.workspaceId !== workspaceId)
+      if (winner.profileId !== profileId)
         throw new WorkError("environment_already_bound", 409);
       return this.view(winner);
     }
     this.launch(record, async () => {
-      if (record.workspaceId) {
-        const workspace = this.workspaces.owned(owner, record.workspaceId);
-        record.workspace = await (await this.workspaces.backend()).prepare(workspace.storageOwner, workspace.id, profile.template);
-        this.save(record); // persist trusted coordinates before requesting a sandbox
-      }
       record.ref = await provider.create({
-        template: record.workspace?.template ?? profile.template,
+        template: profile.template,
         timeoutSeconds: profile.lifetimeSeconds,
         onTimeout: profile.onTimeout,
-        metadata: { "mau-operation": record.operationId, ...record.workspace?.metadata },
+        metadata: { "mau-operation": record.operationId },
       });
       this.save(record); // durable ID precedes bootstrap or further network work
       await this.bootstrap(owner, record, provider, profile);
@@ -351,7 +326,6 @@ export class EnvironmentManager {
     if (old.phase !== "paused" && old.phase !== "deleted") throw new WorkError("environment_pause_before_replace", 409);
     const profile = this.profiles(owner).find(p => p.id === profileId);
     if (!profile) throw new WorkError("environment_profile_not_assigned", 403);
-    if (old.workspaceId || profile.workspace) throw new WorkError("environment_workspace_replacement_unsupported", 409);
     this.bundle(profile);
     if (old.ref && (await (await this.provider(old)).info(old.ref.id)).state !== (old.phase === "deleted" ? "missing" : "paused"))
       throw new WorkError("environment_stop_unconfirmed", 409);
@@ -363,7 +337,6 @@ export class EnvironmentManager {
       phase: "creating", updatedAt: new Date().toISOString(), tokenPerOperation: true, previous: old,
     };
     this.save(record);
-    this.verifiedWorkspaces.delete(agentId);
     this.launch(record, async () => {
       const provider = await this.provider(record);
       record.ref = await provider.create({ template: profile.template, timeoutSeconds: profile.lifetimeSeconds,
@@ -417,12 +390,6 @@ export class EnvironmentManager {
     )
       throw new WorkError("environment_runtime_profile_mismatch", 409);
     for (const file of profile.files) readFileSync(file.source);
-    if (profile.workspace) {
-      const shared = (path: string) => path === "/home/user/workspace" || path.startsWith("/home/user/workspace/");
-      if (config.runtimes.find(r => r.id === profile.runtimeId)?.cwd !== "/home/user/workspace" ||
-          shared(profile.directory) || config.stateDirectory && shared(config.stateDirectory) ||
-          profile.files.some(f => shared(f.destination))) throw new WorkError("invalid_workspace_host_profile", 409);
-    }
     return content;
   }
   private launch(
@@ -494,7 +461,6 @@ export class EnvironmentManager {
     record.phase = "starting";
     delete record.error;
     this.save(record);
-    await this.verifyWorkspace(record, provider);
     const config = this.bundle(profile),
       tokenFile = this.token(record);
     let token: string;
@@ -599,7 +565,7 @@ export class EnvironmentManager {
         if (
           !record?.ref ||
           record.operationId !== operationId ||
-          (!allowStarting && (record.phase !== "ready" || record.workspaceId && !coordinator.verifiedWorkspaces.has(agentId)))
+          (!allowStarting && record.phase !== "ready")
         )
           throw new WorkError("environment_not_ready", 409);
         const profile = coordinator.profile(record),
@@ -625,7 +591,7 @@ export class EnvironmentManager {
   /** Trusted file relay into a ready sandbox, rooted at the runtime's working directory. Never exposed to the model. */
   async files(agentId: string, operationId: string): Promise<SandboxFiles> {
     const record = this.binding(agentId);
-    if (!record?.ref || record.operationId !== operationId || record.phase !== "ready" || record.workspaceId && !this.verifiedWorkspaces.has(agentId))
+    if (!record?.ref || record.operationId !== operationId || record.phase !== "ready")
       throw new WorkError("environment_not_ready", 409);
     const profile = this.profile(record), provider = await this.provider(record), id = record.ref.id;
     const config = JSON.parse(readFileSync(profile.hostConfigFile, "utf8")) as { runtimes?: Array<{ id: string; cwd?: unknown }> };
@@ -685,7 +651,7 @@ export class EnvironmentManager {
     if (running?.kind === "upkeep") await running.promise.catch(() => {});
     this.assertOpen();
     const record = this.binding(agentId);
-    if (!record?.ref || record.phase !== "ready" || this.jobs.has(agentId) || record.workspaceId && !this.verifiedWorkspaces.has(agentId))
+    if (!record?.ref || record.phase !== "ready" || this.jobs.has(agentId))
       throw new WorkError("environment_not_ready", 409);
     const profile = this.profile(record);
     if (!profile.ssh) throw new WorkError("ssh_not_enabled", 409);
@@ -805,7 +771,6 @@ export class EnvironmentManager {
             }
             record.phase = action === "sleep" ? "sleeping" : "paused";
           }
-          this.verifiedWorkspaces.delete(agentId);
           this.save(record);
         },
         async () => {
@@ -842,7 +807,6 @@ export class EnvironmentManager {
     if (config?.host?.binding !== record.operationId)
       await this.bootstrap(owner, record, provider, profile);
     else {
-      await this.verifyWorkspace(record, provider);
       await this.ready(record, profile);
       record.phase = "ready";
       delete record.error;
@@ -853,18 +817,8 @@ export class EnvironmentManager {
   assertReady(agentId: string, operationId: string) {
     const b = this.binding(agentId);
     this.assertOpen();
-    if (b?.operationId !== operationId || b.phase !== "ready" || b.workspaceId && !this.verifiedWorkspaces.has(agentId))
+    if (b?.operationId !== operationId || b.phase !== "ready")
       throw new WorkError("environment_not_ready", 409);
-  }
-  private async verifyWorkspace(record: Binding, provider: EnvironmentProvider) {
-    if (!record.workspaceId) return;
-    this.verifiedWorkspaces.delete(record.agentId);
-    if (!record.workspace || !record.ref) throw new WorkError("workspace_binding_unconfirmed", 409);
-    const owner = this.service.agent(record.agentId).owner;
-    this.workspaces.owned(owner, record.workspaceId);
-    try { await (await this.workspaces.backend()).verify(provider, record.ref.id, record.workspace); }
-    catch { throw new WorkError("workspace_mount_unavailable", 503); }
-    this.verifiedWorkspaces.add(record.agentId);
   }
   private async maintain() {
     if (this.closed || this.controller.signal.aborted) return;
@@ -903,7 +857,6 @@ export class EnvironmentManager {
           try {
             state = (await provider.info(id)).state;
             if (state === "running") {
-              if (record.workspaceId && !this.verifiedWorkspaces.has(record.agentId)) await this.verifyWorkspace(record, provider);
               await provider.setTimeout(id, profile.lifetimeSeconds);
             }
           } catch (error) {
@@ -953,7 +906,7 @@ export class EnvironmentManager {
         await this.service.configureRuntime(agentId, async () => {
           record.phase = "deleting"; delete record.error; this.save(record);
           await this.destroyCloud(record, false);
-          record.phase = "deleted"; this.verifiedWorkspaces.delete(agentId); this.save(record);
+          record.phase = "deleted"; this.save(record);
           return undefined;
         }, async (agent, connector) => {
           record.phase = "needs_action"; record.error = "environment_lifecycle_unconfirmed"; this.save(record);
@@ -1001,7 +954,7 @@ export class EnvironmentManager {
       throw new WorkError("environment_provider_unavailable", 503);
     }
   }
-  /** Remove an Agent's environment records and tokens once Router has deleted the Agent. Workspaces belong to the owner. */
+  /** Remove an Agent's environment records and tokens once Router has deleted the Agent. */
   forgetAgent(agentId: string) {
     this.assertLease();
     this.store.transaction(() => {
@@ -1011,7 +964,6 @@ export class EnvironmentManager {
     });
     rmSync(join(this.directory, "agents", agentId), { recursive: true, force: true });
     for (const map of [this.activity, this.renewalFailures]) map.delete(agentId);
-    this.verifiedWorkspaces.delete(agentId);
   }
   async close() {
     this.closed = true;

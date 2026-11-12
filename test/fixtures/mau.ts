@@ -8,13 +8,12 @@ import { RouterError as WorkError } from "@agent-router/server";
 import { createMau } from "../../src/app.js";
 import { privateFile } from "../../src/files.js";
 import type { EnvironmentProvider } from "../../src/environments.js";
-import type { WorkspaceBackend } from "@olorinm/agent-environment/workspace";
 
 export const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
-  hostCapabilities?: { runIdempotency?: boolean } } = {}, workspaceBackend?: WorkspaceBackend, extraOptions: Record<string, unknown> = {},
+  hostCapabilities?: { runIdempotency?: boolean } } = {}, extraOptions: Record<string, unknown> = {},
   /** Extra Router service settings, for example `{ ledgerRead: true }`. */
   routerConfig: Record<string, unknown> = {},
   /** Extra Router dependencies, for example `{ edgeIdentityCerts }`. */
@@ -137,7 +136,6 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
           hostConfigFile,
           instructions: "Work carefully.\nAnswer in the owner's language.",
           owners: [alice],
-          ...(workspaceBackend ? { workspace: true } : {}),
         },
       ],
     },
@@ -157,7 +155,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       if (id !== "volc") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
       return provider;
     } }),
-      ...(workspaceBackend ? { workspaces: async () => workspaceBackend } : {}), router: {
+      router: {
       ...routerDependencies,
       provision: async () => {},
       deprovision: async () => {},

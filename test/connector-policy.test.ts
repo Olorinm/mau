@@ -69,7 +69,7 @@ async function upstream() {
 
 it("proxies the owner's operation policy with ownership checks, validated input and reviewed fields only", async () => {
   const u = await upstream();
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options });
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options });
   const policy = await f.api("/connector-accounts/alice-gmail/policy");
   expect(policy.status).toBe(200);
   expect(JSON.stringify(policy.data)).not.toMatch(/never-return-this|grantScope|googleapis/);
@@ -101,7 +101,7 @@ it("proxies the owner's operation policy with ownership checks, validated input 
 
 it("lists the authorized account and keeps a pending consent link across reloads, from allowed origins only", async () => {
   const u = await upstream();
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options });
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options });
   const listed = (await f.api("/connector-accounts")).data.data;
   expect(listed.find((a: any) => a.id === "alice-gmail")).toEqual({ id: "alice-gmail", kind: "google", label: "Gmail", state: "connected", verification: "oauth",
     scopes: ["https://www.googleapis.com/auth/gmail.readonly"], account: { email: "owner@example.test" } });
@@ -123,7 +123,7 @@ it("lists the authorized account and keeps a pending consent link across reloads
 
 it("adds scopes only for grantable operations, from the connector's own mapping", async () => {
   const u = await upstream();
-  const f = await mauFixture(cleanup, {}, undefined, { connectorAccounts: u.options });
+  const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options });
   u.state.requests.length = 0;
   for (const operations of [["gmail.unsubscribe"], ["gmail.messages.read"], ["gmail.nothing"]])
     expect(await f.api("/connector-accounts/alice-gmail/connect", { operations })).toEqual({ status: 409, data: expect.objectContaining({ error: "connector_operation_not_grantable" }) });

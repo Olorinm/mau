@@ -2,7 +2,15 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { SandboxNotFoundError, CommandExitError } from "@olorinm/agent-environment/sdk";
+// A command that exited non-zero is recognized by its numeric `exitCode`, so a local error stands in for the SDK's.
+// Environment 0.2 recognizes a missing sandbox only by its bundled SDK class; use it while the package still
+// exports `/sdk` and a local error otherwise, so this fixture does not require that entry.
+const { SandboxNotFoundError = class SandboxNotFoundError extends Error { name = "SandboxNotFoundError"; } } =
+  await import("@olorinm/agent-environment/sdk").catch(() => ({}));
+class CommandExitError extends Error {
+  name = "CommandExitError";
+  constructor({ exitCode, stdout, stderr, error }) { super(error); Object.assign(this, { exitCode, stdout, stderr, error }); }
+}
 import {
   createVolcengineProvider,
   EnvironmentManager,

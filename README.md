@@ -68,8 +68,7 @@ and background permission are separate. [Native work integration](docs/native-wo
 provides owner-scoped session tools, bounded Hermes-style memory, native skill/memory management,
 and persisted proactive rules. Product tools require explicit configuration; no
 rules or new account authorizations are created by enabling the integration.
-The console's Files entry is not connected yet; shared workspace operations remain
-available through the existing Mau API and CLI.
+The console's Files entry is not connected yet.
 
 The operator supplies the Mau URL and a Router/Matrix account. Login reuses that
 account; Mau does not register a second identity. Password/token files are local
@@ -100,8 +99,6 @@ Production configuration, credentials, environment IDs and live state are privat
 License: [MIT](LICENSE) for Mau's project-owned code. Source attribution and
 third-party licensing boundaries, including OMA-derived Environment code:
 [NOTICE](NOTICE).
-
-Shared persistent files: [workspaces](docs/workspaces.md).
 
 Replacing an environment and composing server-side read tools:
 [environment migration](docs/environment-migration.md).
