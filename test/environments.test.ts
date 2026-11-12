@@ -24,9 +24,14 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
   expect(
     (await f.api(f.path, { profileId: "cloud", command: "evil" })).status,
   ).toBe(400);
+  // The fixed instructions are the environment profile's: none before an environment, then readable by the owner only.
+  const instructions = `/agents/${f.agent.id}/instructions`;
+  expect((await f.api(instructions)).data).toEqual({ text: "", shared: "environment_profile" });
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   const ready = await f.settled();
   expect(ready.state).toBe("ready");
+  expect((await f.api(instructions)).data).toEqual({ text: "Work carefully.\nAnswer in the owner's language.", shared: "environment_profile" });
+  expect((await f.api(instructions, undefined, "bob")).status).toBe(404);
   expect(f.creates).toBe(1);
   await f.api(f.path, { profileId: "cloud" });
   expect(f.creates).toBe(1);

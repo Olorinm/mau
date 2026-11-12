@@ -29,6 +29,7 @@ import { ConnectChannelDialog } from "./connect-channel";
 import { useMatrixAvailable } from "../api/features";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
 import { openSettings } from "../settings/route";
+import { employeeDocuments, memoryTarget, type EmployeeDocument } from "./side-views";
 
 const actionLabel = {
   pause: "env.pause",
@@ -53,12 +54,15 @@ const channels = [
 ] as const;
 const isChannel = (kind: string): kind is (typeof channels)[number] =>
   (channels as readonly string[]).includes(kind);
-type Tab = "status" | "channels" | "abilities" | "config";
+type Tab = "status" | "channels" | "abilities" | "documents" | "config";
 
 /** One employee, in the people panel: what state it is in, how it is reached, what it can use, and its settings. */
 export function AgentDetail(props: {
   session: Session;
   summary: AgentSummary;
+  /** The document open beside the conversation, and opening another (or closing the open one). */
+  document?: EmployeeDocument | undefined;
+  onDocument?(name: EmployeeDocument | undefined): void;
 }) {
   const { t, language } = useI18n();
   const { toast } = useToast();
@@ -82,6 +86,7 @@ export function AgentDetail(props: {
     enabled: tab === "abilities",
     staleTime: 30_000,
   });
+  const memory = useQuery({ queryKey: ["agent-memory", agent.id], queryFn: () => mau.agentMemory(agent.id), enabled: tab === "documents" });
   const usable = (accounts.data?.data ?? []).filter((account) => account.assignedAgents?.includes(agent.id));
   const accountStatus = (account: ConnectorAccount) =>
     account.state === "connected" ? <StatusLine tone="success">{zh ? "可用" : "Available"}</StatusLine>
@@ -169,7 +174,7 @@ export function AgentDetail(props: {
     if (result === "primary") remove.mutate();
   };
 
-  const icon = (name: "ops" | "chat" | "extensions" | "settings") => <ProductIcon name={name} size={18} />;
+  const icon = (name: "ops" | "chat" | "extensions" | "copy" | "settings") => <ProductIcon name={name} size={18} />;
   return (
     <>
       <div className="mau-profile">
@@ -179,6 +184,7 @@ export function AgentDetail(props: {
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
             { value: "channels", label: t("channels.title"), icon: icon("chat") },
             { value: "abilities", label: zh ? "能力" : "Capabilities", icon: icon("extensions") },
+            { value: "documents", label: zh ? "文档" : "Documents", icon: icon("copy") },
             { value: "config", label: zh ? "配置" : "Configuration", icon: icon("settings"), divided: true },
           ]} />
         {tab === "status" ? (
@@ -232,6 +238,15 @@ export function AgentDetail(props: {
                   title={product ? (zh ? product.name : product.en ?? product.name) : account.label} trailing={accountStatus(account)} />;
               })
               : <ListRow muted title={zh ? "还没有可用的连接器" : "No connectors yet"} />}
+          </SettingsSection>
+        ) : tab === "documents" ? (
+          <SettingsSection title={zh ? "文档" : "Documents"}>
+            {employeeDocuments.map((name) => {
+              const file = memory.data?.files.find((item) => item.target === memoryTarget(name));
+              return <ListRow key={name} icon={<span className="mau-settings-glyph">{icon("copy")}</span>} title={name} ariaLabel={name}
+                onClick={() => props.onDocument?.(props.document === name ? undefined : name)}
+                trailing={<span className="mau-profile-value">{!memoryTarget(name) ? (zh ? "只读" : "Read-only") : file ? `${file.usage.used} / ${file.usage.limit}` : ""}</span>} />;
+            })}
           </SettingsSection>
         ) : (
           <>

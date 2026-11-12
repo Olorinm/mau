@@ -4,6 +4,17 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.42] - 2026-11-12
+
+- An employee's profile has a documents section: `AGENTS.md` (the fixed instructions of its
+  environment profile, read-only), `MEMORY.md` and `USER.md`. A document opens beside the
+  conversation; the memory files are edited there in the file editor, entries separated by a line
+  with only `§`, and take effect from the next new conversation.
+- `GET /agents/:id/instructions` returns the fixed instructions of the employee's environment
+  profile to its owner.
+- A file opened from a message is a card beside the conversation again, at the same level as the
+  conversation, as the handed-over browser is. The people panel on the left still floats.
+
 ## [0.1.0-alpha.41] - 2026-11-12
 
 - An employee's profile is four sections behind a row of icons: status (the environment and

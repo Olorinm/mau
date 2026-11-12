@@ -23,6 +23,11 @@ export interface AgentSummary {
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
+/** One of an employee's two memory files: `memory` (MEMORY.md, working knowledge) or `user` (USER.md, the owner's preferences). */
+export interface MemoryFile { target: "memory" | "user"; file: string; entries: string[]; usage: { used: number; limit: number } }
+/** Entries of a memory file are separated by this line; the server stores and counts them joined with it. */
+export const memoryDelimiter = "\n§\n";
+export type MemoryOperation = { action: "add"; content: string } | { action: "remove"; old_text: string };
 export interface ConnectorAccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
@@ -96,6 +101,12 @@ export function mauApi(token: string) {
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
+    /** The fixed instructions of the employee's environment profile (read-only; shared by the profile's employees). */
+    agentInstructions: (id: string) => request<{ text: string }>(mau + agent(id) + "/instructions", { token }),
+    agentMemory: (id: string) => request<{ files: MemoryFile[] }>(mau + agent(id) + "/memory", { token }),
+    /** Applies the owner's changes to one memory file atomically. */
+    changeAgentMemory: (id: string, target: MemoryFile["target"], operations: MemoryOperation[]) =>
+      request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", target, operations } }),
     createAgent: (name: string, profileId: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, profileId } }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),

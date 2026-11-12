@@ -401,6 +401,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     sshKeyId(publicKey);
     res.json(await environments.prepareSsh(res.locals.owner, String(req.params.id), publicKey));
   });
+  product.get("/agents/:id/instructions", (req, res) => res.json(environments.instructions(res.locals.owner, String(req.params.id))));
   product.get("/agents/:id/environment", (req, res) => res.json(environments.summary(res.locals.owner, String(req.params.id)) ?? { state: "unconfigured", busy: false }));
   product.post("/agents/:id/environment", async (req, res) => {
     const { profileId, workspaceId } = z.object({ profileId: z.string().min(1).max(48), workspaceId: z.uuid().optional() }).strict().parse(req.body);
