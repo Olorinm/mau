@@ -35,15 +35,12 @@ async function tables(path) {
   return out;
 }
 
-const restored = await tables("src/pages/presentation/restored-labels.ts");
-const presentation = await tables("src/pages/presentation/labels.ts");
+const labels = await tables("src/pages/presentation/labels.ts");
 const languages = ["en", "zh-CN"];
-const text = (language, key) =>
-  restored[language]?.[key] ?? presentation[language]?.[key] ?? presentation.en?.[key];
+const text = (language, key) => labels[language]?.[key];
 
 test("every label key a component asks for has text in each language", async () => {
   const keys = new Map();
-  const stages = ["source-upload", "candidate", "trusted-build", "registry", "local-finalization"];
   for (const path of (await files("src/pages")).filter((path) => /\.tsx?$/.test(path))) {
     const tree = ts.createSourceFile(path, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true);
     function literals(node, into) {
@@ -52,8 +49,6 @@ test("every label key a component asks for has text in each language", async () 
         literals(node.whenTrue, into);
         literals(node.whenFalse, into);
       } else if (ts.isParenthesizedExpression(node)) literals(node.expression, into);
-      else if (ts.isTemplateExpression(node) && node.templateSpans.length === 1)
-        for (const stage of stages) into.push(node.head.text + stage + node.templateSpans[0].literal.text);
     }
     function visit(node) {
       if (ts.isCallExpression(node) && node.arguments.length) {
@@ -76,11 +71,25 @@ test("every label key a component asks for has text in each language", async () 
   assert.deepEqual(missing, []);
 });
 
+test("every label is one a component can ask for, in both languages", async () => {
+  const mentioned = new Set();
+  // The chat components under src/ take their text from the same table through the shared chat provider.
+  for (const path of (await files("src")).filter((path) => /\.tsx?$/.test(path) && !path.endsWith("presentation/labels.ts"))) {
+    const tree = ts.createSourceFile(path, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true);
+    (function visit(node) {
+      if (ts.isStringLiteralLike(node)) mentioned.add(node.text);
+      ts.forEachChild(node, visit);
+    })(tree);
+  }
+  const unused = Object.keys(labels.en).filter((key) => !mentioned.has(key));
+  assert.deepEqual(unused, []);
+  assert.deepEqual(Object.keys(labels["zh-CN"]).sort(), Object.keys(labels.en).sort());
+});
+
 test("label text does not name a product", () => {
   const named = [];
-  for (const table of [restored, presentation])
-    for (const [language, entries] of Object.entries(table))
-      for (const [key, value] of Object.entries(entries))
-        if (/opengrove/i.test(value)) named.push(`${language} ${key}: ${value}`);
+  for (const [language, entries] of Object.entries(labels))
+    for (const [key, value] of Object.entries(entries))
+      if (/opengrove/i.test(value)) named.push(`${language} ${key}: ${value}`);
   assert.deepEqual(named, []);
 });

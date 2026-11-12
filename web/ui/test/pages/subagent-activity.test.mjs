@@ -10,10 +10,10 @@ test("Codex native subagent items render as agent activity counted once per suba
   try {
     const { createActivityModel } = await import("../../" + local);
     const labelFile = ".subagent-labels-" + process.pid + ".mjs";
-    await build({ entryPoints: ["src/pages/presentation/restored-labels.ts"], outfile: labelFile, bundle: true, platform: "node", format: "esm" });
+    await build({ entryPoints: ["src/pages/presentation/labels.ts"], outfile: labelFile, bundle: true, platform: "node", format: "esm" });
     try {
-      const { restoredLabels } = await import("../../" + labelFile);
-      const zh = restoredLabels["zh-CN"];
+      const { presentationLabels } = await import("../../" + labelFile);
+      const zh = presentationLabels["zh-CN"];
       const translate = (key, values = {}) => (zh[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
       const model = createActivityModel(translate);
       const tool = (id, item, status) => ({ type: "tool", call: { id: id + ":call", type: "tool", phase: "call", toolId: item.type, callId: id,
