@@ -762,15 +762,45 @@ body {
   grid-template-columns: minmax(320px, 1fr) minmax(360px, 520px);
 }
 .mau-side-document .mau-side-body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  align-content: start;
+  gap: 8px;
 }
-.mau-side-document .af-file-editor {
-  flex: 1;
+.mau-side-document[data-over] .mau-side-head small {
+  color: var(--c-danger-text);
+}
+/* One memory entry: its text and its own actions. The one being edited holds the Markdown editor. */
+.mau-document-entry {
+  border-radius: var(--r-card);
+  background: var(--c-panel);
+  padding: 12px 14px 8px;
+}
+.mau-document-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 6px;
+}
+.mau-document-entry[data-editing] {
+  padding: 8px;
+}
+.mau-document-entry[data-editing] .af-file-editor {
+  height: auto;
+  min-height: 96px;
+  max-height: min(360px, 50vh);
+  border-radius: 10px;
+  background: var(--c-panel-raised);
+  padding: 8px 12px;
+}
+/* The editor is sized for a whole page by default; here it is one entry tall and reads like the entries around it. */
+.mau-document-entry[data-editing] .af-file-editor .milkdown {
   min-height: 0;
 }
-.mau-side-document:has(.mau-side-body[data-over]) .mau-side-head small {
-  color: var(--c-danger-text);
+.mau-document-entry[data-editing] .markdown-rich-editor .milkdown .ProseMirror {
+  min-height: 72px;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
 }
 
 /* Phones: the people panel covers the whole card. */
