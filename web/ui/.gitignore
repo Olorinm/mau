@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .local/
-*.tgz
+.browser-test-*/
+.restored-tests/
+.ssr-test-*
 .DS_Store
-
-.run-comparison/

@@ -2,14 +2,7 @@
 
 `@olorinm/agent-ui` supplies message, Markdown, composer, process, approval, question and resource components, plus the application primitives in `@olorinm/agent-ui/app`. [Agent Host](https://github.com/Olorinm/agent-host) can be used without React or this package.
 
-Build and install the UI archive:
-
-```sh
-npm ci
-npm pack
-# In your product:
-npm install /path/to/olorinm-agent-ui-0.1.0-alpha.2.tgz
-```
+This package is built inside the Mau `web` workspace and consumed from there (see the [README](../README.md)).
 
 React and React DOM 19 are peer dependencies. The package root only renders caller-owned data. It makes no HTTP calls and has no product-specific stores, authentication, room membership, filesystem access or knowledge of business objects.
 
@@ -90,9 +83,8 @@ Agent Host's [React document editor](https://github.com/Olorinm/agent-host/tree/
 ```sh
 npm test
 npm run test:browser
-npm run test:package
 ```
 
-`test:browser` drives the chat and application fixtures in Chromium. `test:package` installs the packed archive into an independent product, checks the optional Host adapter against Agent Host's published types, bundles without importing this repository's source and repeats the browser checks. Agent Host's own UI archive test runs the document editor through its real HTTP service.
+`test:browser` drives the chat and application fixtures and the page acceptance checks in Chromium.
 
-OpenGrove consumes the chat components with its own product adapters and theme. Source attribution is preserved in [NOTICE](../NOTICE).
+Source attribution is preserved in [NOTICE](../NOTICE).
