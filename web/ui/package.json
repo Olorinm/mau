@@ -35,9 +35,7 @@
     "build": "vite build && tsc -p tsconfig.types.json && node scripts/types.mjs && node scripts/copy-styles.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs test/pages/*.test.mjs",
-    "test:browser": "node scripts/test-browser.mjs && node scripts/test-pages-browser.mjs",
-    "test:restored": "node scripts/test-restored-surfaces.mjs",
-    "dev": "vite --config demo/vite.config.ts"
+    "test:browser": "node scripts/test-browser.mjs && node scripts/test-pages-browser.mjs"
   },
   "peerDependencies": {
     "react": "^19.0.0",

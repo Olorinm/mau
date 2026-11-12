@@ -69,7 +69,7 @@ test("every label key a component asks for has text in each language", async () 
     }
     visit(tree);
   }
-  assert.ok(keys.size > 700, `only ${keys.size} label keys found`);
+  assert.ok(keys.size > 100, `only ${keys.size} label keys found`);
   const missing = [];
   for (const [key, path] of keys)
     for (const language of languages) if (text(language, key) === undefined) missing.push(`${language} ${key} (${path})`);

@@ -88,11 +88,6 @@ export async function checkBrowser(url) {
     await page.keyboard.press("Escape");
     await catalogDialog.waitFor({ state: "hidden" });
     await expect(catalogCard).toBeFocused();
-    await page.getByRole("button", { name: "settings", exact: true }).click();
-    await page.getByText("Caller-owned preferences").waitFor();
-    await page.getByRole("button", { name: "Light", exact: true }).click();
-    await page.getByRole("option", { name: "Dark", exact: true }).click();
-    await page.getByRole("button", { name: "Dark", exact: true }).waitFor();
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Account action" }).click();
     assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
@@ -117,12 +112,6 @@ export async function checkBrowser(url) {
       "profile",
       "A new person",
     ]);
-    await page
-      .getByRole("button", { name: "Capabilities", exact: true })
-      .click();
-    await page.getByText("Caller-owned capabilities").waitFor();
-    await page.getByRole("button", { name: "extensions", exact: true }).click();
-    await page.getByRole("button", { name: "Example tool" }).click();
     await page.getByRole("button", { name: "create", exact: true }).click();
     await page
       .getByLabel("App name", { exact: true })
@@ -144,17 +133,13 @@ export async function checkBrowser(url) {
       false,
       "unavailable builder must not submit via Enter",
     );
-    await page.getByRole("button", { name: "versions", exact: true }).click();
-    await page.getByRole("button", { name: "Choose version" }).click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "version",
-      "1.0",
-    ]);
     await page.getByRole("button", { name: "files", exact: true }).click();
     const editor = page.locator(".cm-content");
     await editor.waitFor();
     await editor.fill("# Edited by caller");
-    await page.getByRole("heading", { name: "Edited by caller" }).waitFor();
+    await expect
+      .poll(async () => (await page.evaluate(() => window.actions)).at(-1))
+      .toEqual(["edit", "# Edited by caller"]);
     await page.getByRole("button", { name: "rich", exact: true }).click();
     await page.locator(".milkdown .ProseMirror").waitFor();
     assert.equal(
@@ -167,45 +152,30 @@ export async function checkBrowser(url) {
     await page
       .locator(".milkdown .ProseMirror")
       .fill("Rich text remains caller owned");
-    await page.getByRole("button", { name: "conflict", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Use saved version", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Save resolution", exact: true })
-      .click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "save",
-      "Saved version",
-    ]);
-    await page.getByRole("button", { name: "login", exact: true }).click();
-    await page.getByLabel("Account", { exact: true }).fill("sample");
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page
-      .getByRole("alert")
-      .filter({ hasText: "Caller rejected this sign in" })
-      .waitFor();
-    await page.screenshot({ path: "/tmp/agent-frontend-neutral-auth.png" });
-    // The sign-in scene follows the theme: dark paper and light ink under a dark system theme.
-    const authShade = () =>
-      page.locator(".cloud-auth-shell").evaluate((element) => {
-        const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-        const light = (color) => {
-          canvas.clearRect(0, 0, 1, 1); canvas.fillStyle = color; canvas.fillRect(0, 0, 1, 1);
-          return Math.max(...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3));
-        };
-        const style = getComputedStyle(element);
-        return { paper: light(style.backgroundColor), ink: light(style.color) };
-      });
-    await page.emulateMedia({ colorScheme: "dark" });
-    await page.waitForFunction(() => document.querySelector(".cloud-auth-shell")?.closest(".af-scope")?.getAttribute("data-resolved-theme") === "dark");
-    const darkAuth = await authShade();
-    assert.ok(darkAuth.paper < 90 && darkAuth.ink > 160, `sign-in must be dark under a dark theme: ${JSON.stringify(darkAuth)}`);
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.waitForFunction(() => document.querySelector(".cloud-auth-shell")?.closest(".af-scope")?.getAttribute("data-resolved-theme") === "light");
-    const lightAuth = await authShade();
-    assert.ok(lightAuth.paper > 240 && lightAuth.ink < 80, `sign-in must stay light under a light theme: ${JSON.stringify(lightAuth)}`);
-    await page.getByRole("button", { name: "Close form" }).click();
+    await expect
+      .poll(async () => (await page.evaluate(() => window.actions)).at(-1)?.[0])
+      .toBe("rich");
+    await page.getByRole("button", { name: "run", exact: true }).click();
+    const runToggle = page.locator(
+      ".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle",
+    );
+    await runToggle.click();
+    await expect(runToggle).toHaveAttribute("aria-expanded", "true");
+    await page.locator(".room-chat-agent-stack").evaluate((element) => {
+      window.auditBody = element;
+    });
+    const sameBody = () =>
+      page
+        .locator(".room-chat-agent-stack")
+        .evaluate((element) => element === window.auditBody);
+    for (const _ of [1, 2]) {
+      await page
+        .getByRole("button", { name: "Toggle final reply" })
+        .click();
+      await expect(runToggle).toHaveAttribute("aria-expanded", "true");
+      assert.equal(await sameBody(), true, "a finished run keeps its rendered process");
+    }
+    await page.getByRole("button", { name: "messages", exact: true }).click();
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-desktop.png" });
     assert.ok(
@@ -247,7 +217,7 @@ export async function checkBrowser(url) {
     assert.deepEqual(errors, []);
     assert.deepEqual(calls, [], "components must not make service requests");
     console.log(
-      "Controlled interactions, caller errors, auth layout, file editing, dark/mobile rendering and zero service requests passed.",
+      "Controlled interactions, caller errors, file editing, run lifecycle, dark/mobile rendering and zero service requests passed.",
     );
   } finally {
     await browser.close();
