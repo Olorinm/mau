@@ -4,6 +4,12 @@ Notable changes to `@olorinm/agent-frontend`, newest first. Each version has a G
 (`frontend-v*` tags) with the same notes and the package archive. When releasing, add the new
 section here in the version-bump commit; the Release notes are copied from it.
 
+## [0.1.0-alpha.13] - 2026-11-12
+
+- Remove duplicate and unreferenced styles from frontend bundles.
+- Consolidate repeated light-theme tokens while preserving their resolved values and existing variable names.
+- Use a dark page surface for resolved dark themes and remove unreachable system-theme fallback rules.
+
 ## [0.1.0-alpha.12] - 2026-11-11
 
 - Shell columns are white panels floating on the grey app background again, instead of hairline

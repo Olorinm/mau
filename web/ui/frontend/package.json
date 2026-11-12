@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/agent-frontend",
-  "version": "0.1.0-alpha.12",
+  "version": "0.1.0-alpha.13",
   "type": "module",
   "license": "MIT",
   "description": "Product-neutral React page layouts and interaction components; caller-owned data and operations",
@@ -133,5 +133,6 @@
     "test:comparison": "node scripts/test-comparison.mjs",
     "compare": "node tools/ui-compare.mjs",
     "test:restored": "node scripts/test-restored-surfaces.mjs"
-  }
+  },
+  "packageManager": "npm@11.16.0"
 }
