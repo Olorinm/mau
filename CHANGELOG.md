@@ -4,6 +4,18 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.48] - 2026-11-13
+
+- An employee's model and reasoning effort can be chosen on its profile (配置). The choices are
+  the models the employee's kernel reports, limited to the values its runtime's
+  `allowedSettings` permits, and each model lists the efforts it supports; nothing is selectable
+  when the runtime allows no choice. The selection applies to every following turn of the
+  employee on any channel. `GET` and `PUT /_mau/v1/agents/:id/model-settings` are the API; while
+  the environment is not running the last reading of the kernel's list is used.
+- Builds on Agent Kit 0.10.0-alpha.3: adding or changing a runtime's `allowedSettings` no longer
+  breaks its existing sessions, and Router sends an agent's default settings with every turn.
+  The release also carries Agent Kit's dependency updates.
+
 ## [0.1.0-alpha.47] - 2026-11-13
 
 - An employee's memory file (`MEMORY.md`, `USER.md`) opens beside the conversation as one

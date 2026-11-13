@@ -74,7 +74,8 @@ without `send` conversations are read-only.
 
 - Each owned Agent has one direct chat. A few conversations stay in the header row; the people panel lists
   all of them and opens an Agent's profile: environment state and checks, channels, connectors, documents,
-  and configuration (kernel, environment profile, destroy the environment, delete the Agent).
+  and configuration (kernel, model and reasoning effort where the runtime allows a choice, environment profile,
+  destroy the environment, delete the Agent).
 - "New group" creates a Router group room with a title and up to 20 of the owner's Agents. In a group only
   the Agents the owner @-mentions (or everyone, with `@all`/`@所有人`) start work; a message without a
   mention is only recorded. The member panel renames the group and adds or removes Agents.

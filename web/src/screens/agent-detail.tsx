@@ -6,6 +6,7 @@ import {
   ListRow,
   ProductIcon,
   SegmentedControl,
+  SelectMenu,
   SettingsSection,
   StatusLine,
   TextButton,
@@ -52,6 +53,10 @@ const channels = [
 const isChannel = (kind: string): kind is (typeof channels)[number] =>
   (channels as readonly string[]).includes(kind);
 type Tab = "status" | "channels" | "abilities" | "documents" | "config";
+/** The select's value for "use the runtime's own default"; no model or effort has this name. */
+const DEFAULT_CHOICE = "\u0000default";
+const effortNames: Record<string, string> = { none: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" };
+const effortLabel = (value: string, zh: boolean) => (zh ? effortNames[value] : undefined) ?? value;
 
 /** One employee, in the people panel: what state it is in, how it is reached, what it can use, and its settings. */
 export function AgentDetail(props: {
@@ -82,6 +87,7 @@ export function AgentDetail(props: {
     staleTime: 30_000,
   });
   const memory = useQuery({ queryKey: ["agent-memory", agent.id], queryFn: () => mau.agentMemory(agent.id), enabled: tab === "documents" });
+  const models = useQuery({ queryKey: ["model-settings", agent.id], queryFn: () => mau.modelSettings(agent.id), enabled: tab === "config" });
   const usable = (accounts.data?.data ?? []).filter((account) => account.assignedAgents?.includes(agent.id));
   const accountStatus = (account: ConnectorAccount) =>
     account.state === "connected" ? <StatusLine tone="success">{zh ? "可用" : "Available"}</StatusLine>
@@ -129,10 +135,36 @@ export function AgentDetail(props: {
     },
     onError: failed,
   });
+  const selectModel = useMutation({
+    mutationFn: (change: { model?: string | null; effort?: string | null }) => mau.selectModelSettings(agent.id, change),
+    onSuccess: (view) => queries.setQueryData(["model-settings", agent.id], view),
+    onError: failed,
+  });
   const checks = useMutation({
     mutationFn: () => router.check(agent.id),
     onError: failed,
   });
+  // Model and effort apply to the employee's following turns. Without a list from the runtime owner they are read-only.
+  const modelRows = () => {
+    const view = models.data, modelTitle = zh ? "模型" : "Model", effortTitle = zh ? "思考强度" : "Reasoning effort";
+    if (!view?.models.length) return <ListRow title={modelTitle} trailing={<span className="mau-profile-value">{view?.defaultModel ?? "—"}</span>} />;
+    const chosen = view.models.find((option) => option.id === (view.selection.model ?? view.defaultModel));
+    const efforts = chosen?.efforts ?? view.efforts, standard = zh ? "默认" : "Default";
+    const pick = (model: string | null) => {
+      const next = view.models.find((option) => option.id === (model ?? view.defaultModel))?.efforts ?? view.efforts;
+      // An effort the newly chosen model does not offer returns to that model's default.
+      selectModel.mutate({ model, ...(view.selection.effort && !next.includes(view.selection.effort) ? { effort: null } : {}) });
+    };
+    return <>
+      <ListRow title={modelTitle} trailing={<SelectMenu label={modelTitle} disabled={selectModel.isPending} value={view.selection.model ?? DEFAULT_CHOICE}
+        options={[{ value: DEFAULT_CHOICE, label: view.defaultModel ? `${standard} · ${view.models.find((option) => option.id === view.defaultModel)?.label ?? view.defaultModel}` : standard },
+          ...view.models.map((option) => ({ value: option.id, label: option.label }))]}
+        onChange={(value) => pick(value === DEFAULT_CHOICE ? null : value)} />} />
+      {efforts.length ? <ListRow title={effortTitle} trailing={<SelectMenu label={effortTitle} disabled={selectModel.isPending} value={view.selection.effort ?? DEFAULT_CHOICE}
+        options={[{ value: DEFAULT_CHOICE, label: standard }, ...efforts.map((value) => ({ value, label: effortLabel(value, zh) }))]}
+        onChange={(value) => selectModel.mutate({ effort: value === DEFAULT_CHOICE ? null : value })} />} /> : null}
+    </>;
+  };
   const profiles = options.data?.environments ?? [];
   const profile = profiles.find((p) => p.id === environment?.profileId);
   const state = environment?.state ?? "unconfigured";
@@ -247,6 +279,7 @@ export function AgentDetail(props: {
           <>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
               <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{profile?.kernel ?? "—"}</span>} />
+              {modelRows()}
               <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />
             </SettingsSection>
             <SettingsSection>

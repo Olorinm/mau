@@ -24,6 +24,7 @@ import { checkConnector } from "./connector-precheck.js";
 import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
 import { CompletedTurns } from "./completed-turns.js";
 import { NativeRelay } from "./native-relay.js";
+import { ModelSettings } from "./model-settings.js";
 import { OwnerPrivateConnections, ownerPrivateAdmission } from "./owner-private.js";
 import { chatChannelApplication } from "./feishu-entry.js";
 
@@ -106,6 +107,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         history.forget(agent.owner, agent.id);
         proactive.forgetAgent(agent.id);
         forgetEmployeeRecords(businessStore, agent.owner, agent.id);
+        modelSettings.forget(agent.id);
         await dependencies.router?.afterDelete?.(agent);
       },
     },
@@ -141,6 +143,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     return value;
   };
   const assertOwned = (owner: string, agentId: string) => { router.service.owned(agentId, owner); };
+  const modelSettings = new ModelSettings(businessStore, sessions);
   const facts = new EmployeeContext(businessStore, assertOwned, { directory: join(config.stateDir, "mau", "memories"), writeApproval: options.nativeWork.memory.writeApproval });
   const history = new SessionHistory(businessStore, assertOwned);
   const proactiveStore = new DurableStore(join(config.stateDir, "proactive.sqlite"), config.serverName);
@@ -355,6 +358,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.json(await environments.prepareSsh(res.locals.owner, String(req.params.id), publicKey));
   });
   product.get("/agents/:id/instructions", (req, res) => res.json(environments.instructions(res.locals.owner, String(req.params.id))));
+  product.get("/agents/:id/model-settings", async (req, res) => res.json(await modelSettings.view(res.locals.owner, String(req.params.id))));
+  product.put("/agents/:id/model-settings", async (req, res) => res.json(await modelSettings.select(res.locals.owner, String(req.params.id), req.body)));
   product.get("/agents/:id/environment", (req, res) => res.json(environments.summary(res.locals.owner, String(req.params.id)) ?? { state: "unconfigured", busy: false }));
   product.post("/agents/:id/environment", async (req, res) => {
     const { profileId } = z.object({ profileId: z.string().min(1).max(48) }).strict().parse(req.body);
