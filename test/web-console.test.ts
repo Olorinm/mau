@@ -60,7 +60,14 @@ const profileState = (page: Page) => profileCard(page).locator(".agent-status-li
 it.skipIf(!built)(
   "opens from the Access session, provisions an agent, controls its environment, connects a channel and signs out",
   async () => {
-    const f = await mauFixture(cleanup, { webRoot });
+    // What the employee's kernel reports and its runtime owner allows callers to select.
+    const host = (url: URL) => url.pathname.endsWith("/runtimes/discover") ? Response.json({ id: "personal", kernel: "codex", model: "large",
+      allowedSettings: { model: { values: ["large", "small"] }, effort: { values: ["low", "high"] } },
+      native: { models: { data: [
+        { model: "large", displayName: "Large", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }] },
+        { model: "small", displayName: "Small", supportedReasoningEfforts: [{ reasoningEffort: "low" }] }] } } })
+      : Response.json({ error: "fixture_unknown_path" }, { status: 404 });
+    const f = await mauFixture(cleanup, { webRoot, host });
     const home = await fetch(f.base + "/");
     expect(home.headers.get("content-security-policy")).toContain("connect-src 'self';");
     for (const path of ["/health/live", "/HEALTH/live/"]) {
@@ -186,6 +193,22 @@ it.skipIf(!built)(
     await see(hostCheck).toContainText("通过");
 
     await profileTab(page, "配置");
+    // Model and effort are chosen from what the kernel reports; an effort the new model lacks returns to its default.
+    const choose = async (name: string, option: string) => {
+      await profile.getByRole("combobox", { name, exact: true }).click();
+      await page.getByRole("option", { name: option, exact: true }).click();
+    };
+    const employees = (await (await fetch(f.base + "/_mau/v1/agents", { headers: f.edgeHeaders() })).json()).data as Array<{ agent: { id: string; name: string } }>;
+    const writerId = employees.find((item) => item.agent.name === "writer")!.agent.id;
+    const saved = async () => (await (await fetch(`${f.base}/_mau/v1/agents/${writerId}/model-settings`, { headers: f.edgeHeaders() })).json()).selection;
+    await see(profile.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Large");
+    await choose("思考强度", "高");
+    await see(profile.getByRole("combobox", { name: "思考强度", exact: true })).toContainText("高");
+    expect(await saved()).toEqual({ effort: "high" });
+    await choose("模型", "Small");
+    await see(profile.getByRole("combobox", { name: "模型", exact: true })).toContainText("Small");
+    await see(profile.getByRole("combobox", { name: "思考强度", exact: true })).toContainText("默认");
+    expect(await saved()).toEqual({ model: "small" });
     await page.getByRole("button", { name: "销毁环境" }).click();
     const destroy = page.getByRole("dialog", {
       name: "销毁 writer 的运行环境？",

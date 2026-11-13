@@ -22,6 +22,8 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `GET /agents/:id/native/skills` | List actual native skills. |
 | `POST /agents/:id/native/skills` | `{path, enabled}` for an already discovered skill. |
 | `GET /agents/:id/native/memory` | Native memory status, if the runtime exposes it. |
+| `GET /agents/:id/model-settings` | The models and efforts the kernel reports and the runtime's `allowedSettings` permit, with the owner's choice. Read from the running kernel; while the environment is not running, the last reading is returned (`source: "saved"`). |
+| `PUT /agents/:id/model-settings` | `{model?, effort?}`, each a listed value or `null` for the runtime's default. Router sends the choice with every following turn of the employee. |
 | `GET /agents/:id/work-sessions/:sessionId/memory` | Read native thread memory through its authenticated Host binding. |
 | `POST /agents/:id/work-sessions/:sessionId/memory` | `{mode: "enabled" | "disabled"}` through the authenticated Host binding. |
 | `GET/POST /agents/:id/memory` | Read both files / execute a bounded memory operation. |

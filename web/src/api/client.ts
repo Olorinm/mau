@@ -71,6 +71,14 @@ export type ConnectionRequest =
   | { kind: "weixin" }
   | { kind: "telegram"; token: string }
   | { kind: "grove-mail"; serviceId: string; inboxId: string; apiKey: string; ownerEmail: string };
+export interface ModelSettings {
+  kernel?: string;
+  defaultModel?: string;
+  models: Array<{ id: string; label: string; description?: string; efforts: string[]; defaultEffort?: string }>;
+  efforts: string[];
+  selection: { model?: string; effort?: string };
+  source: "live" | "saved" | "none";
+}
 export interface CheckResult {
   agentId: string;
   connectionId?: string;
@@ -99,6 +107,11 @@ export function mauApi(token: string) {
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
     /** The fixed instructions of the employee's environment profile (read-only; shared by the profile's employees). */
     agentInstructions: (id: string) => request<{ text: string }>(mau + agent(id) + "/instructions", { token }),
+    /** The models and efforts the employee's kernel offers and its runtime allows, with the owner's choice. */
+    modelSettings: (id: string) => request<ModelSettings>(mau + agent(id) + "/model-settings", { token, timeoutMs: 45_000 }),
+    /** `null` returns a choice to the runtime's default. */
+    selectModelSettings: (id: string, change: { model?: string | null; effort?: string | null }) =>
+      request<ModelSettings>(mau + agent(id) + "/model-settings", { token, method: "PUT", body: change, timeoutMs: 45_000 }),
     agentMemory: (id: string) => request<{ files: MemoryFile[] }>(mau + agent(id) + "/memory", { token }),
     /** Applies the owner's changes to one memory file, in order and all or none. */
     changeAgentMemory: (id: string, target: MemoryFile["target"], operations: MemoryOperation[]) =>
