@@ -4,6 +4,17 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.47] - 2026-11-13
+
+- An employee's memory file (`MEMORY.md`, `USER.md`) opens beside the conversation as one
+  document in the Markdown editor, with a divider between its entries, instead of one block per
+  entry. A divider typed at the end starts a new entry, deleting an entry's text removes it, and
+  one Save writes the document. The stored file and the employee's memory tool are unchanged.
+  The editor writes Markdown in its own style, so the first save may rewrite untouched entries
+  (`-` lists become `*`); an entry that itself contains a divider is saved as two.
+- The console's stylesheet is about a fifth smaller: 733 rules for classes that no source file
+  can produce are removed. The remaining rules and their order are unchanged.
+
 ## [0.1.0-alpha.46] - 2026-11-13
 
 - Built on Agent Kit 0.10.0-alpha.1, whose Router keeps one record of channel messages (its
