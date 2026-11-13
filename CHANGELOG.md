@@ -12,6 +12,8 @@ copied from it.
   `AGENT_LEDGER_*` variables are no longer read and can be removed from a deployment; Mau no
   longer refuses to start without them. On first start each employee's store is migrated by
   Router; no step is required.
+- The console no longer waits for Router to advertise features: sending, card answers, new chat
+  and clear, groups, attachments and the identity page are always available.
 
 ## [0.1.0-alpha.45] - 2026-11-12
 
