@@ -138,71 +138,8 @@ body {
   line-height: 1;
 }
 
-.app-titlebar-update-button {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
-  margin-left: 3px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: var(--og-brand);
-  color: var(--og-white);
-  cursor: pointer;
-  padding: 0;
-  box-shadow: var(--shadow-sm);
-  -webkit-app-region: no-drag;
-}
-
-.app-titlebar-update-button:hover,
-.app-titlebar-update-button:focus-visible {
-  background: color-mix(in srgb, var(--og-brand) 88%, var(--c-overlay-ink) 12%);
-  outline: 0;
-}
-
-.app-titlebar-update-button:disabled {
-  cursor: progress;
-  opacity: 0.86;
-}
-
-.app-titlebar-update-button svg {
-  width: 13px;
-  height: 13px;
-  stroke-width: 2.1;
-}
-
 .app-titlebar-update-button[data-busy="true"] svg {
   animation: spin var(--motion-spin) linear infinite;
-}
-
-.app-titlebar-account-status-live {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  margin-left: var(--sp-2);
-  -webkit-app-region: no-drag;
-}
-
-.app-titlebar-account-status-live:empty {
-  margin-left: 0;
-}
-
-.app-titlebar-account-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-width: 0;
-  height: 22px;
-  border: 1px solid var(--c-line-08);
-  border-radius: var(--r-pill);
-  background: var(--c-surface);
-  color: var(--og-text-strong);
-  padding: 0 var(--sp-2);
-  font-size: var(--fs-xs);
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: none;
 }
 
 .app-titlebar-account-status[data-state="checking"] svg {
@@ -219,64 +156,10 @@ body {
   animation: spin var(--motion-spin) linear infinite;
 }
 
-.app-titlebar-account-status-retry:disabled {
-  cursor: progress;
-  opacity: 0.72;
-}
-
-.app-titlebar-account-status span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.app-titlebar-account-status small {
-  color: var(--og-text-muted);
-  font-size: inherit;
-}
-
-.app-titlebar-account-status-retry {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--og-text-strong);
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
-  font-weight: var(--fw-semibold);
-}
-
-.app-titlebar-account-status-retry:hover {
-  color: var(--c-warning);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.app-titlebar-account-status-retry:focus-visible {
-  border-radius: var(--r-sm);
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
 .app-titlebar-drag-space {
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
-}
-
-.app-titlebar-developer-button {
-  position: relative;
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--og-text-muted);
-  cursor: pointer;
-  padding: 0;
-  -webkit-app-region: no-drag;
 }
 
 .app-titlebar-developer-button:hover,
@@ -285,47 +168,8 @@ body {
   color: var(--og-text);
 }
 
-.app-titlebar-developer-button:focus-visible {
-  outline: 2px solid var(--og-focus-ring);
-  outline-offset: 2px;
-}
-
-.app-chat-button-face {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-}
-
-.app-chat-button-face::before {
-  position: absolute;
-  content: "";
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-md);
-  background: transparent;
-  pointer-events: none;
-  transition: background-color var(--motion-fast) var(--motion-ease);
-}
-
-.app-titlebar-developer-button:is(:hover, :focus-visible) .app-chat-button-face::before {
-  background: var(--c-fill);
-}
-
 .app-titlebar-developer-button[data-open="true"] .app-chat-button-face::before {
   background: var(--c-fill-strong);
-}
-
-.app-chat-icon {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.app-chat-icon-eye {
-  transition: none;
 }
 
 .app-titlebar-developer-button[data-compact="true"] .app-chat-button-face {
@@ -336,17 +180,6 @@ body {
 .app-titlebar-developer-button[data-compact="true"] .app-chat-button-face::before {
   width: 32px;
   height: 32px;
-}
-
-.app-titlebar-developer-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 7px;
-  height: 7px;
-  border: 2px solid var(--app-shell-bg);
-  border-radius: var(--r-pill);
-  background: var(--c-warning);
 }
 
 body:has(.resize-handle[data-resizing="true"]) .app-shell {

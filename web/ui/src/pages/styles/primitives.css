@@ -17,39 +17,6 @@
 /* Button: shared look (radius, weight, transition, focus). Size/padding stay
    with the view since they depend on the toolbar/row the button sits in.
    Variants: default (subtle), --primary (semantic accent), --danger. */
-.og-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  background: var(--c-surface);
-  color: var(--c-text);
-  font: inherit;
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--motion-fast) var(--motion-ease),
-    border-color var(--motion-fast) var(--motion-ease),
-    color var(--motion-fast) var(--motion-ease);
-}
-
-.og-button:hover,
-.og-button:focus-visible {
-  background: var(--c-surface-hover);
-  outline: 0;
-}
-
-.og-button:focus-visible {
-  box-shadow: 0 0 0 3px var(--c-focus-ring);
-}
-
-.og-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
 
 .og-button--primary {
   border-color: var(--button-primary-background-color);
