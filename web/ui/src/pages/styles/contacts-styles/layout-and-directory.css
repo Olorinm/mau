@@ -93,33 +93,6 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
-.contacts-message-button {
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--contacts-message-button-bg);
-  color: var(--og-section-muted);
-  box-shadow: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  min-height: 30px;
-  padding: 0 9px;
-}
-
-.contacts-message-button:hover,
-.contacts-message-button:focus-visible {
-  background: var(--contacts-message-button-hover-bg);
-  color: var(--og-section-text);
-  outline: none;
-}
-
-.contacts-message-button {
-  justify-self: start;
-}
-
 .contacts-list,
 .contacts-group-list {
   display: grid;
@@ -127,10 +100,6 @@
   gap: 2px;
   min-height: 0;
   overflow: auto;
-}
-
-.contacts-group-list {
-  padding: 14px 22px;
 }
 
 .contacts-person-row {
@@ -146,34 +115,10 @@
   text-align: left;
 }
 
-.contacts-group-row {
-  width: 100%;
-  gap: 10px;
-  min-height: 42px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--og-section-text);
-  box-shadow: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
-  padding: 4px 8px;
-  text-align: left;
-}
-
 .contacts-person-row:hover,
 .contacts-person-row:focus-visible,
 .contacts-person-row[data-active="true"] {
   background: var(--rooms-blue-soft);
-  outline: none;
-}
-
-.contacts-group-row:hover,
-.contacts-group-row:focus-visible {
-  background: var(--og-section-hover);
-  color: var(--og-section-text);
   outline: none;
 }
 
@@ -182,26 +127,6 @@
   width: calc(var(--sp-8) - calc(var(--sp-1) / 2));
   height: calc(var(--sp-8) - calc(var(--sp-1) / 2));
   font-size: var(--fs-sm);
-}
-
-.contacts-group-icon {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-pill);
-  background: var(--rooms-blue-soft);
-  color: var(--rooms-blue);
-}
-
-.contacts-group-row svg {
-  color: var(--og-section-icon);
-}
-
-.contacts-group-row small {
-  color: var(--og-section-muted);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-normal);
 }
 
 .contacts-person-row > span:last-child,
@@ -221,10 +146,6 @@
   overflow: hidden;
 }
 
-.contacts-employee-title {
-  min-width: 0;
-}
-
 /* Keep the remote identity next to the editable name, including short names. */
 .contacts-employee-title[data-remote="true"] {
   display: flex;
@@ -242,52 +163,6 @@
   min-width: 2ch;
   max-width: min(360px, calc(100% - 1em - var(--sp-1)));
   padding-inline: 0;
-}
-
-.contacts-employee-title h3 {
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--fs-xl);
-  line-height: var(--lh-tight);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0;
-}
-
-.contacts-employee-title input {
-  box-sizing: border-box;
-  width: min(360px, calc(100vw - var(--sp-10)));
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--rooms-text);
-  font: inherit;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
-  line-height: var(--lh-tight);
-  letter-spacing: 0;
-  padding: var(--sp-1) var(--sp-2);
-  text-align: center;
-  transition:
-    background var(--motion-fast) var(--motion-ease),
-    box-shadow var(--motion-fast) var(--motion-ease);
-}
-
-.contacts-employee-title input:hover {
-  background: var(--contacts-overview-fill-bg);
-}
-
-.contacts-employee-title input:focus {
-  background: var(--contacts-overview-fill-bg);
-  outline: 0;
-  box-shadow: var(--room-dialog-field-focus-shadow);
-}
-
-.contacts-employee-body {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
-  height: 100%;
-  min-height: 0;
 }
 
 .contacts-employee-settings-surface {
@@ -329,315 +204,9 @@
   padding: var(--contacts-summary-action-clearance) var(--sp-5) var(--sp-7);
 }
 
-.contacts-employee-identity {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-self: center;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-
-.contacts-employee-summary .contacts-employee-avatar {
-  flex: 0 0 auto;
-  width: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
-  height: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
-}
-
-.contacts-employee-avatar .rooms-avatar {
-  width: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
-  height: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
-  font-size: var(--fs-xl);
-}
-
-.contacts-employee-summary .contacts-avatar-editor-badge {
-  right: calc(var(--sp-1) * -1);
-  bottom: var(--sp-1);
-  width: var(--sp-6);
-  height: var(--sp-6);
-  border-color: var(--contacts-overview-hairline);
-  background: var(--contacts-overview-fill-bg);
-}
-
-.contacts-employee-summary .contacts-summary-actions {
-  justify-content: center;
-  gap: var(--sp-3);
-}
-
-.contacts-summary-actions .contacts-message-button {
-  display: grid;
-  flex: 0 0 var(--sp-10);
-  place-items: center;
-  width: var(--sp-10);
-  height: var(--sp-10);
-  min-width: 0;
-  min-height: 0;
-  background: transparent;
-  color: var(--rooms-muted);
-  padding: 0;
-}
-
-.contacts-summary-actions .contacts-message-button:hover,
-.contacts-summary-actions .contacts-message-button:focus-visible {
-  background: transparent;
-}
-
-.contacts-summary-action-icon {
-  display: grid;
-  place-items: center;
-  width: var(--sp-10);
-  height: var(--sp-10);
-  border: 1px solid var(--contacts-overview-hairline);
-  border-radius: var(--r-pill);
-  background: var(--contacts-overview-fill-bg);
-  color: var(--rooms-muted);
-}
-
-.contacts-summary-actions .contacts-message-button:hover .contacts-summary-action-icon,
-.contacts-summary-actions .contacts-message-button:focus-visible .contacts-summary-action-icon {
-  border-color: var(--rooms-border-strong);
-  background: var(--contacts-overview-fill-hover-bg);
-  color: var(--rooms-text);
-}
-
 .contacts-summary-actions .contacts-message-button.danger:hover .contacts-summary-action-icon,
 .contacts-summary-actions .contacts-message-button.danger:focus-visible .contacts-summary-action-icon {
   color: var(--c-error);
-}
-
-.contacts-employee-console {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-  background: transparent;
-}
-
-.contacts-console-body {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--sp-6) var(--sp-6) var(--sp-8);
-}
-
-.contacts-console-body:has(> .contacts-employee-overview-page) {
-  padding-top: 0;
-}
-
-.contacts-employee-summary:has(~ .contacts-employee-console .contacts-employee-overview-page) {
-  padding-bottom: var(--sp-3);
-}
-
-.contacts-console-body > * {
-  width: min(100%, 880px);
-  margin-inline: auto;
-}
-
-.contacts-employee-subpage-header {
-  display: grid;
-  grid-template-columns: var(--sp-8) minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sp-3);
-  min-height: calc(var(--sp-10) + var(--sp-6));
-  padding: var(--sp-2) var(--sp-5);
-}
-
-.contacts-employee-subpage-header button {
-  display: grid;
-  place-items: center;
-  width: var(--sp-8);
-  height: var(--sp-8);
-  border: 0;
-  border-radius: var(--r-pill);
-  background: var(--contacts-overview-fill-bg);
-  color: var(--rooms-muted);
-  cursor: pointer;
-  padding: 0;
-}
-
-.contacts-employee-subpage-header button:hover,
-.contacts-employee-subpage-header button:focus-visible {
-  background: var(--contacts-overview-fill-hover-bg);
-  color: var(--rooms-text);
-  outline: none;
-}
-
-.contacts-employee-subpage-header h2 {
-  margin: 0;
-  color: var(--rooms-text);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-employee-overview-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  align-content: start;
-  gap: var(--sp-3);
-}
-
-.contacts-employee-runtime-card {
-  display: grid;
-  gap: var(--sp-4);
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.contacts-employee-overview-runtime-editor .employee-dialog-runtime-card {
-  gap: var(--sp-5);
-}
-
-.contacts-employee-overview-runtime-editor .employee-dialog-runtime {
-  gap: var(--sp-3);
-}
-
-.contacts-employee-overview-runtime-editor .employee-dialog-runtime-settings-card {
-  gap: var(--sp-2);
-}
-
-.contacts-employee-overview-group {
-  display: grid;
-  overflow: hidden;
-  border-radius: var(--r-md);
-  background: var(--contacts-overview-fill-bg);
-}
-
-.contacts-employee-overview-group > button {
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--sp-8) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-3);
-  min-height: calc(var(--sp-10) + var(--sp-2));
-  border: 0;
-  background: transparent;
-  color: var(--rooms-text);
-  cursor: pointer;
-  font: inherit;
-  padding: var(--sp-2) var(--sp-4);
-  text-align: left;
-}
-
-.contacts-employee-overview-group > button:last-child {
-  border-bottom: 0;
-}
-
-.contacts-employee-overview-group > button:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  right: var(--sp-4);
-  bottom: 0;
-  left: calc(var(--sp-4) + var(--sp-8) + var(--sp-3));
-  height: 1px;
-  background: var(--contacts-overview-hairline);
-}
-
-.contacts-employee-overview-group > button:hover,
-.contacts-employee-overview-group > button:focus-visible {
-  background: var(--contacts-overview-fill-hover-bg);
-  outline: none;
-}
-
-.contacts-employee-overview-group > button:disabled {
-  cursor: default;
-  opacity: var(--state-disabled-opacity);
-}
-
-.contacts-employee-overview-icon {
-  display: grid;
-  place-items: center;
-  width: var(--sp-8);
-  height: var(--sp-8);
-  background: transparent;
-  color: var(--rooms-muted);
-}
-
-.contacts-employee-overview-copy {
-  display: grid;
-  gap: calc(var(--sp-1) / 2);
-  min-width: 0;
-}
-
-.contacts-employee-overview-copy strong,
-.contacts-employee-overview-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.contacts-employee-overview-copy strong {
-  color: var(--rooms-text);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-}
-
-.contacts-employee-overview-copy small {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
-.contacts-employee-overview-group > button > svg {
-  color: var(--rooms-muted);
-}
-
-.contacts-employee-activity-preview {
-  display: grid;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  margin-bottom: var(--sp-2);
-}
-
-.contacts-employee-activity-card-action {
-  position: absolute;
-  top: 50%;
-  right: var(--sp-4);
-  display: grid;
-  place-items: center;
-  width: var(--sp-8);
-  height: var(--sp-8);
-  color: var(--rooms-muted);
-  transform: translateY(-50%);
-  transition:
-    color var(--motion-fast) var(--motion-ease),
-    transform var(--motion-fast) var(--motion-ease);
-}
-
-.contacts-employee-activity-summary {
-  box-sizing: border-box;
-  min-width: 0;
-  position: relative;
-  display: grid;
-  gap: var(--sp-3);
-  width: 100%;
-  margin: 0;
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-md);
-  background: var(--rooms-panel);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  padding: var(--sp-3) calc(var(--sp-8) + var(--sp-2));
-  text-align: center;
-  transition:
-    border-color var(--motion-fast) var(--motion-ease),
-    background var(--motion-fast) var(--motion-ease);
-}
-
-.contacts-employee-activity-summary:hover,
-.contacts-employee-activity-summary:focus-visible {
-  border-color: var(--rooms-border-strong);
-  background: color-mix(in srgb, var(--rooms-panel) 92%, var(--contacts-overview-fill-hover-bg));
-  outline: none;
-}
-
-.contacts-employee-activity-summary:hover .contacts-employee-activity-card-action,
-.contacts-employee-activity-summary:focus-visible .contacts-employee-activity-card-action {
-  color: var(--rooms-text);
-  transform: translate(2px, -50%);
 }
 
 .contacts-employee-activity-current {
@@ -665,12 +234,6 @@
   color: var(--c-link);
 }
 
-.contacts-employee-activity-metrics > span {
-  display: grid;
-  gap: calc(var(--sp-1) / 2);
-  min-width: 0;
-}
-
 .contacts-employee-activity-current strong {
   overflow: hidden;
   color: var(--rooms-text);
@@ -678,25 +241,6 @@
   font-weight: var(--fw-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.contacts-employee-activity-metrics small {
-  color: var(--rooms-muted);
-  font-size: var(--fs-xs);
-}
-
-.contacts-employee-activity-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 120px));
-  justify-content: center;
-  gap: var(--sp-6);
-}
-
-.contacts-employee-activity-metrics strong {
-  color: var(--rooms-text);
-  font-size: var(--fs-lg);
-  line-height: var(--lh-tight);
-  font-weight: var(--fw-semibold);
 }
 
 .contacts-main-panel {
@@ -818,21 +362,6 @@
   .contacts-view {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .contacts-employee-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.contacts-confirm-dialog {
-  width: min(360px, calc(100vw - 32px));
-}
-
-.contacts-confirm-copy {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
 }
 
 .contacts-view[data-list-detail="compact"] .contacts-main-panel {

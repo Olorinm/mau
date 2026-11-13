@@ -69,10 +69,6 @@
   grid-template-columns: var(--sp-10) minmax(0, 1fr) auto;
 }
 
-.rooms-group-profile-icon.room-group-avatar {
-  font-size: var(--fs-md);
-}
-
 .rooms-group-profile-card:has(.room-group-avatar.has-members) {
   grid-template-columns: var(--sp-10) minmax(0, 1fr);
 }

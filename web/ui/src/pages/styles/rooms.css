@@ -330,16 +330,6 @@
   background: var(--rooms-primary-hover-bg);
 }
 
-.room-settings-panel section {
-  display: grid;
-  gap: 8px;
-  width: min(720px, 100%);
-  border: 1px solid var(--rooms-border);
-  border-radius: var(--r-sm);
-  background: var(--rooms-panel);
-  padding: 16px;
-}
-
 @media (max-width: 900px) {
   .rooms-view {
     grid-template-columns: minmax(0, 1fr);
