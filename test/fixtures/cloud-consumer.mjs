@@ -35,8 +35,6 @@ async function open() {
       serverName: "example.test",
       publicUrl: "https://example.test/_agent-router/v1",
       stateDir: join(root, "router"),
-      ledgerRead: true,
-      ledgerSend: true,
     },
     options,
     { router: {

@@ -4,7 +4,7 @@ import { Button } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
-import { attachmentLimits, ledgerApi, ledgerFeatures } from "../api/ledger";
+import { attachmentLimits, ledgerApi } from "../api/ledger";
 import { LedgerMessagesScreen } from "./ledger-messages";
 
 type MessagesProps = {
@@ -13,7 +13,7 @@ type MessagesProps = {
   onStartHandled?(): void;
 };
 
-/** Chats are served by Router's owner ledger (agent-router ADR 0005); a Router without it cannot serve this console. */
+/** Chats are served by Router's owner ledger (agent-router ADR 0005). */
 export function MessagesScreen(props: MessagesProps) {
   const { t } = useI18n();
   const me = useQuery({
@@ -29,7 +29,5 @@ export function MessagesScreen(props: MessagesProps) {
       <Button disabled={me.isFetching} onClick={() => void me.refetch()}>{t("common.retry")}</Button>
     </div>
   );
-  const features = ledgerFeatures(me.data);
-  if (!features.has("history")) return <div className="mau-error" role="alert">{errorMessage(t, "chat_history_unavailable")}</div>;
-  return <LedgerMessagesScreen {...props} features={features} limits={attachmentLimits(me.data)} />;
+  return <LedgerMessagesScreen {...props} limits={attachmentLimits(me.data)} />;
 }

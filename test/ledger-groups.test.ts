@@ -57,7 +57,7 @@ it("generates an idempotency key per create and validates input before calling R
 });
 
 it("surfaces Router group errors as codes with console text", async () => {
-  for (const [status, error] of [[422, "agent_not_found"], [429, "room_limit_reached"], [403, "feature_disabled"], [409, "idempotency_key_reused"], [422, "too_many_members"]] as const) {
+  for (const [status, error] of [[422, "agent_not_found"], [429, "room_limit_reached"], [409, "idempotency_key_reused"], [422, "too_many_members"]] as const) {
     stubFetch(() => new Response(JSON.stringify({ error }), { status }));
     await expect(groupsApi("token").create({ title: "t", agentIds: ["a"] })).rejects.toMatchObject({ code: error, status });
   }

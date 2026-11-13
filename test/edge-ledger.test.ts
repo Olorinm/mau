@@ -27,10 +27,6 @@ it("refuses to start without an edge identity: there is no other owner login", a
   await expect(mauFixture(cleanup, {}, { edgeIdentity: undefined })).rejects.toThrow("edge_identity_required");
 });
 
-it("refuses to start without the ledger: the console would have no chat source", async () => {
-  await expect(mauFixture(cleanup, {}, {}, { ledgerRead: false })).rejects.toThrow("ledger_read_required");
-});
-
 it("creates, configures and deletes employees and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();
@@ -76,8 +72,6 @@ it.skipIf(!built)("runs the console without any Matrix code path", async () => {
   };
   const { f, access } = await edgeMau({ webRoot, host, hostCapabilities: { runIdempotency: true } });
   const jwt = access.jwt();
-  const me = await (await fetch(f.base + "/_agent-router/v1/web/me", { headers: { "cf-access-jwt-assertion": jwt } })).json() as { limits?: { features?: Record<string, boolean> } };
-  expect(me.limits?.features).not.toHaveProperty("matrix");
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
 

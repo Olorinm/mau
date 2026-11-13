@@ -150,7 +150,6 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       serverName: "example.test",
       publicUrl: "http://127.0.0.1" + root,
       stateDir: directory,
-      ...("ledgerRead" in routerConfig ? {} : { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerGroups: true }),
       ...routerConfig,
     },
     optionsFile,

@@ -136,7 +136,6 @@ export function memberEventText(event: Pick<MemberEvent, "action" | "member" | "
 const errors: Record<string, [string, string]> = {
   agent_not_found: ["所选员工不存在或已停用。", "An Agent you chose no longer exists or is inactive."],
   room_limit_reached: ["群聊数量已达上限（100 个），请先归档不用的群聊。", "You have reached the limit of 100 groups. Archive one first."],
-  feature_disabled: ["Router 未开启群聊功能。", "Groups are not enabled on this Router."],
   too_many_members: ["一个群聊最多 20 位员工。", "A group can have at most 20 Agents."],
   mention_not_member: ["@ 的员工已不在群里，请重新选择。", "A mentioned Agent is no longer in this group."],
   invalid_group_title: ["群名需要 1–64 个字符。", "A group name needs 1–64 characters."],

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ListRow, ProductIcon, SelectMenu, SettingsPage, SettingsSection, TextButton, useToast } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
-import { ledgerApi, ledgerFeatures, newIdempotencyKey, type ChatSummary } from "../api/ledger";
+import { ledgerApi, newIdempotencyKey, type ChatSummary } from "../api/ledger";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n, type Language } from "../i18n";
 import { useThemePreference } from "../theme";
@@ -47,18 +47,14 @@ export function DataControlsPage({ session }: { session: Session }) {
   const { language, t } = useI18n(), zh = language === "zh-CN";
   const { toast } = useToast();
   const api = ledgerApi(session.token);
-  const me = useQuery({ queryKey: ["ledger-me", session.token], queryFn: ({ signal }) => api.me(signal), retry: false, staleTime: 5 * 60_000 });
-  const features = ledgerFeatures(me.data);
-  const enabled = features.has("send") && features.has("reset");
-  const chats = useQuery({ queryKey: ["data-control-chats", session.owner], queryFn: ({ signal }) => api.chats(null, signal), enabled });
+  const chats = useQuery({ queryKey: ["data-control-chats", session.owner], queryFn: ({ signal }) => api.chats(null, signal) });
   const [purging, setPurging] = useState<ChatSummary>();
   const writable = (chats.data?.data ?? []).filter((chat) => !chat.readOnly);
   return <SettingsPage title={zh ? "数据控制" : "Data controls"}>
     <SettingsSection title={zh ? "聊天记录" : "Chat history"}
       note={zh ? "清空会永久删除你在所有渠道（网页、飞书、邮件等）与该员工或群聊的记录，并开始新对话；员工已经写入的记忆不会被删除。"
         : "Clearing permanently deletes your messages in that chat on every channel and starts a new chat; memories the Agent already wrote are kept."}>
-      {me.isPending || chats.isPending && enabled ? <ListRow muted title={zh ? "正在读取…" : "Loading…"} />
-        : !enabled ? <ListRow muted title={zh ? "这个 Router 尚未开启清空聊天记录。" : "This Router does not offer clearing chat history."} />
+      {chats.isPending ? <ListRow muted title={zh ? "正在读取…" : "Loading…"} />
         : chats.isError ? <ListRow muted title={errorMessage(t, chats.error instanceof ApiError ? chats.error.code : "request_failed")} />
         : writable.length ? writable.map((chat) => <ListRow key={chat.chatId} title={chat.title}
           trailing={<TextButton tone="danger" onClick={() => setPurging(chat)}>{zh ? "清空" : "Clear"}</TextButton>} />)

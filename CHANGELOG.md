@@ -4,6 +4,17 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.46] - 2026-11-13
+
+- Built on Agent Kit 0.10.0-alpha.1, whose Router keeps one record of channel messages (its
+  ledger) and has no ledger switches: the web API, cards, control, groups, identities and
+  attachments are always served. `AGENT_LEDGER_READ`, `AGENT_LEDGER_SEND` and the other
+  `AGENT_LEDGER_*` variables are no longer read and can be removed from a deployment; Mau no
+  longer refuses to start without them. On first start each employee's store is migrated by
+  Router; no step is required.
+- The console no longer waits for Router to advertise features: sending, card answers, new chat
+  and clear, groups, attachments and the identity page are always available.
+
 ## [0.1.0-alpha.45] - 2026-11-12
 
 - Built on Agent Kit 0.9.0-alpha.1, whose Router has no Matrix: accounts and agents, channel

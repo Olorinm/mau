@@ -10,7 +10,7 @@ Mau 负责产品开通、环境绑定、Host 初始化、续期、暂停恢复�
 
 将 [mau.json](../examples/mau.json) 与 [Host 配置](../examples/cloud/host-profile.json) 复制到仓库外，准备私有 providers.json 和密钥文件，调整相对路径。环境方案指定允许的 Router 账号、云模板、内核和 Host 配置。个人登录状态通过私有文件注入，不进入共享镜像。
 
-设置 Router 服务配置（`MATRIX_SERVER_NAME` 仅作为账号命名空间，`AGENT_SERVICE_URL`，`AGENT_LEDGER_READ=1`、`AGENT_LEDGER_SEND=1`）、`MAU_CONFIG_FILE` 和 `MAU_STATE` 后运行 `mau-server`；可选 `MAU_WEB_ROOT` 同域提供 [Web 控制台](web.zh-CN.md)。完整变量与代理要求见[英文说明](environments.md)。Mau 进程内组合 Router，且不使用 Matrix；同一状态目录和渠道只能有一个进程。
+设置 Router 服务配置（`MATRIX_SERVER_NAME` 仅作为账号命名空间，`AGENT_SERVICE_URL`）、`MAU_CONFIG_FILE` 和 `MAU_STATE` 后运行 `mau-server`；可选 `MAU_WEB_ROOT` 同域提供 [Web 控制台](web.zh-CN.md)。完整变量与代理要求见[英文说明](environments.md)。Mau 进程内组合 Router，且不使用 Matrix；同一状态目录和渠道只能有一个进程。
 
 ```sh
 cloudflared access login https://mau.example

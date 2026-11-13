@@ -18,7 +18,7 @@ import { ApiError } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
   AttachmentDrafts, LedgerClient, attachmentKind, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
-  type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerFeature, type LedgerSocket, type LedgerTurn,
+  type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerSocket, type LedgerTurn,
   type PendingAnswer,
 } from "../api/ledger";
 import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
@@ -52,11 +52,11 @@ const cardStatusNames: Record<string, [string, string]> = {
  * buttons answer by choice, free-text cards by text. A pending handoff card reads its live text (the private link
  * is never stored in history).
  */
-function LedgerCardView({ client, api, chatId, card, answer, answerable }: {
-  client: LedgerClient; api: LedgerApi; chatId: string; card: Card; answer: PendingAnswer | undefined; answerable: boolean;
+function LedgerCardView({ client, api, chatId, card, answer }: {
+  client: LedgerClient; api: LedgerApi; chatId: string; card: Card; answer: PendingAnswer | undefined;
 }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
-  const pending = card.status === "pending" && answerable;
+  const pending = card.status === "pending";
   const live = useQuery({ queryKey: ["ledger-card", chatId, card.cardId, card.status], enabled: pending && card.source === "mau-handoff",
     queryFn: ({ signal }) => api.card(chatId, card.cardId, signal), retry: false, refetchOnWindowFocus: false });
   const [draft, setDraft] = useState("");
@@ -161,11 +161,10 @@ function LedgerAttachments({ api, attachments, onError, onPreview }: { api: Ledg
 }
 
 /**
- * Messages served by Router's owner ledger (agent-router ADR 0005). Each console feature follows the
- * server-advertised flags; without `send` the conversations are read-only.
+ * Messages served by Router's owner ledger (agent-router ADR 0005).
  */
-export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, features, limits }: {
-  session: Session; initialAgentId?: string | undefined; onStartHandled?(): void; features: ReadonlySet<LedgerFeature>;
+export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, limits }: {
+  session: Session; initialAgentId?: string | undefined; onStartHandled?(): void;
   /** `GET /me` attachment limits (ADR 0005 16.5). */
   limits?: { bytes: number; perMessage: number } | undefined;
 }) {
@@ -400,11 +399,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError}
     onPreview={(attachment) => { setProfile(undefined); setSideView({ kind: "file", attachment }); }} /> : undefined;
 
-  const sendable = features.has("send");
-  const cardsOn = sendable && features.has("cards"), controlOn = sendable && features.has("reset");
   const answers = new Map(view?.answers.map((item) => [item.cardId, item]) ?? []);
   // Only the owner's own web messages can be withdrawn (no edit); the key is present only on those (§8.2).
-  const canRedact = (item: LedgerBubble) => sendable && item.kind === "message" && item.role === "user" && !item.redacted
+  const canRedact = (item: LedgerBubble) => item.kind === "message" && item.role === "user" && !item.redacted
     && !!item.idempotencyKey && (item.channel?.kind ?? "web") === "web";
   const redactions = new Map(view?.redactions.map((item) => [item.eventId, item]) ?? []);
   const messages: MessageView[] = [];
@@ -423,18 +420,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     }
     const chatId = current.chatId;
     // The run surface answers through the card (one record for every surface); cancel and steer use the turn routes.
-    const controlsFor = (turn: LedgerTurn): RunControls | undefined => !cardsOn && !controlOn ? undefined : {
-      ...(cardsOn ? { answer: async (callId: string, request: Parameters<NonNullable<RunControls["answer"]>>[1], answer: Parameters<NonNullable<RunControls["answer"]>>[2]) => {
+    const controlsFor = (turn: LedgerTurn): RunControls => ({
+      answer: async (callId: string, request: Parameters<NonNullable<RunControls["answer"]>>[1], answer: Parameters<NonNullable<RunControls["answer"]>>[2]) => {
         const card = [...fold.cards.values()].find((item) => item.callId === callId && item.turnId === turn.turnId);
         if (!card) throw new ApiError("card_not_found", 404);
         const allows = "choice" in answer ? request.choices?.find((choice) => choice.id === answer.choice)?.allows
           : "action" in answer ? answer.action === "accept" : undefined;
         const response = await client.answerCard(chatId, card.cardId, cardAnswerBody(card, answerInteraction(request, answer), allows));
         if (response?.status === "stale") throw new ApiError("card_answer_stale", 409);
-      } } : {}),
-      ...(controlOn ? { cancel: () => client.cancelTurn(chatId, turn.turnId),
-        ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}) } : {}),
-    };
+      },
+      cancel: () => client.cancelTurn(chatId, turn.turnId),
+      ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}),
+    });
     const turnView = (turn: LedgerTurn): MessageView => {
       const name = agentName(turn.agentId);
       return {
@@ -468,7 +465,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         title: item.sender.name,
         avatar: actorAvatar(item),
         ...(channel || details ? { subtitle: <>{channel}{channel && details ? " " : null}{details}</> } : {}),
-        content: item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} answerable={cardsOn} />
+        content: item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} />
           : item.redacted ? <p className="mau-muted mau-redacted">{item.sender.type === "person" ? (zh ? "消息已撤回" : "Message withdrawn") : (zh ? "消息已删除" : "Message deleted")}</p>
           : text ? <ChatMarkdown markdown={text} /> : undefined,
         ...(canRedact(item) && !withdrawal ? { menuActions: [{ id: "redact", label: zh ? "撤回" : "Withdraw",
@@ -516,8 +513,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     }
   }
 
-  const groupWritable = features.has("groups") && features.has("send");
-  const canSend = sendable && !!current && !current.readOnly && (current.kind === "dm" || (current.kind === "group" && groupWritable));
+  const canSend = !!current && !current.readOnly && (current.kind === "dm" || current.kind === "group");
   const insertMention = (chatId: string, name: string) => setDrafts((values) => {
     const draft = values[chatId] ?? "";
     const base = draft.endsWith("@") ? draft.slice(0, -1) : draft;
@@ -532,15 +528,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     ...(item.previewUrl ? { previewUrl: item.previewUrl } : {}), detail: draftDetail(item),
     onRemove: () => uploads.remove(chatId, item.id),
   })) as unknown as NonNullable<ConversationComposer["attachments"]>;
-  const attachable = features.has("attachments") && sendable && canSend;
+  const attachable = canSend;
   const failedDrafts = current ? uploads.list(current.chatId).filter((item) => item.state === "failed") : [];
   // While a DM reply runs, the send button stops it and text sent goes into it (steer, ADR 0005 16.2).
   const activeTurn = current?.kind === "dm" && fold
     ? [...fold.turns.values()].reverse().find((turn) => !terminalTurn.includes(turn.state)) : undefined;
-  const runningTurn = controlOn && canSend ? activeTurn : undefined;
+  const runningTurn = canSend ? activeTurn : undefined;
   const clearDraft = (chatId: string) => setDrafts((values) => ({ ...values, [chatId]: "" }));
   // Slash commands in a DM: "/new" is Router's reset (the same as typing it in Feishu), "/clear" asks before purging.
-  const commands = controlOn && current?.kind === "dm" && !current.readOnly ? [
+  const commands = current?.kind === "dm" && !current.readOnly ? [
     { id: "new", name: "new", description: zh ? "开始新对话，之前的上下文不再带入" : "Start a new chat without the earlier context",
       onSelect: () => { clearDraft(current.chatId); reset.mutate({ chatId: current.chatId, cancelActive: false }); } },
     { id: "clear", name: "clear", description: zh ? "永久清空与它的聊天记录" : "Permanently clear the chat history",
@@ -574,7 +570,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     { id: "agents", title: zh ? "员工" : "Employees", entries: agentEntries,
       action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } } },
     { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
-      ...(groupWritable ? { action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } } : {}) },
+      action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } },
     { id: "others", title: zh ? "其他渠道" : "Other channels", entries: otherEntries },
   ];
   const header = (
@@ -588,7 +584,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
           messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
           onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
-          {...(room.group && groupWritable ? {
+          {...(room.group ? {
             onRename: (title: string) => void room.rename(title, (summary) => client.updateSummary(summary)).catch(setUploadError),
             onOpenSettings: () => setMembersOpen(true),
           } : {})} />
@@ -721,9 +717,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       ) : null}
       <PurgeChatDialog chat={purging} onClose={() => setPurging(undefined)}
         purge={(chatId, cancelActive) => client.purge(chatId, chatId, cancelActive)} />
-      {groupWritable ? <LedgerCreateGroupDialog token={session.token} open={grouping} agents={agents.data ?? []}
-        onOpenChange={setGrouping} onCreated={(summary) => { setGrouping(false); open(summary); }} /> : null}
-      {groupWritable && room.group && membersOpen ? <LedgerGroupMembersDialog token={session.token} open chat={room.group}
+      <LedgerCreateGroupDialog token={session.token} open={grouping} agents={agents.data ?? []}
+        onOpenChange={setGrouping} onCreated={(summary) => { setGrouping(false); open(summary); }} />
+      {room.group && membersOpen ? <LedgerGroupMembersDialog token={session.token} open chat={room.group}
         members={room.members} agents={agents.data ?? []} onOpenChange={setMembersOpen}
         onChanged={(change) => room.applyChange(change, (summary) => client.updateSummary(summary))} /> : null}
     </>

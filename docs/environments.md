@@ -18,12 +18,6 @@ channel authorization and delivery. Host owns native execution and sessions.
 ```sh
 MATRIX_SERVER_NAME=agents.example   # the owner-ID namespace (`@alice:agents.example`); no Matrix server is used
 AGENT_SERVICE_URL=https://mau.example/_agent-router/v1
-AGENT_LEDGER_READ=1                 # required: the console's conversations come from Router's ledger
-AGENT_LEDGER_SEND=1                 # required with the ledger
-AGENT_LEDGER_CARDS=1                # optional ledger features: cards, control (new chat, clear), groups, identity
-AGENT_LEDGER_CONTROL=1
-AGENT_LEDGER_GROUPS=1
-AGENT_LEDGER_IDENTITY=1
 MAU_CONFIG_FILE=/private/mau.json
 MAU_STATE=/data/mau
 MAU_WEB_ROOT=/app/web   # optional: serve the web console from the same origin

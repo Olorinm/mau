@@ -94,8 +94,8 @@ export type CancelResponse = { status: "accepted" } | { status: "already_finishe
 export type SteerResponse = { status: "accepted"; event: ChatEvent } | { status: "unsupported" };
 export interface LedgerMe {
   person: { id: string; name: string }; ownerId: string; identities: unknown[];
-  /** `features` is a name → boolean map (ADR 0005 "Client contract" 1); a missing name is off. */
-  limits?: { features?: Partial<Record<LedgerFeature, boolean>> } & Record<string, unknown>;
+  /** Request and attachment limits (`attachmentLimits`). */
+  limits?: Record<string, unknown>;
 }
 /** A verified `(provider, namespace, subject)` of the owner (ADR 0005 phase 6 implementation notes). */
 export interface PersonIdentity {
@@ -106,20 +106,6 @@ export interface PersonIdentity {
 export interface PairingCode { id: string; code: string; expiresAt: string; instructions: string }
 export interface PendingPairingCode { id: string; createdAt: string; expiresAt: string }
 export interface HistoryQuery { before?: number; after?: number; generation?: number; limit?: number; strict?: boolean }
-
-// ---- Flags ----
-/** Console features Router advertises per migration phase (ADR 0005 §11). */
-export type LedgerFeature = "history" | "send" | "cards" | "attachments" | "reset" | "groups" | "identity";
-const featureNames: readonly LedgerFeature[] = ["history", "send", "cards", "attachments", "reset", "groups", "identity"];
-
-
-/** `limits.features` is a name → boolean map; only names set to `true` are on, unknown names are ignored. */
-export function ledgerFeatures(me: LedgerMe | null | undefined): Set<LedgerFeature> {
-  const raw = me?.limits?.features;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return new Set();
-  return new Set(featureNames.filter((name) => (raw as Record<string, unknown>)[name] === true));
-}
-
 
 // ---- HTTP ----
 const keyPattern = /^[A-Za-z0-9_-]{16,128}$/;
