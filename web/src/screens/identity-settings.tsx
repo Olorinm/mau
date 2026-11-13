@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListRow, SettingsPage, SettingsSection, TextButton } from "@olorinm/agent-ui/app";
 import { ApiError } from "../api/http";
-import { ledgerApi, ledgerFeatures, type PairingCode, type PersonIdentity } from "../api/ledger";
+import { ledgerApi, type PairingCode, type PersonIdentity } from "../api/ledger";
 import type { Session } from "../api/session";
 import { errorMessage, useI18n } from "../i18n";
 
@@ -23,16 +23,14 @@ export function remaining(expiresAt: string, now: number): string {
 
 /**
  * "身份与配对" (ADR 0005 18.5): the owner's linked identities, pending pairing codes and a new code with its
- * countdown. Shown only when Router advertises `limits.features.identity`.
+ * countdown.
  */
 export function IdentitySettings({ session }: { session: Session }) {
   const { language, t } = useI18n(), zh = language === "zh-CN";
   const api = useMemo(() => ledgerApi(session.token), [session.token]);
   const client = useQueryClient();
-  const me = useQuery({ queryKey: ["ledger-me", session.owner], queryFn: ({ signal }) => api.me(signal), retry: false });
-  const enabled = ledgerFeatures(me.data).has("identity");
-  const identities = useQuery({ queryKey: ["identities", session.owner], queryFn: ({ signal }) => api.identities(signal), enabled });
-  const codes = useQuery({ queryKey: ["pairing-codes", session.owner], queryFn: ({ signal }) => api.pairingCodes(signal), enabled, refetchInterval: 30_000 });
+  const identities = useQuery({ queryKey: ["identities", session.owner], queryFn: ({ signal }) => api.identities(signal) });
+  const codes = useQuery({ queryKey: ["pairing-codes", session.owner], queryFn: ({ signal }) => api.pairingCodes(signal), refetchInterval: 30_000 });
   const [issued, setIssued] = useState<PairingCode | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +51,6 @@ export function IdentitySettings({ session }: { session: Session }) {
   const loading = <ListRow muted title={zh ? "正在读取…" : "Loading…"} />;
   const failure = (cause: unknown) => <ListRow muted title={errorMessage(t, cause instanceof ApiError ? cause.code : "request_failed")} />;
 
-  if (me.isPending) return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"}><SettingsSection>{loading}</SettingsSection></SettingsPage>;
-  if (!enabled) return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"}>
-    <SettingsSection><ListRow muted title={zh ? "尚未开启" : "Not enabled"}
-      subtitle={zh ? "这个 Router 尚未开启身份与配对（limits.features.identity）。" : "This Router has not enabled identities and pairing (limits.features.identity)."} /></SettingsSection>
-  </SettingsPage>;
   const expired = issued && Date.parse(issued.expiresAt) <= now;
   return <SettingsPage title={zh ? "身份与配对" : "Identities and pairing"} className="mau-identity-settings">
     {error ? <p className="mau-error" role="alert">{error}</p> : null}

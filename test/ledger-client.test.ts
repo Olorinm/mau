@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../web/src/api/http";
 import { readFileSync } from "node:fs";
 import {
-  AttachmentDrafts, LedgerClient, attachmentKind, attachmentLimits, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi, ledgerFeatures,
+  AttachmentDrafts, LedgerClient, attachmentKind, attachmentLimits, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
   type AnswerRequest, type AnswerResponse, type AttachmentRef, type Card, type ChatEvent, type ChatEventBody, type ChatSummary, type EventPage, type HistoryQuery,
   type LedgerCommands, type LedgerSocket, type LedgerTransport, type RedactResponse, type SendRequest, type SendResponse, type UploadOptions,
 } from "../web/src/api/ledger";
@@ -393,14 +393,6 @@ it("folds edits, redactions, reactions, card updates, deliveries and turns into 
   expect(fold.turns.get("t1")).toMatchObject({ state: "completed", inputEventIds: ["ev_1"], seq: 2 });
 });
 
-it("reads features from the boolean map only", () => {
-  const me = (features: unknown) => ({ person: { id: "p", name: "n" }, ownerId: "o", identities: [], limits: { features } }) as never;
-  expect([...ledgerFeatures(me(["history", "send", "bogus"]))]).toEqual([]);
-  expect([...ledgerFeatures(me({ history: true, send: false, cards: false, attachments: false, reset: false, groups: false, bogus: true }))]).toEqual(["history"]);
-  expect([...ledgerFeatures(me({ history: true, cards: false, groups: true }))]).toEqual(["history", "groups"]);
-  expect(ledgerFeatures(me(undefined)).size).toBe(0);
-});
-
 it("calls the web API with encoded chat ids, cursors, idempotency keys and raw attachment uploads", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
@@ -455,9 +447,6 @@ it("calls the identity routes (ADR 0005 phase 6) and reads the identity feature"
     ["DELETE", "/_agent-router/v1/web/identities/pairing-codes/pc_1"],
   ]);
   expect(JSON.parse(calls[3]!.init.body as string)).toEqual({});
-  const me = (features: unknown) => ({ person: { id: "p", name: "n" }, ownerId: "o", identities: [], limits: { features } }) as never;
-  expect(ledgerFeatures(me({ history: true, identity: true })).has("identity")).toBe(true);
-  expect(ledgerFeatures(me({ history: true })).has("identity")).toBe(false);
 });
 
 it("retries a send whose response was lost with the same key and shows one message", async () => {

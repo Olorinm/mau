@@ -110,7 +110,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
     if (path.endsWith("/cancel")) { run!.status = "cancelled"; return Response.json({ cancellationRequested: true }); }
     if (/\/runs\/run-\d+$/.test(path)) return Response.json(run);
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
-  } }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true });
+  } }, {});
   await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
   const instance = await chromium.launch({ headless: true }); cleanup.push(() => instance.close());
   const page = await instance.newPage({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: "reduce", extraHTTPHeaders: f.edgeHeaders() });

@@ -86,10 +86,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const edgeIdentity = options.edgeIdentity as EdgeIdentityConfig | undefined ?? config.edgeIdentity;
   if (options.edgeIdentity && config.edgeIdentity) throw new Error("edge_identity_configured_twice");
-  // Owners sign in through the edge identity only, and the console's only chat source is Router's ledger
-  // (Router refuses `ledgerRead` without `ledgerSend`).
+  // Owners sign in through the edge identity only. The console's chat source is Router's ledger, which Router always serves.
   if (!edgeIdentity) throw new Error("edge_identity_required");
-  if (!config.ledgerRead) throw new Error("ledger_read_required");
   const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"),
     edgeIdentity };
   const router = createRouter(routerConfig, {
@@ -395,10 +393,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   const sshServers = new Set<() => void>();
   return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
-    // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`, only with AGENT_LEDGER_READ)
-    // first, then SSH, which answers 404 for every other path. Older Routers have no `upgrade`.
+    // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`) first, then SSH, which
+    // answers 404 for every other path.
     attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId),
-      (req, socket, head) => (router as { upgrade?: (req: IncomingMessage, socket: Duplex, head: Buffer) => boolean }).upgrade?.(req, socket, head) ?? false)); },
+      (req, socket, head) => router.upgrade(req, socket, head))); },
     close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

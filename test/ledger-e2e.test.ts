@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LedgerClient, attachmentLimits, foldEvents, ledgerApi, ledgerFeatures, newIdempotencyKey, type LedgerSocket } from "../web/src/api/ledger";
+import { LedgerClient, attachmentLimits, foldEvents, ledgerApi, newIdempotencyKey, type LedgerSocket } from "../web/src/api/ledger";
 import { mauFixture } from "./fixtures/mau.js";
 
 // Mau embedding Router's ledger: an owner message is served by the ledger history API behind Mau's console
@@ -26,7 +26,6 @@ it("serves owner messages through /web history and the event socket to the ledge
   const webRoot = mkdtempSync(join(tmpdir(), "mau-ledger-web-"));
   cleanup.push(() => rmSync(webRoot, { recursive: true, force: true }));
   writeFileSync(join(webRoot, "index.html"), "<!doctype html><title>console</title>");
-  // `ledgerSend` is ignored by Routers before phase 3; the send part below is keyed on the advertised feature.
   // A fake Host (with run idempotency, which Mau requires) that completes every run, so a web send runs a whole turn.
   const runs = new Map<string, Record<string, unknown>>(), inputs: string[] = [];
   const media: Array<Array<{ name: string; mediaType: string; data: string }>> = [];
@@ -45,16 +44,14 @@ it("serves owner messages through /web history and the event socket to the ledge
     if (run && runs.has(run)) return Response.json(runs.get(run));
     return Response.json({ error: "fixture_unknown_path" }, { status: 404 });
   };
-  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {}, { ledgerRead: true, ledgerSend: true, ledgerCards: true, ledgerControl: true, ledgerAttachments: true });
+  const f = await mauFixture(cleanup, { webRoot, host, hostCapabilities: { runIdempotency: true } }, {});
   // Released Routers before the ledger web channel have no upgrade handler; the test needs the local Router build.
-  if (typeof (f.mau.router as { upgrade?: unknown }).upgrade !== "function" || !(f.service as { web?: unknown }).web) return context.skip();
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
   const chatId = `dm:${f.agent.id}`;
   const api = ledgerApi("alice", f.base + "/_agent-router/v1/web");
   const me = await api.me();
-  expect(me.limits?.features).toMatchObject({ history: true });
-  const sendable = ledgerFeatures(me).has("send");
+  expect(me.limits).toMatchObject({ textBytes: 24_000 });
   expect(await api.openDm(f.agent.id)).toMatchObject({ chatId, kind: "dm" });
   // A message stored by another client of the same owner (another tab): read from history, then pushed live.
   const elsewhere = (text: string) => api.send(chatId, { idempotencyKey: newIdempotencyKey(), text });
@@ -87,7 +84,7 @@ it("serves owner messages through /web history and the event socket to the ledge
     Array.from({ length: client.view(chatId).events.length }, (_, index) => client.view(chatId).events[0]!.seq + index));
   // The chat index frame may trail the event frame under load.
   await until(() => (client.chats.get(chatId)?.lastSeq ?? 0) >= live.seq, "index");
-  if (sendable) {
+  {
     // Phase 3: the console sends through Router; the stored web message comes back once, keyed by its idempotencyKey.
     const response = await client.send(chatId, { text: "sent from the web" });
     expect(response).toMatchObject({ status: "accepted", event: { kind: "message", role: "user", text: "sent from the web", sender: { type: "person" } } });
@@ -114,7 +111,7 @@ it("serves owner messages through /web history and the event socket to the ledge
     expect(history.events.find((event) => event.eventId === response!.event.eventId)).toMatchObject({ kind: "message", text: "", redacted: true });
     expect(foldEvents(history.events).items.find((item) => item.eventId === response!.event.eventId)).toMatchObject({ redacted: true, text: "" });
 
-    if (ledgerFeatures(me).has("attachments")) {
+    {
       // Phase 4: a raw-body upload, a send that carries it, the Host receiving the bytes, and a same-origin download.
       const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from("pixels")]);
       const limits = attachmentLimits(me);
@@ -143,9 +140,8 @@ it("serves owner messages through /web history and the event socket to the ledge
       expect(folded!.attachments.map((item) => item.name)).toEqual(["截图.png", "notes.txt"]);
     }
   }
-  if (sendable && ledgerFeatures(me).has("reset")) {
+  {
     // Phase 4 control through Mau's server: "新对话" opens a new window for every owner channel; purge needs the chat id.
-    expect(ledgerFeatures(me).has("cards")).toBe(true);
     const reset = await client.reset(chatId, true);
     expect(reset.event).toMatchObject({ kind: "window", reason: "reset", window: reset.window });
     await until(() => client.view(chatId).events.some((event) => event.eventId === reset.event.eventId), "window event");
