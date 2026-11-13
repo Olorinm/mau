@@ -100,9 +100,9 @@ export function mauApi(token: string) {
     /** The fixed instructions of the employee's environment profile (read-only; shared by the profile's employees). */
     agentInstructions: (id: string) => request<{ text: string }>(mau + agent(id) + "/instructions", { token }),
     agentMemory: (id: string) => request<{ files: MemoryFile[] }>(mau + agent(id) + "/memory", { token }),
-    /** Adds, replaces or removes one entry of a memory file. */
-    changeAgentMemory: (id: string, target: MemoryFile["target"], operation: MemoryOperation) =>
-      request<unknown>(mau + agent(id) + "/memory", { token, body: { ...operation, target } }),
+    /** Applies the owner's changes to one memory file, in order and all or none. */
+    changeAgentMemory: (id: string, target: MemoryFile["target"], operations: MemoryOperation[]) =>
+      request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", target, operations } }),
     createAgent: (name: string, profileId: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, profileId } }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),

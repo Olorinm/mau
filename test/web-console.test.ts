@@ -271,13 +271,13 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
 );
 
 it.skipIf(!built)(
-  "the profile lists the employee's documents: instructions are read beside the conversation and memory is edited there entry by entry",
+  "the profile lists the employee's documents: instructions are read beside the conversation and memory is edited there as one document",
   async () => {
     const f = await mauFixture(cleanup, { webRoot });
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
     const memory = `/agents/${f.agent.id}/memory`;
     await f.api(memory, { action: "add", target: "user", content: "Prefers short answers." });
-    // Entries whose Markdown an editor would rewrite if it handled the whole file at once.
+    // Entries a Markdown editor writes back in its own way; they have to stay four entries, in order.
     const tricky = ["Naming: use snake_case_names; 2*3 = 6; path C:\\tmp\\a_b", "Checklist:\n- first item\n- second item\n1. numbered",
       "中文条目：先说结论，**重点**加粗。# 不是标题", "<b>html</b> & [link](https://example.test/a_b) `code`"];
     for (const content of tricky) await f.api(memory, { action: "add", target: "memory", content });
@@ -298,35 +298,38 @@ it.skipIf(!built)(
     // The people panel stays open while a document is used, so another one can be opened from it.
     await see(profile).toBeVisible();
     await profile.getByRole("button", { name: "MEMORY.md", exact: true }).click();
-    // Each entry is a block of its own, shown as Markdown; the others stay byte for byte as they were when one is edited.
-    const blocks = document.locator("article.mau-document-entry");
-    await see(blocks).toHaveCount(4);
-    await see(blocks.nth(1).locator("li")).toHaveCount(3);
-    await blocks.nth(2).getByRole("button", { name: "编辑" }).click();
-    const editor = document.locator(".ProseMirror");
-    await see(editor).toContainText("先说结论");
-    await editor.click(); await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.type(" Added.");
-    await document.getByRole("button", { name: "保存" }).click();
+    // The file is one document in the Markdown editor, with a divider between its entries.
+    const editor = document.locator(".ProseMirror"), save = document.getByRole("button", { name: "保存" });
+    await see(editor.locator("hr")).toHaveCount(3);
+    await see(editor.locator("li")).toHaveCount(3);
+    await see(save).toBeDisabled();
+    await editor.getByText("先说结论").click(); await page.keyboard.press("End"); await page.keyboard.type(" Added.");
+    await save.click();
     await see(page.getByRole("region", { name: "通知" })).toContainText("已保存");
+    await see(save).toBeDisabled();
     const entries = async (target: string) => (await f.api(memory)).data.files.find((file: { target: string }) => file.target === target).entries as string[];
     const saved = await entries("memory");
     expect(saved).toHaveLength(4);
-    expect([saved[0], saved[1], saved[3]]).toEqual([tricky[0], tricky[1], tricky[3]]);
-    expect(saved[2]).toContain("先说结论"); expect(saved[2]).toContain("Added.");
-    // A new entry is added in the same editor; cancelling leaves the file alone; deleting asks first.
-    await document.getByRole("button", { name: "添加" }).click();
-    await document.locator(".ProseMirror").click(); await page.keyboard.type("Remember the release checklist.");
-    await document.getByRole("button", { name: "保存" }).click();
-    await see(blocks).toHaveCount(5);
-    expect((await entries("memory"))[4]).toBe("Remember the release checklist.");
-    await blocks.nth(0).getByRole("button", { name: "编辑" }).click();
-    await document.locator(".ProseMirror").click(); await page.keyboard.type("x");
-    await document.getByRole("button", { name: "取消" }).click();
-    expect((await entries("memory"))[0]).toBe(tricky[0]);
-    await blocks.nth(4).getByRole("button", { name: "删除" }).click();
-    await page.getByRole("dialog", { name: "删除这条记忆？" }).getByRole("button", { name: "删除", exact: true }).click();
-    await see(blocks).toHaveCount(4);
+    expect(saved[0]).toContain("snake_case_names"); expect(saved[1]).toContain("second item"); expect(saved[1]).toContain("1. numbered");
+    expect(saved[2]).toBe(tricky[2] + " Added."); expect(saved[3]).toBe(tricky[3]);
+    // Saving again what the editor wrote changes nothing more.
+    await see(editor.locator("hr")).toHaveCount(3);
+    // A divider typed at the end starts a new entry.
+    await editor.click(); await page.keyboard.press("ControlOrMeta+a"); await page.keyboard.press("ArrowRight");
+    // The editor takes a moment to settle its cursor after a selection; a key pressed before that is lost.
+    await page.waitForTimeout(300); await page.keyboard.press("Enter"); await see(editor.locator("p").last()).toBeEmpty();
+    await page.keyboard.type("---"); await see(editor.locator("hr")).toHaveCount(4);
+    await page.keyboard.press("Enter"); await page.keyboard.type("Remember the release checklist.");
+    await save.click();
+    await see(save).toBeDisabled();
+    expect(await entries("memory")).toEqual([...saved, "Remember the release checklist."]);
+    // Deleting an entry's text removes the entry; the divider left behind separates nothing.
+    await editor.getByText("Remember the release checklist.").click({ clickCount: 3 }); await page.keyboard.press("Backspace");
+    await see(editor).not.toContainText("release checklist");
+    await save.click();
+    await see(save).toBeDisabled();
     expect(await entries("memory")).toEqual(saved);
+    await see(editor.locator("hr")).toHaveCount(3);
     await see(profile.locator(".agent-list-row", { hasText: "USER.md" })).toContainText("22 / 1375");
     await document.getByRole("button", { name: "关闭", exact: true }).click();
     await see(document).toHaveCount(0);
