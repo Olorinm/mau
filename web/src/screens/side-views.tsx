@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatMarkdown } from "@olorinm/agent-ui";
-import { Button, TextButton, useConfirm, useToast } from "@olorinm/agent-ui/app";
+import { Button, useToast } from "@olorinm/agent-ui/app";
 import { FileEditor } from "@olorinm/agent-ui/pages";
-import { mauApi, memoryDelimiter, type MemoryFile, type MemoryOperation } from "../api/client";
+import { mauApi, memoryDelimiter, type MemoryFile } from "../api/client";
+import { memoryDocument, memoryEntries, memoryOperations } from "../api/memory-document";
 import type { Session } from "../api/session";
 import { ApiError } from "../api/http";
 import { attachmentKind, attachmentUrl, formatBytes, type AttachmentRef, type LedgerApi } from "../api/ledger";
@@ -75,79 +76,46 @@ export const memoryTarget = (name: EmployeeDocument): MemoryFile["target"] | und
 const characters = (text: string) => [...text].length;
 
 /**
- * One of an employee's documents beside the conversation. The instructions are read-only. A memory file is its
- * entries, one block each: an entry is edited on its own in the Markdown editor, so saving one never rewrites another.
+ * One of an employee's documents beside the conversation. The instructions are read-only. A memory file is edited as
+ * one Markdown document with a divider between its entries, and saved as the changes to those entries.
  */
 export function DocumentSideView({ session, agentId, name, onClose }: { session: Session; agentId: string; name: EmployeeDocument; onClose(): void }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const { toast } = useToast();
-  const confirm = useConfirm();
   const queries = useQueryClient();
   const api = mauApi(session.token), target = memoryTarget(name);
   const failure = (error: unknown) => errorMessage(t, error instanceof ApiError ? error.code : "request_failed");
   const instructions = useQuery({ queryKey: ["agent-instructions", agentId], queryFn: () => api.agentInstructions(agentId), enabled: !target });
   const memory = useQuery({ queryKey: ["agent-memory", agentId], queryFn: () => api.agentMemory(agentId), enabled: !!target });
   const file = memory.data?.files.find((item) => item.target === target);
-  // The entry being edited (its index, or "new") and its text in the editor.
-  const [editing, setEditing] = useState<number | "new">(), [draft, setDraft] = useState("");
-  const original = typeof editing === "number" ? file?.entries[editing] : undefined;
-  const text = draft.trim();
-  // What the file would hold with this entry saved, counted as the server counts it.
-  const used = !file ? 0 : editing === undefined ? file.usage.used
-    : characters((editing === "new" ? [...file.entries, text] : file.entries.map((entry, index) => index === editing ? text : entry)).filter(Boolean).join(memoryDelimiter));
+  const saved = file ? memoryDocument(file.entries) : undefined;
+  // The document as the editor last wrote it; nothing until something is typed.
+  const [draft, setDraft] = useState<string>();
+  useEffect(() => { setDraft(undefined); }, [saved]);
+  const operations = file && draft !== undefined ? memoryOperations(file.entries, memoryEntries(draft)) : [];
+  const used = !file ? 0 : draft === undefined ? file.usage.used : characters(memoryEntries(draft).join(memoryDelimiter));
   const over = !!file && used > file.usage.limit;
-  const change = useMutation({
-    mutationFn: (operation: MemoryOperation) => api.changeAgentMemory(agentId, target!, operation),
-    onSuccess: async () => {
-      await queries.invalidateQueries({ queryKey: ["agent-memory", agentId] });
-      setEditing(undefined);
-      toast({ kind: "success", title: zh ? "已保存，新对话开始时生效" : "Saved. It applies from the next new conversation." });
+  const save = useMutation({
+    mutationFn: async () => {
+      // The server takes thirty changes at a time.
+      for (let start = 0; start < operations.length; start += 30) await api.changeAgentMemory(agentId, target!, operations.slice(start, start + 30));
     },
+    onSuccess: () => toast({ kind: "success", title: zh ? "已保存，新对话开始时生效" : "Saved. It applies from the next new conversation." }),
     onError: (error) => toast({ kind: "error", title: failure(error) }),
+    onSettled: () => queries.invalidateQueries({ queryKey: ["agent-memory", agentId] }),
   });
-  const start = (index: number | "new") => { setEditing(index); setDraft(index === "new" ? "" : file?.entries[index] ?? ""); };
-  const save = () => {
-    if (editing === "new") change.mutate({ action: "add", content: text });
-    else if (original !== undefined) text === original ? setEditing(undefined) : change.mutate({ action: "replace", old_text: original, content: text });
-  };
-  const remove = async (entry: string) => {
-    const result = await confirm({ title: zh ? "删除这条记忆？" : "Delete this entry?", body: entry.length > 120 ? entry.slice(0, 120) + "…" : entry,
-      confirmLabel: zh ? "删除" : "Delete", danger: true });
-    if (result === "primary") change.mutate({ action: "remove", old_text: entry });
-  };
-  const editor = (
-    <div className="mau-document-entry" data-editing="">
-      <FileEditor key={String(editing)} value={draft} format="markdown" autoFocus onChange={setDraft} />
-      <div className="mau-document-entry-actions">
-        <TextButton tone="neutral" disabled={change.isPending} onClick={() => setEditing(undefined)}>{t("common.cancel")}</TextButton>
-        <Button variant="primary" disabled={!text || over || change.isPending} onClick={save}>{zh ? "保存" : "Save"}</Button>
-      </div>
-    </div>
-  );
   const loading = target ? memory.isPending : instructions.isPending, error = target ? memory.error : instructions.error;
   return (
     <aside className="mau-side-card mau-side-view mau-side-document" aria-label={zh ? "文档" : "Document"} data-over={over || undefined}>
       <SideHead title={name} detail={target ? (file ? `${used} / ${file.usage.limit}` : undefined) : (zh ? "只读" : "Read-only")} onClose={onClose}>
-        {target && file ? <Button disabled={editing !== undefined} onClick={() => start("new")}>{zh ? "添加" : "Add"}</Button> : null}
+        {target && file ? <Button variant="primary" disabled={!operations.length || over || save.isPending} onClick={() => save.mutate()}>{zh ? "保存" : "Save"}</Button> : null}
       </SideHead>
       <div className="mau-side-body">
         {loading ? <p className="mau-muted" role="status">{t("common.loading")}</p>
           : error ? <p className="mau-error" role="alert">{failure(error)}</p>
-          : !target ? (instructions.data?.text ? <ChatMarkdown markdown={instructions.data.text} />
-            : <p className="mau-muted">{zh ? "这个员工还没有固定说明" : "This employee has no fixed instructions"}</p>)
-          : <>
-            {file?.entries.map((entry, index) => editing === index ? <div key={index}>{editor}</div> : (
-              <article key={index} className="mau-document-entry">
-                <ChatMarkdown markdown={entry} />
-                <div className="mau-document-entry-actions">
-                  <TextButton disabled={editing !== undefined || change.isPending} onClick={() => start(index)}>{zh ? "编辑" : "Edit"}</TextButton>
-                  <TextButton tone="danger" disabled={editing !== undefined || change.isPending} onClick={() => void remove(entry)}>{zh ? "删除" : "Delete"}</TextButton>
-                </div>
-              </article>
-            ))}
-            {editing === "new" ? editor : null}
-            {!file?.entries.length && editing !== "new" ? <p className="mau-muted">{zh ? "还没有内容" : "Nothing here yet"}</p> : null}
-          </>}
+          : target ? <FileEditor key={name} value={saved ?? ""} format="markdown" onChange={setDraft} placeholder={zh ? "还没有内容" : "Nothing here yet"} />
+          : instructions.data?.text ? <ChatMarkdown markdown={instructions.data.text} />
+          : <p className="mau-muted">{zh ? "这个员工还没有固定说明" : "This employee has no fixed instructions"}</p>}
       </div>
     </aside>
   );
