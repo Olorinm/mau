@@ -74,7 +74,7 @@ it("recruits only with a valid name, duty and listed settings, and never changes
   const second = await ownerTurn(f, f.partner("trip").id);
   expect(await second.call({ action: "recruit", name: "hotels", duty: "Compares hotels" })).toMatchObject({ status: "recruited", partner: { name: "hotels", model: "small", effort: "low" } });
   expect((await f.api(`/agents/${f.partner("hotels").id}`)).data.environment).toMatchObject({ sharedFrom: f.agent.id });
-  expect((await f.api("/partners")).data.data.find((partner: { name: string }) => partner.name === "hotels")).toMatchObject({ recruitedBy: "trip", sharesEnvironmentOf: f.agent.id });
+  expect((await f.api("/partners")).data.data.find((partner: { name: string }) => partner.name === "hotels")).toMatchObject({ recruitedBy: { id: f.partner("trip").id, name: "trip" }, sharesEnvironmentOf: f.agent.id });
   end(second.turn);
 }, 60_000);
 

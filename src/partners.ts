@@ -322,7 +322,7 @@ export class Partners {
         lastActivityAt: this.store.get<{ at: string }>(ACTIVITY, partner.id)?.at ?? null,
         waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length, approvals: approvals.filter(record => record.agentId === partner.id).length },
         ...(holder !== partner.id ? { sharesEnvironmentOf: holder } : {}),
-        ...(recruit ? { recruitedBy: recruit.by.name, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
+        ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
   }
   private async roster(admission: RunAdmission, includeDismissed: boolean) {
@@ -335,6 +335,8 @@ export class Partners {
     return {
       you: { name: self.name, duty: self.duty ?? null },
       partners: (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId).map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
+        // The model reads names. Each member keeps its place, so a roster reads as it did before.
+        ...(partner.recruitedBy ? { recruitedBy: partner.recruitedBy.name } : {}),
         model: partner.model ?? "default", effort: partner.effort ?? "default",
         ...(sharesEnvironmentOf ? { sharesEnvironmentOf: names.get(sharesEnvironmentOf) ?? "another partner" } : {}) })),
       waitingForReplies: mine.map(message => ({ messageId: message.id, to: message.to.name, intent: message.intent, sentAt: message.createdAt,

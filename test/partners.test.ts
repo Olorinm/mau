@@ -80,7 +80,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // The owner's list of partners and of the messages between them.
   expect((await f.api("/partners")).data.data).toMatchObject([
     { name: "helper", duty: null, kernel: "codex", status: "idle", waiting: { messages: 0, approvals: 0 } },
-    { name: "korea-trip", duty, kernel: "codex", model: null, status: "idle", sharesEnvironmentOf: f.agent.id, recruitedBy: "helper" }]);
+    { name: "korea-trip", duty, kernel: "codex", model: null, status: "idle", sharesEnvironmentOf: f.agent.id, recruitedBy: { id: f.agent.id, name: "helper" } }]);
   expect((await f.api("/partners/messages")).data.data).toMatchObject([{ id: record.id, from: { name: "helper" }, to: { name: "korea-trip" }, intent: "relay", status: "returned",
     connectionId: "web", deliveredBy: "turn", result: { status: "completed" } }]);
   expect((await f.api("/partners/messages", undefined, "bob")).data.data).toEqual([]);

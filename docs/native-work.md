@@ -31,8 +31,8 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `GET/POST /agents/:id/memory` | Read the memory document / execute a bounded memory operation. |
 | `POST /agents/:id/memory/search` | SQLite original-history search with explicit index coverage. |
 | `POST /agents/:id/memory/history/import` | Import one page from this partner’s native history, using `{sessionId,cursor?}`. |
-| `GET /partners` | The owner's partners: `id`, `name`, `duty`, `kernel`, `model`, `effort`, `status`, `lastActivityAt`, `waiting: { messages, approvals }`, and where they apply `sharesEnvironmentOf`, `recruitedBy`, `recruitedAt`, `dismissedAt`. |
-| `GET /partners/messages` | Messages between the owner's partners, newest first (`?agentId=` for one partner, `?limit=`): `from`, `to`, `intent`, `text`, `status`, `connectionId`, and when known `sentTo` (the kernel, model and effort the turn was submitted with), `result`, `deliveredBy`, `reason`. |
+| `GET /partners` | The owner's partners: `id`, `name`, `duty`, `kernel` (the kernel that partner runs on), `model`, `effort`, `status`, `lastActivityAt`, `waiting: { messages, approvals }`, and where they apply `sharesEnvironmentOf`, `recruitedBy: { id, name }`, `recruitedAt`, `dismissedAt`. |
+| `GET /partners/messages` | Messages between the owner's partners, newest first (`?agentId=` for one partner, `?limit=`, 50 by default and at most 200): `from`, `to`, `intent`, `text`, `status`, `connectionId`, and when known `sentTo` (the kernel, model and effort the turn was submitted with), `result`, `deliveredBy`, `reason`. Messages that ended more than 30 days ago are no longer listed. |
 | `POST /agents/:id/dismiss`, `/restore` | `{}`. Archive a partner, or bring it back. `GET /agents` and `/agents/:id` return `dismissed` (a time, or `null`). |
 | `GET/POST /proactive` | List/create owner rules. |
 | `GET/PUT /proactive/:id` | Read or replace with `{expectedVersion, rule}`. |

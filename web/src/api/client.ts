@@ -1,4 +1,4 @@
-import { request } from "./http";
+import { request, type PartnerRef } from "./http";
 
 // Shapes follow Mau /_mau/v1 and Router /_agent-router/v1 on their pinned revisions.
 export type EnvironmentState =
@@ -34,7 +34,7 @@ export interface PartnerView {
   kernel: string | null; model: string | null; effort: string | null; lastActivityAt: string | null;
   /** Messages of other partners it has not answered yet, and its operations that wait for the owner's approval. */
   waiting: { messages: number; approvals: number };
-  sharesEnvironmentOf?: string; recruitedBy?: string; recruitedAt?: string; dismissedAt?: string;
+  sharesEnvironmentOf?: string; recruitedBy?: PartnerRef; recruitedAt?: string; dismissedAt?: string;
 }
 /** Where a new partner runs: in an environment of its own, or in another partner's. */
 export type NewPartnerEnvironment = { profileId: string } | { shareWith: string };
