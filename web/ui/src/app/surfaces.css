@@ -223,6 +223,9 @@ button.agent-list-row-main:focus-visible {
   cursor: default;
   opacity: 0.5;
 }
+.agent-select-trigger [data-placeholder] {
+  color: var(--c-text-secondary);
+}
 .agent-select-chevron {
   display: inline-flex;
   color: var(--c-text-secondary);
@@ -300,6 +303,10 @@ button.agent-list-row-main:focus-visible {
   background: var(--c-panel-raised);
   box-shadow: 0 0 0 0.5px oklch(0% 0 0 / 0.04), 0 1px 3px oklch(0% 0 0 / 0.1);
   font-weight: var(--fw-medium);
+}
+.agent-segmented button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 /* Icon segments: a compact control as wide as its segments, with an optional divider before a segment. */
 .agent-segmented[data-display="icon"] {

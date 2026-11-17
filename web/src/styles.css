@@ -515,6 +515,10 @@ body {
 .mau-profile .agent-detail-hero {
   padding-bottom: 0;
 }
+/* The partner's duty, under its name: one line of the owner's own words, however long. */
+.mau-profile .agent-detail-hero p {
+  overflow-wrap: anywhere;
+}
 .mau-profile-tabs {
   justify-self: center;
   margin: 20px 0;

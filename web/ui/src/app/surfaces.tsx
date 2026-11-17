@@ -192,15 +192,18 @@ export function SelectMenu<T extends string>({
   options,
   onChange,
   label,
+  placeholder,
   disabled,
   readOnly,
   className,
 }: {
-  value: T;
+  /** `null` while nothing is chosen yet: the trigger shows `placeholder`. */
+  value: T | null;
   options: readonly SelectMenuOption<T>[];
   onChange(value: T): void;
   /** Accessible name of the control, usually the row's title. */
   label: string;
+  placeholder?: string | undefined;
   disabled?: boolean | undefined;
   /** Shows the current choice as plain text. */
   readOnly?: boolean | undefined;
@@ -211,7 +214,7 @@ export function SelectMenu<T extends string>({
   if (readOnly)
     return (
       <span className={clsx("agent-select-trigger", className)} data-readonly="">
-        {current?.label ?? value}
+        {current?.label ?? value ?? placeholder}
       </span>
     );
   return (
@@ -225,7 +228,7 @@ export function SelectMenu<T extends string>({
       modal={false}
     >
       <Select.Trigger className={clsx("agent-select-trigger", className)} aria-label={label}>
-        <Select.Value />
+        <Select.Value placeholder={placeholder} />
         <Select.Icon className="agent-select-chevron">
           <ProductIcon name="expand" size={14} />
         </Select.Icon>
@@ -260,6 +263,8 @@ export interface SegmentedOption<T extends string = string> {
   icon?: ReactNode | undefined;
   /** Draws a divider before this segment, to set it apart from the ones before it. */
   divided?: boolean | undefined;
+  /** A choice that cannot be made right now. */
+  disabled?: boolean | undefined;
 }
 
 /**
@@ -289,6 +294,7 @@ export function SegmentedControl<T extends string>({
           <button
             type="button"
             aria-pressed={option.value === value}
+            disabled={option.disabled}
             {...(icon ? { "aria-label": option.label } : {})}
             onClick={() => onChange(option.value)}
           >

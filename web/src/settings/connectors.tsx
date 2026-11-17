@@ -21,7 +21,7 @@ import {
 import { mauApi, type AgentSummary, type ConnectorAccount, type ConnectorPolicy, type PolicyOperation, type PolicySetting } from "../api/client";
 import { ApiError, safeExternalUrl } from "../api/http";
 import type { Session } from "../api/session";
-import { errorMessage, useI18n } from "../i18n";
+import { errorMessage, failureMessage, useI18n } from "../i18n";
 import { LinkCode } from "../screens/link-code";
 import { AppMark, productFor, productIdFor, type Product, type ProductGroup } from "./app-marks";
 import { defaultPolicy, settingLabels } from "./permissions";
@@ -166,7 +166,7 @@ function ConnectConsent({ session, account, product, agentId, onClose, onStarted
     description={zh ? `伙伴可以通过 Mau 使用你的${/^[A-Za-z]/.test(name) ? " " : ""}${name}` : `Your Agents can use ${name} through Mau`}
     closeLabel={zh ? "关闭" : "Close"} confirmLabel={connect.isPending ? zh ? "正在准备…" : "Preparing…" : zh ? "继续" : "Continue"} cancelLabel={zh ? "取消" : "Cancel"}
     pending={connect.isPending}
-    error={connect.error ? errorMessage(t, connect.error instanceof ApiError ? connect.error.code : "request_failed") : undefined}
+    error={connect.error ? failureMessage(t, connect.error) : undefined}
     onConfirm={() => connect.mutate({ account, ...(agentId ? { agentId } : {}) }, { onSuccess: () => { onStarted?.(); if (account.kind === "feishu" || account.verification === "none") onClose(); } })}
     items={[
       { icon: <ProductIcon name="eye" size={18} />, title: zh ? "它可以读取什么" : "What it can read", body: zh ? product.reads : product.readsEn },

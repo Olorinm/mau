@@ -54,6 +54,16 @@ it("requests carry a given bearer and map Mau and Router failures to stable code
   await expect(request("/ok")).rejects.toMatchObject({ code: "network_error", status: 0 });
 });
 
+it("a refusal keeps the partners the server names beside its code, and nothing else from the body", async () => {
+  stubFetch((call) => call.url.endsWith("/destroy") ? Response.json({ error: "environment_shared_by_partners",
+    partners: [{ id: "a-2", name: "trip", owner: "@alice:example.test" }, { id: 7 }, "x"] }, { status: 409 })
+    : call.url.endsWith("/pause") ? Response.json({ error: "environment_shared_from_partner", partner: { id: "a-1", name: "helper" }, partners: "x" }, { status: 409 })
+      : Response.json({ error: "environment_operation_running", partner: "helper" }, { status: 409 }));
+  await expect(request("/destroy", { body: {} })).rejects.toEqual(new ApiError("environment_shared_by_partners", 409, { partners: [{ id: "a-2", name: "trip" }] }));
+  await expect(request("/pause", { body: {} })).rejects.toEqual(new ApiError("environment_shared_from_partner", 409, { partner: { id: "a-1", name: "helper" } }));
+  await expect(request("/other", { body: {} })).rejects.toEqual(new ApiError("environment_operation_running", 409));
+});
+
 it("only https links are rendered or opened", () => {
   expect(safeExternalUrl("https://open.feishu.cn/qr?x=1")).toBe("https://open.feishu.cn/qr?x=1");
   for (const url of ["http://example.test", "javascript:alert(1)", "https://example.test/\u0007", "not a url", undefined])
@@ -64,13 +74,17 @@ it("client paths encode agent and job IDs and send the documented bodies", async
   const calls = stubFetch((call) => call.url.endsWith("/pairing") ? new Response(null, { status: 204 }) : Response.json({ data: [], checks: [] }));
   const mau = mauApi("t"), router = routerApi("t");
   await mau.environmentAction("a/b", "pause");
-  await mau.createAgent("helper", "cloud");
+  await mau.createAgent("helper", { profileId: "cloud" });
+  await mau.createAgent("trip", { shareWith: "a-1" }, "Plans the trip");
+  await mau.createAgent("plain", { shareWith: "a-1" }, "");
   await router.connect("a/b", { kind: "feishu", domain: "lark" });
   await router.pair("a/b", "job 1", "123456");
   await router.check("a/b");
   expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
     ["POST", "/_mau/v1/agents/a%2Fb/environment/pause", {}],
     ["POST", "/_mau/v1/agents", { name: "helper", profileId: "cloud" }],
+    ["POST", "/_mau/v1/agents", { name: "trip", shareWith: "a-1", duty: "Plans the trip" }],
+    ["POST", "/_mau/v1/agents", { name: "plain", shareWith: "a-1" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/connections", { kind: "feishu", domain: "lark" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/connection-jobs/job%201/pairing", { code: "123456" }],
     ["POST", "/_agent-router/v1/agents/a%2Fb/check", {}],

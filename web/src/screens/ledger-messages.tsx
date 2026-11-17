@@ -359,7 +359,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     // The panel floats over the conversation, so a press anywhere else puts it away. Dialogs, menus and toasts the
     // profile opens are outside it too, and do not.
     const outside = (event: PointerEvent) => {
-      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, .mau-side-document, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .agent-toast-region")) closePanel();
+      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, .mau-side-document, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .toast-viewport")) closePanel();
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
@@ -609,6 +609,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
             onBack={() => { setProfile(undefined); setRosterOpen(true); }}
             profile={profileSummary ? { label: zh ? "伙伴资料" : "Partner profile", backLabel: zh ? "全部对话" : "All conversations",
               content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
+                partners={agents.data ?? []} onPartner={setProfile}
                 document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
                 onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
@@ -687,7 +688,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           )} />
         </div>
       )}
-      {creating ? <CreateAgentDialog session={session} onClose={() => setCreating(false)}
+      {creating ? <CreateAgentDialog session={session} partners={agents.data ?? []} onClose={() => setCreating(false)}
         onCreated={(id) => { setCreating(false); void agents.refetch().then(() => start.mutate(id)); }} /> : null}
       {withdrawing ? (
         <Dialog open onOpenChange={(value) => { if (!value) setWithdrawing(undefined); }}>

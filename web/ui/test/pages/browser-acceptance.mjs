@@ -97,15 +97,9 @@ export async function checkBrowser(url) {
     await page
       .getByRole("button", { name: "Edit person", exact: true })
       .click();
-    await page
-      .getByRole("dialog")
-      .getByRole("tab", { name: "Runtime" })
-      .click();
-    await page.getByText("Caller-owned runtime").waitFor();
-    await page
-      .getByRole("dialog")
-      .getByRole("tab", { name: "Identity" })
-      .click();
+    // The form is one page: every field the caller gives is shown, with no tabs to switch.
+    await page.getByRole("dialog").getByText("Caller-owned runtime").waitFor();
+    assert.equal(await page.getByRole("dialog").getByRole("tab").count(), 0);
     await page.getByRole("dialog").getByLabel("Name").fill("A new person");
     await page.getByRole("button", { name: "Save person" }).click();
     assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [

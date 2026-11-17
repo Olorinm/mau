@@ -4,6 +4,28 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.49] - 2026-11-17
+
+- Agents are called partners. The console says partner where it said employee, and code, tests
+  and documentation use the name. Tool names and descriptions, stored data, routes and settings
+  keep their text, so sessions and deployments need no change.
+- A partner can run in the environment of another partner of the same owner: the same sandbox,
+  Host, runtime and working directory, with its own identity, conversations, memory, schedules
+  and model settings. `POST /_mau/v1/agents` takes `shareWith` in place of `profileId` and makes
+  no cloud request. Either form accepts an optional `duty`, one line saying what the partner is
+  responsible for, fixed when it is created; a sharing partner's instructions end with its name
+  and duty. Agent lists and details return `duty`, and `environment` carries `sharedFrom` or
+  `sharedBy`. A sharing partner only reads the environment's state, and an environment is not
+  destroyed or replaced, nor its partner deleted, while other partners run in it. Idle pause and
+  wake count every partner in the environment. See
+  [Partners sharing an environment](docs/environments.md#partners-sharing-an-environment).
+- The console's new-partner dialog is one page, without tabs: name and duty, then an environment
+  of its own (the default) or one shared with a partner that has its own. Environment profiles
+  show their full name and kernel. A profile shows the duty under the partner's name. A sharing
+  partner's profile names the partner whose environment it runs in and has no environment
+  controls; that partner's profile lists the partners sharing its environment. Refusals about
+  shared environments are shown as sentences naming the partners involved.
+
 ## [0.1.0-alpha.48] - 2026-11-13
 
 - An employee's model and reasoning effort can be chosen on its profile (配置). The choices are

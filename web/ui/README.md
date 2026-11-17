@@ -77,7 +77,7 @@ native approvals, questions, forms and URL requests without renaming IDs or addi
   and the IME-aware composer. `RunMessage` renders a run's process, approvals, questions and answer.
 - `Catalog`, `AppCreateDialog`: cards for caller-supplied items and the app-creation dialog; creating
   or installing anything is a callback.
-- `ProfileDialog`, `CreateGroupForm`: tabbed dialog and group-creation form with caller-owned data.
+- `ProfileDialog`, `CreateGroupForm`: a one-page form dialog and the group-creation form, with caller-owned data.
 - `FileEditor`: the Markdown editor (Milkdown), falling back to the source editor (CodeMirror) when the
   rich editor cannot start. `value` and changes are caller-owned; reading and saving stay outside.
 - `FrontendProvider`: theme (`light`, `dark`, `system`), language (`en`, `zh-CN`) and label overrides

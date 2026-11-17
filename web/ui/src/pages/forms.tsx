@@ -1,29 +1,24 @@
 // Extracted from web/src/components/rooms/employee-dialog.tsx at 8b365ed. See source-manifest.json for boundary changes.
-import { useId, useState, type FormEventHandler, type ReactNode } from "react";
+import { useState, type FormEventHandler, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
+  PortalProvider,
   ProductIcon,
 } from "../app/index";
 import identity from "./styles/app-identity.module.css";
 import settings from "./styles/app-settings.module.css";
 
-export interface FormTab {
-  id: string;
-  label: string;
-  content: ReactNode;
-  className?: string;
-}
-
+/**
+ * A form in a dialog: the title, the caller's fields on one page, feedback and actions. Menus opened in the form
+ * render inside it, within the dialog's focus trap, and Escape closes an open menu before the dialog.
+ */
 export function ProfileDialog({
   open,
   onOpenChange,
   title,
-  preview,
-  tabs,
-  selectedId,
-  onSelect,
+  children,
   feedback,
   actions,
   onSubmit,
@@ -31,69 +26,31 @@ export function ProfileDialog({
   open: boolean;
   onOpenChange(open: boolean): void;
   title: string;
-  preview?: ReactNode;
-  tabs: readonly FormTab[];
-  selectedId?: string;
-  onSelect?(id: string): void;
+  children: ReactNode;
   feedback?: ReactNode;
   actions?: ReactNode;
   onSubmit?: FormEventHandler<HTMLFormElement>;
 }) {
-  const id = useId();
-  const [local, setLocal] = useState(tabs[0]?.id);
-  const current = selectedId ?? local;
+  const [form, setForm] = useState<HTMLFormElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="partner-dialog"
         aria-label={title}
         aria-describedby={undefined}
+        onEscapeKeyDown={(event) => {
+          if (form?.querySelector(".agent-select-popup[data-open]")) event.preventDefault();
+        }}
       >
-        <form onSubmit={onSubmit}>
-          <DialogTitle>{title}</DialogTitle>
-          {preview ? (
-            <div className="partner-dialog-preview">{preview}</div>
-          ) : null}
-          <div
-            className="partner-dialog-tabs"
-            role="tablist"
-            aria-label={title}
-          >
-            {tabs.map(({ id: tab, label }) => (
-              <button
-                key={tab}
-                id={`${id}-${tab}-tab`}
-                type="button"
-                role="tab"
-                aria-selected={current === tab}
-                aria-controls={`${id}-${tab}-panel`}
-                data-active={current === tab ? "true" : "false"}
-                onClick={() => {
-                  setLocal(tab);
-                  onSelect?.(tab);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {tabs.map((tab) => (
-            <section
-              key={tab.id}
-              id={id + "-" + tab.id + "-panel"}
-              role="tabpanel"
-              hidden={current !== tab.id}
-              aria-labelledby={id + "-" + tab.id + "-tab"}
-              className={
-                "partner-dialog-card partner-dialog-tab-panel " +
-                (tab.className ?? "")
-              }
-            >
-              {tab.content}
-            </section>
-          ))}
-          {feedback}
-          <div className="modal-actions">{actions}</div>
+        <form ref={setForm} onSubmit={onSubmit}>
+          <PortalProvider container={form}>
+            <div className="partner-dialog-body">
+              <DialogTitle>{title}</DialogTitle>
+              {children}
+              {feedback}
+              <div className="modal-actions">{actions}</div>
+            </div>
+          </PortalProvider>
         </form>
       </DialogContent>
     </Dialog>

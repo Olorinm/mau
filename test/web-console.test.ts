@@ -141,11 +141,13 @@ it.skipIf(!built)(
     await dialog.getByLabel("名称").fill("Writer");
     await see(dialog.getByRole("button", { name: "创建" })).toBeDisabled();
     await dialog.getByLabel("名称").fill("writer");
-    await dialog.getByRole("tab", { name: "运行环境" }).click();
-    await see(dialog.getByRole("button", { name: /Cloud/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // One page, without tabs: the only environment profile is selected, its name and kernel shown in full.
+    await see(dialog.getByRole("tab")).toHaveCount(0);
+    const cloud = dialog.getByRole("group", { name: "环境方案" }).getByRole("button", { name: "Cloud codex", exact: true });
+    await see(cloud).toHaveAttribute("aria-pressed", "true");
+    await see(cloud.locator("strong")).toHaveText("Cloud");
+    await see(cloud.locator("small")).toHaveText("codex");
+    expect(await cloud.evaluate((option) => [...option.children].every((part) => part.scrollWidth <= part.clientWidth && part.clientWidth > 30))).toBe(true);
     await dialog.getByRole("button", { name: "创建" }).click();
     // The new partner's conversation opens; its figure opens its profile.
     const writer = page.locator(".mau-chip[aria-selected='true']");
@@ -359,6 +361,201 @@ it.skipIf(!built)(
     expect(errors).toEqual([]);
   },
   30_000,
+);
+
+/** The new-partner dialog, opened from the "+" of the 伙伴 section in the full list of conversations. */
+async function newPartnerDialog(page: Page) {
+  if (!(await page.getByRole("complementary", { name: "全部对话" }).isVisible()))
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  await page.getByRole("complementary", { name: "全部对话" }).getByRole("button", { name: "新建伙伴", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新建伙伴" });
+  return { dialog, kind: (name: string) => dialog.getByRole("group", { name: "环境类型" }).getByRole("button", { name, exact: true }),
+    partner: dialog.getByRole("combobox", { name: "伙伴", exact: true }), create: dialog.getByRole("button", { name: "创建" }) };
+}
+
+it.skipIf(!built)(
+  "a partner created in another partner's environment is usable at once; profiles show its duty and who shares the environment",
+  async () => {
+    const f = await mauFixture(cleanup, { webRoot });
+    const { page, errors } = await browser(f);
+    const posted: unknown[] = [];
+    page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
+    // Nobody has an environment yet, so there is none to share: only an environment of its own can be chosen.
+    let form = await newPartnerDialog(page);
+    await see(form.kind("独立环境")).toHaveAttribute("aria-pressed", "true");
+    await see(form.kind("与伙伴共用")).toBeDisabled();
+    await see(form.dialog.getByRole("group", { name: "环境方案" }).getByRole("button", { name: "Cloud codex", exact: true })).toBeVisible();
+    // The blocks of the form keep the same distance from one another, whichever environment is chosen (measured once
+    // the dialog has finished opening).
+    const gaps = () => form.dialog.evaluate((dialog) => {
+      const box = (selector: string) => dialog.querySelector(selector)!.getBoundingClientRect();
+      const identity = box(".partner-dialog-identity-card"), environment = box(".agent-settings-section"), actions = box(".modal-actions");
+      const choice = box(".agent-segmented"), chosen = box(".partner-dialog-kernel-list, .agent-group-panel");
+      return [environment.top - identity.bottom, actions.top - environment.bottom, chosen.top - choice.bottom];
+    });
+    await see.poll(gaps).toEqual([20, 20, 10]);
+    // The duty is one line of at most 200 characters, counted as it is typed.
+    const duty = form.dialog.getByLabel("职责");
+    await duty.fill("x".repeat(230));
+    await see(duty).toHaveValue("x".repeat(200));
+    await see(form.dialog).toContainText("200 / 200");
+    await form.dialog.getByRole("button", { name: "取消" }).click();
+
+    await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+    form = await newPartnerDialog(page);
+    await form.dialog.getByLabel("名称").fill("trip");
+    await form.dialog.getByLabel("职责").fill("Plans the Korea trip");
+    await see(form.dialog).toContainText("20 / 200");
+    // Its own environment stays the default; sharing is chosen, and the only partner that can be shared with is filled in.
+    await see(form.kind("与伙伴共用")).toBeEnabled({ timeout: 15_000 });
+    await see(form.kind("独立环境")).toHaveAttribute("aria-pressed", "true");
+    await form.kind("与伙伴共用").click();
+    await see(form.partner).toContainText("helper");
+    await see(form.dialog.getByRole("group", { name: "环境方案" })).toHaveCount(0);
+    await see.poll(gaps).toEqual([20, 20, 10]);
+    // Escape closes the open menu, not the dialog around it.
+    await form.partner.click(); await see(page.getByRole("option", { name: "helper", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape"); await see(page.getByRole("listbox")).toHaveCount(0); await see(form.dialog).toBeVisible();
+    await form.create.click();
+    expect(posted).toEqual([{ name: "trip", shareWith: f.agent.id, duty: "Plans the Korea trip" }]);
+    // No environment is created: the conversation opens and the partner is ready, with no time spent preparing.
+    const chip = page.locator(".mau-chip[aria-selected='true']");
+    await see(chip).toHaveAttribute("title", "trip");
+    await see(chip.locator("small")).toHaveText("可用");
+    await see(page.getByPlaceholder("发送消息…")).toBeEnabled();
+    expect(f.creates).toBe(1);
+    const tripId = (await chip.getAttribute("data-chat-key"))!.slice("agent:".length);
+    await chip.click();
+    const profile = profileCard(page), hero = profile.locator(".agent-detail-hero");
+    await see(hero.getByRole("heading", { name: "trip" })).toBeVisible();
+    await see(hero.locator("p")).toHaveText("Plans the Korea trip");
+    // 状态: the environment's state is read, the partner that has it is named, and nothing here operates it.
+    await see(profileState(page)).toContainText("可用");
+    await see(profile.getByRole("button", { name: "与 helper 共用环境" })).toBeVisible();
+    for (const name of ["暂停", "恢复", "核对"]) await see(profile.getByRole("button", { name, exact: true })).toHaveCount(0);
+    // The check is the partner's own (Router answers it from the shared environment), so it stays.
+    await profile.getByRole("button", { name: "运行自检" }).click();
+    await see(profile.locator(".agent-list-row", { hasText: "HTTP service and runtime exist" })).toContainText("通过");
+    // 配置: the shared environment in place of an environment profile; the partner can be deleted, the environment not destroyed.
+    await profileTab(page, "配置");
+    await see(profile.getByRole("button", { name: "与 helper 共用环境" })).toBeVisible();
+    await see(profile.locator(".agent-list-row", { hasText: "方案" })).toHaveCount(0);
+    await see(profile.getByRole("button", { name: "销毁环境" })).toHaveCount(0);
+    await see(profile.getByRole("button", { name: "删除伙伴" })).toBeEnabled();
+    // 文档: its fixed instructions are its own text, read-only.
+    await profileTab(page, "文档");
+    await profile.getByRole("button", { name: "AGENTS.md", exact: true }).click();
+    const document = page.getByRole("complementary", { name: "文档" });
+    await see(document).toContainText("Work carefully.");
+    await see(document).toContainText("Partner identity");
+    await see(document).toContainText("Duty: Plans the Korea trip");
+    await see(document.getByRole("button", { name: "保存" })).toHaveCount(0);
+    await document.getByRole("button", { name: "关闭", exact: true }).click();
+
+    // The partner that has the environment: no duty under its name, and the partners sharing it are listed.
+    await profileTab(page, "状态");
+    await profile.getByRole("button", { name: "与 helper 共用环境" }).click();
+    await see(hero.getByRole("heading", { name: "helper" })).toBeVisible();
+    await see(hero.locator("p")).toHaveCount(0);
+    const sharing = profile.locator(".agent-settings-section", { hasText: "共用此环境的伙伴" });
+    await see(sharing.getByRole("button", { name: "trip", exact: true })).toBeVisible();
+    await see(profile.getByRole("button", { name: "暂停", exact: true })).toBeEnabled();
+    // Destroying the environment or deleting its partner is refused in words that name who shares it, with nothing to confirm.
+    await profileTab(page, "配置");
+    const notices = page.getByRole("region", { name: "通知" });
+    for (const name of ["销毁环境", "删除伙伴"]) {
+      await profile.getByRole("button", { name, exact: true }).click();
+      await see(notices.getByText("这个环境还在与 trip 共用，请先删除共用的伙伴。").last()).toBeVisible();
+      await see(page.getByRole("dialog")).toHaveCount(0);
+      await notices.getByRole("button", { name: "关闭通知" }).last().click();
+      await see(notices.getByText("这个环境还在与 trip 共用")).toHaveCount(0);
+    }
+    expect((await f.api(f.path)).data).toMatchObject({ state: "ready", sharedBy: [tripId] });
+
+    // A second partner with its own environment: with two to share with, none is preselected, and a sharing partner
+    // is never offered.
+    expect((await f.api("/agents", { name: "writer", profileId: "cloud" })).status).toBe(202);
+    await profile.getByRole("button", { name: "全部对话" }).click();
+    form = await newPartnerDialog(page);
+    await form.dialog.getByLabel("名称").fill("second");
+    await see(form.kind("与伙伴共用")).toBeEnabled();
+    await form.kind("与伙伴共用").click();
+    await see(form.partner).toContainText("选择伙伴", { timeout: 15_000 });
+    await see(form.create).toBeDisabled();
+    await form.partner.click();
+    await see(page.getByRole("option")).toHaveText(["helper", "writer"]);
+    await page.getByRole("option", { name: "writer", exact: true }).click();
+    await see(form.partner).toContainText("writer");
+    await see(form.create).toBeEnabled();
+    await form.dialog.getByRole("button", { name: "取消" }).click();
+
+    // Deleting the sharing partner says the environment stays, and leaves it and its partner as they were.
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    await page.getByRole("complementary", { name: "全部对话" }).getByRole("button", { name: "伙伴资料 · trip" }).click();
+    await profileTab(page, "配置");
+    await profile.getByRole("button", { name: "删除伙伴" }).click();
+    const remove = page.getByRole("dialog", { name: "删除伙伴 trip？" });
+    await see(remove).toContainText("共用的环境和其中的文件保留");
+    await remove.getByRole("button", { name: "删除伙伴" }).click();
+    await see(notices).toContainText("已删除 trip");
+    const helperEnvironment = (await f.api(f.path)).data;
+    expect(helperEnvironment.state).toBe("ready"); expect(helperEnvironment.sharedBy).toBeUndefined();
+    expect(errors).toEqual([]);
+  },
+  60_000,
+);
+
+it.skipIf(!built)(
+  "refusals about shared environments are said in words, with the partners the server names",
+  async () => {
+    const f = await mauFixture(cleanup, { webRoot });
+    await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+    const { page, errors } = await browser(f);
+    await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    // The page keeps the list it read before another partner began to share helper's environment, so the server refuses.
+    const list = await (await fetch(f.base + "/_mau/v1/agents", { headers: f.edgeHeaders() })).json();
+    await page.route("**/_mau/v1/agents", (route) => route.request().method() === "GET" ? route.fulfill({ json: list }) : route.fallback());
+    const trip = (await f.api("/agents", { name: "trip", shareWith: f.agent.id })).data.agent as { id: string };
+    await agentChip(page, f.agent.id).click();
+    const profile = profileCard(page), notices = page.getByRole("region", { name: "通知" });
+    await profileTab(page, "配置");
+    await profile.getByRole("button", { name: "销毁环境" }).click();
+    await page.getByRole("dialog", { name: "销毁 helper 的运行环境？" }).getByRole("button", { name: "销毁环境" }).click();
+    await see(notices.getByText("这个环境还在与 trip 共用，请先删除共用的伙伴。")).toBeVisible();
+    await notices.getByRole("button", { name: "关闭通知" }).click();
+    await profile.getByRole("button", { name: "删除伙伴" }).click();
+    await page.getByRole("dialog", { name: "删除伙伴 helper？" }).getByRole("button", { name: "删除伙伴" }).click();
+    await see(notices.getByText("这个环境还在与 trip 共用，请先删除共用的伙伴。")).toBeVisible();
+    expect((await f.api(f.path)).data).toMatchObject({ state: "ready", sharedBy: [trip.id] });
+
+    // The environment chosen to share is destroyed before the form is sent.
+    expect((await fetch(`${f.base}/_mau/v1/agents/${trip.id}`, { method: "DELETE", headers: { authorization: "Bearer alice" } })).status).toBe(204);
+    await f.api(f.path + "/destroy", {}); expect((await f.settled()).state).toBe("deleted");
+    await profile.getByRole("button", { name: "全部对话" }).click();
+    const form = await newPartnerDialog(page);
+    await form.dialog.getByLabel("名称").fill("late");
+    await form.kind("与伙伴共用").click();
+    await form.create.click();
+    const alert = form.dialog.getByRole("alert");
+    await see(alert).toHaveText("这个伙伴的环境已不可用，请换一个伙伴或使用独立环境。");
+    // Every code the server can answer with has its sentence; none is shown as a code.
+    const partner = { id: f.agent.id, name: "helper" };
+    for (const [refusal, text] of [
+      [{ error: "environment_share_chain_not_allowed" }, "这个伙伴用的是别的伙伴的环境，不能再与它共用。"],
+      [{ error: "agent_duty_immutable" }, "职责在创建伙伴时确定，之后不能修改。"],
+      [{ error: "environment_shared_by_partners", partners: [partner, { id: trip.id, name: "trip" }] }, "这个环境还在与 helper、trip 共用，请先删除共用的伙伴。"],
+      [{ error: "environment_shared_by_partners" }, "还有伙伴在共用这个环境，请先删除共用的伙伴。"],
+      [{ error: "environment_shared_from_partner", partner }, "这个环境属于 helper，请到 helper 的资料里操作。"],
+      [{ error: "connector_assigned_through_partner", partner }, "这个连接分配给了 helper，请通过 helper 设置。"],
+    ] as const) {
+      await page.route("**/_mau/v1/agents", (route) => route.request().method() === "POST" ? route.fulfill({ status: 409, json: refusal }) : route.fallback());
+      await form.create.click();
+      await see(alert).toHaveText(text);
+    }
+    expect(errors).toEqual([]);
+  },
+  60_000,
 );
 
 it.skipIf(!built)(

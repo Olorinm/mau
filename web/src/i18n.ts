@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { ApiError } from "./api/http";
 
 const zh = {
   "composer.send": "发送消息",
@@ -30,6 +31,12 @@ const zh = {
   "create.title": "新建伙伴",
   "create.name": "名称",
   "create.nameHint": "小写字母开头，可包含小写字母、数字和连字符，最多 48 个字符。",
+  "create.duty": "职责",
+  "create.environment": "环境类型",
+  "create.ownEnvironment": "独立环境",
+  "create.sharedEnvironment": "与伙伴共用",
+  "create.sharePartner": "伙伴",
+  "create.choosePartner": "选择伙伴",
   "create.profile": "环境方案",
   "create.noProfiles": "你的账号还没有分配环境方案，请联系管理员。",
   "create.submit": "创建",
@@ -42,11 +49,14 @@ const zh = {
   "env.reconcile": "核对",
   "env.configure": "配置环境",
   "env.destroy": "销毁环境",
+  "env.sharedWith": "与 {name} 共用环境",
+  "env.sharedBy": "共用此环境的伙伴",
   "agents.delete": "删除伙伴",
   "agents.deleting": "正在删除…",
   "agents.deleted": "已删除 {name}",
   "agents.deleteTitle": "删除伙伴 {name}？",
   "agents.deleteBody": "会销毁它的云端环境和其中的文件，注销它的账号，删除它的记忆、定时任务和渠道连接，无法恢复。已发出的消息仍留在聊天记录里。",
+  "agents.deleteSharedBody": "会注销它的账号，删除它的记忆、定时任务和渠道连接，无法恢复。共用的环境和其中的文件保留，已发出的消息仍留在聊天记录里。",
   "env.destroyTitle": "销毁 {name} 的运行环境？",
   "env.destroyBody": "云端环境和其中的工作区文件会被删除，无法恢复。伙伴身份和渠道连接保留，但需要新建伙伴才能再次运行。",
   "env.sleepingHint": "空闲时自动休眠，收到新消息会自动唤醒。",
@@ -161,6 +171,16 @@ const zh = {
   "error.environment_has_active_ssh": "有正在使用的 SSH 连接，断开后再试。",
   "error.environment_deleted_create_new_agent": "环境已销毁，请新建伙伴。",
   "error.environment_already_bound": "这个伙伴已经绑定了其他环境方案。",
+  "error.environment_share_target_unavailable": "这个伙伴的环境已不可用，请换一个伙伴或使用独立环境。",
+  "error.environment_share_chain_not_allowed": "这个伙伴用的是别的伙伴的环境，不能再与它共用。",
+  "error.environment_shared_by_partners": "还有伙伴在共用这个环境，请先删除共用的伙伴。",
+  "error.environment_shared_by_partners.named": "这个环境还在与 {names} 共用，请先删除共用的伙伴。",
+  "error.environment_shared_from_partner": "这个伙伴用的是别的伙伴的环境，请到那个伙伴的资料里操作。",
+  "error.environment_shared_from_partner.named": "这个环境属于 {names}，请到 {names} 的资料里操作。",
+  "error.agent_duty_immutable": "职责在创建伙伴时确定，之后不能修改。",
+  "error.connector_assigned_through_partner": "这个连接分配给了共用环境的伙伴，请通过那个伙伴设置。",
+  "error.connector_assigned_through_partner.named": "这个连接分配给了 {names}，请通过 {names} 设置。",
+  "list.separator": "、",
   "error.agent_has_active_or_unknown_run": "伙伴有正在执行或结果未确认的任务，完成后再操作。",
   "error.proactive_run_active": "伙伴有正在执行的定时任务，完成后再删除。",
   "error.agent_used_by_channel_configuration": "服务器配置的邮件入口仍指向这个伙伴，需要管理员先移除。",
@@ -220,6 +240,12 @@ const en: Record<MessageKey, string> = {
   "create.title": "New agent",
   "create.name": "Name",
   "create.nameHint": "Starts with a lowercase letter; lowercase letters, digits and hyphens; up to 48 characters.",
+  "create.duty": "Duty",
+  "create.environment": "Environment kind",
+  "create.ownEnvironment": "Own environment",
+  "create.sharedEnvironment": "Share with a partner",
+  "create.sharePartner": "Partner",
+  "create.choosePartner": "Choose a partner",
   "create.profile": "Environment profile",
   "create.noProfiles": "No environment profile is assigned to your account. Contact your administrator.",
   "create.submit": "Create",
@@ -232,11 +258,14 @@ const en: Record<MessageKey, string> = {
   "env.reconcile": "Reconcile",
   "env.configure": "Set up environment",
   "env.destroy": "Destroy environment",
+  "env.sharedWith": "Shares the environment of {name}",
+  "env.sharedBy": "Partners sharing this environment",
   "agents.delete": "Delete agent",
   "agents.deleting": "Deleting…",
   "agents.deleted": "Deleted {name}",
   "agents.deleteTitle": "Delete {name}?",
   "agents.deleteBody": "Its cloud environment and files are destroyed, its account is deactivated, and its memory, schedules and channel connections are deleted permanently. Sent messages stay in chat history.",
+  "agents.deleteSharedBody": "Its account is deactivated, and its memory, schedules and channel connections are deleted permanently. The shared environment and its files remain, and sent messages stay in chat history.",
   "env.destroyTitle": "Destroy the environment of {name}?",
   "env.destroyBody": "The cloud environment and its workspace files are deleted permanently. The agent identity and channels remain, but running again requires a new agent.",
   "env.sleepingHint": "Sleeps when idle and wakes automatically for new messages.",
@@ -351,6 +380,16 @@ const en: Record<MessageKey, string> = {
   "error.environment_has_active_ssh": "An SSH session is active. Disconnect it and try again.",
   "error.environment_deleted_create_new_agent": "The environment was destroyed. Create a new agent.",
   "error.environment_already_bound": "This agent is bound to another environment profile.",
+  "error.environment_share_target_unavailable": "That partner's environment is no longer available. Choose another partner or an own environment.",
+  "error.environment_share_chain_not_allowed": "That partner runs in another partner's environment, so it cannot be shared with.",
+  "error.environment_shared_by_partners": "Other partners still share this environment. Delete those partners first.",
+  "error.environment_shared_by_partners.named": "This environment is still shared with {names}. Delete the sharing partners first.",
+  "error.environment_shared_from_partner": "This partner runs in another partner's environment. Manage it from that partner's profile.",
+  "error.environment_shared_from_partner.named": "This environment belongs to {names}. Manage it from the profile of {names}.",
+  "error.agent_duty_immutable": "A partner's duty is set when it is created and cannot be changed.",
+  "error.connector_assigned_through_partner": "This connection is assigned to the partner whose environment is shared. Set it up through that partner.",
+  "error.connector_assigned_through_partner.named": "This connection is assigned to {names}. Set it up through {names}.",
+  "list.separator": ", ",
   "error.agent_has_active_or_unknown_run": "The agent has running or unconfirmed work. Try again after it finishes.",
   "error.proactive_run_active": "A scheduled run is in progress. Delete the agent after it finishes.",
   "error.agent_used_by_channel_configuration": "A server-configured mail entry still points to this agent. An administrator must remove it first.",
@@ -404,6 +443,17 @@ export function translator(language: Language): Translate {
 export function errorMessage(t: Translate, code: string): string {
   const key = `error.${code}` as MessageKey;
   return key in zh ? t(key) : t("error.generic", { code });
+}
+
+/**
+ * What a failed request says. Shared-environment refusals name the partners the server sent beside the code.
+ */
+export function failureMessage(t: Translate, error: unknown): string {
+  if (!(error instanceof ApiError)) return errorMessage(t, "request_failed");
+  const { partner, partners } = error.details;
+  const names = (partners ?? (partner ? [partner] : [])).map(({ name }) => name).join(t("list.separator"));
+  const named = `error.${error.code}.named` as MessageKey;
+  return names && named in zh ? t(named, { names }) : errorMessage(t, error.code);
 }
 
 export const I18n = createContext<{ language: Language; t: Translate; setLanguage(language: Language): void }>({

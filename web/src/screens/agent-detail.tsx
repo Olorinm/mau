@@ -24,7 +24,7 @@ import {
 } from "../api/client";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
-import { errorMessage, useI18n } from "../i18n";
+import { errorMessage, failureMessage, useI18n } from "../i18n";
 import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
@@ -62,6 +62,10 @@ const effortLabel = (value: string, zh: boolean) => (zh ? effortNames[value] : u
 export function AgentDetail(props: {
   session: Session;
   summary: AgentSummary;
+  /** The owner's partners, to name the ones this partner shares an environment with. */
+  partners: readonly AgentSummary[];
+  /** Opens another partner's profile in place of this one. */
+  onPartner(agentId: string): void;
   /** The document open beside the conversation, and opening another (or closing the open one). */
   document?: PartnerDocument | undefined;
   onDocument?(name: PartnerDocument | undefined): void;
@@ -70,8 +74,11 @@ export function AgentDetail(props: {
   const { toast } = useToast();
   const confirm = useConfirm();
   const queries = useQueryClient();
-  const { agent, environment } = props.summary;
-  const { connections } = props.summary;
+  const { agent, environment, duty, connections } = props.summary;
+  const named = (ids: readonly string[]) => props.partners.flatMap(({ agent: { id, name } }) => ids.includes(id) ? [{ id, name }] : []);
+  // In a shared environment the partner only reads its state; `host` is the partner that has it and operates it.
+  const host = environment?.sharedFrom ? named([environment.sharedFrom])[0] ?? { id: environment.sharedFrom, name: "…" } : undefined;
+  const sharers = named(environment?.sharedBy ?? []);
   const mau = mauApi(props.session.token),
     router = routerApi(props.session.token);
   const [connecting, setConnecting] = useState<{ job?: ConnectionJob } | null>(
@@ -107,13 +114,7 @@ export function AgentDetail(props: {
   // A 401 already returns to sign-in with its own notice.
   const failed = (error: unknown) => {
     if (error instanceof ApiError && error.status === 401) return;
-    toast({
-      kind: "error",
-      title: errorMessage(
-        t,
-        error instanceof ApiError ? error.code : "request_failed",
-      ),
-    });
+    toast({ kind: "error", title: failureMessage(t, error) });
   };
   const lifecycle = useMutation({
     mutationFn: (action: EnvironmentAction) =>
@@ -182,7 +183,10 @@ export function AgentDetail(props: {
           Date.parse(job.expiresAt) > Date.now())),
   );
 
+  // An environment other partners run in stays, and so does its partner: say who they are instead of asking to confirm.
+  const sharedRefusal = () => failed(new ApiError("environment_shared_by_partners", 409, { partners: sharers }));
   const destroy = async () => {
+    if (sharers.length) return sharedRefusal();
     const result = await confirm({
       title: t("env.destroyTitle", { name: agent.name }),
       body: t("env.destroyBody"),
@@ -192,9 +196,10 @@ export function AgentDetail(props: {
     if (result === "primary") lifecycle.mutate("destroy");
   };
   const deleteAgent = async () => {
+    if (sharers.length) return sharedRefusal();
     const result = await confirm({
       title: t("agents.deleteTitle", { name: agent.name }),
-      body: t("agents.deleteBody"),
+      body: t(host ? "agents.deleteSharedBody" : "agents.deleteBody"),
       confirmLabel: t("agents.delete"),
       danger: true,
     });
@@ -202,10 +207,11 @@ export function AgentDetail(props: {
   };
 
   const icon = (name: "ops" | "chat" | "extensions" | "copy" | "settings") => <ProductIcon name={name} size={18} />;
+  const sharedRow = host ? <ListRow tone="action" title={t("env.sharedWith", { name: host.name })} onClick={() => props.onPartner(host.id)} /> : null;
   return (
     <>
       <div className="mau-profile">
-        <DetailHero icon={<PartnerAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} />
+        <DetailHero icon={<PartnerAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} subtitle={duty} />
         <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "伙伴资料分类" : "Profile sections"} value={tab} onChange={setTab}
           options={[
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
@@ -223,6 +229,7 @@ export function AgentDetail(props: {
                 trailing={<StatusLine tone={lineTone[stateTone(environment)]}>{t(`state.${state}`)}</StatusLine>}
               />
               {environment?.error ? <ListRow muted title={errorMessage(t, environment.error)} /> : null}
+              {sharedRow}
               {availableActions(environment).map((action) => (
                 <ListRow key={action} tone="action" disabled={busy} title={t(actionLabel[action])} onClick={() => lifecycle.mutate(action)} />
               ))}
@@ -230,6 +237,13 @@ export function AgentDetail(props: {
                 <ListRow key={p.id} tone="action" disabled={busy} title={`${t("env.configure")} · ${p.label}`} onClick={() => configure.mutate(p.id)} />
               )) : null}
             </SettingsSection>
+            {sharers.length ? (
+              <SettingsSection title={t("env.sharedBy")}>
+                {sharers.map(({ id, name }) => (
+                  <ListRow key={id} icon={<PartnerAvatar seed={id} fallbackName={name} size={32} />} title={name} onClick={() => props.onPartner(id)} />
+                ))}
+              </SettingsSection>
+            ) : null}
             <SettingsSection title={t("check.title")}
               action={<TextButton disabled={checks.isPending} onClick={() => checks.mutate()}>{t("check.run")}</TextButton>}>
               {checks.data ? checks.data.map((check, index) => (
@@ -280,7 +294,7 @@ export function AgentDetail(props: {
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
               <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{profile?.kernel ?? "—"}</span>} />
               {modelRows()}
-              <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />
+              {sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
             </SettingsSection>
             <SettingsSection>
               {canDestroy(environment) ? <ListRow tone="danger" disabled={busy} title={t("env.destroy")} onClick={() => void destroy()} /> : null}

@@ -48,7 +48,6 @@ export {
   AppCreateForm,
   AppIdentityEditor,
   AppSettingsDialog,
-  type FormTab,
 } from "./forms";
 
 export { RoomComposer, type MentionOption } from "./presentation/room-composer";
