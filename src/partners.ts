@@ -7,7 +7,7 @@ import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import type { ApprovalDesk } from "./connector-approvals.js";
 import { dutySchema } from "./environments.js";
-import { GUIDE, NEXT, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText } from "./partner-text.js";
+import { GUIDE, NEXT, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
@@ -37,6 +37,8 @@ const NOTE_LIMIT = 20;
 /** Environment states in which a partner cannot be woken by a message. */
 const UNREACHABLE = ["paused", "pausing", "deleting", "deleted", "needs_action"];
 const MESSAGE_BYTES = 16_000;
+/** The answers a hand-over shows the owner share this many bytes; Router admits 64,000 for what an input shows. */
+const SHOWN_ANSWER_BYTES = 48_000;
 /** The states of a work event whose turn has ended. */
 const ENDED = ["completed", "failed", "cancelled", "rejected"];
 
@@ -141,20 +143,20 @@ export class PartnerError extends Error {
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** Long values of an operation's arguments shortened so that every one of them is still shown, and marked as shortened. */
-const shortened = (value: unknown): unknown => typeof value === "string" ? (value.length > 80 ? `${value.slice(0, 80)}…(共 ${value.length} 字符)` : value)
-  : Array.isArray(value) ? [...value.slice(0, 5).map(shortened), ...(value.length > 5 ? [`…(共 ${value.length} 项)`] : [])]
-  : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shortened(item)])) : value;
+const briefly = (value: unknown): unknown => typeof value === "string" ? (value.length > 80 ? `${value.slice(0, 80)}…(共 ${value.length} 字符)` : value)
+  : Array.isArray(value) ? [...value.slice(0, 5).map(briefly), ...(value.length > 5 ? [`…(共 ${value.length} 项)`] : [])]
+  : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, briefly(item)])) : value;
 /**
  * The arguments of an operation as the owner reads them on its approval card. They are never cut off without saying
  * so: arguments too long for the card are shown with every value shortened, and when even that does not fit, the
  * card is not shown and the operation is refused.
  */
-function shownArguments(value: unknown): string {
+function shownArguments(value: unknown): { json: string; brief: boolean } {
   const full = JSON.stringify(value);
-  if (full.length <= 4000) return `参数：${full}`;
-  const brief = JSON.stringify(shortened(value));
+  if (full.length <= 4000) return { json: full, brief: false };
+  const brief = JSON.stringify(briefly(value));
   if (brief.length > 4000) throw new Error("approval_arguments_too_long_to_show");
-  return `参数（较长，以下每项只显示开头）：${brief}`;
+  return { json: brief, brief: true };
 }
 const iso = (time = Date.now()) => new Date(time).toISOString();
 const expectsReply = (message: PartnerMessage) => message.intent !== "inform";
@@ -609,6 +611,8 @@ export class Partners {
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
+      // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
+      display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
       admission: { kind: "delegation", owner: message.owner, agentId: message.to.agentId, reference: message.id,
         toolGrants: { feishu: grants.feishu, connectedApps: { connections: grants.connections, ...(grants.operations ? { operations: grants.operations } : {}) } },
@@ -809,7 +813,14 @@ export class Partners {
     const work = await this.port.sessions(batch.owner, batch.agentId);
     const messages = batch.messageIds.map(id => this.store.get<PartnerMessage>(MESSAGES, id)).filter((message): message is PartnerMessage => !!message);
     const senders = new Map(messages.map(message => [message.to.agentId, message.to.name])), authorization = batch.authorization;
+    const share = Math.floor(SHOWN_ANSWER_BYTES / Math.max(1, messages.length));
     await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary),
+      // What the owner is shown in the sender's conversation: each partner's result, apart from the lines written for the model.
+      display: { partnerResults: messages.map(message => {
+        const result = message.result!, answer = shortened(result.answer.trim(), share);
+        return { messageId: message.id, partner: { id: message.to.agentId, name: message.to.name }, intent: message.intent, status: result.status,
+          ...(result.error ? { error: result.error } : {}), answer: answer.text, ...(answer.cut ? { cut: answer.cut } : {}), durationMs: result.durationMs };
+      }) },
       // One partner's results are that partner's; several partners' are the system's.
       ...(senders.size === 1 ? { sender: { kind: "agent" as const, id: [...senders.keys()][0]!, name: [...senders.values()][0]! } } : {}),
       reply: batch.reply, context: { partnerResults: batch.messageIds },
@@ -822,9 +833,15 @@ export class Partners {
     return {
       open: async card => {
         const sessions = await work(), connection = message.origin.connectionId;
+        // The text is what a channel shows and what stands in the transcript. `display` carries the same as members, for a
+        // console to show in its own words and language.
+        const shown = shownArguments(card.arguments);
         sessions.request({ eventId: card.id, kind: "approval", title: `伙伴「${message.to.name}」请求批准`,
-          text: [`「${message.to.name}」在处理「${message.from.name}」转来的消息时，需要你批准这个操作：`, card.summary, `连接：${card.connection}`, shownArguments(card.arguments)].join("\n"),
+          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`, `连接：${card.connection}`,
+            `${shown.brief ? "参数（较长，以下每项只显示开头）" : "参数"}：${shown.json}`].join("\n"),
           choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
+          display: { partnerApproval: { partner: { id: message.to.agentId, name: message.to.name }, from: { id: message.from.agentId, name: message.from.name },
+            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown.json, ...(shown.brief ? { argumentsShortened: true } : {}) } },
           ...(sessions.deliveryConnections().includes(connection) ? { connectionId: connection } : {}) });
       },
       status: async id => {

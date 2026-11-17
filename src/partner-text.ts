@@ -87,6 +87,18 @@ function clip(text: string, bytes: number, where: string): string {
   return `${kept}\n[cut: ${characters.length - count} more characters; ${where}]`;
 }
 
+/** At most `bytes` of a text, cut between characters, with the number of characters left out. */
+export function shortened(text: string, bytes: number): { text: string; cut?: number } {
+  if (Buffer.byteLength(text) <= bytes) return { text };
+  const characters = Array.from(text); let kept = "", size = 0, count = 0;
+  for (const character of characters) {
+    const next = Buffer.byteLength(character);
+    if (size + next > bytes) break;
+    kept += character; size += next; count++;
+  }
+  return { text: kept, cut: characters.length - count };
+}
+
 /** What a partner reads when a message reaches it. The message is the last part: nothing fixed comes after it. */
 export function incomingText(message: PartnerMessage): string {
   const from = `"${message.from.name}"`;

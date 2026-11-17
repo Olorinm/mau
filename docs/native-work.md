@@ -71,7 +71,9 @@ A partner is an Agent of the owner: its own Router identity, its own conversatio
 - Partners are recruited, messaged and dismissed only from the owner's private conversation with the caller, because that is where a reply returns. Other owner turns (a group of the owner and the owner's Agents, work submitted through Router's work-events API) can read the roster; the rest is refused with `partner_owner_conversation_required`.
 - A message is at most 16,000 bytes. An answer longer than the room one Router input has is cut in the hand-over and says so; the full answer is in the recipient's conversation.
 
-**Delivery.** The record of every message is kept in Mau's store (`partner_messages`), with what became of it:
+**What a console is given.** The input of a partner turn is text written for a model. Mau submits it with Router's `display`, which the web chat API returns on the event and which is no part of the model's input: `partnerMessage` (`id`, `intent`, `from: { id, name }`, and `text` as the sender wrote it) on a message in the recipient's conversation, and `partnerResults` (for each result `messageId`, `partner: { id, name }`, `intent`, `status`, `error`, `answer`, `cut`, `durationMs`) on the turn that hands results over. The answers there share 48,000 bytes; `cut` says how many characters a long one lost, and the whole answer is in that partner's conversation. An approval card of a partner carries `card.display.partnerApproval` (see [connector approvals](connector-accounts.md#approvals-for-a-partners-turn)).
+
+**Delivery.** The record of every message is kept in Mau's store (`partner_messages`) for 30 days after it has ended, with what became of it:
 
 | Status | Meaning |
 | --- | --- |

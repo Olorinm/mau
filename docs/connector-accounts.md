@@ -142,8 +142,11 @@ was sent in:
   was the owner's.
 - When an operation needs the owner's approval, the card appears in the conversation the message was sent from, on
   the connection the owner used there. It is a Router owner request (`source: "product"`), not a card of any run. It
-  names the partner that asks and the partner whose message it is handling, and shows the operation's summary, its
-  connection and its arguments, with 批准这次操作 and 拒绝这次操作. Arguments are never cut off silently: when they are too
+  names the partner that asks in its title and the partner whose message it is handling in its text, and shows the
+  operation's summary, its connection and its arguments, with 批准这次操作 and 拒绝这次操作. That text is what a channel
+  shows; the card also carries the same as members (`card.display.partnerApproval`: `partner`, `from`, `messageId`,
+  `summary`, `connection`, `arguments`), from which the console words the card in the interface language. Arguments
+  are never cut off silently: when they are too
   long for the card, every value is shown shortened and the card says so, and when even that does not fit, no card is
   shown and the call fails as below.
 - The partner's tool call waits. Approval runs the operation once with the grant bound to what the card showed, and
