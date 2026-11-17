@@ -8,7 +8,7 @@ import type { Duplex } from "node:stream";
 import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
 import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
-import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
+import { EnvironmentManager, dutySchema, environmentOptionsSchema, type Environments } from "./environments.js";
 
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
@@ -79,7 +79,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
   // Owner writes need an approval presenter: only Mau's authority key (connectorAccounts) can sign grants.
-  const connectedApps = new ConnectedApps(options.connectedApps, base, !!options.connectorAccounts);
+  const connectedApps = new ConnectedApps(options.connectedApps, base, !!options.connectorAccounts,
+    { sharedFrom: agentId => environments.sharedFrom(agentId), sharedBy: agentId => environments.sharedBy(agentId) });
   const business = new BusinessTools(options.feishuBotReaders, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
   if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
@@ -95,7 +96,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     dependencies: {
       ...dependencies.router,
       // Deleting a partner: stop its schedules and destroy its environments while Router still has the Agent,
-      // then remove Mau's per-partner state after Router has deactivated it.
+      // then remove Mau's per-partner state after Router has deactivated it. A partner in a shared environment
+      // leaves that environment untouched.
       beforeDelete: async agent => {
         proactive.suspendAgent(agent.id);
         await environments.removeAgent(agent.owner, agent.id);
@@ -125,6 +127,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     router.service.authenticateRequest({ headers: req.headers, method: req.method });
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments);
+  // Refused before anything of the partner is stopped or paused: other partners still run in its environment.
+  router.service.guardDelete(agentId => environments.assertUnshared(agentId));
   business.setSandboxFiles((agentId, binding) => environments.files(agentId, binding));
   // Rule: owner-identity connections (Feishu personal authorization) only in the owner's private conversation.
   const ownerPrivate = new OwnerPrivateConnections([...connectedApps.ownerPrivateConnections,
@@ -134,7 +138,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     admitted: async admission => ownerPrivateAdmission(admission, await router.service.runtime(admission.agentId).then(r => r.extension, () => undefined)) });
   if (connectorRuntime) {
     const skills = new AgentSkills(connectedApps, () => connectorRuntime.connections());
-    business.setSkills((agentId, owner, binding) => skills.sync(agentId, owner, binding, () => environments.files(agentId, binding)));
+    // Guides and commands are files of the environment: partners sharing one install those of the partner that has it.
+    business.setSkills((agentId, owner, binding) => skills.sync(environments.sharedFrom(agentId) ?? agentId, owner, binding,
+      () => environments.files(agentId, binding)));
   }
   const sessions = async (owner: string, agentId: string) => {
     router.service.owned(agentId, owner);
@@ -312,6 +318,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const { agentId } = z.object({ agentId: z.uuid() }).strict().parse(req.body);
     const owner = res.locals.owner as string, agent = router.service.owned(agentId, owner), id = String(req.params.id);
     if (!connectedApps.assigned(owner, id).includes(agentId)) throw new RouterError("connector_not_assigned_to_agent", 409);
+    // A partner using another partner's connections does not change the application behind them.
+    const sharedFrom = environments.sharedFrom(agentId);
+    if (sharedFrom && !connectedApps.configured(owner, id).includes(agentId)) {
+      const partner = router.service.agent(sharedFrom);
+      throw new RouterError("connector_assigned_through_partner", 409).with({ partner: { id: partner.id, name: partner.name } });
+    }
     const application = chatChannelApplication(router.connections.configuration(agent)?.connections, router.connections.agentDirectory(agentId));
     res.json(await connectorAccounts.provideApplication(owner, id, application));
   });
@@ -336,16 +348,27 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   }));
   const summary = (owner: string, id: string) => ({
     ...router.connections.summary(router.service.owned(id, owner)),
+    duty: environments.duty(id) ?? null,
     environment: environments.summary(owner, id),
   });
   product.get("/agents", (_req, res) => res.json({ data: router.service.agents(res.locals.owner).map(a => summary(a.owner, a.id)) }));
+  // A partner gets an environment of its own (`profileId`) or runs in another partner's (`shareWith`).
+  const newAgent = { name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), duty: dutySchema.optional() };
+  const newAgentInput = z.union([z.object({ ...newAgent, profileId: z.string().min(1).max(48) }).strict(),
+    z.object({ ...newAgent, shareWith: z.uuid() }).strict()]);
   product.post("/agents", async (req, res) => {
-    const input = z.object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), profileId: z.string().min(1).max(48) }).strict().parse(req.body);
-    const profile = environments.profiles(res.locals.owner).find(p => p.id === input.profileId);
+    const input = newAgentInput.parse(req.body), owner = res.locals.owner as string;
+    if ("shareWith" in input) {
+      environments.assertShareable(owner, input.shareWith);
+      const agent = await router.service.create(owner, input.name);
+      await environments.beginShared(owner, agent.id, input.shareWith, input.duty);
+      res.status(202).json(summary(owner, agent.id)); return;
+    }
+    const profile = environments.profiles(owner).find(p => p.id === input.profileId);
     if (!profile) throw new RouterError("environment_profile_not_assigned", 403);
-    const agent = await router.service.create(res.locals.owner, input.name);
-    await environments.begin(res.locals.owner, agent.id, input.profileId);
-    res.status(202).json(summary(res.locals.owner, agent.id));
+    const agent = await router.service.create(owner, input.name);
+    await environments.begin(owner, agent.id, input.profileId, input.duty);
+    res.status(202).json(summary(owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
   product.delete("/agents/:id", async (req, res) => {
@@ -392,6 +415,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       .json({ error: error instanceof RouterError ? error.message : error instanceof z.ZodError ? "invalid_request"
         : parser === 413 ? "request_too_large" : parser ? "invalid_request" : "operation_failed",
         ...(error instanceof RouterError && error.nativeError !== undefined ? { nativeError: error.nativeError } : {}),
+        // Members beside `error`, for example the partners sharing an environment that was asked to be destroyed.
+        ...(error instanceof RouterError && error.fields ? error.fields : {}),
         // Router's identity errors carry display fields (e.g. `email` for owner_not_configured).
         ...(error instanceof RouterError && "details" in error && error.details && typeof error.details === "object" ? error.details : {}),
         ...(error instanceof MemoryError ? { details: error.details } : {}) });

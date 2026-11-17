@@ -20,6 +20,11 @@ by reconciliation, not by allocating another environment. Bootstrap files are
 explicit operator-selected profile inputs; replacement does not copy arbitrary
 old filesystem contents automatically.
 
+An environment that other partners run in cannot be replaced or rolled back
+(`environment_shared_by_partners`), and a partner in a shared environment has no environment of
+its own to replace (`environment_shared_from_partner`); see
+[Partners sharing an environment](environments.md#partners-sharing-an-environment).
+
 The old environment is left paused; provider retention limits can still expire it.
 Keep independent file exports. Rollback verifies that the old environment still
 exists and is paused before changing any binding. To roll back, pause the replacement and use

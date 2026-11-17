@@ -93,9 +93,27 @@ interface Binding {
   tokenPerOperation?: boolean;
   previous?: Binding;
 }
+/** A partner that runs in another partner's environment instead of having its own; stored under its own Agent ID. */
+interface SharedBinding {
+  agentId: string;
+  /** The partner whose environment, Host and working directory this one uses. */
+  sharedFrom: string;
+  /** That environment's operation, which is also this partner's Host binding in Router. */
+  operationId: string;
+  createdAt: string;
+}
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
-const collection = "environments";
+const collection = "environments", shared = "shared_environments", duties = "agent_duties";
+/** One line of plain text saying what a partner is responsible for. */
+export const dutySchema = z.string().trim().min(1).max(200).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u);
+/**
+ * The fixed instructions of a partner in a shared environment: the environment profile's, then who this partner is.
+ * Router and Host fingerprint the partner's sessions by this text, so it is written once, when the partner is created.
+ */
+export const sharedInstructions = (profile: string, name: string, duty?: string) =>
+  [...(profile ? [profile] : []), `## Partner identity\n\nName: ${name}\n${duty ? `Duty: ${duty}\n` : ""}\n` +
+    "You are this partner. Where other instructions or files in this environment give a different name or role, this section applies to you."].join("\n\n");
 // Only what identifies the created environment and its Host endpoint. Labels, owners,
 // instructions, lifetime and bootstrap sources may change without stranding existing Agents.
 const profileHash = (p: Profile) =>
@@ -118,10 +136,12 @@ export class EnvironmentManager {
   private readonly store: DurableStore;
   private readonly jobs = new Map<
     string,
-    { kind: "operation" | "upkeep"; promise: Promise<void> }
+    // `retirement` is an operation that ends or switches the environment; nothing may start sharing it meanwhile.
+    { kind: "operation" | "upkeep" | "retirement"; promise: Promise<void> }
   >();
   private readonly renewalFailures = new Map<string, number>();
-  // Last Host request per Agent. In memory: a restart only restarts the idle window.
+  // Last Host request per environment, kept under the Agent that has it, whichever partner made the request.
+  // In memory: a restart only restarts the idle window.
   private readonly activity = new Map<string, number>();
   private readonly lease = randomUUID();
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -210,6 +230,60 @@ export class EnvironmentManager {
   private binding(id: string) {
     return this.store.get<Binding>(collection, id);
   }
+  private sharedBinding(id: string) {
+    return this.store.get<SharedBinding>(shared, id);
+  }
+  /** The environment a Host binding runs on: the Agent's own, or the one it shares. */
+  private bound(agentId: string, operationId: string) {
+    const record = this.binding(this.sharedBinding(agentId)?.sharedFrom ?? agentId);
+    return record?.operationId === operationId ? record : undefined;
+  }
+  /** The partners running in this Agent's environment, as far as Router still has them. */
+  private sharers(agentId: string) {
+    return this.store.entries<SharedBinding>(shared).flatMap(({ value }) => {
+      if (value.sharedFrom !== agentId) return [];
+      try { return [this.service.agent(value.agentId)]; } catch { return []; }
+    });
+  }
+  /** Destroying or switching an environment would strand the partners that run in it. */
+  assertUnshared(agentId: string) {
+    const partners = this.sharers(agentId).map(({ id, name }) => ({ id, name }));
+    if (partners.length) throw new WorkError("environment_shared_by_partners", 409).with({ partners });
+  }
+  /** A sharing partner only reads the environment's state; the partner that has the environment operates it. */
+  private assertOwnEnvironment(agentId: string) {
+    const share = this.sharedBinding(agentId);
+    if (!share) return;
+    const { id, name } = this.service.agent(share.sharedFrom);
+    throw new WorkError("environment_shared_from_partner", 409).with({ partner: { id, name } });
+  }
+  /** The owner's partner whose own, undeleted environment another partner may run in. Sharing does not chain. */
+  assertShareable(owner: string, agentId: string) {
+    this.shareable(owner, agentId);
+  }
+  private shareable(owner: string, agentId: string) {
+    this.service.owned(agentId, owner);
+    if (this.sharedBinding(agentId)) throw new WorkError("environment_share_chain_not_allowed", 409);
+    const record = this.binding(agentId);
+    if (!record || record.phase === "deleting" || record.phase === "deleted" || this.jobs.get(agentId)?.kind === "retirement")
+      throw new WorkError("environment_share_target_unavailable", 409);
+    return { record, profile: this.profile(record) };
+  }
+  /** A duty is recorded with the Agent's environment binding and is fixed from then on. */
+  private assertDuty(agentId: string, duty: string | undefined) {
+    if (duty !== undefined && duty !== this.duty(agentId)) throw new WorkError("agent_duty_immutable", 409);
+  }
+  duty(agentId: string) {
+    return this.store.get<string>(duties, agentId);
+  }
+  /** The partner whose environment this Agent runs in, when it has none of its own. */
+  sharedFrom(agentId: string) {
+    return this.sharedBinding(agentId)?.sharedFrom;
+  }
+  /** The partners that run in this Agent's environment. */
+  sharedBy(agentId: string) {
+    return this.sharers(agentId).map((agent) => agent.id);
+  }
   private async provider(record: Binding) {
     this.manager ??= this.load ? this.load() : this.importManager();
     try {
@@ -239,42 +313,62 @@ export class EnvironmentManager {
       throw new WorkError("environment_profile_changed", 409);
     return p;
   }
+  /** A sharing partner reads the state of the environment it runs in, with the partner that has it. */
   summary(owner: string, agentId: string) {
     this.service.owned(agentId, owner);
-    return this.view(this.binding(agentId));
-  }
-  /**
-   * The fixed instructions the Agent runs with, for its owner to read. They belong to the environment profile, so
-   * every Agent on that profile shares them; an Agent without an environment has none.
-   */
-  instructions(owner: string, agentId: string) {
-    this.service.owned(agentId, owner);
-    const record = this.binding(agentId);
-    const profile = record ? this.options.profiles.find((p) => p.id === record.profileId) : undefined;
-    return { text: profile?.instructions ?? "", shared: "environment_profile" as const };
-  }
-  private view(record: Binding | undefined) {
+    const share = this.sharedBinding(agentId);
+    if (!share) return this.view(this.binding(agentId));
+    const record = this.binding(share.sharedFrom);
     return record
       ? {
-          operationId: record.operationId,
+          operationId: share.operationId,
           profileId: record.profileId,
           state: record.phase,
           busy: this.jobs.has(record.agentId),
           updatedAt: record.updatedAt,
           ...(record.error ? { error: record.error } : {}),
-          ...(record.previous ? { previousEnvironment: { profileId: record.previous.profileId, state: record.previous.phase } } : {}),
+          sharedFrom: share.sharedFrom,
         }
       : null;
   }
-  async begin(owner: string, agentId: string, profileId: string) {
+  /**
+   * The fixed instructions the Agent runs with, for its owner to read. They belong to the environment profile, so
+   * every Agent with an environment on that profile shares them; an Agent without an environment has none. A partner
+   * in a shared environment has its own text: the profile's as it was when the partner was created, then its identity.
+   */
+  instructions(owner: string, agentId: string) {
+    const agent = this.service.owned(agentId, owner);
+    if (this.sharedBinding(agentId))
+      return { text: this.configuration.configuration(agent)?.host?.instructions ?? "", shared: "none" as const };
+    const record = this.binding(agentId);
+    const profile = record ? this.options.profiles.find((p) => p.id === record.profileId) : undefined;
+    return { text: profile?.instructions ?? "", shared: "environment_profile" as const };
+  }
+  private view(record: Binding | undefined) {
+    if (!record) return null;
+    const sharedBy = this.sharedBy(record.agentId);
+    return {
+      operationId: record.operationId,
+      profileId: record.profileId,
+      state: record.phase,
+      busy: this.jobs.has(record.agentId),
+      updatedAt: record.updatedAt,
+      ...(record.error ? { error: record.error } : {}),
+      ...(record.previous ? { previousEnvironment: { profileId: record.previous.profileId, state: record.previous.phase } } : {}),
+      ...(sharedBy.length ? { sharedBy } : {}),
+    };
+  }
+  async begin(owner: string, agentId: string, profileId: string, duty?: string) {
     this.assertOpen();
     const agent = this.service.owned(agentId, owner);
     const profile = this.profiles(owner).find((p) => p.id === profileId);
     if (!profile) throw new WorkError("environment_profile_not_assigned", 403);
+    if (this.sharedBinding(agentId)) throw new WorkError("environment_already_bound", 409);
     const existing = this.binding(agentId);
     if (existing) {
       if (existing.profileId !== profileId)
         throw new WorkError("environment_already_bound", 409);
+      this.assertDuty(agentId, duty);
       return this.view(existing);
     }
     if (this.configuration.configuration(agent)?.host)
@@ -294,13 +388,15 @@ export class EnvironmentManager {
     const provider = await this.provider(record);
     this.assertOpen();
     const inserted = this.store.transaction(() => {
-      if (this.binding(agentId)) return false;
+      if (this.binding(agentId) || this.sharedBinding(agentId)) return false;
+      if (duty !== undefined) this.store.set(duties, agentId, duty);
       return this.store.insert(collection, agentId, record);
     });
     if (!inserted) {
-      const winner = this.binding(agentId)!;
-      if (winner.profileId !== profileId)
+      const winner = this.binding(agentId);
+      if (winner?.profileId !== profileId)
         throw new WorkError("environment_already_bound", 409);
+      this.assertDuty(agentId, duty);
       return this.view(winner);
     }
     this.launch(record, async () => {
@@ -315,10 +411,40 @@ export class EnvironmentManager {
     });
     return this.view(record);
   }
+  /**
+   * Run a partner in another partner's environment: the same sandbox, Host and working directory, with no cloud
+   * request. The partner keeps its own Router identity, conversations, memory and settings. Repeating the request
+   * completes a binding that was recorded but not yet given to Router.
+   */
+  async beginShared(owner: string, agentId: string, sharedFrom: string, duty?: string) {
+    this.assertOpen();
+    const agent = this.service.owned(agentId, owner), { record, profile } = this.shareable(owner, sharedFrom);
+    let share = this.sharedBinding(agentId);
+    if (share ? share.sharedFrom !== sharedFrom || share.operationId !== record.operationId : this.binding(agentId))
+      throw new WorkError("environment_already_bound", 409);
+    if (share) this.assertDuty(agentId, duty);
+    else {
+      if (this.configuration.configuration(agent)?.host) throw new WorkError("host_already_bound", 409);
+      share = { agentId, sharedFrom, operationId: record.operationId, createdAt: new Date().toISOString() };
+      this.assertLease();
+      // No await since the checks above: the environment cannot be retired or the partner bound in between.
+      this.store.transaction(() => {
+        this.store.set(shared, agentId, share);
+        if (duty !== undefined) this.store.set(duties, agentId, duty);
+      });
+    }
+    const host = { binding: share.operationId, runtimeId: profile.runtimeId, instanceName: "channel-host",
+      instructions: sharedInstructions(profile.instructions ?? "", agent.name, this.duty(agentId)) };
+    if (this.configuration.configuration(agent)?.host?.binding !== host.binding)
+      await this.configuration.edit(owner, agentId, (config) => { config.host = host; });
+    return this.summary(owner, agentId);
+  }
   /** Replace a stopped execution environment, retaining the Agent's identity and channels. */
   async replace(owner: string, agentId: string, profileId: string, expectedOperationId: string) {
     this.assertOpen();
     this.service.owned(agentId, owner);
+    this.assertOwnEnvironment(agentId);
+    this.assertUnshared(agentId);
     const old = this.binding(agentId);
     if (!old || old.operationId !== expectedOperationId) throw new WorkError("environment_binding_changed", 409);
     if (this.jobs.has(agentId) || this.sshActive.has(agentId)) throw new WorkError("environment_operation_running", 409);
@@ -332,6 +458,8 @@ export class EnvironmentManager {
     this.assertOpen();
     if (this.jobs.has(agentId) || this.sshActive.has(agentId) || this.binding(agentId)?.operationId !== expectedOperationId || this.binding(agentId)?.phase !== old.phase)
       throw new WorkError("environment_binding_changed", 409);
+    // A partner may have started sharing the environment while the provider was asked.
+    this.assertUnshared(agentId);
     const record: Binding = {
       agentId, operationId: randomUUID(), profileId, profileHash: profileHash(profile), provider: profile.provider,
       phase: "creating", updatedAt: new Date().toISOString(), tokenPerOperation: true, previous: old,
@@ -350,6 +478,8 @@ export class EnvironmentManager {
   async rollbackReplacement(owner: string, agentId: string, expectedOperationId: string) {
     this.assertOpen();
     this.service.owned(agentId, owner);
+    this.assertOwnEnvironment(agentId);
+    this.assertUnshared(agentId);
     const current = this.binding(agentId);
     if (!current?.previous || current.operationId !== expectedOperationId) throw new WorkError("environment_binding_changed", 409);
     if (this.jobs.has(agentId) || this.sshActive.has(agentId)) throw new WorkError("environment_operation_running", 409);
@@ -374,7 +504,7 @@ export class EnvironmentManager {
         this.save(current);
         throw error;
       }
-    });
+    }, "retirement");
     return this.view(current);
   }
   private bundle(profile: Profile) {
@@ -395,11 +525,11 @@ export class EnvironmentManager {
   private launch(
     record: Binding,
     operation: () => Promise<void>,
-    kind: "operation" | "upkeep" = "operation",
+    kind: "operation" | "upkeep" | "retirement" = "operation",
   ) {
     if (this.jobs.has(record.agentId))
       throw new WorkError("environment_operation_running", 409);
-    if (kind === "operation") this.renewalFailures.delete(record.agentId);
+    if (kind !== "upkeep") this.renewalFailures.delete(record.agentId);
     const job = Promise.resolve()
       .then(() => {
         this.assertOpen();
@@ -551,12 +681,8 @@ export class EnvironmentManager {
         path: string,
         request: Parameters<ServiceHttp["request"]>[1] = {},
       ) {
-        const record = coordinator.binding(agentId);
-        if (
-          !record?.ref ||
-          record.operationId !== operationId ||
-          (!allowStarting && record.phase !== "ready")
-        )
+        const record = coordinator.bound(agentId, operationId);
+        if (!record?.ref || (!allowStarting && record.phase !== "ready"))
           throw new WorkError("environment_not_ready", 409);
         const profile = coordinator.profile(record),
           provider = await coordinator.provider(record);
@@ -565,7 +691,7 @@ export class EnvironmentManager {
           profile.port,
         );
         // Background observers read without extending the idle window.
-        if (marksActivity) coordinator.activity.set(agentId, Date.now());
+        if (marksActivity) coordinator.activity.set(record.agentId, Date.now());
         const headers = new Headers(endpoint.headers);
         new Headers(request.headers).forEach((v, k) => headers.set(k, v));
         return new ServiceHttp(
@@ -580,14 +706,14 @@ export class EnvironmentManager {
   }
   /** Trusted file relay into a ready sandbox, rooted at the runtime's working directory. Never exposed to the model. */
   async files(agentId: string, operationId: string): Promise<SandboxFiles> {
-    const record = this.binding(agentId);
-    if (!record?.ref || record.operationId !== operationId || record.phase !== "ready")
+    const record = this.bound(agentId, operationId);
+    if (!record?.ref || record.phase !== "ready")
       throw new WorkError("environment_not_ready", 409);
     const profile = this.profile(record), provider = await this.provider(record), id = record.ref.id;
     const config = JSON.parse(readFileSync(profile.hostConfigFile, "utf8")) as { runtimes?: Array<{ id: string; cwd?: unknown }> };
     const directory = remotePath.safeParse(config.runtimes?.find(r => r.id === profile.runtimeId)?.cwd);
     if (!directory.success) throw new WorkError("environment_working_directory_unknown", 409);
-    this.activity.set(agentId, Date.now());
+    this.activity.set(record.agentId, Date.now());
     return {
       directory: directory.data,
       exec: async (argv) => {
@@ -603,18 +729,23 @@ export class EnvironmentManager {
       writeFile: (path, data) => provider.writeFile(id, path, data),
     };
   }
-  /** Ready environments with their runtime, for background observers that must not wake them. */
+  /**
+   * Every Agent whose environment is ready, with its Host binding and runtime, for background observers that must
+   * not wake it. Partners in one environment are listed separately and name the same operation and runtime.
+   */
   readyBindings() {
     return this.store.entries<Binding>(collection).map(({ value }) => value)
       .filter((record) => record.phase === "ready" && record.ref)
       .flatMap((record) => {
         const profile = this.options.profiles.find((p) => p.id === record.profileId);
-        return profile ? [{ agentId: record.agentId, operationId: record.operationId, runtimeId: profile.runtimeId, kernel: profile.kernel }] : [];
+        return profile ? [record.agentId, ...this.sharedBy(record.agentId)]
+          .map((agentId) => ({ agentId, operationId: record.operationId, runtimeId: profile.runtimeId, kernel: profile.kernel })) : [];
       });
   }
-  /** Native work outside Router runs (background subagents) keeps a ready environment awake. */
+  /** Native work outside Router runs (background subagents) keeps a ready environment awake, whichever partner's it is. */
   touch(agentId: string) {
-    if (this.binding(agentId)?.phase === "ready") this.activity.set(agentId, Date.now());
+    const holder = this.sharedFrom(agentId) ?? agentId;
+    if (this.binding(holder)?.phase === "ready") this.activity.set(holder, Date.now());
   }
   private async ready(record: Binding, profile: Profile) {
     const deadline = Date.now() + 180_000,
@@ -637,6 +768,7 @@ export class EnvironmentManager {
   }
   private async acquireSsh(owner: string, agentId: string) {
     this.assertOpen(); this.service.owned(agentId, owner);
+    this.assertOwnEnvironment(agentId);
     const running = this.jobs.get(agentId);
     if (running?.kind === "upkeep") await running.promise.catch(() => {});
     this.assertOpen();
@@ -686,6 +818,8 @@ export class EnvironmentManager {
   ) {
     this.assertOpen();
     this.service.owned(agentId, owner);
+    this.assertOwnEnvironment(agentId);
+    if (action === "destroy") this.assertUnshared(agentId);
     // Renewal is background upkeep; a lifecycle request waits for it instead of failing.
     const running = this.jobs.get(agentId);
     if (running?.kind === "upkeep") await running.promise.catch(() => {});
@@ -697,16 +831,20 @@ export class EnvironmentManager {
     if (this.sshActive.has(agentId)) throw new WorkError("environment_has_active_ssh", 409);
     if (record.phase === "deleted")
       throw new WorkError("environment_deleted_create_new_agent", 409);
-    this.launch(record, () => this.lifecycle(owner, record, action));
+    if (action === "destroy") this.assertUnshared(agentId);
+    this.launch(record, () => this.lifecycle(owner, record, action), action === "destroy" ? "retirement" : "operation");
     return this.view(record);
   }
-  /** Router calls this while deliverable work waits; only an idle-paused environment wakes. */
+  /**
+   * Router calls this while deliverable work waits; only an idle-paused environment wakes. Work waiting for any
+   * partner in the environment wakes it.
+   */
   wake(agentId: string, binding: string) {
     try {
-      const record = this.binding(agentId);
-      if (record?.operationId !== binding || record.phase !== "sleeping" || this.jobs.has(agentId)) return;
+      const record = this.bound(agentId, binding);
+      if (record?.phase !== "sleeping" || this.jobs.has(record.agentId)) return;
       this.assertOpen();
-      this.launch(record, () => this.lifecycle(this.service.agent(agentId).owner, record, "resume"));
+      this.launch(record, () => this.lifecycle(this.service.agent(record.agentId).owner, record, "resume"));
     } catch {
       /* Router asks again on its next tick. */
     }
@@ -739,7 +877,7 @@ export class EnvironmentManager {
     const id = record.ref.id;
     if (action === "destroy" || action === "pause" || action === "sleep") {
       // Stop workers and reject active/uncertain native work before cloud lifecycle changes.
-      await this.configuration.withStoppedRuntime(
+      await this.withStoppedRuntimes(
         owner, agentId,
         async () => {
           record.phase = action === "destroy" ? "deleting" : "pausing";
@@ -804,10 +942,22 @@ export class EnvironmentManager {
     }
     this.activity.set(agentId, Date.now());
   }
+  /**
+   * Quiesce every partner running in the environment: the sharing partners first, then the Agent that has it, so
+   * that a busy partner refuses the operation before anything is stopped for the others.
+   */
+  private withStoppedRuntimes(owner: string, agentId: string, operation: () => Promise<void>, rollback: () => Promise<void>) {
+    // A partner being deleted has passed its own active-run check and no longer has a runtime to stop.
+    const partners = this.sharers(agentId).filter((agent) => agent.status !== "deleting").map((agent) => agent.id);
+    const stopped = (index: number): Promise<void> => index < partners.length
+      ? this.configuration.withStoppedRuntime(owner, partners[index]!, () => stopped(index + 1), async () => {})
+      : this.configuration.withStoppedRuntime(owner, agentId, operation, rollback);
+    return stopped(0);
+  }
   assertReady(agentId: string, operationId: string) {
-    const b = this.binding(agentId);
+    const b = this.bound(agentId, operationId);
     this.assertOpen();
-    if (b?.operationId !== operationId || b.phase !== "ready")
+    if (b?.phase !== "ready")
       throw new WorkError("environment_not_ready", 409);
   }
   private async maintain() {
@@ -867,15 +1017,19 @@ export class EnvironmentManager {
    * Destroy every environment an Agent still has (current, retained previous, retired) before its
    * identity is deleted. Records already `deleted` were confirmed by the provider and are skipped.
    * A retained or retired record whose provider is no longer configured cannot be managed and is
-   * recorded as gone; the current environment must always be confirmed by its provider.
+   * recorded as gone; the current environment must always be confirmed by its provider. A partner in a shared
+   * environment has none of its own and leaves that environment as it is; an Agent whose environment is shared is
+   * not removed.
    */
   async removeAgent(owner: string, agentId: string) {
     this.assertOpen();
     this.service.owned(agentId, owner);
+    if (this.sharedBinding(agentId)) return;
+    this.assertUnshared(agentId);
     if (this.jobs.has(agentId) || this.sshActive.has(agentId) || this.sshPreparing.has(agentId))
       throw new WorkError("environment_operation_running", 409);
     let release!: () => void;
-    this.jobs.set(agentId, { kind: "operation", promise: new Promise<void>((r) => { release = r; }) });
+    this.jobs.set(agentId, { kind: "retirement", promise: new Promise<void>((r) => { release = r; }) });
     try {
       let current = this.binding(agentId);
       if (current?.previous && current.previous.phase !== "deleted") {
@@ -948,7 +1102,7 @@ export class EnvironmentManager {
   forgetAgent(agentId: string) {
     this.assertLease();
     this.store.transaction(() => {
-      this.store.delete(collection, agentId);
+      for (const name of [collection, shared, duties]) this.store.delete(name, agentId);
       for (const { id, value } of this.store.entries<Binding>("retired_environments"))
         if (value.agentId === agentId) this.store.delete("retired_environments", id);
     });

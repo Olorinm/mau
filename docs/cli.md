@@ -45,6 +45,10 @@ memory, schedules, channel connections and product records. Sent messages stay
 in chat history. It is
 refused while work or a scheduled run is in progress. If it stops partway, the
 Agent stops receiving messages and running `mau delete` again finishes it.
+A partner that runs in another partner's environment leaves that environment in
+place; a partner whose environment is still shared is refused
+(`environment_shared_by_partners`) until the sharing partners are deleted. See
+[Partners sharing an environment](environments.md#partners-sharing-an-environment).
 
 When the environment profile enables SSH, connect to an existing Agent:
 

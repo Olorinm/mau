@@ -21,10 +21,16 @@ interface ConnectedAppScope { connections: string[]; operations?: string[] | und
 interface ConnectedAppOptions { write?: boolean; }
 export type ConnectedAppReader = (input: z.infer<typeof connectedAppInput>, scope?: ConnectedAppScope, options?: ConnectedAppOptions) => Promise<unknown>;
 export const browserToolName = (connection: string, tool: string) => `${connection.replaceAll("-", "_")}__${tool}`;
+/** Which partners run in another partner's environment. Such a partner has no assignment of its own by default. */
+export interface EnvironmentSharing {
+  sharedFrom(agentId: string): string | undefined;
+  sharedBy(agentId: string): string[];
+}
 export class ConnectedApps {
   private readonly client?: ConnectorReadClient;
   private readonly caller?: ConnectorCallerClient;
-  constructor(private readonly config: z.infer<typeof connectedAppsSchema>, base: string, writable = false) {
+  constructor(private readonly config: z.infer<typeof connectedAppsSchema>, base: string, writable = false,
+    private readonly sharing?: EnvironmentSharing) {
     if (!config) return;
     if (new Set(config.assignments.map(a => a.agentId)).size !== config.assignments.length) throw new Error("duplicate_connected_app_agent");
     const { browserConnections: _browser, ownerPrivateConnections: _private, assignments: _assignments, ...endpoint } = config;
@@ -34,11 +40,29 @@ export class ConnectedApps {
   }
   get writable() { return !!this.caller; }
   get ownerPrivateConnections() { return [...(this.config?.ownerPrivateConnections ?? [])]; }
-  assigned(owner: string, connection: string) {
+  /**
+   * The Agent's own assignment. A partner in a shared environment without one uses the connections of the partner
+   * whose environment it runs in (same owner), under its own Agent ID.
+   */
+  private principal(agentId: string, owner: string) {
+    const assignments = this.config?.assignments ?? [];
+    if (assignments.some(a => a.agentId === agentId)) return assignments.find(a => a.agentId === agentId && a.owner === owner);
+    const sharedFrom = this.sharing?.sharedFrom(agentId);
+    const inherited = sharedFrom === undefined ? undefined : assignments.find(a => a.agentId === sharedFrom && a.owner === owner);
+    return inherited && { agentId, owner, connections: inherited.connections };
+  }
+  /** The Agents whose own assignment names the connection. */
+  configured(owner: string, connection: string) {
     return this.config?.assignments.filter(a => a.owner === owner && a.connections.includes(connection)).map(a => a.agentId) ?? [];
   }
+  /** Every Agent that can use the connection: the configured ones and the partners using their connections. */
+  assigned(owner: string, connection: string) {
+    const explicit = new Set(this.config?.assignments.map(a => a.agentId));
+    return this.configured(owner, connection)
+      .flatMap(agentId => [agentId, ...(this.sharing?.sharedBy(agentId) ?? []).filter(id => !explicit.has(id))]);
+  }
   connections(agentId: string, owner: string): string[] {
-    return [...(this.config?.assignments.find(a => a.agentId === agentId && a.owner === owner)?.connections ?? [])];
+    return [...(this.principal(agentId, owner)?.connections ?? [])];
   }
   /** Browser connections assigned to this Agent, by their tool-name prefix. */
   browser(agentId: string, owner: string): string[] {
@@ -46,7 +70,7 @@ export class ConnectedApps {
     return this.connections(agentId, owner).filter(id => browser.includes(id));
   }
   reader(agentId: string, owner: string): ConnectedAppReader | undefined {
-    const principal = this.config?.assignments.find(a => a.agentId === agentId && a.owner === owner);
+    const principal = this.principal(agentId, owner);
     if (!principal || !this.client) return undefined;
     const client = this.client, caller = this.caller;
     return async (input, scope, options) => {

@@ -117,3 +117,66 @@ it("running native threads keep the environment awake up to a bounded window; un
   // Activity known before the environment stopped answering is not extended by guesswork.
   expect(f.touch.mock.calls.length).toBe(calls);
 });
+
+it("partners sharing one Host runtime each receive only the woken turns of their own conversations, once", async () => {
+  // Both partners read the same native event stream and the same session bindings of the runtime.
+  const store = new DurableStore(":memory:", "relay"); cleanup.push(() => store.close());
+  const helper: NativeRelayPartner = { agentId: "helper", owner: "alice", operationId: "op", runtimeId: "personal" };
+  const scout: NativeRelayPartner = { ...helper, agentId: "scout" };
+  const log: Array<{ sequence: number; event: Record<string, unknown> }> = [];
+  const push = (...events: Array<Record<string, unknown>>) => { for (const event of events) log.push({ sequence: log.length + 1, event }); };
+  const runEvents = new Map<string, Array<Record<string, unknown>>>();
+  const host: NativeRelayHost = {
+    nativeEvents: vi.fn(async (_runtime: string, after = 0, limit = 200) => {
+      const events = log.filter(e => e.sequence > after).slice(0, limit), cursor = events.at(-1)?.sequence ?? after;
+      return { epoch: "e1", events, cursor, hasMore: cursor < log.length, historyTruncated: false };
+    }),
+    nativeSessions: vi.fn(async () => ({ bindings: [{ sessionId: "h-helper", nativeSessionId: "thread-helper" },
+      { sessionId: "h-scout", nativeSessionId: "thread-scout" }, { sessionId: "h-scout-group", nativeSessionId: "thread-scout-group" }] })),
+    events: vi.fn(async (runId: string) => ({ events: (runEvents.get(runId) ?? []).map(event => ({ event })), cursor: 1, hasMore: false })),
+  };
+  // Each partner's Router knows only its own sessions; a Host session maps to a conversation for the partner that ran it.
+  const aliases: Record<string, Record<string, string>> = { helper: { "h-helper": "c-helper" }, scout: { "h-scout": "c-scout", "h-scout-group": "c-scout-group" } };
+  const conversations: Record<string, string> = { helper: "c-helper", scout: "c-scout" };
+  const runs: Record<string, Array<{ taskId: string; runId: string | null; phase: string; error: null }>> = { helper: [], scout: [] };
+  const deliver = { helper: vi.fn((input: { eventId: string }) => ({ ...input, state: "queued" })), scout: vi.fn((input: { eventId: string }) => ({ ...input, state: "queued" })) };
+  const work = (agentId: "helper" | "scout") => ({
+    validateTarget: (sessionId: string) => { if (sessionId !== conversations[agentId]) throw new Error("notification_requires_owner_conversation"); return { sessionId, ownerConversation: true }; },
+    getSession: (sessionId: string) => ({ sessionId, runs: runs[agentId]! }), deliver: deliver[agentId],
+  }) as unknown as WorkSessions;
+  const touch = vi.fn(), record = vi.fn();
+  const relay = new NativeRelay(store, {
+    partners: () => [helper, scout], host: () => host, sessions: async (_owner, agentId) => work(agentId as "helper" | "scout"), touch, record,
+    publicSession: (_owner, agentId, hostSessionId) => aliases[agentId]?.[hostSessionId],
+  }, { clock: () => 1_000_000 });
+  cleanup.push(() => relay.close());
+  await relay.tick();
+
+  runs.scout.push({ taskId: "task-run-9", runId: "run-9", phase: "finished", error: null });
+  runEvents.set("run-9", [{ type: "native.notification", notification: { method: "turn/started", params: { threadId: "thread-scout", turn: { id: "scout-managed" } } } }]);
+  push(turn("thread-scout", "scout-woken", "Invoices are filed."),
+    turn("thread-helper", "helper-woken", "The week is planned."),
+    turn("thread-scout", "scout-managed", "Router already replied"),
+    turn("thread-scout-group", "scout-group", "A group conversation is not an owner chat"),
+    turn("thread-child", "child-turn", "Subagent final answer"),
+    status("thread-scout", "active"));
+  await relay.tick();
+  expect(deliver.scout.mock.calls).toEqual([[{ eventId: "wake-scout-woken", targetSessionId: "c-scout", text: "Invoices are filed." }]]);
+  expect(deliver.helper.mock.calls).toEqual([[{ eventId: "wake-helper-woken", targetSessionId: "c-helper", text: "The week is planned." }]]);
+  expect(record.mock.calls).toEqual(expect.arrayContaining([["alice", "scout", "c-scout", "scout-woken:assistant", "Invoices are filed."],
+    ["alice", "helper", "c-helper", "helper-woken:assistant", "The week is planned."]]));
+  expect(record).toHaveBeenCalledTimes(2);
+  // One record per turn, under the partner the conversation belongs to.
+  expect(store.entries<any>("native_relay_turns").map(({ id, value }) => [id, value.agentId, value.status]).sort()).toEqual([
+    ["helper-woken", "helper", "delivered"], ["scout-managed", "scout", "managed"], ["scout-woken", "scout", "delivered"]]);
+  // Each partner keeps its own position in the shared stream; reading it again, by either, delivers nothing twice.
+  expect(store.get("native_relay_cursors", "helper")).toEqual({ epoch: "e1", cursor: 6 });
+  expect(store.get("native_relay_cursors", "scout")).toEqual({ epoch: "e1", cursor: 6 });
+  store.set("native_relay_cursors", "helper", { epoch: "e1", cursor: 0 });
+  store.set("native_relay_cursors", "scout", { epoch: "e1", cursor: 0 });
+  await relay.tick(); await relay.tick();
+  expect(deliver.scout).toHaveBeenCalledTimes(1);
+  expect(deliver.helper).toHaveBeenCalledTimes(1);
+  // A native thread still running keeps the environment awake, whichever partner it belongs to.
+  expect(touch.mock.calls.map(([agentId]) => agentId)).toEqual(expect.arrayContaining(["helper", "scout"]));
+});

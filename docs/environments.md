@@ -51,7 +51,8 @@ may require separate cleanup.
 
 Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau delete NAME --yes`) first
 pauses its schedules and destroys its current, retained previous and retired
-environments; records already confirmed `deleted` are not contacted again, so an
+environments (a partner in a [shared environment](#partners-sharing-an-environment)
+has none of its own and leaves that environment in place); records already confirmed `deleted` are not contacted again, so an
 Agent whose provider was removed from configuration can still be deleted. A
 cloud failure leaves the Agent and its binding in place (`needs_action`). After
 Router deactivates the Agent, Mau removes its bindings, tokens, memory files,
@@ -64,7 +65,7 @@ longer Mau outages. Volcengine currently uses explicit pause and `kill` on expir
 choose durable storage accordingly.
 
 Optional `idlePauseSeconds` (600 to 2592000) pauses a ready environment after no
-Host requests for that long, using the same guarded pause. The state is `sleeping`.
+Host requests for that long from any partner running in it, using the same guarded pause. The state is `sleeping`.
 Router keeps receiving messages; when deliverable work waits, it asks Mau to wake
 the environment, and the first reply waits for resume. Active or unresolved runs
 count as activity. An explicit `mau pause` is never woken by messages.
@@ -74,7 +75,7 @@ existing binding and must not change. Labels, owners, instructions, lifetime, id
 and bootstrap file settings may change.
 
 Host requests use Environment's application endpoint/traffic token and a separate
-per-Agent Host token. Cloud management credentials stay in Mau. Private gateways
+Host token per environment. Cloud management credentials stay in Mau. Private gateways
 must preserve application Authorization and required sandbox routing headers.
 
 ```sh
@@ -97,6 +98,65 @@ not real model authentication. Router's former product commands and provisioning
 routes are deleted, with no compatibility aliases or automatic state migration.
 
 
+## Partners sharing an environment
+
+A partner normally gets an environment of its own. It can instead run in the environment of another
+partner of the same owner: the same sandbox, Host, runtime and working directory. It is still a
+complete Agent, with its own Router identity, conversations, ledger, memory files, schedules and
+model settings, and creating it makes no cloud request.
+
+`POST /_mau/v1/agents` takes `name` and exactly one of:
+
+- `profileId`: an environment of its own (the behavior described above);
+- `shareWith`: the ID of the partner whose environment it runs in.
+
+Both accept an optional `duty`, one line of plain text (at most 200 characters) saying what the
+partner is responsible for. The duty is fixed once the partner has an environment binding; there is
+no route to change it. The response has the usual shape; repeating the request with the same name
+returns the same partner.
+
+```json
+{ "name": "scout", "shareWith": "00000000-0000-4000-8000-000000000001", "duty": "Watches the inbox and files invoices" }
+```
+
+Rules:
+
+- The other partner must belong to the same owner and have an environment of its own that is not
+  destroyed. Sharing does not chain: a partner that runs in a shared environment cannot be shared
+  with (`environment_share_chain_not_allowed`, `environment_share_target_unavailable`).
+- `GET /_mau/v1/agents` and `/agents/:id` return `duty` (or `null`). The `environment` of a sharing
+  partner is the state of the environment it runs in plus `sharedFrom` (that partner's ID); the
+  `environment` of a partner whose environment is shared lists the sharing partners in `sharedBy`.
+- The sharing partner's Host requests, checks and file relay use the shared environment and its
+  Host token. Its runtime ID is the environment's. Its fixed instructions are the environment
+  profile's instructions followed by a `## Partner identity` section with its name and duty, written
+  when it is created. The instructions of the partner that has the environment do not change.
+- Idle pause counts the Host requests, unresolved runs and running native threads of every partner
+  in the environment. Work waiting for any of them wakes a sleeping environment. An explicit pause
+  stops the environment for all of them and is refused while any of them has an active or
+  unresolved run.
+- A sharing partner only reads the environment's state. Its pause, resume, reconcile, destroy,
+  replace, rollback and SSH requests are refused with `environment_shared_from_partner` and
+  `partner: { id, name }`; the partner that has the environment operates it.
+- While other partners run in an environment, destroying it, replacing it, rolling it back and
+  deleting its partner are refused with `environment_shared_by_partners` and
+  `partners: [{ id, name }]`, before anything is stopped. Delete the sharing partners first.
+- Deleting a sharing partner removes its own identity, memory, history, schedules and product
+  records, and leaves the environment and the other partners untouched.
+- Without an assignment of its own in `connectedApps.assignments`, a sharing partner uses the
+  connections assigned to the partner whose environment it runs in, under its own Agent ID.
+  Connections that act as the owner's personal identity keep their rule: they work only in the
+  owner's private conversation with the partner making the call, and the application behind such a
+  connection is still set up through the partner it is assigned to
+  (`connector_assigned_through_partner`). Connector guides and commands are files of the
+  environment and follow the assignment of the partner that has it.
+- Every partner in the environment reads the same native event stream. A native turn that Router did
+  not start is delivered only to the owner's private conversation of the partner whose session ran
+  it.
+
+Partners in one environment see the same files, native kernel home and login. Give a partner an
+environment of its own when its work must be isolated.
+
 ## SSH access
 
 Add `"ssh": { "port": 37421 }` to an assigned environment profile to enable
@@ -116,6 +176,7 @@ SSH port is required. Custom HTTP entrypoints must call `mau.attach(server)`.
 Each Agent allows up to eight connections or setup requests. Active SSH sessions
 block lifecycle changes and idle pause while normal environment renewal continues.
 Resume a paused environment before connecting. Client authentication expires after
-ten minutes and established sessions after eight hours. Shell access exposes the
+ten minutes and established sessions after eight hours. A partner in a shared
+environment has no SSH access of its own; connect through the partner that has the environment. Shell access exposes the
 execution user's existing files and credentials; it does not change the existing
 network or model-credential policy.
