@@ -52,8 +52,12 @@ For a personal pilot, add the owner as a test user. Gmail authorizations in an E
 
 ### Connector CLIs and guides in the Agent's environment
 
-When `runtimeConfigFile` is set, Mau brings each Agent's connectors into its environment before a run (at most every ten
-minutes per environment):
+A connector's guide is written around its official CLI. How it reaches an Agent follows the Agent's kernel, and the
+tool stays the same for all of them: every call ends at `connected_apps`.
+
+When `runtimeConfigFile` is set, Mau brings the connectors of an Agent on Codex into its environment before a run (at
+most every ten minutes per environment). The commands below relay through what Codex reports to Agent Host about the
+shell command it is running, so they are installed by the runs of Codex partners and work only for them:
 
 - For every assigned connection whose connector ships a guide (`@olorinm/agent-connectors/guides`) and currently offers
   the guide's CLI tools (`<connection>__gws_read`, `<connection>__cli_read`, `<connection>__agent_browser_read`), the guide is written as a Codex skill
@@ -75,6 +79,20 @@ minutes per environment):
 - Files Mau installs carry an `Installed by Mau` marker; unassigned ones are removed. Files without the marker (an
   owner's own skill or CLI) are never overwritten. Environments whose Agent Host predates the relay client get guides
   but no commands.
+
+An Agent on another kernel (a Claude partner, in an environment of its own or in a Codex partner's) is not installed
+for: its runs write no skill and no command. It uses the `connected_apps` tool directly, and the tool brings the guides
+with it. The catalog (`action=tools`) of such an Agent carries, beside `tools`:
+
+- `guides`: for each connection whose CLI tools the catalog lists, `{ connection, command, read, write?, guide }`, where
+  `guide` is the same text a Codex skill has and `read` / `write` name the tools that run the command;
+- `guidesNote`: how to run a guide's command through the tool. The command's arguments, without its name, are
+  `arguments.args` of the tool named in `read`; a command the connector classifies as a write is refused there and
+  runs on the tool named in `write`, which asks the owner.
+
+Reads, approvals, the personal-identity rule and the browser's file relay (workspace paths for uploads, saved files
+under `browser_downloads/`) are the same as through the commands. In an environment that Codex partners also use, the
+commands exist in the shell; outside a Codex command they refuse to run and say so.
 
 The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
 ConnectorService runs for `gws_read`/`gws_write`. The browser connector's agent-browser CLI comes with Agent Connectors'
