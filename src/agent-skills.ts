@@ -2,12 +2,16 @@ import { createHash } from "node:crypto";
 import { connectorGuide, type ConnectorGuide } from "@olorinm/agent-connectors/guides";
 import type { ConnectedApps } from "./connected-apps.js";
 import type { SandboxFiles } from "./browser-relay.js";
+import { shellRelay } from "./kernels.js";
 
 /**
- * Installs, in an Agent's environment, the guide of each assigned connector as a Codex skill and
- * a shell command (`gws`, `lark-cli`, `agent-browser`) that relays to the connector through Agent Host. The
- * Agent then knows its connectors from the start and uses their official CLIs; credentials
- * and approvals stay with Mau and the connector service.
+ * How an Agent learns the connectors assigned to it. Each connector ships a guide written around its official CLI.
+ *
+ * For a kernel whose shell commands relay through Agent Host (Codex), the guide is installed in the environment as a
+ * Codex skill, with a shell command (`gws`, `lark-cli`, `agent-browser`) that relays to the connector: the Agent
+ * knows its connectors from the start and uses their CLIs. For every other kernel the same guides come with the
+ * `connected_apps` tool itself (`toolGuides`), which runs the same commands. Credentials and approvals stay with Mau
+ * and the connector service either way.
  */
 const SKILLS_DIRECTORY = "/home/user/.codex/skills";
 const RELAY_CLIENT = "/opt/agent-host/node_modules/@olorinm/agent-host/dist/service/relay-cli.js";
@@ -86,6 +90,25 @@ export function planSkills(connections: ConnectionSummary[], assigned: string[],
   return { skills, commands: [...commands].sort() };
 }
 
+/** What the `connected_apps` catalog says above the guides it carries. */
+export const TOOL_GUIDES = "Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
+  "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
+  "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this.";
+/**
+ * The guides of the connections whose CLI tools a catalog offers, for a turn whose kernel has no relay commands: each
+ * with the tools that run its command.
+ */
+export function toolGuides(connections: ConnectionSummary[], tools: string[], guides: GuideLookup = connectorGuide) {
+  const found = connections.flatMap(connection => {
+    const product = typeof connection.settings?.product === "string" ? connection.settings.product : undefined;
+    const guide = guides(connection.kind, product), prefix = guide && prefixes[guide.command];
+    const read = `${connection.id.replaceAll("-", "_")}__${prefix}_read`, write = `${connection.id.replaceAll("-", "_")}__${prefix}_write`;
+    return guide && prefix && tools.includes(read)
+      ? [{ connection: connection.id, command: guide.command, read, ...(tools.includes(write) ? { write } : {}), guide: guide.body }] : [];
+  });
+  return found.length ? { guidesNote: TOOL_GUIDES, guides: found } : {};
+}
+
 /** Runs inside the environment as root: write managed skills and commands, remove stale managed ones. */
 const installer = `
 const fs = require("node:fs"), path = require("node:path");
@@ -124,6 +147,17 @@ export class AgentSkills {
   private readonly synced = new Map<string, string>();
   private readonly checked = new Map<string, number>();
   constructor(private readonly apps: ConnectedApps, private readonly connections: () => ConnectionSummary[], private readonly guides: GuideLookup = connectorGuide) {}
+  /**
+   * Before a run of an Agent on `kernel`: where the kernel's shell commands relay, the guides and commands of
+   * `agentId` (the partner that has the environment) are installed in it. For another kernel nothing is installed.
+   */
+  async install(kernel: string | undefined, agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
+    return shellRelay(kernel) ? this.sync(agentId, owner, binding, files) : undefined;
+  }
+  /** For an Agent on a kernel without relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
+  toolGuides(kernel: string | undefined) {
+    return shellRelay(kernel) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
+  }
   /** Idempotent; repeats only when the plan for this environment binding changes. */
   async sync(agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
     const reader = this.apps.reader(agentId, owner);

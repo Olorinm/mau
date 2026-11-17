@@ -77,7 +77,7 @@ export function AgentDetail(props: {
   const { toast } = useToast();
   const confirm = useConfirm();
   const queries = useQueryClient();
-  const { agent, environment, duty, connections } = props.summary;
+  const { agent, environment, duty, kernel, connections } = props.summary;
   const named = (ids: readonly string[]) => props.partners.flatMap(({ agent: { id, name } }) => ids.includes(id) ? [{ id, name }] : []);
   // In a shared environment the partner only reads its state; `host` is the partner that has it and operates it.
   const host = environment?.sharedFrom ? named([environment.sharedFrom])[0] ?? { id: environment.sharedFrom, name: "…" } : undefined;
@@ -231,7 +231,7 @@ export function AgentDetail(props: {
   };
 
   const icon = (name: "ops" | "chat" | "extensions" | "copy" | "settings") => <ProductIcon name={name} size={18} />;
-  // Another partner named on the profile: its figure and name, which open its profile. A name nobody has any more is text.
+  // Another partner named on the profile: its figure and name, which open its profile. One that is no longer there is text.
   const partnerValue = (name: string, id: string | undefined) => id
     ? <TextButton tone="neutral" className="mau-profile-partner" onClick={() => props.onPartner(id)}>
         <PartnerAvatar seed={id} fallbackName={name} size={20} animated={false} />{name}
@@ -240,7 +240,7 @@ export function AgentDetail(props: {
   const sharedRow = host ? <ListRow title={t("env.shared")} trailing={partnerValue(host.name, host.id)} /> : null;
   const recruiter = props.partner?.recruitedBy;
   const recruitedRow = recruiter
-    ? <ListRow title={t("partners.recruitedBy")} trailing={partnerValue(recruiter, props.partners.find(({ agent: other }) => other.name === recruiter)?.agent.id)} />
+    ? <ListRow title={t("partners.recruitedBy")} trailing={partnerValue(recruiter.name, named([recruiter.id])[0]?.id)} />
     : null;
   return (
     <>
@@ -329,7 +329,7 @@ export function AgentDetail(props: {
         ) : (
           <>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
-              <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{profile?.kernel ?? "—"}</span>} />
+              <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{kernel ?? "—"}</span>} />
               {modelRows()}
               {sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
             </SettingsSection>

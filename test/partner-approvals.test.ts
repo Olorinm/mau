@@ -38,8 +38,12 @@ it("puts a partner's approval card in the conversation its message came from, wh
   const [card] = await cards(f.agent.id);
   expect(card!.card).toMatchObject({ source: "product", kind: "approval", turnId: "", freeText: false,
     choices: [{ choiceId: "0", label: "批准这次操作" }, { choiceId: "1", label: "拒绝这次操作" }] });
-  expect(card!.card.text).toBe(["伙伴「trip」请求批准", "", "「trip」在处理「helper」转来的消息时，需要你批准这个操作：", "Submit the booking form on booking.example",
+  // The title names the partner once; the text says what it is doing and for whom.
+  expect(card!.card.text).toBe(["伙伴「trip」请求批准", "", "处理「helper」转来的消息时需要执行：Submit the booking form on booking.example",
     "连接：trip-browser", '参数：{"site":"https://booking.example","ref":"submit"}'].join("\n"));
+  // The same as members, for a console to show in its own words: who asks, for whose message, and what.
+  expect(card!.card.display).toEqual({ partnerApproval: { partner: { id: trip.id, name: "trip" }, from: { id: f.agent.id, name: "helper" }, messageId: expect.stringMatching(/^pm-[0-9a-f]{32}$/),
+    summary: "Submit the booking form on booking.example", connection: "trip-browser", arguments: '{"site":"https://booking.example","ref":"submit"}' } });
   expect(await cards(trip.id)).toEqual([]);
   expect(await desk.status("partner-approval-" + "a".repeat(40))).toBe("pending");
   // Approved by the owner on the card.

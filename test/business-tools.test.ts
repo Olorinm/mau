@@ -57,6 +57,30 @@ it("injects the reviewed tool only with trusted owner admission and resolves it 
   expect(f.submitted().admission).toBeUndefined();
 });
 
+it("adds the connector guides to the catalog of an Agent whose kernel has none installed, and to no other", async () => {
+  const f = fixture(), read = vi.fn(async (input: { action: string }) => input.action === "tools" ? { status: "completed", tools: [{ name: "mail__gws_read" }, { name: "mail__gws_write" }] } : { status: "completed", result: { output: "ok" } });
+  const apps = { reader: () => read, connections: () => ["mail"], browser: () => [], writable: false } as unknown as ConstructorParameters<typeof BusinessTools>[3];
+  const business = new BusinessTools([], tmpdir(), f.store, apps);
+  const sync = vi.fn(async () => undefined);
+  business.setSkills(sync);
+  business.setGuides(agentId => agentId === "agent" ? tools => ({ guidesNote: "note", guides: tools.map(name => ({ read: name })) }) : undefined);
+  const catalog = async (agentId: string) => {
+    const host = business.host(agentId, "alice", "binding", f.http);
+    await host.start({ ...input, tools, admission: { ...admission, agentId } });
+    f.setCalls("connected_apps", "", { action: "tools" });
+    await host.calls("run");
+    return JSON.parse(f.resolved.at(-1).contentItems[0].text);
+  };
+  expect(await catalog("agent")).toEqual({ status: "completed", tools: [{ name: "mail__gws_read" }, { name: "mail__gws_write" }],
+    guidesNote: "note", guides: [{ read: "mail__gws_read" }, { read: "mail__gws_write" }] });
+  // The calls themselves are the same for every kernel.
+  f.setCalls("connected_apps", "", { action: "call", name: "mail__gws_read", arguments: { args: ["gmail", "+triage"] } }, "second");
+  await business.host("agent", "alice", "binding", f.http).calls("run");
+  expect(read).toHaveBeenLastCalledWith({ action: "call", name: "mail__gws_read", arguments: { args: ["gmail", "+triage"] } });
+  expect(JSON.parse(f.resolved.at(-1).contentItems[0].text)).toEqual({ status: "completed", result: { output: "ok" } });
+  expect(sync).toHaveBeenCalledWith("agent", "alice", "binding");
+});
+
 it("serves connected apps through the native Host protocol only for admitted runs and preserves channel handling", async () => {
   const f = fixture(), read = vi.fn(async () => ({ status: "completed", tools: [{ name: "gmail__list" }] }));
   const host = new BusinessHost(f.http, undefined, f.store, "apps:binding", read, principal);

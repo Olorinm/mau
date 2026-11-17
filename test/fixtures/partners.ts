@@ -25,7 +25,7 @@ interface Run { record: Record<string, unknown>; calls: Array<Record<string, unk
   events: Array<Record<string, unknown>> }
 
 export function scriptedHost() {
-  const runs = new Map<string, Run>(), turns: Turn[] = [];
+  const runs = new Map<string, Run>(), turns: Turn[] = [], discoveries: Record<string, unknown> = {};
   let script: Script = turn => `answer to ${turn.text}`, deadlineMs = 90_000, expired: (call: { name: string; input: any }) => boolean = () => false;
   const json = (value: unknown, status = 200) => Response.json(value, { status });
   const host = (url: URL, init?: RequestInit): Response => {
@@ -55,6 +55,9 @@ export function scriptedHost() {
       return json(run.record);
     }
     if (path === "/v1/runs/by-request") return json({ run: [...runs.values()].find(run => run.requestKey === url.searchParams.get("requestKey"))?.record ?? null });
+    if (path === "/v1/runtimes/discover" && discoveries[String(JSON.parse(String(init?.body)).runtimeId)]) return json(discoveries[String(JSON.parse(String(init?.body)).runtimeId)]);
+    // The fixture's own runtime; a Host does not know any other that was not described to it.
+    if (path === "/v1/runtimes/discover" && JSON.parse(String(init?.body)).runtimeId !== "personal") return json({ error: "runtime_not_found" }, 404);
     if (path === "/v1/runtimes/discover") return json({ id: "personal", kernel: "codex", model: "large",
       allowedSettings: { model: { values: ["large", "small"] }, effort: { values: ["low", "high"] } },
       native: { models: { data: [{ model: "large", displayName: "Large", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }] },
@@ -77,6 +80,8 @@ export function scriptedHost() {
     return json(run.record);
   };
   return { host, turns, runs,
+    /** What the Host's discovery of another runtime than the fixture's own returns. */
+    discovery(runtimeId: string, value: unknown) { discoveries[runtimeId] = value; },
     /** What every following run does. Throwing fails the run. */
     respond(next: Script) { script = next; },
     /** How long a tool call of a following run may wait for its answer. */
@@ -87,10 +92,14 @@ export function scriptedHost() {
 
 /** Mau with the partner tools on and the fixture's partner ("helper") in a ready environment of its own. */
 export async function partnersFixture(cleanup: Array<() => unknown>, options: { runtime?: Record<string, unknown>; mau?: Record<string, unknown>;
+  /** Other runtimes of the Host and what the environment profile says about them (`mauFixture`). */
+  runtimes?: Record<string, Record<string, unknown>>; profile?: Record<string, unknown>; hostConfigRuntimes?: unknown[];
   /** The built console, served by the fixture's Mau for browser tests. */
   webRoot?: string } = {}) {
   const scripted = scriptedHost();
   const f = await mauFixture(cleanup, { host: scripted.host, hostCapabilities: { runIdempotency: true }, ...(options.runtime ? { runtime: options.runtime } : {}),
+    ...(options.runtimes ? { runtimes: options.runtimes } : {}), ...(options.profile ? { profile: options.profile } : {}),
+    ...(options.hostConfigRuntimes ? { hostConfigRuntimes: options.hostConfigRuntimes } : {}),
     ...(options.webRoot ? { webRoot: options.webRoot } : {}) },
     { nativeWork: { partnerTools: true }, ...options.mau });
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);

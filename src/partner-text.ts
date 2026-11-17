@@ -54,6 +54,12 @@ export const GUIDE = [
   "- kernel, model, effort: leave them empty to use the same as you. Only the values under recruit are accepted. Keep your own model unless the owner asks otherwise; a lighter listed model or lower effort suits routine lookups, a stronger one planning and long documents.",
 ].join("\n");
 
+/** What a roster says beside the kernels a recruit may choose other than the recruiter's own. */
+export const OTHER_KERNELS = "models, efforts and yours describe your own kernel. A partner recruited on another kernel works in the same environment and on the same files as you, " +
+  "with that kernel's models: choose model and effort from its entry in otherKernels, or leave them empty for that kernel's default. Your own model and effort are not carried over to another kernel.";
+/** What a recruit says when it names a kernel for a partner that already exists. */
+export const KERNEL_KEPT = "This partner already runs on a kernel, which cannot be changed. It is the one shown.";
+
 /** What a recruit, message, wait or dismiss call says happens next. */
 export const NEXT = {
   sent: (to: string) => `"${to}" handles this in its own conversation with the owner. Its reply arrives in this conversation as a new turn after this turn has ended. ` +
@@ -85,6 +91,18 @@ function clip(text: string, bytes: number, where: string): string {
     kept += character; size += next; count++;
   }
   return `${kept}\n[cut: ${characters.length - count} more characters; ${where}]`;
+}
+
+/** At most `bytes` of a text, cut between characters, with the number of characters left out. */
+export function shortened(text: string, bytes: number): { text: string; cut?: number } {
+  if (Buffer.byteLength(text) <= bytes) return { text };
+  const characters = Array.from(text); let kept = "", size = 0, count = 0;
+  for (const character of characters) {
+    const next = Buffer.byteLength(character);
+    if (size + next > bytes) break;
+    kept += character; size += next; count++;
+  }
+  return { text: kept, cut: characters.length - count };
 }
 
 /** What a partner reads when a message reaches it. The message is the last part: nothing fixed comes after it. */

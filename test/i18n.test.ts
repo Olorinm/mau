@@ -28,6 +28,10 @@ it("says a shared-environment refusal in words in both languages, naming the par
       "This environment belongs to helper. Manage it from the profile of helper."],
     [new ApiError("environment_shared_from_partner", 409), "这个伙伴用的是别的伙伴的环境，请到那个伙伴的资料里操作。",
       "This partner runs in another partner's environment. Manage it from that partner's profile."],
+    // A partner sharing an environment runs on a kernel its profile offers, whose runtime is available there.
+    [new ApiError("environment_kernel_not_available", 409), "这个环境不提供所选的内核，请换一个内核。", "That environment does not offer the chosen kernel. Choose another kernel."],
+    [new ApiError("environment_kernel_not_ready", 409), "所选内核的运行时现在在这个环境里不可用，请换一个内核或稍后再试。",
+      "The chosen kernel's runtime is not available in that environment right now. Choose another kernel or try again later."],
     [new ApiError("agent_duty_immutable", 409), "职责在创建伙伴时确定，之后不能修改。", "A partner's duty is set when it is created and cannot be changed."],
     [new ApiError("connector_assigned_through_partner", 409, { partner: helper }), "这个连接分配给了 helper，请通过 helper 设置。",
       "This connection is assigned to helper. Set it up through helper."],
@@ -63,6 +67,9 @@ it("says every refusal of the partners tool, of dismissing and of the memory doc
     expect(errorMessage(t, code), code).not.toContain(code);
   }
   expect(errorMessage(zh, "partner_chain_limit")).toBe("伙伴之间已经来回了太多轮，等你发下一条消息后才能继续。");
+  // A recruit may name another kernel of the environment: the refusal is about what the environment offers and has running.
+  expect(errorMessage(zh, "partner_kernel_not_available")).toBe("这个内核不在环境提供的范围内，或者它的运行时现在不可用。");
+  expect(errorMessage(en, "partner_kernel_not_available")).toBe("The kernel is not one the environment offers, or its runtime is not available there now.");
   expect(errorMessage(en, "partner_owner_conversation_required")).toBe("Partners can be recruited, messaged and dismissed only from your private conversation with this partner.");
   expect(errorSentence(zh, "some_new_code")).toBeUndefined();
 });

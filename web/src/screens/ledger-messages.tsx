@@ -15,16 +15,15 @@ import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, 
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
-import { isPartnerText, partnerMessage, partnerResults, type PartnerResult } from "../api/partner-text";
-import { ApiError } from "../api/http";
+import { ApiError, type PartnerRef } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
   AttachmentDrafts, LedgerClient, attachmentKind, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
   type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerSocket, type LedgerTurn,
-  type PendingAnswer,
+  type PartnerResult, type PendingAnswer,
 } from "../api/ledger";
 import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
-import { errorMessage, errorSentence, failureMessage, useI18n } from "../i18n";
+import { errorMessage, errorSentence, failureMessage, useI18n, type Translate } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 import { AgentDetail } from "./agent-detail";
@@ -50,8 +49,19 @@ const cardStatusNames: Record<string, [string, string]> = {
 };
 /** How a request of a partner closed; one that is closed before it was answered was withdrawn by the partner's side. */
 const requestStatusKeys = { approved: "card.approved", rejected: "card.rejected", expired: "card.expired", canceled: "card.withdrawn" } as const;
-/** The partner a request card is about, from the title Mau gives it. */
-const requestPartner = (card: Card) => card.source === "product" ? /^伙伴「([a-z][a-z0-9-]{0,47})」/.exec(card.text)?.[1] : undefined;
+/**
+ * A request of the product in words, its title first. A partner's request carries its members and is worded in the
+ * interface's language; the operation's arguments are shown as they are written. Any other is the server's text.
+ */
+function requestText(t: Translate, card: Card): string[] {
+  const approval = card.display?.partnerApproval;
+  if (!approval) return card.text.split("\n\n");
+  return [t("card.partnerApproval.title", { partner: approval.partner.name }), [
+    t("card.partnerApproval.operation", { from: approval.from.name, summary: approval.summary }),
+    t("card.partnerApproval.connection", { connection: approval.connection }),
+    t(approval.argumentsShortened ? "card.partnerApproval.argumentsShortened" : "card.partnerApproval.arguments", { arguments: approval.arguments }),
+  ].join("\n")];
+}
 
 /**
  * A ledger card outside a run surface (Router's own "重新执行 / 不用了" card, a partner's request for approval, or a
@@ -68,16 +78,17 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
   const [draft, setDraft] = useState("");
   const busy = answer?.state === "sending";
   const send = (body: { choiceId: string } | { text: string }) => void client.answerCard(chatId, card.cardId, body).catch(() => undefined);
-  // A request of the product is plain text with a title line: the operation's arguments are shown as they are written.
-  const request = card.source === "product", [heading, ...rest] = request ? card.text.split("\n\n") : [];
+  const request = card.source === "product", [heading, ...rest] = request ? requestText(t, card) : [];
   const closed = request ? requestStatusKeys[card.status as keyof typeof requestStatusKeys] : undefined;
+  // A partner's request is answered by approving or rejecting, in that order.
+  const labels = card.display?.partnerApproval ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")] : [];
   return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status} data-card-source={card.source}>
     {request ? <div className="mau-card-text">{rest.length ? <strong>{heading}</strong> : null}<p>{rest.length ? rest.join("\n\n") : heading}</p></div>
       : <ChatMarkdown markdown={live.data?.text ?? card.text} />}
     {pending && card.kind === "sensitive" ? <p className="mau-muted">{zh ? "请在执行内核的原生入口完成敏感输入，不要在聊天中发送密码或令牌。" : "Complete sensitive input in the runtime's native prompt; never send secrets in chat."}</p> : null}
     {pending && card.kind !== "sensitive" && card.choices.length && answer?.state !== "stale" ? <div className="mau-card-actions">
-      {card.choices.map((choice) => <TextButton key={choice.choiceId} tone={choice.style === "danger" ? "danger" : "primary"} disabled={busy}
-        onClick={() => send({ choiceId: choice.choiceId })}>{choice.label}</TextButton>)}
+      {card.choices.map((choice, index) => <TextButton key={choice.choiceId} tone={choice.style === "danger" ? "danger" : "primary"} disabled={busy}
+        onClick={() => send({ choiceId: choice.choiceId })}>{labels[index] ?? choice.label}</TextButton>)}
     </div> : null}
     {pending && card.kind !== "sensitive" && card.freeText ? <form className="mau-card-reply" onSubmit={(event) => {
       event.preventDefault(); if (draft.trim()) { send({ text: draft.trim() }); setDraft(""); } }}>
@@ -339,8 +350,14 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const dms = new Map(list.flatMap((chat) => chat.kind === "dm" && chat.agentIds[0] ? [[chat.agentIds[0], chat] as const] : []));
   const unavailable = ["unconfigured", "paused", "deleting", "deleted", "needs_action"];
   const views = new Map(partnerViews.data?.map((item) => [item.id, item]) ?? []);
-  // What partners write each other is recorded as the text their models read; it is not a preview of a conversation.
-  const preview = (chat: ChatSummary | undefined) => chat?.lastEvent && !isPartnerText(chat.lastEvent.preview) ? chat.lastEvent.preview : undefined;
+  // The last event is a preview of the conversation when somebody in it wrote it: a person, or a partner the chat is
+  // with. What another partner sent into it is recorded as the text its model reads, and a system line is not a message.
+  const preview = (chat: ChatSummary | undefined) => {
+    const last = chat?.lastEvent;
+    if (!chat || !last) return undefined;
+    const { type, id } = last.sender;
+    return type === "person" || type === "external" || type === "agent" && chat.agentIds.includes(id) ? last.preview : undefined;
+  };
   const partnerEntry = ({ agent, environment, dismissed }: NonNullable<typeof agents.data>[number]): Entry => {
     const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured", waiting = dismissed ? undefined : views.get(agent.id)?.waiting;
     const working = !!chat?.activeTurns || !!waiting?.messages;
@@ -413,22 +430,23 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   };
   // Another partner named in a conversation (the sender of a message, a recruit, the one that asks for approval)
   // leads to the conversation with it.
-  const partnerIds = new Map((agents.data ?? []).map(({ agent }) => [agent.name, agent.id]));
   const openPartner = (agentId: string | undefined) => {
     const entry = agentId && agentId !== currentAgent ? [...agentEntries, ...dismissedEntries].find((item) => item.agentId === agentId) : undefined;
     return entry ? () => show(entry) : undefined;
   };
+  // A run's activity names partners as its tool was given them: by name.
+  const partnerIds = new Map((agents.data ?? []).map(({ agent }) => [agent.name, agent.id]));
   const partnerLink: PartnerLinkResolver = (name) => openPartner(partnerIds.get(name));
-  const partnerAuthor = (agentId: string | undefined, name: string) => {
-    const open = openPartner(agentId);
-    return { title: name, avatar: <PartnerAvatar seed={agentId ?? name} fallbackName={name} size={28} animated={false} />, ...(open ? { onAuthorClick: open } : {}) };
+  const partnerAuthor = ({ id, name }: PartnerRef) => {
+    const open = openPartner(id);
+    return { title: name, avatar: <PartnerAvatar seed={id} fallbackName={name} size={28} animated={false} />, ...(open ? { onAuthorClick: open } : {}) };
   };
   // A result that is not completed says so under the partner's name, with the reason in words where there is one.
   const resultStatus = (result: PartnerResult) => {
     if (result.status === "completed" && !result.cut) return {};
-    const cut = result.cut ? t("partners.result.cut", { name: result.partner }) : "";
+    const cut = result.cut ? t("partners.result.cut", { name: result.partner.name }) : "";
     if (result.status === "completed") return { state: "note", status: cut };
-    const status = t(`partners.result.${result.status}`), reason = result.reason;
+    const status = t(`partners.result.${result.status}`), reason = result.error;
     // A reason that is a code has a sentence here, or stays behind the status as its tooltip; the runtime's own words are shown.
     const code = reason && /^[A-Za-z0-9_.:-]+$/.test(reason) ? reason : undefined;
     const said = code ? errorSentence(t, code) : reason;
@@ -515,27 +533,26 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         if (!placed.has(turn.turnId)) { placed.add(turn.turnId); messages.push(turnView(turn)); }
         continue;
       }
-      // What partners sent each other is recorded as an input no person wrote. It is shown as the partner's own words,
-      // beside its figure: a message in the conversation of the partner that received it, and each result in the
-      // conversation of the partner that had sent the message. Text that does not have the expected form is shown whole.
-      if (item.kind === "message" && item.role === "user" && item.origin === "delegation" && !item.redacted
-          && (item.sender.type === "agent" || isPartnerText(item.text))) {
-        const results = partnerResults(item.text);
+      // What partners sent each other is recorded as an input no person wrote, with what to show of it beside the text
+      // written for the model: a message, in the conversation of the partner that received it, stands under the
+      // sender's figure as the sender wrote it, and each result, in the conversation of the partner that had sent the
+      // message, under the figure of the partner that answered. An input recorded without that is shown as its whole text.
+      if (item.kind === "message" && item.role === "user" && item.origin === "delegation" && !item.redacted) {
+        const { partnerMessage: sent, partnerResults: results } = item.display ?? {};
         if (results) results.forEach((result, index) => messages.push({
-          id: `${item.eventId}:${index}`, role: "assistant", ...partnerAuthor(partnerIds.get(result.partner), result.partner),
+          id: `${item.eventId}:${index}`, role: "assistant", ...partnerAuthor(result.partner),
           ...(result.answer ? { copyText: result.answer, content: <ChatMarkdown markdown={result.answer} /> } : {}), ...resultStatus(result) }));
-        else {
-          const message = partnerMessage(item.text), text = message?.text ?? item.text;
-          messages.push({ id: item.eventId, role: "assistant", copyText: text, content: <ChatMarkdown markdown={text} />,
-            ...(item.sender.type === "agent" ? partnerAuthor(item.sender.id, item.sender.name) : partnerAuthor(undefined, t("partners.results"))),
-            ...(message?.intent ? { subtitle: t(`partners.intent.${message.intent}`) } : {}) });
-        }
+        else if (sent) messages.push({ id: item.eventId, role: "assistant", copyText: sent.text, content: <ChatMarkdown markdown={sent.text} />,
+          ...partnerAuthor(sent.from), subtitle: t(`partners.intent.${sent.intent}`) });
+        else messages.push({ id: item.eventId, role: "assistant", copyText: item.text, content: item.text,
+          ...(item.sender.type === "agent" ? partnerAuthor(item.sender) : { title: t("partners.results"), avatar: actorAvatar(item) }) });
         for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
         continue;
       }
       const system = item.kind === "notice" || item.kind === "window" || item.kind === "member" || item.kind === "action";
       const text = item.kind === "window" ? (zh ? "新对话" : "New chat")
-        : item.kind === "member" ? room.memberText(item.eventId) ?? item.text : item.text;
+        : item.kind === "member" ? room.memberText(item.eventId) ?? item.text
+        : item.card?.source === "product" ? requestText(t, item.card).join("\n\n") : item.text;
       const details = describe(item), channel = badge(item), addressed = item.redacted ? "" : room.addressedLine(item.eventId);
       const withdrawal = redactions.get(item.eventId);
       // Window, notice and member lines are centred, like a time separator, with no sender.
@@ -544,11 +561,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
         continue; }
       // A partner's request for approval stands under that partner's figure, in the conversation it was asked in.
-      const requester = item.kind === "card" && item.card ? requestPartner(item.card) : undefined;
+      const requester = item.card?.display?.partnerApproval?.partner;
       messages.push({
         id: item.eventId, role: item.role === "user" ? "user" : "assistant",
         ...(item.redacted ? {} : { copyText: text }),
-        ...(requester && partnerIds.has(requester) ? partnerAuthor(partnerIds.get(requester), requester) : { title: item.sender.name, avatar: actorAvatar(item) }),
+        ...(requester ? partnerAuthor(requester) : { title: item.sender.name, avatar: actorAvatar(item) }),
         ...(channel || details ? { subtitle: <>{channel}{channel && details ? " " : null}{details}</> } : {}),
         content: item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} />
           : item.redacted ? <p className="mau-muted mau-redacted">{item.sender.type === "person" ? (zh ? "消息已撤回" : "Message withdrawn") : (zh ? "消息已删除" : "Message deleted")}</p>

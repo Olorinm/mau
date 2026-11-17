@@ -7,7 +7,8 @@ import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 import { openPartnerTurn, partnerConversations, tripAnswer, tripMessage, visaQuestion } from "./fixtures/partner-console.js";
 
 // Browser acceptance of partners working together, in the built console: what they send each other in the
-// conversations, the partners tool in a run's activity, a partner's request for approval, and dismissing.
+// conversations, the partners tool in a run's activity, a partner's request for approval, dismissing, and the kernel
+// a partner runs on.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
@@ -32,6 +33,9 @@ const profile = (page: Page) => page.getByRole("complementary", { name: "伙伴�
 const profileTab = (page: Page, name: string) => profile(page).getByRole("group", { name: "伙伴资料分类" }).getByRole("button", { name, exact: true }).click();
 const roster = (page: Page) => page.getByRole("complementary", { name: "全部对话" });
 const notices = (page: Page) => page.getByRole("region", { name: "通知" });
+/** Router's work sessions of a partner, for recording an input or a request as an earlier release did: without `display`. */
+const workSessions = async (f: PartnersFixture, agentId: string) => (await f.service.runtime(agentId)).extension!.sessions!;
+const grants = { feishu: false, connectedApps: { connections: [] } };
 
 it.skipIf(!built)("shows what partners send each other as their own words, and the partners tool as readable activity", async () => {
   const f = await partnersFixture(cleanup, { webRoot });
@@ -132,6 +136,61 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   expect(errors).toEqual([]);
 }, 90_000);
 
+it.skipIf(!built)("an input recorded without what to show is its whole text; a long answer says where the rest is, and the list previews only what somebody in the conversation wrote", async () => {
+  const f = await partnersFixture(cleanup, { webRoot });
+  const end = f.hold();
+  await f.say(f.agent.id, "让 notes 把读书笔记抄一遍");
+  const turn = await f.turnOf(f.agent.id);
+  const recruited = await turn.call("partners", { action: "recruit", name: "notes", duty: "整理读书笔记", message: "把读书笔记全部抄一遍。", intent: "relay" });
+  const notes = f.partner("notes");
+  // An answer longer than a hand-over shows.
+  end(await f.turnOf(notes.id), "字".repeat(20_000));
+  await f.until(() => f.record(recruited.message.messageId as string).status === "settled", "settled");
+  end(turn, "已经交给 notes。");
+  const back = await f.turnOf(f.agent.id, 1);
+  const { page, errors } = await browser(f);
+  await openChat(page, f, f.agent.id);
+  const stream = page.locator(".room-chat-stream");
+  const result = stream.locator(`article[data-room-message-id$=":0"]`);
+  await see(result.locator(".room-chat-author")).toContainText("notes");
+  await see(result.locator(".room-chat-bubble")).toHaveText(/^字{1000,19999}$/);
+  await see(result.locator(".room-chat-status")).toHaveAttribute("data-status", "note");
+  await see(result.locator(".room-chat-status")).toHaveText("回答较长，完整内容在 notes 的对话里。");
+
+  // The results are the newest event of the conversation with helper, and another partner sent them: they are not
+  // its preview. The conversation with notes ends with what notes itself answered.
+  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  const row = (agentId: string) => roster(page).locator(`.mau-roster-row[data-chat-key="agent:${agentId}"]`);
+  await see(row(notes.id)).toHaveAttribute("title", /^字+$/);
+  await see(row(f.agent.id)).not.toHaveAttribute("title", /./);
+  end(back, "笔记抄好了。");
+  await see(row(f.agent.id)).toHaveAttribute("title", "笔记抄好了。");
+  await page.keyboard.press("Escape");
+
+  // Inputs as an earlier release recorded them: only the text written for the model. All of it is shown, as it is,
+  // under the partner that sent it; one that several partners' results came in has no partner to stand under.
+  const sessions = await workSessions(f, f.agent.id), { sessionId } = sessions.openOwnerConversation();
+  const earlier = (id: string, text: string, sender?: { kind: "agent"; id: string; name: string }) => sessions.submit({ eventId: id, sessionId, input: text, ...(sender ? { sender } : {}),
+    admission: { kind: "delegation", owner: "@alice:example.test", agentId: f.agent.id, reference: id, toolGrants: grants } });
+  const one = ["[Partner results: 1 result, delivered by the system]", 'From: partner "notes"', "Status: completed", "----- answer 9f8e7d -----", "**抄好了**，共 3 本。", "----- end of answer 9f8e7d -----"].join("\n");
+  await earlier("earlier-results-1", one, { kind: "agent", id: notes.id, name: "notes" });
+  end(await f.turnOf(f.agent.id, 2), "三本都抄好了。");
+  const whole = stream.locator("article").filter({ hasText: "delivered by the system" });
+  await see(whole).toHaveCount(1);
+  await see(whole.locator(".room-chat-author")).toContainText("notes");
+  await see(whole.locator(".room-chat-bubble")).toHaveText(one, { useInnerText: true });
+  await see(whole.locator(".room-chat-bubble strong")).toHaveCount(0);
+  await see(whole.locator(".room-chat-status")).toHaveCount(0);
+  const several = "[Partner results: 2 results]\nResult 1 of 2\nResult 2 of 2";
+  await earlier("earlier-results-2", several);
+  end(await f.turnOf(f.agent.id, 3), "都收到了。");
+  const unnamed = stream.locator("article").filter({ hasText: "Result 1 of 2" });
+  await see(unnamed.locator(".room-chat-author")).toContainText("伙伴的回复");
+  await see(unnamed.locator(".room-chat-bubble")).toHaveText(several, { useInnerText: true });
+  await see(stream).toContainText("都收到了。");
+  expect(errors).toEqual([]);
+}, 90_000);
+
 it.skipIf(!built)("a partner's request for approval is a card in the sender's conversation that the owner answers once", async () => {
   const f = await partnersFixture(cleanup, { webRoot });
   const scene = await partnerConversations(f);
@@ -145,8 +204,8 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
     server.onMessage((message) => { if (!(behind && typeof message === "string" && message.includes('"card.update"'))) socket.send(message); });
   });
   await openChat(page, f, f.agent.id);
-  const request = (id: string, summary: string, deadlineAt?: string) => f.approval(open.message, { id: id.repeat(40), summary, connection: "trip-browser",
-    arguments: { site: "https://booking.example", guests: 2 }, ...(deadlineAt ? { deadlineAt } : {}) });
+  const request = (id: string, summary: string, deadlineAt?: string, input: unknown = { site: "https://booking.example", guests: 2 }) =>
+    f.approval(open.message, { id: id.repeat(40), summary, connection: "trip-browser", arguments: input, ...(deadlineAt ? { deadlineAt } : {}) });
   const cards = page.locator(".mau-ledger-card[data-card-source='product']");
   const status = (index: number) => cards.nth(index).locator(".mau-card-status .agent-status-line");
 
@@ -156,7 +215,8 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   await see(cards).toHaveCount(1);
   await see(cards.first()).toHaveAttribute("data-card-status", "pending");
   await see(cards.first().locator("strong")).toHaveText("伙伴「korea-trip」请求批准");
-  await see(cards.first().locator("p").first()).toHaveText(["「korea-trip」在处理「helper」转来的消息时，需要你批准这个操作：", "在 booking.example 提交改期表单", "连接：trip-browser",
+  // The partner is named once, in the title; the rest says whose message it handles, the operation and its arguments.
+  await see(cards.first().locator("p").first()).toHaveText(["处理「helper」转来的消息时需要执行：在 booking.example 提交改期表单", "连接：trip-browser",
     '参数：{"site":"https://booking.example","guests":2}'].join("\n"), { useInnerText: true });
   const asking = page.locator("article").filter({ has: cards.first() });
   await see(asking.locator(".room-chat-author")).toContainText("korea-trip");
@@ -177,9 +237,10 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   expect(await first.status()).toBe("approved");
   first.settle();
 
-  // Refused.
-  const second = await request("b", "给酒店发送确认邮件");
+  // Refused. Arguments too long to show whole say that only the start of each is shown.
+  const second = await request("b", "给酒店发送确认邮件", undefined, { body: "x".repeat(5000) });
   await see(cards).toHaveCount(2);
+  await see(cards.nth(1).locator("p").first()).toContainText('参数（较长，以下每项只显示开头）：{"body":"xxx');
   await cards.nth(1).getByRole("button", { name: "拒绝这次操作" }).click();
   await see(status(1)).toHaveText("已拒绝");
   expect(await second.status()).toBe("denied");
@@ -232,6 +293,45 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   await see(returned).toHaveAttribute("data-continued", "true");
   await see(page.locator("article").filter({ has: cards.first() }).locator(".room-chat-author")).toContainText("korea-trip");
   await see(page.locator(".room-chat-stream")).not.toContainText("Partner results");
+  expect(errors).toEqual([]);
+}, 90_000);
+
+it.skipIf(!built)("a partner's request is worded in the interface's language from its members; one recorded without them is the server's text", async () => {
+  const f = await partnersFixture(cleanup, { webRoot });
+  const trip = (await f.api("/agents", { name: "korea-trip", shareWith: f.agent.id })).data.agent as { id: string };
+  f.hold();
+  await f.say(f.agent.id, "Change the booking to two guests");
+  const turn = await f.turnOf(f.agent.id);
+  const sent = await turn.call("partners", { action: "message", to: "korea-trip", text: "Change the booking to two guests.", intent: "relay" });
+  await f.turnOf(trip.id);
+  const asked = await f.approval(f.record(sent.messageId as string), { id: "a".repeat(40), summary: "Submit the change form on booking.example", connection: "trip-browser",
+    arguments: { site: "https://booking.example", guests: 2 } });
+  // A request as an earlier release recorded it: a title and a text, no members.
+  (await workSessions(f, f.agent.id)).request({ eventId: "earlier-approval-1", kind: "approval", title: "伙伴「korea-trip」请求批准",
+    text: "「korea-trip」在处理「helper」转来的消息时，需要你批准这个操作：\n发送确认邮件\n连接：trip-mail\n参数：{}",
+    choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: new Date(Date.now() + 120_000).toISOString() });
+  const { page, errors } = await browser(f, "en-US");
+  await openChat(page, f, f.agent.id);
+  const cards = page.locator(".mau-ledger-card[data-card-source='product']");
+  await see(cards).toHaveCount(2);
+  await see(cards.first().locator("strong")).toHaveText("Partner korea-trip asks for approval");
+  await see(cards.first().locator("p").first()).toHaveText(["To handle a message from helper, it needs to run: Submit the change form on booking.example", "Connection: trip-browser",
+    'Arguments: {"site":"https://booking.example","guests":2}'].join("\n"), { useInnerText: true });
+  await see(cards.first().getByRole("button")).toHaveText(["Approve this operation", "Decline this operation"]);
+  // The partner that asks is taken from the request, and leads to the conversation with it.
+  const asking = page.locator("article").filter({ hasText: "Partner korea-trip asks for approval" });
+  await see(asking.locator(".room-chat-author")).toContainText("korea-trip");
+  await see(asking.getByRole("button", { name: "Open the conversation with korea-trip" })).toBeVisible();
+  // Without members the card is the text and the choices the server wrote, under the partner of the conversation.
+  await see(cards.nth(1).locator("strong")).toHaveText("伙伴「korea-trip」请求批准");
+  await see(cards.nth(1).locator("p").first()).toContainText("需要你批准这个操作：\n发送确认邮件", { useInnerText: true });
+  await see(cards.nth(1).getByRole("button")).toHaveText(["批准这次操作", "拒绝这次操作"]);
+  await see(page.locator("article").filter({ hasText: "伙伴「korea-trip」请求批准" }).locator(".room-chat-author")).toContainText("helper");
+  await cards.first().getByRole("button", { name: "Approve this operation" }).click();
+  await see(cards.first().locator(".mau-card-status .agent-status-line")).toHaveText("Approved");
+  expect(await asked.status()).toBe("approved");
+  await cards.nth(1).getByRole("button", { name: "拒绝这次操作" }).click();
+  await see(cards.nth(1).locator(".mau-card-status .agent-status-line")).toHaveText("Declined");
   expect(errors).toEqual([]);
 }, 90_000);
 
@@ -295,6 +395,20 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
 
   // The header row leaves a dismissed partner out; its conversation is still there when it is opened from the list.
   expect((await f.api(`/agents/${scene.visa.id}/dismiss`, {})).status).toBe(200);
+  // Settings leave it out too: the channels of each partner, and the partners that use a connection.
+  await page.route("**/_mau/v1/connector-accounts**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state: "connected",
+      verification: "oauth", scopes: [], assignedAgents: [f.agent.id, scene.trip.id, scene.visa.id], permission: "read-only" }] } });
+    if (path.endsWith("/policy")) return route.fulfill({ status: 404, json: { error: "not_found" } });
+    return route.fulfill({ json: { state: "connected", verification: "oauth", scopes: [] } });
+  });
+  await page.goto(f.base + "/#/settings/channels");
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await see(settings.locator(".agent-settings-section h3")).toHaveText(["helper", "korea-trip", "notes"]);
+  await settings.getByRole("button", { name: "连接器", exact: true }).click();
+  await settings.getByRole("button", { name: "Gmail", exact: true }).click();
+  await see(settings.locator(".agent-settings-section", { hasText: "使用此连接的伙伴" }).locator(".agent-list-row-title")).toHaveText(["helper", "korea-trip"]);
   await openChat(page, f, f.agent.id);
   await see(chip(page, scene.trip.id)).toBeVisible();
   await see(chip(page, scene.visa.id)).toHaveCount(0);
@@ -327,6 +441,66 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
   expect(await lines()).toBe(3);
   // A partner the owner made has no recruiter to name.
   await see(row("招募者")).toHaveCount(0);
+  expect(errors).toEqual([]);
+}, 90_000);
+
+it.skipIf(!built)("a partner sharing an environment that offers several kernels is put on the one the owner chooses, and its profile shows its own", async () => {
+  // The fixture's environment (helper, on codex) also offers claude; the Host does not have that runtime available at first.
+  const claude: Record<string, unknown> = { kernel: "claude", model: "claude-main", capabilities: { features: { "input.nativeItems": { status: "unsupported" } } }, available: false };
+  const f = await partnersFixture(cleanup, { webRoot, runtimes: { claude }, profile: { otherKernels: [{ kernel: "claude", runtimeId: "claude" }] } });
+  f.discovery("claude", { id: "claude", kernel: "claude", model: "claude-main", allowedSettings: { model: { values: ["claude-main", "claude-small"] }, effort: { values: ["low", "high"] } },
+    native: { models: [{ value: "claude-main", displayName: "Main", supportedEffortLevels: ["low", "high"] }, { value: "claude-small", displayName: "Small", supportedEffortLevels: ["low"] }] } });
+  const { page, errors } = await browser(f);
+  const posted: unknown[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
+  await openChat(page, f, f.agent.id);
+  const dialog = page.getByRole("dialog", { name: "新建伙伴" });
+  const sharing = async (name: string) => {
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    await roster(page).getByRole("button", { name: "新建伙伴", exact: true }).click();
+    await dialog.getByLabel("名称").fill(name);
+    await dialog.getByRole("group", { name: "环境类型" }).getByRole("button", { name: "与伙伴共用", exact: true }).click();
+    await see(dialog.getByRole("combobox", { name: "伙伴", exact: true })).toContainText("helper");
+  };
+  const kernel = dialog.getByRole("combobox", { name: "内核", exact: true });
+  // The environment's main kernel is the choice until another is made.
+  await sharing("writer");
+  await see(kernel).toContainText("codex");
+  await kernel.click();
+  await see(page.getByRole("option")).toHaveText(["codex", "claude"]);
+  await page.getByRole("option", { name: "claude", exact: true }).click();
+  await see(kernel).toContainText("claude");
+  // The kernel is offered, but its runtime is not available in the environment now: said in words, nothing created.
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog.getByRole("alert")).toHaveText("所选内核的运行时现在在这个环境里不可用，请换一个内核或稍后再试。");
+  delete claude.available;
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog).toHaveCount(0);
+  const writer = await f.until(() => f.partner("writer"), "writer created");
+  await see(chip(page, writer.id)).toHaveAttribute("aria-selected", "true");
+  // Its profile shows the kernel it runs on, and the models of that kernel; the partner that has the environment keeps its own.
+  const card = profile(page), row = (title: string) => card.locator(".agent-list-row").filter({ has: page.locator(".agent-list-row-title", { hasText: new RegExp(`^${title}$`) }) });
+  await chip(page, writer.id).click();
+  await profileTab(page, "配置");
+  await see(row("内核").locator(".mau-profile-value")).toHaveText("claude");
+  await see(card.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Main");
+  await card.getByRole("combobox", { name: "模型", exact: true }).click();
+  await see(page.getByRole("option")).toHaveText(["默认 · Main", "Main", "Small"]);
+  await page.keyboard.press("Escape");
+  await row("共用环境").getByRole("button", { name: "helper", exact: true }).click();
+  await see(card.getByRole("heading", { name: "helper" })).toBeVisible();
+  await profileTab(page, "配置");
+  await see(row("内核").locator(".mau-profile-value")).toHaveText("codex");
+  await see(card.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Large");
+  await page.keyboard.press("Escape");
+  // The main kernel is not named in the request.
+  await sharing("clerk");
+  await see(kernel).toContainText("codex");
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog).toHaveCount(0);
+  expect(posted).toEqual([{ name: "writer", shareWith: f.agent.id, kernel: "claude" }, { name: "writer", shareWith: f.agent.id, kernel: "claude" }, { name: "clerk", shareWith: f.agent.id }]);
+  const kernelOf = async (name: string) => (await f.api(`/agents/${f.partner(name).id}`)).data.kernel;
+  expect([await kernelOf("helper"), await kernelOf("writer"), await kernelOf("clerk")]).toEqual(["codex", "claude", "codex"]);
   expect(errors).toEqual([]);
 }, 90_000);
 

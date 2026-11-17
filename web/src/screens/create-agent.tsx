@@ -37,7 +37,13 @@ export function CreateAgentDialog(props: {
   // With several partners to share with, the owner picks one; nothing is preselected.
   const [partner, setPartner] = useState<string | null>(null);
   const shareWith = hosts.some(({ agent }) => agent.id === partner) ? partner : hosts.length === 1 ? hosts[0]!.agent.id : null;
-  const environment = shared ? (shareWith ? { shareWith } : null) : profileId ? { profileId } : null;
+  // The kernels a partner can run on in the chosen partner's environment, its main one first. The main one is the
+  // choice until the owner makes another, and is not named in the request.
+  const sharedProfile = hosts.find(({ agent }) => agent.id === shareWith)?.environment?.profileId;
+  const kernels = profiles.find((profile) => profile.id === sharedProfile)?.kernels ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  const kernel = picked !== null && kernels.includes(picked) ? picked : kernels[0] ?? null;
+  const environment = shared ? (shareWith ? { shareWith, ...(kernel && kernel !== kernels[0] ? { kernel } : {}) } : null) : profileId ? { profileId } : null;
   const create = useMutation({
     mutationFn: () => api.createAgent(name, environment!, duty.trim()),
     onSuccess: (summary) => props.onCreated(summary.agent.id),
@@ -131,6 +137,19 @@ export function CreateAgentDialog(props: {
                 />
               }
             />
+            {kernels.length > 1 ? (
+              <ListRow
+                title={t("create.kernel")}
+                trailing={
+                  <SelectMenu
+                    label={t("create.kernel")}
+                    value={kernel}
+                    onChange={setPicked}
+                    options={kernels.map((value) => ({ value, label: value }))}
+                  />
+                }
+              />
+            ) : null}
           </GroupPanel>
         ) : options.isPending ? (
           <p className="mau-muted">{t("common.loading")}</p>

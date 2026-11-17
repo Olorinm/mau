@@ -89,17 +89,21 @@ export class BusinessTools {
   private skills?: (agentId: string, owner: string, binding: string) => Promise<unknown>;
   /** Connector guides and CLI commands are brought into the environment before a run starts. */
   setSkills(sync: (agentId: string, owner: string, binding: string) => Promise<unknown>) { this.skills = sync; }
+  private guides?: (agentId: string) => ((tools: string[]) => Record<string, unknown>) | undefined;
+  /** For an Agent whose kernel has no relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
+  setGuides(guides: (agentId: string) => ((tools: string[]) => Record<string, unknown>) | undefined) { this.guides = guides; }
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.readers.get(agentId);
     const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
     const partner = this.partnerTools?.(agentId, owner);
     if (!bot && !appReader && !partner) return new HttpAgentHost(http);
-    const files = this.files, skills = this.skills;
+    const files = this.files, skills = this.skills, guides = appReader ? this.guides?.(agentId) : undefined;
     const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
+        ...(guides ? { guides } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
     if (appReader && skills) host.beforeStart = () => skills(agentId, owner, binding);
     return host;
@@ -113,6 +117,8 @@ interface ConnectedAppHosting {
   approvals?: ApprovalPort;
   files?: () => Promise<SandboxFiles>;
   ownerPrivate?: OwnerPrivatePolicy;
+  /** The connector guides for the tools a catalog lists, when the Agent's kernel has none installed. */
+  guides?: (tools: string[]) => Record<string, unknown>;
 }
 const WAITING = Symbol("approval_waiting");
 class Removed extends Error {}
@@ -405,7 +411,10 @@ export class BusinessHost extends HttpAgentHost {
     const unavailable = blocked.map(connection => ({ connection, reason: OWNER_PRIVATE_ONLY }));
     if (input.action === "tools") {
       const catalog = blocked.length && !connections.length ? { status: "completed", tools: [] } : agentCatalog(await read(input), browser);
-      return unavailable.length && catalog && typeof catalog === "object" && !Array.isArray(catalog) ? { ...catalog, unavailableHere: unavailable } : catalog;
+      if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) return catalog;
+      const listed = z.object({ status: z.literal("completed"), tools: z.array(z.object({ name: z.string() }).passthrough()) }).passthrough().safeParse(catalog);
+      return { ...catalog, ...(unavailable.length ? { unavailableHere: unavailable } : {}),
+        ...(listed.success ? apps?.guides?.(listed.data.tools.map(tool => tool.name)) : {}) };
     }
     const refused = blocked.find(id => input.name?.startsWith(`${id.replaceAll("-", "_")}__`));
     if (refused) return ownerPrivateRefusal(refused);

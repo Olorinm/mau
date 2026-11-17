@@ -7,7 +7,7 @@ import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import type { ApprovalDesk } from "./connector-approvals.js";
 import { dutySchema } from "./environments.js";
-import { GUIDE, NEXT, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText } from "./partner-text.js";
+import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
@@ -37,6 +37,13 @@ const NOTE_LIMIT = 20;
 /** Environment states in which a partner cannot be woken by a message. */
 const UNREACHABLE = ["paused", "pausing", "deleting", "deleted", "needs_action"];
 const MESSAGE_BYTES = 16_000;
+/** The answers a hand-over shows the owner share this many bytes; Router admits 64,000 for what an input shows. */
+const SHOWN_ANSWER_BYTES = 48_000;
+/** A message or a hand-over that reached its end is kept this long, then removed. */
+const KEPT_MS = 30 * 24 * 3_600_000;
+/** How often the records past that age are removed. */
+const CLEANUP_MS = 3_600_000;
+const FINAL_MESSAGES: Status[] = ["returned", "collected", "seen", "dropped"], FINAL_RETURNS = ["completed", "failed"];
 /** The states of a work event whose turn has ended. */
 const ENDED = ["completed", "failed", "cancelled", "rejected"];
 
@@ -123,12 +130,18 @@ export interface PartnersPort {
   duty(agentId: string): string | undefined;
   /** The partner whose environment the agent runs in: itself, or the one it shares. */
   environmentHolder(agentId: string): string;
+  /** The kernel the agent runs on. */
   kernel(agentId: string): string | undefined;
+  /** The kernels a partner in the agent's environment can run on. */
+  kernels(agentId: string): string[];
   environmentState(owner: string, agentId: string): string | undefined;
-  /** Refuses when another partner cannot run in the holder's environment. */
-  assertShareable(owner: string, holder: string): void;
-  share(owner: string, agentId: string, holder: string, duty: string): Promise<unknown>;
+  /** Refuses when another partner cannot run in the holder's environment on that kernel. */
+  assertShareable(owner: string, holder: string, kernel: string | undefined): Promise<void>;
+  share(owner: string, agentId: string, holder: string, duty: string, kernel: string | undefined): Promise<unknown>;
   models(owner: string, agentId: string): Promise<ModelSettingsView>;
+  /** What another kernel of the agent's environment offers; nobody's selection. */
+  kernelModels(owner: string, agentId: string, kernel: string): Promise<ModelSettingsView>;
+  /** The model a partner's runtime uses when none is selected, as far as it was read. */
   defaultModel(agentId: string): string | undefined;
   connections(owner: string, agentId: string): string[];
   /** Withdraw the owner cards a finished run left open. */
@@ -141,20 +154,20 @@ export class PartnerError extends Error {
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** Long values of an operation's arguments shortened so that every one of them is still shown, and marked as shortened. */
-const shortened = (value: unknown): unknown => typeof value === "string" ? (value.length > 80 ? `${value.slice(0, 80)}…(共 ${value.length} 字符)` : value)
-  : Array.isArray(value) ? [...value.slice(0, 5).map(shortened), ...(value.length > 5 ? [`…(共 ${value.length} 项)`] : [])]
-  : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shortened(item)])) : value;
+const briefly = (value: unknown): unknown => typeof value === "string" ? (value.length > 80 ? `${value.slice(0, 80)}…(共 ${value.length} 字符)` : value)
+  : Array.isArray(value) ? [...value.slice(0, 5).map(briefly), ...(value.length > 5 ? [`…(共 ${value.length} 项)`] : [])]
+  : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, briefly(item)])) : value;
 /**
  * The arguments of an operation as the owner reads them on its approval card. They are never cut off without saying
  * so: arguments too long for the card are shown with every value shortened, and when even that does not fit, the
  * card is not shown and the operation is refused.
  */
-function shownArguments(value: unknown): string {
+function shownArguments(value: unknown): { json: string; brief: boolean } {
   const full = JSON.stringify(value);
-  if (full.length <= 4000) return `参数：${full}`;
-  const brief = JSON.stringify(shortened(value));
+  if (full.length <= 4000) return { json: full, brief: false };
+  const brief = JSON.stringify(briefly(value));
   if (brief.length > 4000) throw new Error("approval_arguments_too_long_to_show");
-  return `参数（较长，以下每项只显示开头）：${brief}`;
+  return { json: brief, brief: true };
 }
 const iso = (time = Date.now()) => new Date(time).toISOString();
 const expectsReply = (message: PartnerMessage) => message.intent !== "inform";
@@ -179,6 +192,7 @@ export class Partners {
   private readonly active = new Map<string, Set<string>>();
   /** When each agent's open turns were last read directly. */
   private readonly checked = new Map<string, number>();
+  private cleanedAt = 0;
   constructor(private readonly store: DurableStore, private readonly port: PartnersPort) {}
   start() { this.timer = setInterval(() => { void this.tick(); }, 1000); this.timer.unref(); void this.tick(); }
   async tick() {
@@ -320,7 +334,7 @@ export class Partners {
         lastActivityAt: this.store.get<{ at: string }>(ACTIVITY, partner.id)?.at ?? null,
         waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length, approvals: approvals.filter(record => record.agentId === partner.id).length },
         ...(holder !== partner.id ? { sharesEnvironmentOf: holder } : {}),
-        ...(recruit ? { recruitedBy: recruit.by.name, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
+        ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
   }
   private async roster(admission: RunAdmission, includeDismissed: boolean) {
@@ -329,20 +343,33 @@ export class Partners {
     const mine = this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self.agentId);
     let options: ModelSettingsView | undefined;
     try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
-    const kernel = this.port.kernel(self.agentId);
+    const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
+    const choices = (view: ModelSettingsView | undefined) => ({
+      models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
+      efforts: view?.efforts ?? [] });
+    // What the other kernels of the environment offer is read one after the other: each reading starts that kernel.
+    const otherKernels: Array<Record<string, unknown>> = [];
+    for (const name of others) {
+      let view: ModelSettingsView | undefined;
+      try { view = await this.port.kernelModels(owner, self.agentId, name); } catch { /* Listed as unavailable below. */ }
+      otherKernels.push({ kernel: name, ...choices(view), default: { model: view?.defaultModel ?? "default", effort: "default" },
+        ...(view && view.source !== "none" ? {} : { unavailable: "The model list of this kernel could not be read now. Recruit on it without model and effort, or call roster again later." }) });
+    }
     return {
       you: { name: self.name, duty: self.duty ?? null },
       partners: (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId).map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
+        // The model reads names. Each member keeps its place, so a roster reads as it did before.
+        ...(partner.recruitedBy ? { recruitedBy: partner.recruitedBy.name } : {}),
         model: partner.model ?? "default", effort: partner.effort ?? "default",
         ...(sharesEnvironmentOf ? { sharesEnvironmentOf: names.get(sharesEnvironmentOf) ?? "another partner" } : {}) })),
       waitingForReplies: mine.map(message => ({ messageId: message.id, to: message.to.name, intent: message.intent, sentAt: message.createdAt,
         state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you" : "not answered yet" })),
       recruit: {
-        kernels: kernel ? [kernel] : [],
-        models: options?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
-        efforts: options?.efforts ?? [],
+        kernels: kernel ? [kernel, ...others] : others,
+        ...choices(options),
         yours: { kernel: kernel ?? null, model: options?.selection.model ?? options?.defaultModel ?? "default", effort: options?.selection.effort ?? "default" },
         ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
+        ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
       },
       limits: { waitingMessages: WAITING_LIMIT },
       guide: GUIDE,
@@ -357,23 +384,30 @@ export class Partners {
     if (input.message !== undefined && !input.intent) throw new PartnerError("partner_intent_required", { instruction: "A first message needs intent: relay, ask or inform." });
     if (input.message === undefined && input.intent) throw new PartnerError("partner_message_required", { instruction: "intent goes with a first message. Leave both out to recruit without one." });
     if (input.message !== undefined) this.checkText(input.message);
-    const selection = await this.selection(admission, input);
     const key = JSON.stringify([owner, name.data]), existing = this.partners(owner).find(agent => agent.name === name.data);
     const record = this.store.get<{ agentId?: string }>(RECRUITS, key);
+    // A dismissed partner comes back as it was: on its own kernel, whatever the recruit names.
+    const returning = existing && this.dismissed(existing.id) && existing.id !== self.agentId ? existing : undefined;
+    const selection = await this.selection(admission, input, returning?.id);
     let restored = false, agent: { id: string; name: string } | undefined = existing;
-    if (existing && this.dismissed(existing.id) && existing.id !== self.agentId) { this.store.delete(DISMISSALS, existing.id); restored = true; }
+    if (returning) { this.store.delete(DISMISSALS, returning.id); restored = true; }
     else if (existing && !(record && !record.agentId)) throw new PartnerError("partner_name_taken", {
       partner: { name: existing.name, duty: this.port.duty(existing.id) ?? null },
       instruction: existing.id === self.agentId ? "That is your own name. Choose another." : "A partner with this name exists. Send it a message, or choose another name." });
     else {
       const holder = this.port.environmentHolder(self.agentId);
-      try { this.port.assertShareable(owner, holder); }
-      catch (error) { throw new PartnerError("partner_environment_unavailable", { reason: code(error, "environment_unavailable"), instruction: "A new partner runs in your environment, which cannot take one now. Tell the owner." }); }
+      try { await this.port.assertShareable(owner, holder, selection.kernel); }
+      catch (error) {
+        // The profile offers the kernel, but the environment's Host does not have its runtime available.
+        if (code(error, "") === "environment_kernel_not_ready") throw new PartnerError("partner_kernel_not_available", { kernel: selection.kernel, reason: "kernel_runtime_unavailable",
+          instruction: "This kernel is listed, but its runtime is not available in your environment now. Nothing was recruited. Recruit on another listed kernel, or tell the owner." });
+        throw new PartnerError("partner_environment_unavailable", { reason: code(error, "environment_unavailable"), instruction: "A new partner runs in your environment, which cannot take one now. Tell the owner." });
+      }
       // The intent is recorded first: a recruit that stopped half way is finished by repeating it.
       this.store.set(RECRUITS, key, { owner, name: name.data, by: { agentId: self.agentId, name: self.name }, at: iso() });
       try {
         agent = await this.port.create(owner, name.data);
-        await this.port.share(owner, agent.id, holder, described.data);
+        await this.port.share(owner, agent.id, holder, described.data, selection.kernel);
       } catch (error) {
         throw new PartnerError(code(error, "") === "agent_limit_reached" ? "partner_limit_reached" : "partner_recruit_failed", { reason: code(error, "recruit_failed"),
           instruction: "The partner was not recruited. Tell the owner; repeating the same recruit finishes one that stopped half way." });
@@ -382,39 +416,50 @@ export class Partners {
     }
     const partner = this.party(agent!);
     const settings = await this.applySelection(owner, partner.agentId,
-      restored ? { ...(input.model !== undefined && selection.model ? { model: selection.model } : {}), ...(input.effort !== undefined && selection.effort ? { effort: selection.effort } : {}) } : selection, restored);
+      restored ? { ...(input.model !== undefined && selection.model ? { model: selection.model } : {}), ...(input.effort !== undefined && selection.effort ? { effort: selection.effort } : {}) }
+        : { ...(selection.model ? { model: selection.model } : {}), ...(selection.effort ? { effort: selection.effort } : {}) }, restored);
     const sent = input.message === undefined ? undefined
       : await this.send(admission, turn, origin, callId, partner, input.intent!, input.message).catch((error: unknown) => {
         if (error instanceof PartnerError) return { isError: true as const, error: error.message, ...error.details };
         throw error;
       });
-    const kept = restored && partner.duty !== described.data;
+    const kept = restored && partner.duty !== described.data, kernel = this.port.kernel(partner.agentId);
     return { status: restored ? "restored" : "recruited",
-      partner: { name: partner.name, duty: partner.duty ?? null, kernel: this.port.kernel(partner.agentId) ?? null, model: settings.model ?? "default", effort: settings.effort ?? "default" },
+      partner: { name: partner.name, duty: partner.duty ?? null, kernel: kernel ?? null, model: settings.model ?? "default", effort: settings.effort ?? "default" },
       ...(kept ? { dutyKept: "This partner already had a duty, which cannot be changed. It is the one shown." } : {}),
+      ...(restored && input.kernel !== undefined && input.kernel !== kernel ? { kernelKept: KERNEL_KEPT } : {}),
       ...(selection.dropped && !restored ? { effortNote: `Your effort "${selection.dropped}" is not offered for this model, so the partner uses the model's default.` } : {}),
       ...(sent ? { message: sent } : {}),
       next: [restored ? NEXT.restored(partner.name) : NEXT.recruited(partner.name),
         sent && !("isError" in sent) ? sent.next : sent ? NEXT.firstMessageFailed : NEXT.noFirstMessage].join(" ") };
   }
-  /** kernel, model and effort of a recruit: the recruiter's own unless given, and only values the roster lists. */
-  private async selection(admission: RunAdmission, input: Input): Promise<{ model?: string; effort?: string; dropped?: string }> {
-    const kernel = this.port.kernel(admission.agentId);
-    if (input.kernel !== undefined && input.kernel !== kernel) throw new PartnerError("partner_kernel_not_available", { allowed: kernel ? [kernel] : [],
-      instruction: "A partner runs on the same kernel as its recruiter. Leave kernel empty." });
+  /**
+   * kernel, model and effort of a recruit, and only values the roster lists. On the recruiter's kernel what is left
+   * out is the recruiter's own. On another kernel of the environment nothing is carried over: what is left out is that
+   * kernel's default. A partner that returns (`returning`) stays on its kernel and is checked against it.
+   */
+  private async selection(admission: RunAdmission, input: Input, returning?: string): Promise<{ kernel?: string; model?: string; effort?: string; dropped?: string }> {
+    const own = this.port.kernel(admission.agentId), offered = this.port.kernels(admission.agentId);
+    if (!returning && input.kernel !== undefined && !offered.includes(input.kernel)) throw new PartnerError("partner_kernel_not_available", { allowed: offered,
+      instruction: "Use a kernel listed by roster, or leave kernel empty to use your own." });
+    const kernel = returning ? this.port.kernel(returning) : input.kernel ?? own, inherits = kernel === own;
     let view: ModelSettingsView | undefined;
-    try { view = await this.port.models(admission.owner, admission.agentId); } catch { /* Refused below when a value was asked for. */ }
+    try {
+      view = returning && !inherits ? await this.port.models(admission.owner, returning)
+        : inherits || !kernel ? await this.port.models(admission.owner, admission.agentId) : await this.port.kernelModels(admission.owner, admission.agentId, kernel);
+    } catch { /* Refused below when a value was asked for. */ }
     if ((!view || view.source === "none") && (input.model !== undefined || input.effort !== undefined)) throw new PartnerError("partner_model_options_unavailable", {
-      instruction: "The model list cannot be read now, so model and effort cannot be checked. Recruit without them to use your own settings." });
-    if (!view) return {};
+      instruction: inherits ? "The model list cannot be read now, so model and effort cannot be checked. Recruit without them to use your own settings."
+        : "The model list of this kernel cannot be read now, so model and effort cannot be checked. Recruit without them to use the kernel's default." });
+    if (!view) return { ...(kernel ? { kernel } : {}) };
     if (input.model !== undefined && !view.models.some(option => option.id === input.model)) throw new PartnerError("partner_model_not_available", { allowed: view.models.map(option => option.id),
-      instruction: "Use a listed model id, or leave model empty to use your own." });
-    const model = input.model ?? view.selection.model;
+      instruction: inherits ? "Use a listed model id, or leave model empty to use your own." : "Use a model id listed for this kernel, or leave model empty to use the kernel's default." });
+    const model = input.model ?? (inherits ? view.selection.model : undefined);
     const efforts = view.models.find(option => option.id === (model ?? view.defaultModel))?.efforts ?? view.efforts;
     if (input.effort !== undefined && !efforts.includes(input.effort)) throw new PartnerError("partner_effort_not_available", { allowed: efforts,
       instruction: "Use an effort listed for the model, or leave effort empty." });
-    const inherited = view.selection.effort, effort = input.effort ?? (inherited && efforts.includes(inherited) ? inherited : undefined);
-    return { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(input.effort === undefined && inherited && !effort ? { dropped: inherited } : {}) };
+    const inherited = inherits ? view.selection.effort : undefined, effort = input.effort ?? (inherited && efforts.includes(inherited) ? inherited : undefined);
+    return { ...(kernel ? { kernel } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(input.effort === undefined && inherited && !effort ? { dropped: inherited } : {}) };
   }
   /** A new partner starts with the selection; a restored one keeps its own settings unless values were given. */
   private async applySelection(owner: string, agentId: string, selection: { model?: string; effort?: string }, restored: boolean) {
@@ -567,9 +612,9 @@ export class Partners {
 
   /** The owner's messages between partners, newest first. */
   messages(owner: string, filter: { agentId?: string | undefined; limit?: number | undefined } = {}) {
-    return this.store.entries<PartnerMessage>(MESSAGES).map(entry => entry.value)
-      .filter(message => message.owner === owner && (!filter.agentId || message.from.agentId === filter.agentId || message.to.agentId === filter.agentId))
-      .reverse().slice(0, filter.limit ?? 50).map(message => ({ id: message.id, from: { id: message.from.agentId, name: message.from.name }, to: { id: message.to.agentId, name: message.to.name },
+    return this.store.newest<PartnerMessage>(MESSAGES, [{ members: ["owner"], value: owner },
+      ...(filter.agentId ? [{ members: ["from.agentId", "to.agentId"], value: filter.agentId }] : [])], filter.limit ?? 50)
+      .map(entry => entry.value).map(message => ({ id: message.id, from: { id: message.from.agentId, name: message.from.name }, to: { id: message.to.agentId, name: message.to.name },
         intent: message.intent, text: message.text, status: message.status, createdAt: message.createdAt, connectionId: message.origin.connectionId,
         ...(message.sentTo ? { sentTo: message.sentTo } : {}), ...(message.result ? { result: message.result } : {}),
         ...(message.delivery?.via ? { deliveredBy: message.delivery.via } : {}), ...(message.delivery?.reason ? { reason: message.delivery.reason } : {}) }));
@@ -605,10 +650,12 @@ export class Partners {
     const work = await this.port.sessions(message.owner, message.to.agentId), { sessionId } = work.openOwnerConversation();
     const settings = work.defaultSettings(), grants = message.grants;
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
-      model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? this.port.defaultModel(this.port.environmentHolder(message.to.agentId)) ?? null,
+      model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
+      // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
+      display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
       admission: { kind: "delegation", owner: message.owner, agentId: message.to.agentId, reference: message.id,
         toolGrants: { feishu: grants.feishu, connectedApps: { connections: grants.connections, ...(grants.operations ? { operations: grants.operations } : {}) } },
@@ -620,10 +667,21 @@ export class Partners {
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver()]) {
+    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
+  }
+  /**
+   * Records are not kept for ever either: a message that reached its end, and a hand-over that did, is removed 30
+   * days after it was created. What the partners said stays in their conversations.
+   */
+  private cleanUp(now = Date.now()) {
+    if (now - this.cleanedAt < CLEANUP_MS) return;
+    this.cleanedAt = now;
+    const before = iso(now - KEPT_MS);
+    this.store.deleteBefore(MESSAGES, FINAL_MESSAGES, before);
+    this.store.deleteBefore(RETURNS, FINAL_RETURNS, before);
   }
   /** Messages recorded but not yet in their recipient's work queue: the call that sent them was interrupted. */
   private async resume() {
@@ -809,7 +867,14 @@ export class Partners {
     const work = await this.port.sessions(batch.owner, batch.agentId);
     const messages = batch.messageIds.map(id => this.store.get<PartnerMessage>(MESSAGES, id)).filter((message): message is PartnerMessage => !!message);
     const senders = new Map(messages.map(message => [message.to.agentId, message.to.name])), authorization = batch.authorization;
+    const share = Math.floor(SHOWN_ANSWER_BYTES / Math.max(1, messages.length));
     await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary),
+      // What the owner is shown in the sender's conversation: each partner's result, apart from the lines written for the model.
+      display: { partnerResults: messages.map(message => {
+        const result = message.result!, answer = shortened(result.answer.trim(), share);
+        return { messageId: message.id, partner: { id: message.to.agentId, name: message.to.name }, intent: message.intent, status: result.status,
+          ...(result.error ? { error: result.error } : {}), answer: answer.text, ...(answer.cut ? { cut: answer.cut } : {}), durationMs: result.durationMs };
+      }) },
       // One partner's results are that partner's; several partners' are the system's.
       ...(senders.size === 1 ? { sender: { kind: "agent" as const, id: [...senders.keys()][0]!, name: [...senders.values()][0]! } } : {}),
       reply: batch.reply, context: { partnerResults: batch.messageIds },
@@ -822,9 +887,15 @@ export class Partners {
     return {
       open: async card => {
         const sessions = await work(), connection = message.origin.connectionId;
+        // The text is what a channel shows and what stands in the transcript. `display` carries the same as members, for a
+        // console to show in its own words and language.
+        const shown = shownArguments(card.arguments);
         sessions.request({ eventId: card.id, kind: "approval", title: `伙伴「${message.to.name}」请求批准`,
-          text: [`「${message.to.name}」在处理「${message.from.name}」转来的消息时，需要你批准这个操作：`, card.summary, `连接：${card.connection}`, shownArguments(card.arguments)].join("\n"),
+          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`, `连接：${card.connection}`,
+            `${shown.brief ? "参数（较长，以下每项只显示开头）" : "参数"}：${shown.json}`].join("\n"),
           choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
+          display: { partnerApproval: { partner: { id: message.to.agentId, name: message.to.name }, from: { id: message.from.agentId, name: message.from.name },
+            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown.json, ...(shown.brief ? { argumentsShortened: true } : {}) } },
           ...(sessions.deliveryConnections().includes(connection) ? { connectionId: connection } : {}) });
       },
       status: async id => {

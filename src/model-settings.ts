@@ -17,7 +17,9 @@ export interface ModelSettingsView {
 }
 interface Reading { kernel?: string; defaultModel?: string; models: ModelOption[]; efforts: string[] }
 
-const collection = "model_settings_readings";
+const collection = "model_settings_readings", kernels = "model_settings_kernel_readings";
+/** How long what a kernel reported is used without asking it again, when no partner's own settings are read. */
+const KERNEL_READING_MS = 10 * 60_000;
 const text = z.string().min(1).max(200);
 const allowed = z.object({ values: z.array(z.unknown()) }).passthrough();
 const description = z.object({
@@ -87,8 +89,26 @@ export class ModelSettings {
     return { ...current, selection: { ...(model ? { model } : {}), ...(effort ? { effort } : {}) } };
   }
 
+  /**
+   * What a kernel of an environment offers, for choosing it for a new partner: nobody's selection. `holder` is the
+   * partner that has the environment. A kernel starts to answer, so a reading is kept for ten minutes; when the
+   * environment cannot be asked, the last reading is returned as `saved`. The readings are removed with the holder's
+   * other product records when it is deleted.
+   */
+  async kernelView(holder: string, kernel: string, discover: () => Promise<unknown>): Promise<ModelSettingsView> {
+    const key = `${holder}:${kernel}`, prior = this.store.get<{ reading: Reading; at: number }>(kernels, key);
+    if (prior && Date.now() - prior.at < KERNEL_READING_MS) return { ...prior.reading, selection: {}, source: "live" };
+    try {
+      const reading = readModelOptions(await discover());
+      this.store.set(kernels, key, { reading, at: Date.now() });
+      return { ...reading, selection: {}, source: "live" };
+    } catch { return prior ? { ...prior.reading, selection: {}, source: "saved" } : { models: [], efforts: [], selection: {}, source: "none" }; }
+  }
+
   /** The runtime's own model as it was last read for the agent, without asking its Host. */
   defaultModel(agentId: string) { return this.store.get<Reading>(collection, agentId)?.defaultModel; }
+  /** The same for a kernel of the environment `holder` has, as `kernelView` last read it. */
+  kernelDefaultModel(holder: string, kernel: string) { return this.store.get<{ reading: Reading }>(kernels, `${holder}:${kernel}`)?.reading.defaultModel; }
 
   forget(agentId: string) { this.store.delete(collection, agentId); }
 }

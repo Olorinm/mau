@@ -24,7 +24,8 @@ export function ChannelsPage({ session }: { session: Session }) {
         : mine.map((item) => item.detail).join(" · ") || (zh ? "连接需要处理" : "The connection needs attention") });
     },
     onError: () => toast({ kind: "error", title: zh ? "连接检查失败，请稍后重试。" : "Connection check failed. Try again later." }) });
-  const active = (agents.data ?? []).filter((agent) => agent.environment?.state !== "deleted");
+  // A dismissed partner is put away from this list too; its channels stay connected.
+  const active = (agents.data ?? []).filter((agent) => agent.environment?.state !== "deleted" && !agent.dismissed);
   const personal = (agentId: string) => accounts.data?.data.find((account) => account.kind === "feishu" && account.assignedAgents?.includes(agentId));
 
   if (connecting) return <SettingsPage onBack={() => setConnecting(undefined)} backLabel={zh ? "消息渠道" : "Messaging"}

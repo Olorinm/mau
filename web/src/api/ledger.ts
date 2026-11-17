@@ -1,4 +1,4 @@
-import { ApiError, request } from "./http";
+import { ApiError, request, type PartnerRef } from "./http";
 
 /*
  * Router owner-ledger web channel (agent-router ADR 0005, section 8).
@@ -15,6 +15,31 @@ export type ChannelTag = { kind: "web" | "room" | "matrix" | "feishu" | "grove-m
 export type AttachmentRef = { attachmentId: string; name: string; contentType: string; size: number | null; sha256: string | null; url: string };
 export type DeliveryState = { deliveryId: string; channel: ChannelTag; status: "queued" | "sending" | "sent" | "suppressed" | "rejected" | "unknown" | "replied"; error?: string };
 export type CardStatus = "pending" | "answered" | "approved" | "rejected" | "expired" | "canceled";
+// `display` is what Mau attaches to an input or a card of a partner, for showing it apart from the text written for
+// the model or a channel. Router keeps it and does not read it; an event recorded without it has only its text.
+export type PartnerIntent = "relay" | "ask";
+/** One partner's result, handed back in the conversation its message was sent from. */
+export interface PartnerResult {
+  messageId: string; partner: PartnerRef; intent: PartnerIntent;
+  status: "completed" | "failed" | "cancelled" | "rejected" | "unknown";
+  /** Why it is not completed: a code (`no_answer_after_48_hours`) or the partner runtime's own words. */
+  error?: string;
+  /** The partner's answer; empty when it gave none. */
+  answer: string;
+  /** Characters left out of a long answer; the whole answer is in that partner's conversation. */
+  cut?: number;
+  durationMs: number;
+}
+export interface MessageDisplay {
+  /** A partner's message in the recipient's conversation; `text` is what the sender wrote. */
+  partnerMessage?: { id: string; intent: PartnerIntent; from: PartnerRef; text: string };
+  /** The results of a partner's messages, in the sender's conversation. */
+  partnerResults?: PartnerResult[];
+}
+export interface CardDisplay {
+  /** `partner` asks to run an operation while it handles a message of `from`; `arguments` is JSON text. */
+  partnerApproval?: { partner: PartnerRef; from: PartnerRef; messageId: string; summary: string; connection: string; arguments: string; argumentsShortened?: true };
+}
 export interface Card {
   cardId: string; agentId: string; turnId: string; claimId: string; callId: string;
   kind: "question" | "approval" | "connector_approval" | "sensitive";
@@ -28,6 +53,7 @@ export interface Card {
   freeText: boolean;
   native?: { method: string; params: unknown };
   deadlineAt: string | null; status: CardStatus;
+  display?: CardDisplay;
 }
 export type TurnState = "queued" | "running" | "waiting" | "completed" | "failed" | "canceled" | "unknown";
 export type ChatEventBody =
@@ -39,7 +65,7 @@ export type ChatEventBody =
       /** Phase 4: steered into a running turn (rendered inside its run surface). */
       steer?: boolean;
       /** What started an input that no channel message carried; `delegation` is a partner's message or its results. */
-      origin?: "work" | "delegation" | "schedule" }
+      origin?: "work" | "delegation" | "schedule"; display?: MessageDisplay }
   | { kind: "notice"; text: string; level: "info" | "warning" }
   | { kind: "action"; targetCardId: string; label: string }
   | { kind: "card"; card: Card }
@@ -1031,6 +1057,7 @@ export interface LedgerBubble {
   steer?: boolean;
   /** What started an input that no channel message carried. */
   origin?: "work" | "delegation" | "schedule";
+  display?: MessageDisplay;
 }
 export interface LedgerTurn { turnId: string; agentId: string; state: TurnState; inputEventIds: string[]; error?: string; seq: number }
 export interface LedgerFold { items: LedgerBubble[]; turns: Map<string, LedgerTurn>; cards: Map<string, Card> }
@@ -1052,6 +1079,7 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
           ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
           ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}),
           ...(event.steer ? { steer: true } : {}), ...(event.origin ? { origin: event.origin } : {}),
+          ...(event.display ? { display: event.display } : {}),
           ...(event.redacted ? { redacted: true, text: "", attachments: [] } : {}) };
         break;
       case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;

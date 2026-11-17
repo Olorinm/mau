@@ -135,3 +135,29 @@ it("the browser client forwards the shell's arguments and directory, retries upl
     expect(await run(["click", "#x"])).toEqual({ code: 1, stdout: "", stderr: "✗ Element not found: #x\n" });
   } finally { server.close(); }
 });
+
+it("installs nothing for a kernel whose shell does not relay, and gives it the same guides with the tool", async () => {
+  let calls = 0;
+  const apps = { reader: () => async () => { calls++; return { status: "completed", tools: [{ name: "google_gmail__gws_read" }] }; },
+    connections: () => ["google-gmail", "work-feishu"] } as unknown as ConnectedApps;
+  const box = sandbox(true), manager = new skills.AgentSkills(apps, () => connections);
+  // A run on such a kernel reads no catalog and writes no file: the commands in the shell would not work for it.
+  expect(await manager.install("claude", "agent", "owner", "binding", async () => box.files)).toBeUndefined();
+  expect(await manager.install(undefined, "agent", "owner", "binding", async () => box.files)).toBeUndefined();
+  expect([calls, existsSync(join(box.codex, "skills")), existsSync(join(box.bin, "gws"))]).toEqual([0, false, false]);
+  // Its catalog carries the guide of each connection whose CLI tools it lists, with the tools that run the command.
+  const guides = manager.toolGuides("claude")!;
+  expect(guides(["google_gmail__gws_read", "google_gmail__gws_write", "google_gmail__get_thread", "work_feishu__cli_read", "coco_browser__handoff_start", "drive__gws_read"])).toEqual({
+    guidesNote: skills.TOOL_GUIDES,
+    guides: [{ connection: "google-gmail", command: "gws", read: "google_gmail__gws_read", write: "google_gmail__gws_write", guide: expect.stringContaining("gws gmail +triage") },
+      { connection: "work-feishu", command: "lark-cli", read: "work_feishu__cli_read", guide: expect.stringContaining("lark-cli skills read lark-shared") }] });
+  expect(guides(["google_gmail__get_thread"])).toEqual({});
+  expect(skills.TOOL_GUIDES).toBe("Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
+    "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
+    "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. " +
+    "Where a guide says to run something in your shell, it means this.");
+  // A kernel whose shell relays is installed for, as before, and its catalog carries no guides.
+  expect(manager.toolGuides("codex")).toBeUndefined();
+  expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toMatchObject({ skills: ["google-gmail"], commands: ["gws"] });
+  expect(existsSync(join(box.bin, "gws"))).toBe(true);
+});
