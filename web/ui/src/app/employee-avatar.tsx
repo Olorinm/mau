@@ -19,7 +19,7 @@ export function useEmployeeAvatarAppearance(): EmployeeAvatarAppearance {
 }
 
 /**
- * 员工头像：seed（通常用员工 id）确定性生成 Notionists 插画脸。
+ * 伙伴头像：seed（通常用伙伴 id）确定性生成 Notionists 插画脸。
  * 本地纯函数生成，无网络请求；同一 seed 永远同脸，换 seed 即换脸。
  * 用 img 加载 SVG data URI，让每个头像拥有独立 SVG 文档，避免 mask id 串台。
  */
@@ -29,7 +29,7 @@ const pendingEmployeeAvatarDataUris = new Map<string, Promise<string>>();
 let employeeAvatarGeneratorPromise: Promise<(seed: string) => string> | undefined;
 
 /**
- * 同一个逻辑员工可能同时存在“全局定义”和“App/会话绑定”，两者的 member id
+ * 同一个逻辑伙伴可能同时存在“全局定义”和“App/会话绑定”，两者的 member id
  * 可以不同，但 employeeDefinitionId 相同。头像必须优先使用逻辑定义 id，
  * 才能保证通讯录、聊天、标题栏和 App 内嵌聊天显示同一张脸。
  */

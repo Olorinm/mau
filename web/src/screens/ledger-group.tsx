@@ -109,9 +109,9 @@ export function LedgerGroupMembersDialog({ token, chat, members, agents, open, o
         </ul>
         <div className="mau-group-add">
           <label className="mau-field">
-            <span>{zh ? "添加员工" : "Add an Agent"}</span>
+            <span>{zh ? "添加伙伴" : "Add an Agent"}</span>
             <select value={adding} onChange={(event) => setAdding(event.target.value)} disabled={agentMembers.length >= groupAgentsMax}>
-              <option value="">{zh ? "选择员工" : "Select an Agent"}</option>
+              <option value="">{zh ? "选择伙伴" : "Select an Agent"}</option>
               {addable.map(({ agent }) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
           </label>

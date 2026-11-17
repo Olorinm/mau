@@ -567,7 +567,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   };
 
   const sections: ChatSection[] = [
-    { id: "agents", title: zh ? "员工" : "Employees", entries: agentEntries,
+    { id: "agents", title: zh ? "伙伴" : "Partners", entries: agentEntries,
       action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } } },
     { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
       action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } },
@@ -604,10 +604,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           {panelOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={closePanel}
             label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
             emptyLabel={zh ? "没有找到" : "Nothing found"}
-            onProfile={{ label: zh ? "员工资料" : "Employee profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
+            onProfile={{ label: zh ? "伙伴资料" : "Partner profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
               open: (entry) => { setRosterOpen(true); setProfile(entry.key.slice(6)); } }}
             onBack={() => { setProfile(undefined); setRosterOpen(true); }}
-            profile={profileSummary ? { label: zh ? "员工资料" : "Employee profile", backLabel: zh ? "全部对话" : "All conversations",
+            profile={profileSummary ? { label: zh ? "伙伴资料" : "Partner profile", backLabel: zh ? "全部对话" : "All conversations",
               content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
                 document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
                 onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
@@ -659,7 +659,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),
                 disabled: !canSend,
                 placeholder: !canSend ? (zh ? "此对话只读" : "This conversation is read-only")
-                  : current.kind === "group" ? (zh ? "@员工 让他回答，@所有人 让大家都回答…" : "@an employee to ask them, @all to ask everyone…")
+                  : current.kind === "group" ? (zh ? "@伙伴 让他回答，@所有人 让大家都回答…" : "@a partner to ask them, @all to ask everyone…")
                   : (zh ? "发送消息…" : "Send a message…"),
                 ...(attachable ? {
                   onFiles: (picked: File[]) => { setUploadError(undefined); uploads.add(current.chatId, picked); },
@@ -669,7 +669,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   ...room.candidates.map(({ id, name }) => ({ id, label: name,
                     avatar: <EmployeeAvatar seed={id} fallbackName={name} size={20} animated={false} />,
                     onSelect: () => insertMention(current.chatId, name) })),
-                  { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的员工都回答" : "Every employee in the group answers",
+                  { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的伙伴都回答" : "Every partner in the group answers",
                     onSelect: () => insertMention(current.chatId, zh ? "所有人" : "all") },
                 ] } : {}),
                 ...(commands ? { commands } : {}),
@@ -682,7 +682,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
               {header}
               {failure}
               {start.isPending || chats.isPending ? <LoadingSurface label={t("common.loading")} />
-                : <EmptyState illustration="messages" title={zh ? "选一个员工开始对话" : "Pick an employee to start"} />}
+                : <EmptyState illustration="messages" title={zh ? "选一个伙伴开始对话" : "Pick a partner to start"} />}
             </>
           )} />
         </div>

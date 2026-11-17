@@ -69,7 +69,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await composer.fill("/clear");
   await page.getByRole("option", { name: /\/clear/ }).click();
   const purge = page.getByRole("dialog", { name: "清空聊天记录？" });
-  await see(purge).toContainText("员工已经写入的记忆不会被删除");
+  await see(purge).toContainText("伙伴已经写入的记忆不会被删除");
   await see(purge.getByRole("button", { name: "永久清空" })).toBeDisabled();
   await purge.getByRole("textbox").fill("helper");
   await purge.getByRole("button", { name: "永久清空" }).click();

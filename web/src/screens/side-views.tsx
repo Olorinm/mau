@@ -115,7 +115,7 @@ export function DocumentSideView({ session, agentId, name, onClose }: { session:
           : error ? <p className="mau-error" role="alert">{failure(error)}</p>
           : target ? <FileEditor key={name} value={saved ?? ""} format="markdown" onChange={setDraft} placeholder={zh ? "还没有内容" : "Nothing here yet"} />
           : instructions.data?.text ? <ChatMarkdown markdown={instructions.data.text} />
-          : <p className="mau-muted">{zh ? "这个员工还没有固定说明" : "This employee has no fixed instructions"}</p>}
+          : <p className="mau-muted">{zh ? "这个伙伴还没有固定说明" : "This partner has no fixed instructions"}</p>}
       </div>
     </aside>
   );

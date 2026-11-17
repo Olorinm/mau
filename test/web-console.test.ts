@@ -50,10 +50,10 @@ const agentChip = (page: Page, agentId: string) =>
   page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
 /** The employee profile in the people panel (the former contacts detail); the current employee's figure opens it. */
 const profileCard = (page: Page) =>
-  page.getByRole("complementary", { name: "员工资料" });
+  page.getByRole("complementary", { name: "伙伴资料" });
 /** The profile's sections are icon tabs: 状态, 消息渠道, 能力 and 配置. */
 const profileTab = (page: Page, name: string) =>
-  profileCard(page).getByRole("group", { name: "员工资料分类" }).getByRole("button", { name, exact: true }).click();
+  profileCard(page).getByRole("group", { name: "伙伴资料分类" }).getByRole("button", { name, exact: true }).click();
 /** The environment state shown on the 状态 tab. */
 const profileState = (page: Page) => profileCard(page).locator(".agent-status-line").first();
 
@@ -131,13 +131,13 @@ it.skipIf(!built)(
       "未配置环境",
     );
 
-    // A new employee is created from the "+" of the 员工 section in the full list of conversations.
+    // A new employee is created from the "+" of the 伙伴 section in the full list of conversations.
     await page.getByRole("button", { name: "全部对话", exact: true }).click();
     await page
       .getByRole("complementary", { name: "全部对话" })
-      .getByRole("button", { name: "新建员工", exact: true })
+      .getByRole("button", { name: "新建伙伴", exact: true })
       .click();
-    const dialog = page.getByRole("dialog", { name: "新建员工" });
+    const dialog = page.getByRole("dialog", { name: "新建伙伴" });
     await dialog.getByLabel("名称").fill("Writer");
     await see(dialog.getByRole("button", { name: "创建" })).toBeDisabled();
     await dialog.getByLabel("名称").fill("writer");
@@ -559,7 +559,7 @@ it.skipIf(!built)(
     expect(await current.getAttribute("data-chat-key")).toMatch(/^chat:/);
     expect(groupBodies).toHaveLength(1);
     expect(groupBodies[0]).toMatchObject({ title: "发布组", agentIds: [f.agent.id] });
-    const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
+    const composer = page.getByPlaceholder("@伙伴 让他回答，@所有人 让大家都回答…");
     await composer.pressSequentially("@");
     await page.getByRole("option", { name: /helper/ }).click();
     await see(composer).toHaveValue("@helper ");
@@ -838,7 +838,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
   legacy = false;
   await settings.getByRole("button", { name: "连接", exact: true }).click();
   const consent = page.getByRole("dialog", { name: "Gmail" });
-  await see(consent).toContainText("授权凭据保存在 Mau，不会进入员工的沙箱。");
+  await see(consent).toContainText("授权凭据保存在 Mau，不会进入伙伴的沙箱。");
   await see(consent).toContainText("写入操作按你的设置请求批准");
   await see(consent.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "https://www.openmau.com/privacy.html");
   await page.screenshot({ path: "/tmp/mau-consent.png" });
@@ -861,7 +861,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
   await detail.getByRole("combobox", { name: "发邮件" }).click();
   await page.getByRole("option", { name: "允许", exact: true }).click();
   const allow = page.getByRole("dialog", { name: "允许「发邮件」？" });
-  await see(allow).toContainText("以后员工执行此操作不会再询问你。");
+  await see(allow).toContainText("以后伙伴执行此操作不会再询问你。");
   await allow.getByRole("button", { name: "允许", exact: true }).click();
   await see(detail.getByRole("combobox", { name: "发邮件" })).toHaveText(/允许/);
   expect(mutations.at(-1)).toEqual(["policy", { settings: { "gmail.send": "allow" } }]);
@@ -988,11 +988,11 @@ it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with 
   await see(settings.getByText("飞书的授权已过期")).toBeVisible();
   await settings.getByRole("button", { name: "重新授权", exact: true }).click();
   await see(settings.getByRole("heading", { name: "飞书" })).toBeVisible();
-  await see(settings.getByText(/授权已到期。员工暂时无法使用，请重新授权。/)).toBeVisible();
+  await see(settings.getByText(/授权已到期。伙伴暂时无法使用，请重新授权。/)).toBeVisible();
   await see(settings.getByText("仅私聊")).toBeVisible();
   await settings.getByRole("button", { name: "重新授权", exact: true }).click();
   const consent = page.getByRole("dialog", { name: "飞书" });
-  await see(consent).toContainText("只在你和员工的私聊中可用，群聊中不可用");
+  await see(consent).toContainText("只在你和伙伴的私聊中可用，群聊中不可用");
   await consent.getByRole("button", { name: "继续", exact: true }).click();
   await see(settings.getByRole("link", { name: "在浏览器中打开" })).toHaveAttribute("href", link);
   expect(requests.filter(([action]) => action !== "check" && action !== "complete").slice(0, 2)).toEqual([["feishu-application", { agentId: f.agent.id }], ["connect", {}]]);

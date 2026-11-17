@@ -124,9 +124,9 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   return <section className="mau-run" data-density="compact" data-run-id={claimId} aria-label={label}>
     {placeholder ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
       onToggle={(open) => { setOpened(open); if (open && sleeping && !wake.isPending) wake.mutate(); }}
-      summary={wake.isPending ? zh ? "正在唤醒员工…" : "Waking the employee…" : zh ? "执行过程" : "Process"}>
-      {sleeping ? <p className="mau-muted">{wake.isPending ? zh ? "员工醒来后会自动加载执行过程。" : "The process loads once the employee is awake."
-        : zh ? "展开即可唤醒员工并加载执行过程。" : "Expand to wake the employee and load the process."}</p> : null}
+      summary={wake.isPending ? zh ? "正在唤醒伙伴…" : "Waking the partner…" : zh ? "执行过程" : "Process"}>
+      {sleeping ? <p className="mau-muted">{wake.isPending ? zh ? "伙伴醒来后会自动加载执行过程。" : "The process loads once the partner is awake."
+        : zh ? "展开即可唤醒伙伴并加载执行过程。" : "Expand to wake the partner and load the process."}</p> : null}
     </Disclosure> : null}
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}

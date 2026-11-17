@@ -82,8 +82,8 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
       expect(await inside()).toBeLessThan(260);
       await capture(page, `${prefix}-roster`);
       // An employee's profile opens in the same panel, which widens for it; back returns to the list.
-      await roster.getByRole("button", { name: /^员工资料/ }).first().click();
-      const profile = page.getByRole("complementary", { name: "员工资料" }); await see(profile).toBeVisible();
+      await roster.getByRole("button", { name: /^伙伴资料/ }).first().click();
+      const profile = page.getByRole("complementary", { name: "伙伴资料" }); await see(profile).toBeVisible();
       await see.poll(inside).toBeGreaterThan(330);
       expect(await card()).toEqual(before);
       await capture(page, `${prefix}-profile`);
@@ -95,7 +95,7 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
     if (width === 390) {
       // The current employee's figure opens the profile; on a phone the panel covers the card and can be closed.
       await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
-      const profile = page.getByRole("complementary", { name: "员工资料" }); await see(profile).toBeVisible();
+      const profile = page.getByRole("complementary", { name: "伙伴资料" }); await see(profile).toBeVisible();
       expect(await profile.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);
       await capture(page, `${prefix}-profile`);
       await profile.getByRole("button", { name: "收起" }).click(); await see(profile).toBeHidden();

@@ -26,8 +26,8 @@ export function PurgeChatDialog({ chat, purge, onClose, onPurged }: {
   return (
     <Modal open={!!chat} onOpenChange={(open) => { if (!open) onClose(); }} closeLabel={t("common.close")}
       title={zh ? "清空聊天记录？" : "Clear chat history?"}
-      description={zh ? "聊天记录将被永久删除，无法撤销；员工已经写入的记忆不会被删除。这会删除你在所有渠道（网页、飞书、邮件等）与它的记录，并开始新对话。"
-        : "The history is deleted permanently and cannot be undone; memories the employee already wrote are kept. This deletes your messages with it on every channel and starts a new chat."}
+      description={zh ? "聊天记录将被永久删除，无法撤销；伙伴已经写入的记忆不会被删除。这会删除你在所有渠道（网页、飞书、邮件等）与它的记录，并开始新对话。"
+        : "The history is deleted permanently and cannot be undone; memories the partner already wrote are kept. This deletes your messages with it on every channel and starts a new chat."}
       actions={<ModalActions danger confirmLabel={busy ? zh ? "停止任务并清空" : "Stop and clear" : zh ? "永久清空" : "Clear permanently"}
         cancelLabel={t("common.cancel")} pending={request.isPending} disabled={!chat || typed.trim() !== chat.title}
         onConfirm={() => chat && request.mutate({ chatId: chat.chatId, title: chat.title, cancelActive: busy })} onCancel={onClose} />}>

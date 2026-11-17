@@ -10,25 +10,25 @@ export interface Product {
 }
 export const products: Product[] = [
   { id: "gmail", name: "Gmail", description: "查找邮件、阅读往来，把重要信息带进对话。", descriptionEn: "Find emails and bring important conversations into your work.", group: "work",
-    reads: "员工可以搜索和阅读你的邮件、草稿和标签。", readsEn: "Agents can search and read your email, drafts and labels." },
+    reads: "伙伴可以搜索和阅读你的邮件、草稿和标签。", readsEn: "Agents can search and read your email, drafts and labels." },
   { id: "calendar", name: "Google 日历", en: "Google Calendar", description: "把日程、会议与待办安排在一起。", descriptionEn: "Bring your events and meetings together.", group: "work",
-    reads: "员工可以查看你的日程和会议。", readsEn: "Agents can view your events and meetings." },
+    reads: "伙伴可以查看你的日程和会议。", readsEn: "Agents can view your events and meetings." },
   { id: "feishu", name: "飞书", en: "Feishu", description: "以你的身份读取文档、日历和邮件。", descriptionEn: "Read your docs, calendar and mail as you.", group: "work",
-    reads: "员工可以以你的身份读取飞书文档、日历、云空间和邮件。", readsEn: "Agents can read your Feishu docs, calendar, drive and mail as you." },
+    reads: "伙伴可以以你的身份读取飞书文档、日历、云空间和邮件。", readsEn: "Agents can read your Feishu docs, calendar, drive and mail as you." },
   { id: "drive", name: "Google 云端硬盘", en: "Google Drive", description: "查找文件，获取工作所需的资料。", descriptionEn: "Find files and the information you need.", group: "knowledge",
-    reads: "员工可以查找和读取你的文件。", readsEn: "Agents can find and read your files." },
+    reads: "伙伴可以查找和读取你的文件。", readsEn: "Agents can find and read your files." },
   { id: "docs", name: "Google 文档", en: "Google Docs", description: "读取文档，了解项目上下文。", descriptionEn: "Bring document context into your conversations.", group: "knowledge",
-    reads: "员工可以读取你的文档。", readsEn: "Agents can read your documents." },
+    reads: "伙伴可以读取你的文档。", readsEn: "Agents can read your documents." },
   { id: "sheets", name: "Google 表格", en: "Google Sheets", description: "读取表格，理解和分析数据。", descriptionEn: "Read spreadsheets and understand your data.", group: "knowledge",
-    reads: "员工可以读取你的表格。", readsEn: "Agents can read your spreadsheets." },
+    reads: "伙伴可以读取你的表格。", readsEn: "Agents can read your spreadsheets." },
   { id: "slides", name: "Google 幻灯片", en: "Google Slides", description: "阅读演示文稿，提取关键信息。", descriptionEn: "Read presentations and find the key points.", group: "knowledge",
-    reads: "员工可以阅读你的演示文稿。", readsEn: "Agents can read your presentations." },
+    reads: "伙伴可以阅读你的演示文稿。", readsEn: "Agents can read your presentations." },
   { id: "notion", name: "Notion", description: "连接笔记、文档与团队知识。", descriptionEn: "Connect notes, documents and team knowledge.", group: "knowledge",
-    reads: "员工可以读取你的 Notion 页面。", readsEn: "Agents can read your Notion pages." },
+    reads: "伙伴可以读取你的 Notion 页面。", readsEn: "Agents can read your Notion pages." },
   { id: "github", name: "GitHub", description: "了解代码仓库与项目进展。", descriptionEn: "Keep up with repositories and project progress.", group: "knowledge",
-    reads: "员工可以读取你的仓库、议题和拉取请求。", readsEn: "Agents can read your repositories, issues and pull requests." },
+    reads: "伙伴可以读取你的仓库、议题和拉取请求。", readsEn: "Agents can read your repositories, issues and pull requests." },
   { id: "browser", name: "浏览器", en: "Browser", description: "在云端浏览器中打开网页，必要时由你接管登录。", descriptionEn: "Open pages in a cloud browser; you take over for sign-in.", group: "tools",
-    reads: "员工可以打开网页并读取页面内容。", readsEn: "Agents can open web pages and read their content." },
+    reads: "伙伴可以打开网页并读取页面内容。", readsEn: "Agents can open web pages and read their content." },
 ];
 
 const has = (account: ConnectorAccount, word: string) => `${account.id} ${account.label}`.toLowerCase().includes(word);
@@ -46,7 +46,7 @@ export function productFor(id: string, accounts: ConnectorAccount[]): Product | 
   const known = products.find((product) => product.id === id);
   if (known) return known;
   const account = id.startsWith("account:") ? accounts.find((item) => "account:" + item.id === id) : undefined;
-  return account ? { id, name: account.label, description: "", descriptionEn: "", group: "tools", reads: "员工可以读取你授权的内容。", readsEn: "Agents can read what you authorize." } : undefined;
+  return account ? { id, name: account.label, description: "", descriptionEn: "", group: "tools", reads: "伙伴可以读取你授权的内容。", readsEn: "Agents can read what you authorize." } : undefined;
 }
 
 /** Local vector marks keep the catalog independent of third-party image requests. */

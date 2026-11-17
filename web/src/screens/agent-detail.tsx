@@ -206,7 +206,7 @@ export function AgentDetail(props: {
     <>
       <div className="mau-profile">
         <DetailHero icon={<EmployeeAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} />
-        <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "员工资料分类" : "Profile sections"} value={tab} onChange={setTab}
+        <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "伙伴资料分类" : "Profile sections"} value={tab} onChange={setTab}
           options={[
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
             { value: "channels", label: t("channels.title"), icon: icon("chat") },
