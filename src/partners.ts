@@ -39,6 +39,11 @@ const UNREACHABLE = ["paused", "pausing", "deleting", "deleted", "needs_action"]
 const MESSAGE_BYTES = 16_000;
 /** The answers a hand-over shows the owner share this many bytes; Router admits 64,000 for what an input shows. */
 const SHOWN_ANSWER_BYTES = 48_000;
+/** A message or a hand-over that reached its end is kept this long, then removed. */
+const KEPT_MS = 30 * 24 * 3_600_000;
+/** How often the records past that age are removed. */
+const CLEANUP_MS = 3_600_000;
+const FINAL_MESSAGES: Status[] = ["returned", "collected", "seen", "dropped"], FINAL_RETURNS = ["completed", "failed"];
 /** The states of a work event whose turn has ended. */
 const ENDED = ["completed", "failed", "cancelled", "rejected"];
 
@@ -181,6 +186,7 @@ export class Partners {
   private readonly active = new Map<string, Set<string>>();
   /** When each agent's open turns were last read directly. */
   private readonly checked = new Map<string, number>();
+  private cleanedAt = 0;
   constructor(private readonly store: DurableStore, private readonly port: PartnersPort) {}
   start() { this.timer = setInterval(() => { void this.tick(); }, 1000); this.timer.unref(); void this.tick(); }
   async tick() {
@@ -571,9 +577,9 @@ export class Partners {
 
   /** The owner's messages between partners, newest first. */
   messages(owner: string, filter: { agentId?: string | undefined; limit?: number | undefined } = {}) {
-    return this.store.entries<PartnerMessage>(MESSAGES).map(entry => entry.value)
-      .filter(message => message.owner === owner && (!filter.agentId || message.from.agentId === filter.agentId || message.to.agentId === filter.agentId))
-      .reverse().slice(0, filter.limit ?? 50).map(message => ({ id: message.id, from: { id: message.from.agentId, name: message.from.name }, to: { id: message.to.agentId, name: message.to.name },
+    return this.store.newest<PartnerMessage>(MESSAGES, [{ members: ["owner"], value: owner },
+      ...(filter.agentId ? [{ members: ["from.agentId", "to.agentId"], value: filter.agentId }] : [])], filter.limit ?? 50)
+      .map(entry => entry.value).map(message => ({ id: message.id, from: { id: message.from.agentId, name: message.from.name }, to: { id: message.to.agentId, name: message.to.name },
         intent: message.intent, text: message.text, status: message.status, createdAt: message.createdAt, connectionId: message.origin.connectionId,
         ...(message.sentTo ? { sentTo: message.sentTo } : {}), ...(message.result ? { result: message.result } : {}),
         ...(message.delivery?.via ? { deliveredBy: message.delivery.via } : {}), ...(message.delivery?.reason ? { reason: message.delivery.reason } : {}) }));
@@ -626,10 +632,21 @@ export class Partners {
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver()]) {
+    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
+  }
+  /**
+   * Records are not kept for ever either: a message that reached its end, and a hand-over that did, is removed 30
+   * days after it was created. What the partners said stays in their conversations.
+   */
+  private cleanUp(now = Date.now()) {
+    if (now - this.cleanedAt < CLEANUP_MS) return;
+    this.cleanedAt = now;
+    const before = iso(now - KEPT_MS);
+    this.store.deleteBefore(MESSAGES, FINAL_MESSAGES, before);
+    this.store.deleteBefore(RETURNS, FINAL_RETURNS, before);
   }
   /** Messages recorded but not yet in their recipient's work queue: the call that sent them was interrupted. */
   private async resume() {
