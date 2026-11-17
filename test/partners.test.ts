@@ -216,6 +216,8 @@ it("hands results that are ready together to their sender in one turn, after the
   await f.until(() => f.messages().every(message => f.record(message.id).status === "returned"), "returned");
   await f.settle(1500);
   expect(f.turns.filter(turn => turn.agentId === f.agent.id)).toHaveLength(2);
+  // A turn's ending is known a moment before Router has recorded its answer for the owner.
+  await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   expect(await f.answers(f.agent.id)).toEqual(["Both partners are pricing it.", "Flights 3000, hotels 5000."]);
   // The answer of the turn that handed them over went the way the owner's own turn answers: recorded for the web.
   const batch = f.store(store => store.entries<{ id: string; status: string; reply: unknown; messageIds: string[] }>("partner_returns"))[0]!.value;
@@ -251,6 +253,7 @@ it("continues after Mau restarts: a message whose partner is still working, and 
   const back = await f.turnOf(f.agent.id, 1);
   expect(back.text).toContain(f.answer(id, "Booked for May."));
   await f.until(() => f.record(id).status === "returned", "returned after restart");
+  await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   expect(await f.answers(f.agent.id)).toEqual(["Booking is under way.", "It is booked for May."]);
   expect(f.turns).toHaveLength(3);
 }, 90_000);
@@ -295,5 +298,6 @@ it("hands a result over as a turn when the answer of the wait that read it never
   expect(back.text).toContain(f.answer(id, "Seoul first."));
   await f.until(() => f.record(id).status === "returned", "returned");
   expect(f.record(id).delivery).toMatchObject({ via: "turn", readBy: expect.stringContaining("call") });
+  await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   expect(await f.answers(f.agent.id)).toEqual(["I could not read the reply in time.", "Seoul first, says the trip partner."]);
 }, 60_000);

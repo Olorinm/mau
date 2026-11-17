@@ -28,21 +28,25 @@ it("tries eight times to hand a result over, waiting longer each time, then drop
   await f.say(f.agent.id, "Ask trip");
   const id = (await f.until(() => f.messages()[0], "message")).id;
   const attempt = (n: number) => f.until(() => { const record = f.record(id); return record.delivery?.attempts === n && record.status !== "returning" ? record : undefined; }, `attempt ${n}`);
-  const first = await attempt(1), started = Date.now();
+  /** Seconds from the start of hand-over `n` to the time the next one is due: the delay, plus how long that turn took to fail. */
+  const delay = (n: number, record: PartnerMessage) => {
+    const batch = f.store(store => store.entries<{ attempt: number; createdAt: string }>("partner_returns").map(entry => entry.value).find(value => value.attempt === n)!);
+    return (Date.parse(record.delivery!.nextAttemptAt) - Date.parse(batch.createdAt)) / 1000;
+  };
+  const first = await attempt(1);
   expect(first).toMatchObject({ status: "settled", delivery: { attempts: 1, reason: "model_unavailable" } });
-  expect(Date.parse(first.delivery!.nextAttemptAt) - started).toBeGreaterThan(3000); expect(Date.parse(first.delivery!.nextAttemptAt) - started).toBeLessThan(5500);
+  const waits = [delay(1, first)];
   // Not before its time.
   await f.settle(1200);
   expect(results(f)).toHaveLength(1);
-  const waits: number[] = [];
   for (let n = 2; n <= 7; n++) {
     due(f, id);
     const record = await attempt(n);
     expect(record.status).toBe("settled");
-    waits.push(Math.round((Date.parse(record.delivery!.nextAttemptAt) - Date.now()) / 1000));
+    waits.push(delay(n, record));
   }
-  // 15 s, 1 min, 5 min, 15 min, 1 h, 3 h after the attempts 2 to 7.
-  expect(waits.map((seconds, index) => Math.abs(seconds - [15, 60, 300, 900, 3600, 10_800][index]!) <= 3)).toEqual([true, true, true, true, true, true]);
+  // 5 s, 15 s, 1 min, 5 min, 15 min, 1 h, 3 h after the attempts 1 to 7.
+  expect(waits.map((seconds, index) => { const expected = [5, 15, 60, 300, 900, 3600, 10_800][index]!; return seconds >= expected && seconds < expected + 30; })).toEqual(Array(7).fill(true));
   due(f, id);
   expect(await attempt(8)).toMatchObject({ status: "dropped", delivery: { attempts: 8, reason: "delivery_attempts_exhausted" }, result: { status: "completed", answer: "The answer is 42." } });
   expect(results(f)).toHaveLength(8);
