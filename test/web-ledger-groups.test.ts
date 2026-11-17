@@ -130,16 +130,16 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   await see(currentChip.locator("strong")).toHaveText("周报小组");
 
   // Without a mention the message is only recorded; the hint says so.
-  const composer = page.getByPlaceholder("@员工 让他回答，@所有人 让大家都回答…");
+  const composer = page.getByPlaceholder("@伙伴 让他回答，@所有人 让大家都回答…");
   await composer.fill("大家好");
-  await see(page.getByText("未 @ 任何员工，消息只记录")).toBeVisible();
+  await see(page.getByText("未 @ 任何伙伴，消息只记录")).toBeVisible();
   await composer.fill("");
   await composer.pressSequentially("@");
   await see(page.getByRole("option", { name: /所有人/ })).toBeVisible();
   await see(page.getByRole("option", { name: /writer/ })).toBeVisible();
   await page.getByRole("option", { name: /helper/ }).click();
   await see(composer).toHaveValue("@helper ");
-  await see(page.getByText("未 @ 任何员工，消息只记录")).toHaveCount(0);
+  await see(page.getByText("未 @ 任何伙伴，消息只记录")).toHaveCount(0);
   await composer.pressSequentially("看一下");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.getByText("已通知：helper")).toBeVisible();
@@ -158,7 +158,7 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   const panel = page.getByRole("dialog", { name: "群成员" });
   await panel.getByRole("button", { name: "移出 writer" }).click();
   await see(panel.getByRole("button", { name: "移出 writer" })).toHaveCount(0);
-  await panel.getByLabel("添加员工").selectOption(writer.id);
+  await panel.getByLabel("添加伙伴").selectOption(writer.id);
   await panel.getByRole("button", { name: "添加", exact: true }).click();
   await see(panel.getByRole("button", { name: "移出 writer" })).toBeVisible();
   await panel.getByLabel("群聊名称").fill("周报");

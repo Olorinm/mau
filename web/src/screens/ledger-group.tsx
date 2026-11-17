@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateGroupForm } from "@olorinm/agent-ui/pages";
-import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar } from "@olorinm/agent-ui/app";
 import type { AgentSummary } from "../api/client";
 import { ApiError } from "../api/http";
 import { newIdempotencyKey as newGroupKey, type Actor, type ChatEvent, type ChatSummary, type LedgerChatView, type SendResponse } from "../api/ledger";
@@ -97,7 +97,7 @@ export function LedgerGroupMembersDialog({ token, chat, members, agents, open, o
         <ul className="mau-group-member-list" aria-label={zh ? "成员" : "Members"}>
           {members.map((member) => (
             <li key={member.type + ":" + member.id}>
-              <EmployeeAvatar seed={member.id} fallbackName={member.name} size={28} />
+              <PartnerAvatar seed={member.id} fallbackName={member.name} size={28} />
               <span>{member.name}</span>
               {member.type === "agent" ? (
                 <Button disabled={busy} aria-label={(zh ? "移出 " : "Remove ") + member.name} onClick={() => remove.mutate(member.id)}>
@@ -109,9 +109,9 @@ export function LedgerGroupMembersDialog({ token, chat, members, agents, open, o
         </ul>
         <div className="mau-group-add">
           <label className="mau-field">
-            <span>{zh ? "添加员工" : "Add an Agent"}</span>
+            <span>{zh ? "添加伙伴" : "Add an Agent"}</span>
             <select value={adding} onChange={(event) => setAdding(event.target.value)} disabled={agentMembers.length >= groupAgentsMax}>
-              <option value="">{zh ? "选择员工" : "Select an Agent"}</option>
+              <option value="">{zh ? "选择伙伴" : "Select an Agent"}</option>
               {addable.map(({ agent }) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
           </label>

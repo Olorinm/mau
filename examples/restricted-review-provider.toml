@@ -1,5 +1,5 @@
 # Install in the dedicated review CODEX_HOME/config.toml, never over the main
-# employee's config. Set MAU_REVIEW_API_KEY in the trusted service environment.
+# partner's config. Set MAU_REVIEW_API_KEY in the trusted service environment.
 # This is an example, not a configured or deployed account.
 model = "gpt-5.4"
 model_provider = "mau_review"

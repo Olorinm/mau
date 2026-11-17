@@ -1,10 +1,10 @@
 import type { WorkSessions } from "@agent-router/server";
-import type { CompletedEmployeeTurn } from "./business-tools.js";
+import type { CompletedPartnerTurn } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { SessionHistory } from "./session-history.js";
 import { MemoryReviewCoordinator } from "./memory-review.js";
 
-type Record = CompletedEmployeeTurn & { status: "queued" | "completed" };
+type Record = CompletedPartnerTurn & { status: "queued" | "completed" };
 /** Durable bookkeeping queue: resolving public session identity never delays a foreground turn. */
 export class CompletedTurns {
   private timer?: ReturnType<typeof setInterval>;
@@ -12,7 +12,7 @@ export class CompletedTurns {
   private closed = false;
   constructor(private store: DurableStore, private history: SessionHistory, private reviews: MemoryReviewCoordinator,
     private sessions: (owner: string, agentId: string) => Promise<WorkSessions>, private memoryEnabled: boolean) {}
-  enqueue(turn: CompletedEmployeeTurn) {
+  enqueue(turn: CompletedPartnerTurn) {
     if (turn.admission.kind === "schedule") return;
     this.store.insert("employee_completed_turns", JSON.stringify([turn.admission.owner, turn.admission.agentId, turn.runId]), { ...turn, status: "queued" });
   }

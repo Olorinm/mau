@@ -21,7 +21,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  EmployeeAvatar,
+  PartnerAvatar,
   EmptyState,
   ObjectSettingsRow,
   ObjectSettingsSection,
@@ -104,7 +104,7 @@ function Fixture() {
     <main className="agent-app">
       <ObjectSettingsSection title="Agents">
         <ObjectSettingsRow
-          leading={<EmployeeAvatar seed="agent-1" fallbackName="Helper" />}
+          leading={<PartnerAvatar seed="agent-1" fallbackName="Helper" />}
           title="Helper"
           value={<ProductStatus tone="success" label="Ready" />}
           onClick={() => setOpen(true)}

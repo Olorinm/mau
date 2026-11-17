@@ -15,7 +15,7 @@ const help = `Mau — your agent product
   mau options
   mau setup NAME --environment PROFILE
   mau agents | use NAME | status | check
-  mau delete NAME --yes   (permanently deletes the employee, its environment and memory)
+  mau delete NAME --yes   (permanently deletes the partner, its environment and memory)
   mau environment-create PROFILE
   mau environment-replace PROFILE | environment-rollback
   mau pause | resume | destroy | reconcile

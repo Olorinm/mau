@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ServiceHttp, type WorkSessions } from "@agent-router/server";
-import { NativeEmployeeTools } from "../src/native-work.js";
-import { EmployeeContext } from "../src/employee-context.js";
+import { NativePartnerTools } from "../src/native-work.js";
+import { PartnerContext } from "../src/partner-context.js";
 import { ConnectedApps } from "../src/connected-apps.js";
 import { BusinessHost } from "../src/business-tools.js";
 import { DurableStore } from "../src/store.js";
@@ -13,11 +13,11 @@ import { mauFixture } from "./fixtures/mau.js";
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.unstubAllGlobals(); });
 
-it("enabled employee tools cross the native Host call boundary with server-authored delegation and rule grants", async () => {
+it("enabled partner tools cross the native Host call boundary with server-authored delegation and rule grants", async () => {
   const store = new DurableStore(":memory:", "tools"); cleanup.push(() => store.close());
   const agentId = "11111111-1111-4111-8111-111111111111", owner = "alice";
   const directory = mkdtempSync(join(tmpdir(), "mau-native-memory-")); cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
-  const facts = new EmployeeContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
+  const facts = new PartnerContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
   facts.mutate(owner, agentId, { action: "add", target: "user", content: "Prefers concise summaries" });
   const submitted: unknown[] = [], resolved: unknown[] = []; let pending: any[] = [], request: any;
   const wait = vi.fn(async () => ({ data: [], cursor: "changed" }));
@@ -27,7 +27,7 @@ it("enabled employee tools cross the native Host call boundary with server-autho
     deliver: async () => { throw new Error("not_started"); }, cancel: async () => {} };
   const proactive = new ProactiveWork(store, port), apps = new ConnectedApps(undefined, ".");
   const search = vi.fn(() => ({ data: [], coverage: "fixture_history", format: "original_text" }));
-  const employee = new NativeEmployeeTools(owner, agentId, async () => work, facts, apps, proactive, true, {
+  const partner = new NativePartnerTools(owner, agentId, async () => work, facts, apps, proactive, true, {
     history: { search } as any, isMemoryReview: admission => admission.reference === "trusted-review",
     reminders: () => "Maintain useful durable notes when appropriate.",
   });
@@ -39,7 +39,7 @@ it("enabled employee tools cross the native Host call boundary with server-autho
       throw new Error("unexpected_request");
     }
   }("https://host.fixture", "secret");
-  const host = new BusinessHost(http, undefined, store, "tools:binding", undefined, { agentId, owner }, employee);
+  const host = new BusinessHost(http, undefined, store, "tools:binding", undefined, { agentId, owner }, partner);
   const admission = { kind: "owner" as const, agentId, owner, reference: "owner-request" };
   await host.start({ sessionId: "session", runtimeId: "personal", input: "Start a task", instructions: "Stable role", admission });
   expect(request.tools.map((t: any) => t.name)).toEqual(["work_sessions", "employee_memory", "session_search", "proactive_work"]);
@@ -62,40 +62,40 @@ it("enabled employee tools cross the native Host call boundary with server-autho
   await host.calls("run");
   expect(proactive.list(owner)).toMatchObject([{ agentId, status: "paused", schedule: { type: "daily", at: "09:00" } }]);
   expect(resolved).toHaveLength(2);
-  await employee.execute("work_sessions", { action: "wait", eventIds: ["event"], timeoutMs: 1000 }, admission, "wait-call", "trusted-run");
+  await partner.execute("work_sessions", { action: "wait", eventIds: ["event"], timeoutMs: 1000 }, admission, "wait-call", "trusted-run");
   expect(wait).toHaveBeenCalledWith(["event"], { timeoutMs: 1000, waitingRunId: "trusted-run", waitingReference: admission.reference, waitingCallId: "wait-call" });
-  await expect(employee.execute("work_sessions", { action: "wait", eventIds: ["event"], waitingRunId: "forged" }, admission, "wait-call", "trusted-run")).rejects.toThrow();
+  await expect(partner.execute("work_sessions", { action: "wait", eventIds: ["event"], waitingRunId: "forged" }, admission, "wait-call", "trusted-run")).rejects.toThrow();
   wait.mockRejectedValueOnce(new Error("work_dependency_capacity_exhausted"));
   pending = [{ ...pending[0], id: "wait-capacity", name: "work_sessions", input: { action: "wait", eventIds: ["event"] } }];
   await host.calls("run");
   expect(JSON.stringify(resolved.at(-1))).toContain("work_dependency_capacity_exhausted");
   expect(JSON.stringify(resolved.at(-1))).toContain("Finish this turn");
   const narrow = { ...admission, kind: "delegation" as const, toolGrants: {} };
-  await expect(employee.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-write", "run")).resolves.toMatchObject({ done: true });
-  await expect(employee.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-duplicate", "run")).resolves.toMatchObject({ isError: true, error: "memory_duplicate", files: expect.any(Array) });
-  await expect(employee.execute("employee_memory", { action: "add", content: "x".repeat(2201) }, admission, "memory-full", "run")).resolves.toMatchObject({ isError: true, error: "memory_capacity_exceeded", usage: { limit: 2200 } });
+  await expect(partner.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-write", "run")).resolves.toMatchObject({ done: true });
+  await expect(partner.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-duplicate", "run")).resolves.toMatchObject({ isError: true, error: "memory_duplicate", files: expect.any(Array) });
+  await expect(partner.execute("employee_memory", { action: "add", content: "x".repeat(2201) }, admission, "memory-full", "run")).resolves.toMatchObject({ isError: true, error: "memory_capacity_exceeded", usage: { limit: 2200 } });
   const review = { ...narrow, reference: "trusted-review" };
-  await expect(employee.execute("employee_memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review", "run")).resolves.toMatchObject({ staged: true });
-  await expect(employee.execute("session_search", { query: "fact" }, review, "review-history", "run")).rejects.toThrow("memory_review_tool_not_authorized");
-  await expect(employee.execute("work_sessions", { action: "create", input: "Do more work" }, review, "review-work", "run")).rejects.toThrow("memory_review_tool_not_authorized");
-  await employee.execute("session_search", { query: "exact phrase" }, admission, "history-search", "run");
+  await expect(partner.execute("employee_memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review", "run")).resolves.toMatchObject({ staged: true });
+  await expect(partner.execute("session_search", { query: "fact" }, review, "review-history", "run")).rejects.toThrow("memory_review_tool_not_authorized");
+  await expect(partner.execute("work_sessions", { action: "create", input: "Do more work" }, review, "review-work", "run")).rejects.toThrow("memory_review_tool_not_authorized");
+  await partner.execute("session_search", { query: "exact phrase" }, admission, "history-search", "run");
   expect(search).toHaveBeenCalledWith(owner, agentId, { query: "exact phrase", limit: 10, offset: 0 });
   const scheduled = { ...admission, kind: "schedule" as const, toolGrants: {} };
-  expect(employee.context(scheduled, "Scheduled work", "scheduled-session")).toBeUndefined();
-  await expect(employee.execute("employee_memory", { action: "read" }, scheduled, "schedule-read", "run")).rejects.toThrow("employee_tool_not_authorized");
+  expect(partner.context(scheduled, "Scheduled work", "scheduled-session")).toBeUndefined();
+  await expect(partner.execute("employee_memory", { action: "read" }, scheduled, "schedule-read", "run")).rejects.toThrow("employee_tool_not_authorized");
   const originalInstructions = request.instructions;
   await host.start({ sessionId: "session", runtimeId: "personal", input: "Next turn", instructions: "Stable role", admission });
   expect(request.instructions).toBe(originalInstructions); expect(request.instructions).not.toContain("A durable fact");
   for (const input of [{ action: "create", rule: { name: "Unauthorized background", goal: "Read more", targetSessionId: "owner-main", schedule: { type: "daily", at: "09:00" }, timeZone: "Asia/Shanghai", connections: ["gmail"], status: "active" } },
     { action: "resume", ruleId: proactive.list(owner)[0]!.id }, { action: "pause", ruleId: proactive.list(owner)[0]!.id }])
-    await expect(employee.execute("proactive_work", input, narrow, "forbidden-rule", "run")).rejects.toThrow("proactive_owner_admission_required");
+    await expect(partner.execute("proactive_work", input, narrow, "forbidden-rule", "run")).rejects.toThrow("proactive_owner_admission_required");
   expect(proactive.list(owner)).toHaveLength(1);
-  await expect(employee.execute("proactive_work", { action: "list" }, narrow, "read-rules", "run")).resolves.toMatchObject({ rules: [{ status: "paused" }] });
-  await expect(employee.execute("work_sessions", { action: "steer", sessionId: "owner-main", input: "use broader tools" }, narrow, "forbidden-steer", "run")).rejects.toThrow("steer_owner_admission_required");
-  const disabled = new NativeEmployeeTools(owner, agentId, async () => work, facts, apps, proactive, false);
+  await expect(partner.execute("proactive_work", { action: "list" }, narrow, "read-rules", "run")).resolves.toMatchObject({ rules: [{ status: "paused" }] });
+  await expect(partner.execute("work_sessions", { action: "steer", sessionId: "owner-main", input: "use broader tools" }, narrow, "forbidden-steer", "run")).rejects.toThrow("steer_owner_admission_required");
+  const disabled = new NativePartnerTools(owner, agentId, async () => work, facts, apps, proactive, false);
   expect(disabled.definitions).toEqual([]); expect(disabled.context(admission, "Input", "disabled-session")).toBeUndefined();
   await expect(disabled.execute("employee_memory", { action: "read" }, admission, "disabled", "run")).rejects.toThrow("employee_tool_not_authorized");
-  await expect(employee.execute("work_sessions", { action: "create", input: "x", owner: "bob" }, admission, "forged", "run")).rejects.toThrow();
+  await expect(partner.execute("work_sessions", { action: "create", input: "x", owner: "bob" }, admission, "forged", "run")).rejects.toThrow();
 });
 
 it("product native and memory APIs enforce owner identity before touching the Host", async () => {

@@ -325,7 +325,7 @@ body {
   padding-top: 6px;
 }
 
-/* Chat: one column. The people panel (the full list of conversations, or one employee's profile) floats inside the
+/* Chat: one column. The people panel (the full list of conversations, or one partner's profile) floats inside the
    conversation's card, on its left, without moving it. Content opened from the conversation or the profile (a file,
    a document, the handed-over browser) is a card beside the conversation, at the same level as it. */
 .mau-stage {
@@ -502,12 +502,12 @@ body {
   transition: width 0.18s ease;
   animation: mau-roster-in 0.2s ease-out;
 }
-/* An employee's profile needs more room than the list. */
+/* A partner's profile needs more room than the list. */
 .mau-roster[data-view="profile"] {
   width: 400px;
   padding: 8px 0 0;
 }
-/* The profile: the employee, a row of section icons, and the open section in the settings pages' own components. */
+/* The profile: the partner, a row of section icons, and the open section in the settings pages' own components. */
 .mau-profile {
   display: grid;
   padding: 0 20px 24px;
@@ -543,7 +543,7 @@ body {
 .mau-roster-back:hover {
   color: var(--c-text);
 }
-/* A row and, for an employee, the button that opens the profile; it takes the place of the time on hover. */
+/* A row and, for a partner, the button that opens the profile; it takes the place of the time on hover. */
 .mau-roster-item {
   position: relative;
 }

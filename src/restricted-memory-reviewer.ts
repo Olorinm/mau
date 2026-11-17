@@ -71,7 +71,7 @@ export interface ReviewToolBinding {
   recursion: "disabled";
 }
 export interface ReviewRuntimeBinding {
-  /** The trusted original employee whose memory is being maintained. The worker
+  /** The trusted original partner whose memory is being maintained. The worker
    * may have another agent ID, but its tools must remain mapped to this scope. */
   employee: MemoryReviewScope;
   sessions: Pick<WorkSessions, "owner" | "agentId" | "runtimeId" | "submit" | "lookup" | "cancel" | "discover" | "host">;
@@ -90,7 +90,7 @@ export interface CodexRestrictedReviewerDependencies {
 
 /** A functioning Router adapter, with no connector, fork or deliver call. It
  * still requires the embedding server to provision a dedicated worker/runtime
- * and its original-employee managed-tool binding; it never fabricates that proof. */
+ * and its original-partner managed-tool binding; it never fabricates that proof. */
 export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
   private readonly maxToolCalls: number;
   private readonly timeoutSeconds: number;

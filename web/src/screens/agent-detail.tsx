@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DetailHero,
-  EmployeeAvatar,
+  PartnerAvatar,
   ListRow,
   ProductIcon,
   SegmentedControl,
@@ -29,7 +29,7 @@ import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
 import { openSettings } from "../settings/route";
-import { employeeDocuments, memoryTarget, type EmployeeDocument } from "./side-views";
+import { partnerDocuments, memoryTarget, type PartnerDocument } from "./side-views";
 
 const actionLabel = {
   pause: "env.pause",
@@ -58,13 +58,13 @@ const DEFAULT_CHOICE = "\u0000default";
 const effortNames: Record<string, string> = { none: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" };
 const effortLabel = (value: string, zh: boolean) => (zh ? effortNames[value] : undefined) ?? value;
 
-/** One employee, in the people panel: what state it is in, how it is reached, what it can use, and its settings. */
+/** One partner, in the people panel: what state it is in, how it is reached, what it can use, and its settings. */
 export function AgentDetail(props: {
   session: Session;
   summary: AgentSummary;
   /** The document open beside the conversation, and opening another (or closing the open one). */
-  document?: EmployeeDocument | undefined;
-  onDocument?(name: EmployeeDocument | undefined): void;
+  document?: PartnerDocument | undefined;
+  onDocument?(name: PartnerDocument | undefined): void;
 }) {
   const { t, language } = useI18n();
   const { toast } = useToast();
@@ -79,7 +79,7 @@ export function AgentDetail(props: {
   );
   const [tab, setTab] = useState<Tab>("status");
   const zh = language === "zh-CN";
-  // The connector accounts this employee may use; the same query as the settings page, read when the tab opens.
+  // The connector accounts this partner may use; the same query as the settings page, read when the tab opens.
   const accounts = useQuery({
     queryKey: ["connector-accounts", props.session.owner],
     queryFn: mau.connectorAccounts,
@@ -144,7 +144,7 @@ export function AgentDetail(props: {
     mutationFn: () => router.check(agent.id),
     onError: failed,
   });
-  // Model and effort apply to the employee's following turns. Without a list from the runtime owner they are read-only.
+  // Model and effort apply to the partner's following turns. Without a list from the runtime owner they are read-only.
   const modelRows = () => {
     const view = models.data, modelTitle = zh ? "模型" : "Model", effortTitle = zh ? "思考强度" : "Reasoning effort";
     if (!view?.models.length) return <ListRow title={modelTitle} trailing={<span className="mau-profile-value">{view?.defaultModel ?? "—"}</span>} />;
@@ -205,8 +205,8 @@ export function AgentDetail(props: {
   return (
     <>
       <div className="mau-profile">
-        <DetailHero icon={<EmployeeAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} />
-        <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "员工资料分类" : "Profile sections"} value={tab} onChange={setTab}
+        <DetailHero icon={<PartnerAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} />
+        <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "伙伴资料分类" : "Profile sections"} value={tab} onChange={setTab}
           options={[
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
             { value: "channels", label: t("channels.title"), icon: icon("chat") },
@@ -268,7 +268,7 @@ export function AgentDetail(props: {
           </SettingsSection>
         ) : tab === "documents" ? (
           <SettingsSection title={zh ? "文档" : "Documents"}>
-            {employeeDocuments.map((name) => {
+            {partnerDocuments.map((name) => {
               const file = memory.data?.files.find((item) => item.target === memoryTarget(name));
               return <ListRow key={name} icon={<span className="mau-settings-glyph">{icon("copy")}</span>} title={name} ariaLabel={name}
                 onClick={() => props.onDocument?.(props.document === name ? undefined : name)}

@@ -202,12 +202,12 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
         <span className="room-chat-avatar-gap" aria-hidden="true" />
       ) : !isUser ? (
         message.onAuthorClick ? (
-          <Tooltip content={t("employee.profileSettingsTitle")} side="right">
+          <Tooltip content={t("partner.profileSettingsTitle")} side="right">
             <button
               className="room-chat-avatar-button"
               type="button"
               onClick={() => message.onAuthorClick?.()}
-              aria-label={t("employee.openSettingsFor", {
+              aria-label={t("partner.openSettingsFor", {
                 name: senderDisplayName,
               })}
             >

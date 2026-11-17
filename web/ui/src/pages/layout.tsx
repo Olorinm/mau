@@ -384,7 +384,7 @@ export function ListDetailLayout({
         ) : null}
         {contacts ? (
           <div className="contacts-detail-layout">
-            <section className="contacts-detail-panel contacts-employee-detail">
+            <section className="contacts-detail-panel contacts-partner-detail">
               {detail ?? empty}
             </section>
           </div>

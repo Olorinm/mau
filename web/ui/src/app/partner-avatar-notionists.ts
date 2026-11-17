@@ -1,10 +1,10 @@
 import { Avatar, Style } from "@dicebear/core";
 import notionistsDefinition from "@dicebear/styles/notionists.json" with { type: "json" };
 
-const employeeAvatarStyle = new Style(notionistsDefinition);
+const partnerAvatarStyle = new Style(notionistsDefinition);
 
-export function generateEmployeeAvatarDataUri(seed: string): string {
-  return new Avatar(employeeAvatarStyle, {
+export function generatePartnerAvatarDataUri(seed: string): string {
+  return new Avatar(partnerAvatarStyle, {
     seed,
     size: 128,
     backgroundColor: ["#dbeafe", "#dcfce7", "#ede9fe", "#fce7f3", "#fef3c7"],

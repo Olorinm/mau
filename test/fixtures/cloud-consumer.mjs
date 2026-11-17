@@ -179,7 +179,7 @@ try {
   // Scheduled notices recorded in the owner's conversation (Router's ledger).
   const recorded = async text => (await web(`/chats/${encodeURIComponent(chat.chatId)}/events?limit=200`)).events
     .filter(event => event.kind === "notice" && event.text === text).length;
-  await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-1", text: "employee-orchestrate" });
+  await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-1", text: "partner-orchestrate" });
   let incoming;
   for (let n = 0; n < 300 && !incoming; n++) {
     incoming = sessions.communication.status().inbox.find(value => value.connectionId === "web" && value.taskId);

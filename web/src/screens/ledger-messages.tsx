@@ -10,7 +10,7 @@ import {
   type ConversationComposer,
   type MessageView,
 } from "@olorinm/agent-ui/pages";
-import { Button, Dialog, DialogContent, DialogTitle, EmployeeAvatar, EmptyState, PixelAvatarGroup, ProductIcon, TextButton } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, TextButton } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
@@ -29,7 +29,7 @@ import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
 import { liveViewUrl } from "../api/live-view";
-import { BrowserSideView, DocumentSideView, type EmployeeDocument, FileSideView } from "./side-views";
+import { BrowserSideView, DocumentSideView, type PartnerDocument, FileSideView } from "./side-views";
 import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
@@ -190,14 +190,14 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const names = new Map(agents.data?.map(({ agent }) => [agent.id, agent.name]) ?? []);
 
   const [selected, setSelected] = useState<string>();
-  // The people panel over the left of the chat (the full list of conversations, or one employee's profile opened
-  // from it) and the new-employee dialog.
+  // The people panel over the left of the chat (the full list of conversations, or one partner's profile opened
+  // from it) and the new-partner dialog.
   const [rosterOpen, setRosterOpen] = useState(false);
   const [profile, setProfile] = useState<string>();
   const [creating, setCreating] = useState(false);
-  // On the right of the conversation: a message's file, or the browser an employee handed over.
+  // On the right of the conversation: a message's file, or the browser a partner handed over.
   const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }
-    | { kind: "document"; agentId: string; name: EmployeeDocument }>();
+    | { kind: "document"; agentId: string; name: PartnerDocument }>();
   const dismissedHandoff = useRef<string | undefined>(undefined);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -222,11 +222,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     return () => client.closeChat(selected);
   }, [client, selected]);
   const list = client.chatList();
-  // On a wide screen the first conversation opens by itself: a chat with an employee before another channel's session.
+  // On a wide screen the first conversation opens by itself: a chat with a partner before another channel's session.
   useEffect(() => {
     if (selected || !agents.isSuccess || !matchMedia("(min-width: 901px)").matches) return;
-    const employees = new Set(agents.data.map(({ agent }) => agent.id));
-    const first = list.find((chat) => chat.kind === "dm" && employees.has(chat.agentIds[0] ?? ""))
+    const partners = new Set(agents.data.map(({ agent }) => agent.id));
+    const first = list.find((chat) => chat.kind === "dm" && partners.has(chat.agentIds[0] ?? ""))
       ?? list.find((chat) => chat.kind === "group") ?? list.find((chat) => !observedKey(chat)?.startsWith("work:"));
     if (first) setSelected(first.chatId);
   }, [list.length, selected, agents.isSuccess]);
@@ -308,7 +308,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     return `${agent ? `${agent} · ` : ""}${channel}${tail ? ` ${tail}` : ""}`;
   };
 
-  // Everyone the owner can talk to: each employee (with or without a chat yet), then groups and other channels' sessions.
+  // Everyone the owner can talk to: each partner (with or without a chat yet), then groups and other channels' sessions.
   type Entry = ChatEntry & { chat?: ChatSummary | undefined; agentId?: string | undefined };
   const clock = (at: string | undefined) => {
     if (!at) return undefined;
@@ -325,26 +325,26 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const figure = chat?.activeTurns ? "working" : unavailable.includes(state) ? "offline" : "idle";
     return { key: "agent:" + agent.id, title: agent.name, status: chat?.activeTurns ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
       preview: chat?.lastEvent?.preview, time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
-      avatar: (size) => <EmployeeAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
+      avatar: (size) => <PartnerAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
   });
   const chatEntry = (chat: ChatSummary): Entry => ({ key: "chat:" + chat.chatId, title: titleOf(chat), preview: chat.lastEvent?.preview,
     time: clock(chat.lastEvent?.at), unread: chat.unread, chat,
     ...(chat.kind === "group" ? { status: `${chat.agentIds.length + 1} ${zh ? "位成员" : "participants"}` }
       : { agentId: chat.agentIds[0], status: zh ? "只读" : "Read-only" }),
     avatar: (size) => chat.kind === "group" ? <PixelAvatarGroup seeds={chat.agentIds} size={size} />
-      : <EmployeeAvatar seed={chat.agentIds[0] ?? chat.chatId} fallbackName={chat.title} size={size} /> });
+      : <PartnerAvatar seed={chat.agentIds[0] ?? chat.chatId} fallbackName={chat.title} size={size} /> });
   const groupEntries = list.filter((chat) => chat.kind === "group").map(chatEntry);
-  // Sessions on other channels (a Feishu group, a chat with an employee that no longer exists) can be read here.
+  // Sessions on other channels (a Feishu group, a chat with a partner that no longer exists) can be read here.
   const otherEntries = list.filter((chat) => chat.kind !== "group" && !(chat.kind === "dm" && known.has(chat.agentIds[0] ?? ""))
     && !observedKey(chat)?.startsWith("work:")).map(chatEntry);
   const latest = (entry: Entry) => entry.chat?.lastEvent?.at ?? "";
   const recent = (entries: Entry[]) => [...entries].sort((a, b) => latest(b).localeCompare(latest(a)));
   const allEntries = [...agentEntries, ...groupEntries, ...otherEntries];
   const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
-  // The header row holds employees first, then groups. Another channel's session is listed in the full list only,
+  // The header row holds partners first, then groups. Another channel's session is listed in the full list only,
   // and joins the row while it is the one being read.
   const strip = useChatStrip([...recent(agentEntries), ...recent(groupEntries), ...otherEntries.filter((entry) => entry.key === currentKey)], currentKey);
-  // The profile card follows the conversation; it closes on one that has no single employee.
+  // The profile card follows the conversation; it closes on one that has no single partner.
   const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
   useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
   const profileSummary = profile ? agents.data?.find(({ agent }) => agent.id === profile) : undefined;
@@ -379,7 +379,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   };
 
   const insertPrompt = (value: string) => { if (selected) setDrafts((values) => ({ ...values, [selected]: value })); };
-  const actorAvatar = (bubble: LedgerBubble) => <EmployeeAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} animated={false} {...(bubble.sender.type === "person" ? { appearance: "illustrated" as const } : {})} />;
+  const actorAvatar = (bubble: LedgerBubble) => <PartnerAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} animated={false} {...(bubble.sender.type === "person" ? { appearance: "illustrated" as const } : {})} />;
   // The DM merges the owner's messages from every channel; non-web origins carry a small badge.
   const badge = (bubble: LedgerBubble) => bubble.channel && bubble.channel.kind !== "web" && bubble.channel.kind !== "room" ? (
     <span className="mau-channel-badge" data-channel={bubble.channel.kind}>
@@ -436,7 +436,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       const name = agentName(turn.agentId);
       return {
         id: "turn:" + turn.turnId, role: "assistant", title: name,
-        avatar: <EmployeeAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
+        avatar: <PartnerAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
           fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} />,
@@ -491,7 +491,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     for (const item of view.inflight) if (!fold.turns.has(item.turnId)) {
       const name = agentName(item.agentId);
       messages.push({ id: "inflight:" + item.turnId, role: "assistant", title: name, state: "streaming",
-        avatar: <EmployeeAvatar seed={item.agentId} fallbackName={name} size={28} animated={false} />, content: <ChatMarkdown markdown={item.text} /> });
+        avatar: <PartnerAvatar seed={item.agentId} fallbackName={name} size={28} animated={false} />, content: <ChatMarkdown markdown={item.text} /> });
     }
     for (const item of view.pending) messages.push({
       id: "pending:" + item.idempotencyKey, role: "user", title: session.owner, copyText: item.text,
@@ -567,7 +567,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   };
 
   const sections: ChatSection[] = [
-    { id: "agents", title: zh ? "员工" : "Employees", entries: agentEntries,
+    { id: "agents", title: zh ? "伙伴" : "Partners", entries: agentEntries,
       action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } } },
     { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
       action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } },
@@ -604,10 +604,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           {panelOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={closePanel}
             label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
             emptyLabel={zh ? "没有找到" : "Nothing found"}
-            onProfile={{ label: zh ? "员工资料" : "Employee profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
+            onProfile={{ label: zh ? "伙伴资料" : "Partner profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
               open: (entry) => { setRosterOpen(true); setProfile(entry.key.slice(6)); } }}
             onBack={() => { setProfile(undefined); setRosterOpen(true); }}
-            profile={profileSummary ? { label: zh ? "员工资料" : "Employee profile", backLabel: zh ? "全部对话" : "All conversations",
+            profile={profileSummary ? { label: zh ? "伙伴资料" : "Partner profile", backLabel: zh ? "全部对话" : "All conversations",
               content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
                 document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
                 onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
@@ -659,7 +659,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),
                 disabled: !canSend,
                 placeholder: !canSend ? (zh ? "此对话只读" : "This conversation is read-only")
-                  : current.kind === "group" ? (zh ? "@员工 让他回答，@所有人 让大家都回答…" : "@an employee to ask them, @all to ask everyone…")
+                  : current.kind === "group" ? (zh ? "@伙伴 让他回答，@所有人 让大家都回答…" : "@a partner to ask them, @all to ask everyone…")
                   : (zh ? "发送消息…" : "Send a message…"),
                 ...(attachable ? {
                   onFiles: (picked: File[]) => { setUploadError(undefined); uploads.add(current.chatId, picked); },
@@ -667,9 +667,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 } : {}),
                 ...(current.kind === "group" && canSend ? { mentions: [
                   ...room.candidates.map(({ id, name }) => ({ id, label: name,
-                    avatar: <EmployeeAvatar seed={id} fallbackName={name} size={20} animated={false} />,
+                    avatar: <PartnerAvatar seed={id} fallbackName={name} size={20} animated={false} />,
                     onSelect: () => insertMention(current.chatId, name) })),
-                  { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的员工都回答" : "Every employee in the group answers",
+                  { id: "all", kind: "all" as const, label: zh ? "所有人" : "all", detail: zh ? "群里的伙伴都回答" : "Every partner in the group answers",
                     onSelect: () => insertMention(current.chatId, zh ? "所有人" : "all") },
                 ] } : {}),
                 ...(commands ? { commands } : {}),
@@ -682,7 +682,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
               {header}
               {failure}
               {start.isPending || chats.isPending ? <LoadingSurface label={t("common.loading")} />
-                : <EmptyState illustration="messages" title={zh ? "选一个员工开始对话" : "Pick an employee to start"} />}
+                : <EmptyState illustration="messages" title={zh ? "选一个伙伴开始对话" : "Pick a partner to start"} />}
             </>
           )} />
         </div>

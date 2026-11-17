@@ -44,7 +44,7 @@ export function ChannelsPage({ session }: { session: Session }) {
   return <SettingsPage title={zh ? "消息渠道" : "Messaging"}>
     {agents.isPending ? <p className="mau-settings-note" role="status">{zh ? "正在读取…" : "Loading…"}</p> : null}
     {agents.isSuccess && !active.length ? <SettingsSection>
-      <ListRow muted title={zh ? "先在通讯录创建一个员工，再连接消息渠道。" : "Create an Agent in Contacts to connect a channel."} />
+      <ListRow muted title={zh ? "先在通讯录创建一个伙伴，再连接消息渠道。" : "Create an Agent in Contacts to connect a channel."} />
     </SettingsSection> : null}
     {active.map((agent) => <SettingsSection key={agent.agent.id} title={agent.agent.name}>
       {channelKinds.map((kind) => {
@@ -62,7 +62,7 @@ export function ChannelsPage({ session }: { session: Session }) {
           </>} />;
       })}
     </SettingsSection>)}
-    <p className="mau-settings-note">{zh ? "飞书聊天使用机器人身份；个人权限在「连接器 → 飞书」中授权，以你的身份读取文档、日历和邮件，只在你与员工的私聊中可用。"
+    <p className="mau-settings-note">{zh ? "飞书聊天使用机器人身份；个人权限在「连接器 → 飞书」中授权，以你的身份读取文档、日历和邮件，只在你与伙伴的私聊中可用。"
       : "Feishu chat uses the bot. Personal access is authorized in Connectors → Feishu; it acts as you and works only in your private chats."}</p>
   </SettingsPage>;
 }

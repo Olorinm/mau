@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ConsentDialog,
   DetailHero,
-  EmployeeAvatar,
+  PartnerAvatar,
   InitialAvatar,
   ListRow,
   Modal,
@@ -113,7 +113,7 @@ export function ConnectorsPage({ session, item }: { session: Session; item?: str
     </SettingsSection> : null}
     {expiredAccounts.length ? <SettingsSection>
       <ListRow tone="danger" title={zh ? `${expiredAccounts.map((account) => account.label).join("、")}的授权已过期` : `${expiredAccounts.map((account) => account.label).join(", ")}: authorization expired`}
-        subtitle={zh ? "员工暂时无法使用，需要重新授权。" : "Agents cannot use it until you re-authorize."} />
+        subtitle={zh ? "伙伴暂时无法使用，需要重新授权。" : "Agents cannot use it until you re-authorize."} />
     </SettingsSection> : null}
     {accounts.isPending ? <p className="mau-settings-note" role="status">{zh ? "正在读取连接状态…" : "Loading connections…"}</p> : null}
     {accounts.data && !accounts.data.configured ? <SettingsSection>
@@ -163,7 +163,7 @@ function ConnectConsent({ session, account, product, agentId, onClose, onStarted
   const ownerPrivate = account.usage === "owner_private" || account.kind === "feishu";
   return <ConsentDialog open onOpenChange={(open) => { if (!open) onClose(); }}
     icon={<AppMark id={product.id} size="card" />} title={name}
-    description={zh ? `员工可以通过 Mau 使用你的${/^[A-Za-z]/.test(name) ? " " : ""}${name}` : `Your Agents can use ${name} through Mau`}
+    description={zh ? `伙伴可以通过 Mau 使用你的${/^[A-Za-z]/.test(name) ? " " : ""}${name}` : `Your Agents can use ${name} through Mau`}
     closeLabel={zh ? "关闭" : "Close"} confirmLabel={connect.isPending ? zh ? "正在准备…" : "Preparing…" : zh ? "继续" : "Continue"} cancelLabel={zh ? "取消" : "Cancel"}
     pending={connect.isPending}
     error={connect.error ? errorMessage(t, connect.error instanceof ApiError ? connect.error.code : "request_failed") : undefined}
@@ -171,10 +171,10 @@ function ConnectConsent({ session, account, product, agentId, onClose, onStarted
     items={[
       { icon: <ProductIcon name="eye" size={18} />, title: zh ? "它可以读取什么" : "What it can read", body: zh ? product.reads : product.readsEn },
       { icon: <ProductIcon name="locked" size={18} />, title: zh ? "凭据保存在 Mau" : "Credentials stay in Mau",
-        body: zh ? "授权凭据保存在 Mau，不会进入员工的沙箱。" : "Authorization credentials stay in Mau and never enter the Agent's sandbox." },
+        body: zh ? "授权凭据保存在 Mau，不会进入伙伴的沙箱。" : "Authorization credentials stay in Mau and never enter the Agent's sandbox." },
       { icon: <ProductIcon name="shield" size={18} />, title: zh ? "由你决定能做什么" : "You decide what it can do",
         body: ownerPrivate
-          ? zh ? "写入操作按你的设置请求批准；只在你和员工的私聊中可用，群聊中不可用。你可以随时断开连接。" : "Writes ask for your approval as you set them. It works only in your private chats with the Agent, never in groups. You can disconnect at any time."
+          ? zh ? "写入操作按你的设置请求批准；只在你和伙伴的私聊中可用，群聊中不可用。你可以随时断开连接。" : "Writes ask for your approval as you set them. It works only in your private chats with the Agent, never in groups. You can disconnect at any time."
           : zh ? "写入操作按你的设置请求批准。你可以随时断开连接。" : "Writes ask for your approval as you set them. You can disconnect at any time." },
     ]}
     footnote={<>{zh ? "请参阅我们的" : "See our "}<a href={privacyPolicyUrl} target="_blank" rel="noopener noreferrer">{zh ? "隐私政策" : "privacy policy"}</a>{zh ? "，了解我们如何使用这些信息。" : " to learn how this information is used."}</>}
@@ -262,22 +262,22 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
       </div>
     </SettingsSection> : <SettingsSection>
       <ListRow tone={account.state === "expired" ? "danger" : "action"} title={connectLabel} ariaLabel={connectLabel}
-        subtitle={account.state === "expired" ? reasonText(zh, account.reason) + (zh ? "员工暂时无法使用，请重新授权。" : " Agents cannot use it until you re-authorize.") : undefined}
+        subtitle={account.state === "expired" ? reasonText(zh, account.reason) + (zh ? "伙伴暂时无法使用，请重新授权。" : " Agents cannot use it until you re-authorize.") : undefined}
         onClick={uncertain ? undefined : () => setConsent(true)} />
     </SettingsSection>}
     {connected && identity ? <SettingsSection>
       <ListRow icon={<InitialAvatar name={identity} />} title={identity} />
     </SettingsSection> : null}
-    <SettingsSection title={zh ? "使用此连接的员工" : "Agents using this connection"}>
+    <SettingsSection title={zh ? "使用此连接的伙伴" : "Agents using this connection"}>
       {assigned.length ? assigned.map((agent) => <ListRow key={agent.agent.id}
-        icon={<EmployeeAvatar seed={agent.agent.id} fallbackName={agent.agent.name} size={32} />} title={agent.agent.name}
+        icon={<PartnerAvatar seed={agent.agent.id} fallbackName={agent.agent.name} size={32} />} title={agent.agent.name}
         trailing={account.usage === "owner_private" || feishu ? <span>{zh ? "仅私聊" : "Private chat only"}</span> : null} />)
-        : <ListRow muted title={agents.isPending ? zh ? "正在读取…" : "Loading…" : zh ? "暂未分配员工" : "No Agent assigned"} />}
+        : <ListRow muted title={agents.isPending ? zh ? "正在读取…" : "Loading…" : zh ? "暂未分配伙伴" : "No Agent assigned"} />}
     </SettingsSection>
     <PolicySections session={session} account={account} product={product} />
     <Modal open={confirmDisconnect} onOpenChange={setConfirmDisconnect} closeLabel={zh ? "关闭" : "Close"}
       title={zh ? `断开${name}？` : `Disconnect ${name}?`}
-      description={zh ? "断开后，Mau 将清除此连接保存的授权，员工无法继续访问。服务方的授权可能还需要在其账号设置中撤销。" : "Disconnecting removes the saved authorization and stops Agent access. You may also need to revoke it in the provider's account settings."}
+      description={zh ? "断开后，Mau 将清除此连接保存的授权，伙伴无法继续访问。服务方的授权可能还需要在其账号设置中撤销。" : "Disconnecting removes the saved authorization and stops Agent access. You may also need to revoke it in the provider's account settings."}
       actions={<ModalActions danger confirmLabel={zh ? "断开" : "Disconnect"} cancelLabel={zh ? "取消" : "Cancel"} pending={disconnect.isPending}
         onConfirm={() => disconnect.mutate()} onCancel={() => setConfirmDisconnect(false)} />} />
     {consent ? <ConnectConsent session={session} account={account} product={product} {...(feishuAgent ? { agentId: feishuAgent.agent.id } : {})}
@@ -348,7 +348,7 @@ function PolicySections({ session, account, product }: { session: Session; accou
     </div> : null}
     <Modal open={!!allowing} onOpenChange={(open) => { if (!open) setAllowing(undefined); }} closeLabel={zh ? "关闭" : "Close"}
       title={allowing ? zh ? `允许「${label(allowing)}」？` : `Allow “${label(allowing)}”?` : ""}
-      description={zh ? "以后员工执行此操作不会再询问你。" : "Your Agents will no longer ask before doing this."}
+      description={zh ? "以后伙伴执行此操作不会再询问你。" : "Your Agents will no longer ask before doing this."}
       actions={<ModalActions confirmLabel={zh ? "允许" : "Allow"} cancelLabel={zh ? "取消" : "Cancel"}
         onConfirm={() => { if (allowing) update.mutate({ id: allowing.id, setting: "allow" }); setAllowing(undefined); }}
         onCancel={() => setAllowing(undefined)} />} />

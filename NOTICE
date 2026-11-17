@@ -12,5 +12,5 @@ Agent Router, Agent Host, Agent Connectors and Agent Environment are developed
 in Olorinm/agent-kit and consumed through their public packages and protocols. Dependencies and separately
 distributed components retain their respective licenses and notices.
 
-Bounded employee memory and review behavior are adapted from Hermes Agent.
+Bounded partner memory and review behavior are adapted from Hermes Agent.
 Source references and the upstream MIT notice are in THIRD_PARTY_NOTICES.

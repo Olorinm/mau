@@ -29,7 +29,7 @@ createInterface({ input: process.stdin }).on("line", async line => {
   const message = JSON.parse(line), params = message.params ?? {};
   if (pending.has(message.id)) { pending.get(message.id)(message.result); pending.delete(message.id); return; }
   const special = ["skills/list", "skills/config/write", "memory/status", "thread/memoryMode/set"].includes(message.method);
-  const orchestration = message.method === "turn/start" && params.input?.some(item => item.text?.includes("employee-orchestrate"));
+  const orchestration = message.method === "turn/start" && params.input?.some(item => item.text?.includes("partner-orchestrate"));
   const delivery = message.method === "turn/start" && params.toolOutput?.namespace === "mau";
   if (!special && !orchestration && !delivery) { child.stdin.write(line + "\n"); return; }
   if (process.env.CODEX_TEST_LOG) appendFileSync(process.env.CODEX_TEST_LOG, line + "\n");

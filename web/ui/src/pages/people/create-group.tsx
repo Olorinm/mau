@@ -54,7 +54,7 @@ export function CreateGroupForm(props: CreateGroupDialogProps) {
       </section>
       <section className="rooms-create-group-members">
         <div className="rooms-create-group-title">
-          <strong>{t("rooms.chooseEmployees")}</strong>
+          <strong>{t("rooms.choosePartners")}</strong>
           <span>
             {props.selectedMemberIds.length} / {props.contactMembers.length}
           </span>
@@ -78,7 +78,7 @@ export function CreateGroupForm(props: CreateGroupDialogProps) {
               </label>
             ))
           ) : (
-            <div className="rooms-empty-row">{t("rooms.noEmployeesRecruitFirst")}</div>
+            <div className="rooms-empty-row">{t("rooms.noPartnersRecruitFirst")}</div>
           )}
         </div>
       </section>

@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
 import { ServiceHttp } from "@agent-router/server";
-import { BusinessHost, type EmployeeTools } from "../src/business-tools.js";
+import { BusinessHost, type PartnerTools } from "../src/business-tools.js";
 import { DurableStore } from "../src/store.js";
 
 it("freezes memory in native instructions across writes, restart, fork and scheduled continuation", async () => {
   const store = new DurableStore(":memory:", "memory-test");
   let current = "MEMORY: first", run = 0;
   const requests: any[] = [], completions: unknown[] = [];
-  const employee: EmployeeTools = { definitions: [], context: admission => admission.kind === "schedule" ? undefined : { text: current }, execute: async () => ({}) };
+  const partner: PartnerTools = { definitions: [], context: admission => admission.kind === "schedule" ? undefined : { text: current }, execute: async () => ({}) };
   const http = new class extends ServiceHttp {
     override async request(path: string, options: any = {}) {
       if (path === "/v1/native-sessions") return {};
@@ -15,8 +15,8 @@ it("freezes memory in native instructions across writes, restart, fork and sched
       throw new Error("unexpected_request");
     }
   }("https://host.test", "token");
-  const owner = { kind: "owner" as const, owner: "alice", agentId: "employee", reference: "input" };
-  const make = () => new BusinessHost(http, undefined, store, "employee:binding", undefined, { owner: "alice", agentId: "employee" }, employee, turn => completions.push(turn));
+  const owner = { kind: "owner" as const, owner: "alice", agentId: "partner", reference: "input" };
+  const make = () => new BusinessHost(http, undefined, store, "partner:binding", undefined, { owner: "alice", agentId: "partner" }, partner, turn => completions.push(turn));
   const input = { sessionId: "first", runtimeId: "native", instructions: "Stable role", input: "hi", admission: owner };
   try {
     let host = make(); await host.start(input);

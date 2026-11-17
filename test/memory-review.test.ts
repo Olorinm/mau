@@ -9,7 +9,7 @@ import { MEMORY_REVIEW_DEFAULTS, MemoryReviewCoordinator, type MemoryReviewCompl
 
 const closers: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); });
-const scope = { owner: "alice", agentId: "employee" };
+const scope = { owner: "alice", agentId: "partner" };
 function gate<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 function proof(): ReviewCapabilities {
   return { ...scope, status: "available", runtimeId: "review-runtime", policyId: "server-enforced-v1",
@@ -124,7 +124,7 @@ it("deduplicates repeated completion observations and survives restart without r
   expect(() => reopened.completed({ ...scope, sessionId: "host-main", runId: "run-1", origin: "owner", status: "completed", toolIterations: 2 })).toThrow("completion_conflict");
 });
 
-it("holds uncertain submissions when lookup finds nothing, and prevents overlap across one employee's sessions", async () => {
+it("holds uncertain submissions when lookup finds nothing, and prevents overlap across one partner's sessions", async () => {
   const f = fixture(); vi.mocked(f.reviewer.submit).mockRejectedValue(new Error("connection_lost"));
   f.complete(); await f.service.tick();
   f.complete("run-2", { sessionId: "other-host-session" });

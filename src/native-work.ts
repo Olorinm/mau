@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { WorkSessions } from "@agent-router/server";
-import type { EmployeeTools } from "./business-tools.js";
+import type { PartnerTools } from "./business-tools.js";
 import type { RunAdmission } from "./run-admission.js";
-import { EmployeeContext, MemoryError, memoryInput, memoryToolSchema } from "./employee-context.js";
+import { PartnerContext, MemoryError, memoryInput, memoryToolSchema } from "./partner-context.js";
 import { historyQuery, type SessionHistory } from "./session-history.js";
 import { ConnectedApps } from "./connected-apps.js";
 import { ProactiveWork, proactiveRuleInput } from "./proactive.js";
@@ -21,10 +21,10 @@ const proactiveInput = z.object({ action: z.enum(["list", "create", "update", "r
 const required = (value: string | undefined, name: string) => { if (!value) throw new Error(`${name}_required`); return value; };
 
 /** Product tools compose native operations; no model argument may choose owner, Host or runtime. */
-export class NativeEmployeeTools implements EmployeeTools {
+export class NativePartnerTools implements PartnerTools {
   readonly definitions;
   constructor(private readonly owner: string, private readonly agentId: string,
-    private readonly sessions: () => Promise<WorkSessions>, private readonly facts: EmployeeContext,
+    private readonly sessions: () => Promise<WorkSessions>, private readonly facts: PartnerContext,
     private readonly apps: ConnectedApps, private readonly proactive: ProactiveWork, private readonly enabled: boolean,
     private readonly options: { history?: Pick<SessionHistory, "search">; isMemoryReview?: (admission: RunAdmission) => boolean;
       reminders?: (admission: RunAdmission, sessionId: string) => string } = {}) {

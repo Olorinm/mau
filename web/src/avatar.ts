@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import type { EmployeeAvatarAppearance } from "@olorinm/agent-ui/app";
+import type { PartnerAvatarAppearance } from "@olorinm/agent-ui/app";
 
-/** How employees are drawn: pixel animals by default, or the illustrated faces. Remembered in this browser. */
+/** How partners are drawn: pixel animals by default, or the illustrated faces. Remembered in this browser. */
 const storageKey = "mau.avatar";
-let current: EmployeeAvatarAppearance = "pixel";
+let current: PartnerAvatarAppearance = "pixel";
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -16,8 +16,8 @@ try {
 }
 
 export function useAvatarAppearance() {
-  const appearance = useSyncExternalStore(subscribe, () => current, () => "pixel" as EmployeeAvatarAppearance);
-  const set = (next: EmployeeAvatarAppearance) => {
+  const appearance = useSyncExternalStore(subscribe, () => current, () => "pixel" as PartnerAvatarAppearance);
+  const set = (next: PartnerAvatarAppearance) => {
     current = next;
     try { localStorage.setItem(storageKey, next); } catch { /* not remembered */ }
     for (const listener of listeners) listener();

@@ -7,8 +7,8 @@ import { ChatProvider } from "../dist/index.js";
 import {
   Button,
   ConfirmProvider,
-  EmployeeAvatar,
-  EmployeeAvatarAppearanceProvider,
+  PartnerAvatar,
+  PartnerAvatarAppearanceProvider,
   EmptyState,
   ListRow,
   ObjectSettingsRow,
@@ -38,20 +38,20 @@ test("application primitives render without product stores or network access", (
   assert.match(renderToStaticMarkup(h(Button, { variant: "primary" }, "Create")), /class="primary-button" type="button"/);
 });
 
-test("empty states and employee avatars keep caller-owned labels and deterministic fallbacks", () => {
+test("empty states and partner avatars keep caller-owned labels and deterministic fallbacks", () => {
   const empty = renderToStaticMarkup(
     h(EmptyState, { illustration: "sprout", title: "No agents", actions: [{ label: "Create", onClick() {}, variant: "primary" }] }),
   );
   assert.match(empty, /og-empty-state/);
   assert.match(empty, /<svg[^>]*aria-hidden="true"/);
   assert.match(empty, /class="primary-button"[^>]*>Create</);
-  const avatar = renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 }));
+  const avatar = renderToStaticMarkup(h(PartnerAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 }));
   assert.match(avatar, /width:40px/);
   assert.doesNotMatch(avatar, /<img/);
 });
 
-test("employee avatars are pixel animals by default and keep the illustrated face as a choice", () => {
-  const pixel = renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", size: 40, state: "working" }));
+test("partner avatars are pixel animals by default and keep the illustrated face as a choice", () => {
+  const pixel = renderToStaticMarkup(h(PartnerAvatar, { seed: "agent-1", size: 40, state: "working" }));
   assert.match(pixel, /class="agent-pixel-avatar"[^>]*data-state="working"/);
   assert.match(pixel, /width:40px;height:40px/);
   assert.match(pixel, /<svg viewBox="0 0 10 10"/);
@@ -71,11 +71,11 @@ test("employee avatars are pixel animals by default and keep the illustrated fac
   const group = renderToStaticMarkup(h(PixelAvatarGroup, { seeds: ["a", "b", "c", "d"], size: 40 }));
   assert.equal(group.match(/class="agent-pixel-avatar"/g).length, 3);
   const illustrated = renderToStaticMarkup(
-    h(EmployeeAvatarAppearanceProvider, { appearance: "illustrated" }, h(EmployeeAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 })),
+    h(PartnerAvatarAppearanceProvider, { appearance: "illustrated" }, h(PartnerAvatar, { seed: "agent-1", fallbackName: "Helper", size: 40 })),
   );
   assert.doesNotMatch(illustrated, /agent-pixel-avatar/);
   assert.match(illustrated, /agent-ui-avatar-root/);
-  assert.match(renderToStaticMarkup(h(EmployeeAvatar, { seed: "agent-1", appearance: "illustrated" })), /agent-ui-avatar-root/);
+  assert.match(renderToStaticMarkup(h(PartnerAvatar, { seed: "agent-1", appearance: "illustrated" })), /agent-ui-avatar-root/);
 });
 
 test("confirm and toast providers render on the server without a document", () => {

@@ -1,7 +1,7 @@
 import { useThemePreference } from "./theme";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, EmployeeAvatar, EmployeeAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
+import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
 import { useAvatarAppearance } from "./avatar";
 import {
   bootSession,
@@ -62,7 +62,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
   }, [t, toast]);
   const [createOpen, setCreateOpen] = useState(false);
-  // `?agent=<id>` opens the conversation with that employee.
+  // `?agent=<id>` opens the conversation with that partner.
   const [conversationTarget, setConversationTarget] = useState<string | undefined>(() => new URLSearchParams(location.search).get("agent") ?? undefined);
   const current = useRef(session);
   current.current = session;
@@ -170,7 +170,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         zh ? (labels[key] ?? frontendLabels[key]) : frontendLabels[key]
       }
     >
-      <EmployeeAvatarAppearanceProvider appearance={avatarAppearance}>
+      <PartnerAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
         brand={t("app.name")}
         logo={<SaplingPlaceholder />}
@@ -186,7 +186,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             account={{
               name: session.edge.email ?? session.owner,
               avatar: (
-                <EmployeeAvatar
+                <PartnerAvatar
                   seed={session.owner}
                   fallbackName={session.owner}
                   size={28}
@@ -235,7 +235,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           }}
         />
       </AppShell>
-      </EmployeeAvatarAppearanceProvider>
+      </PartnerAvatarAppearanceProvider>
     </FrontendProvider>
   );
 }

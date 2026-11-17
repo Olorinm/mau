@@ -100,7 +100,7 @@ const stateNames: Record<AddressedState, [string, string]> = {
   queued: ["已通知", "notified"], delivered: ["已送达", "delivered"], failed: ["未能送达", "not delivered"],
   control: ["已处理", "handled"], not_addressed: ["未 @", "not mentioned"],
 };
-export const noMentionHint = (zh: boolean) => zh ? "未 @ 任何员工，消息只记录" : "No Agent mentioned; the message is only recorded";
+export const noMentionHint = (zh: boolean) => zh ? "未 @ 任何伙伴，消息只记录" : "No Agent mentioned; the message is only recorded";
 
 /**
  * One line such as "已通知：研究助理、写作助理". The send response is authoritative while it is known;
@@ -134,12 +134,12 @@ export function memberEventText(event: Pick<MemberEvent, "action" | "member" | "
 
 // ---- Errors ----
 const errors: Record<string, [string, string]> = {
-  agent_not_found: ["所选员工不存在或已停用。", "An Agent you chose no longer exists or is inactive."],
+  agent_not_found: ["所选伙伴不存在或已停用。", "An Agent you chose no longer exists or is inactive."],
   room_limit_reached: ["群聊数量已达上限（100 个），请先归档不用的群聊。", "You have reached the limit of 100 groups. Archive one first."],
-  too_many_members: ["一个群聊最多 20 位员工。", "A group can have at most 20 Agents."],
-  mention_not_member: ["@ 的员工已不在群里，请重新选择。", "A mentioned Agent is no longer in this group."],
+  too_many_members: ["一个群聊最多 20 位伙伴。", "A group can have at most 20 Agents."],
+  mention_not_member: ["@ 的伙伴已不在群里，请重新选择。", "A mentioned Agent is no longer in this group."],
   invalid_group_title: ["群名需要 1–64 个字符。", "A group name needs 1–64 characters."],
-  invalid_group_members: ["请选择 1–20 位员工。", "Choose 1–20 Agents."],
+  invalid_group_members: ["请选择 1–20 位伙伴。", "Choose 1–20 Agents."],
 };
 /** Group-specific error text; other codes fall back to the console's shared messages. */
 export function groupErrorMessage(code: string, zh: boolean): string | undefined {

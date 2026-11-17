@@ -57,7 +57,7 @@ export interface MemoryReviewSubmission extends MemoryReviewSessionScope {
  * Router WorkSessions on a separately restricted runtime. capabilities() must be
  * evidence of the deployed dispatch policy, not model text or an HTTP/config
  * boolean. It must validate scope and prevent all unlisted native tool effects.
- * The normal employee WorkSessions/fork path cannot satisfy this contract. */
+ * The normal partner WorkSessions/fork path cannot satisfy this contract. */
 export interface RestrictedMemoryReviewer {
   capabilities(scope: MemoryReviewScope, signal: AbortSignal): Promise<ReviewCapabilities | { status: "unsupported"; reason: string }>;
   submit(input: MemoryReviewSubmission, signal: AbortSignal): Promise<ReviewWork>;
@@ -118,7 +118,7 @@ function reminder(memory: boolean, skills: boolean): string {
 /** Records work synchronously, but performs all history/model I/O after the owner
  * turn returns. Review responses never enter the owner's transcript or delivery
  * path. Durable event IDs survive restart; an uncertain submission is looked up,
- * never replayed. At most one review per employee may be in flight. */
+ * never replayed. At most one review per partner may be in flight. */
 export class MemoryReviewCoordinator {
   private readonly config;
   private readonly clock;

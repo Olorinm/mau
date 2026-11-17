@@ -21,7 +21,7 @@ export interface AgentSummary {
   environment: EnvironmentView | null;
 }
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
-/** One of an employee's two memory files: `memory` (MEMORY.md, working knowledge) or `user` (USER.md, the owner's preferences). */
+/** One of a partner's two memory files: `memory` (MEMORY.md, working knowledge) or `user` (USER.md, the owner's preferences). */
 export interface MemoryFile { target: "memory" | "user"; file: string; entries: string[]; usage: { used: number; limit: number } }
 /** Entries of a memory file are separated by this line; the server stores and counts them joined with it. */
 export const memoryDelimiter = "\n§\n";
@@ -105,9 +105,9 @@ export function mauApi(token: string) {
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
-    /** The fixed instructions of the employee's environment profile (read-only; shared by the profile's employees). */
+    /** The fixed instructions of the partner's environment profile (read-only; shared by the profile's partners). */
     agentInstructions: (id: string) => request<{ text: string }>(mau + agent(id) + "/instructions", { token }),
-    /** The models and efforts the employee's kernel offers and its runtime allows, with the owner's choice. */
+    /** The models and efforts the partner's kernel offers and its runtime allows, with the owner's choice. */
     modelSettings: (id: string) => request<ModelSettings>(mau + agent(id) + "/model-settings", { token, timeoutMs: 45_000 }),
     /** `null` returns a choice to the runtime's default. */
     selectModelSettings: (id: string, change: { model?: string | null; effort?: string | null }) =>

@@ -1,4 +1,4 @@
-.employee-dialog,
+.partner-dialog,
 .rooms-create-group-dialog {
   box-sizing: border-box;
   width: min(520px, calc(100vw - 32px));
@@ -6,18 +6,18 @@
   padding: var(--sp-5);
 }
 
-.employee-dialog {
+.partner-dialog {
   --rooms-text: var(--c-text);
   --rooms-muted: var(--c-muted);
   --rooms-border: var(--c-border);
   --rooms-panel: var(--c-surface);
   --rooms-panel-soft: var(--c-surface-sunken);
   --rooms-blue-soft: var(--c-accent-soft);
-  --employee-dialog-control-bg: var(--c-surface-grouped);
-  --employee-dialog-active-bg: color-mix(in srgb, var(--c-link) 24%, var(--c-surface));
-  --employee-dialog-hover-bg: color-mix(in srgb, var(--c-text) 10%, var(--c-surface-grouped));
-  --employee-dialog-control-border: transparent;
-  --rooms-border-strong: var(--employee-dialog-control-border);
+  --partner-dialog-control-bg: var(--c-surface-grouped);
+  --partner-dialog-active-bg: color-mix(in srgb, var(--c-link) 24%, var(--c-surface));
+  --partner-dialog-hover-bg: color-mix(in srgb, var(--c-text) 10%, var(--c-surface-grouped));
+  --partner-dialog-control-border: transparent;
+  --rooms-border-strong: var(--partner-dialog-control-border);
   --room-dialog-kernel-active-border: var(--c-link);
   gap: var(--sp-2);
   max-height: calc(100vh - 32px);
@@ -25,13 +25,13 @@
   width: min(640px, calc(100vw - 32px));
 }
 
-.employee-dialog .modal-title,
+.partner-dialog .modal-title,
 .rooms-create-group-dialog .modal-title {
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
 }
 
-.employee-dialog-preview {
+.partner-dialog-preview {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 10px;
@@ -42,22 +42,22 @@
   padding: 8px;
 }
 
-.employee-dialog-preview .rooms-avatar {
+.partner-dialog-preview .rooms-avatar {
   width: 34px;
   height: 34px;
   font-size: var(--fs-sm);
 }
 
-.employee-dialog-tabs {
+.partner-dialog-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--sp-1);
   border-radius: var(--r-sm);
-  background: var(--employee-dialog-control-bg);
+  background: var(--partner-dialog-control-bg);
   padding: var(--sp-1);
 }
 
-.employee-dialog-tabs button {
+.partner-dialog-tabs button {
   min-width: 0;
   min-height: 36px;
   border: 0;
@@ -70,23 +70,23 @@
   font-weight: var(--fw-normal);
 }
 
-.employee-dialog-tabs button:hover {
-  background: var(--employee-dialog-hover-bg);
+.partner-dialog-tabs button:hover {
+  background: var(--partner-dialog-hover-bg);
   color: var(--rooms-text);
 }
 
-.employee-dialog-tabs button[data-active="true"] {
+.partner-dialog-tabs button[data-active="true"] {
   background: var(--c-surface);
   color: var(--rooms-text);
   box-shadow: var(--shadow-sm);
 }
 
-.employee-dialog-tabs button:focus-visible {
+.partner-dialog-tabs button:focus-visible {
   outline: none;
   box-shadow: var(--room-dialog-field-focus-shadow);
 }
 
-.employee-dialog-card {
+.partner-dialog-card {
   display: grid;
   gap: var(--sp-3);
   min-width: 0;
@@ -96,65 +96,65 @@
   padding: 0;
 }
 
-.employee-dialog-identity-card {
+.partner-dialog-identity-card {
   gap: var(--sp-4);
   border-radius: var(--r-lg);
   background: var(--c-surface-grouped);
   padding: var(--sp-5);
 }
 
-.employee-dialog-profile-hero {
+.partner-dialog-profile-hero {
   display: grid;
   place-items: center;
   min-height: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
 }
 
-.employee-dialog-profile-hero .rooms-avatar {
+.partner-dialog-profile-hero .rooms-avatar {
   width: 100%;
   height: 100%;
   font-size: var(--fs-lg);
 }
 
-.employee-dialog-profile-name-row {
+.partner-dialog-profile-name-row {
   align-items: center;
   border-radius: var(--r-md);
   background: var(--c-surface);
   padding: var(--sp-3) var(--sp-4);
 }
 
-.employee-dialog-runtime-card {
+.partner-dialog-runtime-card {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-5);
 }
 
-.employee-dialog-avatar-tabs button[data-active="true"] {
+.partner-dialog-avatar-tabs button[data-active="true"] {
   background: transparent;
   color: var(--c-text);
   font-weight: var(--fw-medium);
   box-shadow: none;
 }
 
-.employee-dialog-avatar-option[data-active="true"] {
+.partner-dialog-avatar-option[data-active="true"] {
   border-color: var(--room-dialog-kernel-active-border);
   box-shadow: var(--room-dialog-field-focus-shadow);
 }
 
-.employee-dialog-avatar-mode-card small,
-.employee-dialog-avatar-error {
+.partner-dialog-avatar-mode-card small,
+.partner-dialog-avatar-error {
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
   overflow-wrap: anywhere;
 }
 
-.employee-dialog-avatar-error {
+.partner-dialog-avatar-error {
   margin: 0;
   color: var(--c-error);
 }
 
-.employee-dialog-preview div,
-.employee-dialog-field,
-.employee-dialog-runtime,
+.partner-dialog-preview div,
+.partner-dialog-field,
+.partner-dialog-runtime,
 .rooms-create-group-members {
   min-width: 0;
 }
@@ -223,25 +223,25 @@
   font: inherit;
 }
 
-.employee-dialog-preview strong,
-.employee-dialog-preview small {
+.partner-dialog-preview strong,
+.partner-dialog-preview small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.employee-dialog-preview strong {
+.partner-dialog-preview strong {
   color: var(--rooms-text);
   font-size: var(--fs-base);
 }
 
-.employee-dialog-preview small {
+.partner-dialog-preview small {
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
 }
 
-.employee-dialog-field {
+.partner-dialog-field {
   display: grid;
   gap: var(--sp-1);
   min-width: 0;
@@ -249,29 +249,29 @@
   font-size: var(--fs-base);
 }
 
-.employee-dialog-field > small {
+.partner-dialog-field > small {
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
 }
 
-.employee-dialog-runtime {
+.partner-dialog-runtime {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--sp-2);
 }
 
-.employee-dialog-runtime-fields > .employee-dialog-warning {
+.partner-dialog-runtime-fields > .partner-dialog-warning {
   margin: var(--sp-2);
 }
 
-.employee-dialog-contract-segmented button[data-active="true"] {
-  background: var(--employee-dialog-active-bg);
+.partner-dialog-contract-segmented button[data-active="true"] {
+  background: var(--partner-dialog-active-bg);
   color: var(--rooms-text);
   box-shadow: none;
 }
 
-.employee-dialog-runtime-title {
+.partner-dialog-runtime-title {
   margin: 0;
   padding: 0 var(--sp-1);
   color: var(--rooms-text);
@@ -280,7 +280,7 @@
   line-height: var(--lh-normal);
 }
 
-.employee-dialog-kernel-list {
+.partner-dialog-kernel-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-content: start;
@@ -288,7 +288,7 @@
   padding: 1px 2px 1px 1px;
 }
 
-.employee-dialog-kernel-option {
+.partner-dialog-kernel-option {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   gap: var(--sp-2);
@@ -297,7 +297,7 @@
   min-height: 42px;
   border: 0;
   border-radius: var(--r-sm);
-  background: var(--employee-dialog-control-bg);
+  background: var(--partner-dialog-control-bg);
   color: var(--rooms-text);
   cursor: pointer;
   font: inherit;
@@ -305,56 +305,56 @@
   text-align: left;
 }
 
-.employee-dialog-kernel-option:hover,
-.employee-dialog-kernel-option:focus-visible {
+.partner-dialog-kernel-option:hover,
+.partner-dialog-kernel-option:focus-visible {
   border-color: var(--room-dialog-kernel-hover-border);
   background: var(--rooms-blue-soft);
   outline: none;
 }
 
-.employee-dialog-kernel-option[data-active="true"] {
-  background: var(--employee-dialog-active-bg);
+.partner-dialog-kernel-option[data-active="true"] {
+  background: var(--partner-dialog-active-bg);
   color: var(--rooms-text);
   box-shadow: none;
 }
 
-.employee-dialog-kernel-option[data-ready="false"] {
+.partner-dialog-kernel-option[data-ready="false"] {
   background: var(--room-dialog-kernel-disabled-bg);
   color: var(--room-dialog-kernel-disabled-fg);
 }
 
-.employee-dialog-kernel-option[data-ready="false"][data-active="true"] {
+.partner-dialog-kernel-option[data-ready="false"][data-active="true"] {
   border-color: var(--room-dialog-kernel-disabled-active-border);
   background: var(--room-dialog-kernel-disabled-active-bg);
   color: var(--room-dialog-kernel-disabled-active-fg);
   box-shadow: var(--room-dialog-kernel-disabled-active-shadow);
 }
 
-.employee-dialog-kernel-option span:last-child {
+.partner-dialog-kernel-option span:last-child {
   display: grid;
   gap: 1px;
   min-width: 0;
 }
 
-.employee-dialog-kernel-option strong,
-.employee-dialog-kernel-option small {
+.partner-dialog-kernel-option strong,
+.partner-dialog-kernel-option small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.employee-dialog-kernel-option strong {
+.partner-dialog-kernel-option strong {
   font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   line-height: var(--lh-tight);
 }
 
-.employee-dialog-kernel-option small {
+.partner-dialog-kernel-option small {
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
 }
 
-.employee-dialog-warning {
+.partner-dialog-warning {
   border-radius: var(--r-sm);
   background: var(--room-dialog-warning-bg);
   color: var(--room-dialog-warning-fg);
@@ -363,15 +363,15 @@
   padding: 8px 10px;
 }
 
-.employee-dialog-section-note,
-.employee-dialog-field > small {
+.partner-dialog-section-note,
+.partner-dialog-field > small {
   margin: 0;
   color: var(--rooms-muted);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
 }
 
-.employee-dialog-submit-error {
+.partner-dialog-submit-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -385,7 +385,7 @@
   padding: var(--sp-2) var(--sp-3);
 }
 
-.employee-dialog-submit-error button {
+.partner-dialog-submit-error button {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
@@ -396,77 +396,77 @@
   padding: var(--sp-1) var(--sp-2);
 }
 
-.employee-dialog-submit-error button:hover,
-.employee-dialog-submit-error button:focus-visible {
+.partner-dialog-submit-error button:hover,
+.partner-dialog-submit-error button:focus-visible {
   border-radius: var(--r-sm);
   background: color-mix(in srgb, currentColor 10%, transparent);
   outline: none;
 }
 
-.employee-dialog-field input,
-.employee-dialog-field select,
-.employee-dialog-field textarea {
+.partner-dialog-field input,
+.partner-dialog-field select,
+.partner-dialog-field textarea {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   border: 1px solid var(--rooms-border-strong);
   border-radius: var(--r-sm);
-  background: var(--employee-dialog-control-bg);
+  background: var(--partner-dialog-control-bg);
   color: var(--rooms-text);
   font: inherit;
   font-size: var(--fs-base);
   outline: none;
 }
 
-.employee-dialog .employee-dialog-field [data-inline-select-button] {
+.partner-dialog .partner-dialog-field [data-inline-select-button] {
   min-height: 32px;
   border: 0;
-  background: var(--employee-dialog-control-bg);
+  background: var(--partner-dialog-control-bg);
 }
 
-.employee-dialog .employee-dialog-runtime-fields .employee-dialog-field [data-inline-select-button] {
+.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button] {
   width: auto;
   min-height: 24px;
   background: transparent;
   padding: 0 var(--sp-1) 0 var(--sp-2);
 }
 
-.employee-dialog .employee-dialog-field [data-inline-select-button]:hover,
-.employee-dialog .employee-dialog-field [data-inline-select-button][aria-expanded="true"] {
-  background: var(--employee-dialog-hover-bg);
+.partner-dialog .partner-dialog-field [data-inline-select-button]:hover,
+.partner-dialog .partner-dialog-field [data-inline-select-button][aria-expanded="true"] {
+  background: var(--partner-dialog-hover-bg);
 }
 
-.employee-dialog .employee-dialog-runtime-fields .employee-dialog-field [data-inline-select-button]:hover,
-.employee-dialog .employee-dialog-runtime-fields .employee-dialog-field [data-inline-select-button]:focus-visible,
-.employee-dialog
-  .employee-dialog-runtime-fields
-  .employee-dialog-field
+.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button]:hover,
+.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button]:focus-visible,
+.partner-dialog
+  .partner-dialog-runtime-fields
+  .partner-dialog-field
   [data-inline-select-button][aria-expanded="true"] {
   background: var(--c-fill);
   outline: none;
 }
 
-.employee-dialog-field input,
-.employee-dialog-field select {
+.partner-dialog-field input,
+.partner-dialog-field select {
   height: 32px;
   padding: 0 10px;
 }
 
-.employee-dialog-field textarea {
+.partner-dialog-field textarea {
   resize: vertical;
   min-height: 74px;
   padding: 9px 10px;
 }
 
-.employee-dialog-field:focus-within input,
-.employee-dialog-field:focus-within select,
-.employee-dialog-field:focus-within textarea {
+.partner-dialog-field:focus-within input,
+.partner-dialog-field:focus-within select,
+.partner-dialog-field:focus-within textarea {
   border-color: var(--room-dialog-field-focus-border);
   box-shadow: var(--room-dialog-field-focus-shadow);
 }
 
-.employee-dialog .primary-button,
-.employee-dialog .ghost-button {
+.partner-dialog .primary-button,
+.partner-dialog .ghost-button {
   min-height: 32px;
   border: 0;
   border-radius: var(--r-md);
@@ -475,10 +475,10 @@
   font-weight: var(--fw-normal);
 }
 
-.employee-dialog .primary-button:hover,
-.employee-dialog .ghost-button:hover {
+.partner-dialog .primary-button:hover,
+.partner-dialog .ghost-button:hover {
   border: 0;
-  background: var(--employee-dialog-hover-bg);
+  background: var(--partner-dialog-hover-bg);
   color: var(--rooms-text);
 }
 

@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { SearchField } from "@olorinm/agent-ui/pages";
 
-/** One conversation the owner can switch to: an employee (with or without a chat yet), a group, or another channel's session. */
+/** One conversation the owner can switch to: a partner (with or without a chat yet), a group, or another channel's session. */
 export interface ChatEntry {
-  /** Stable across the chat being opened: `agent:<id>` for an employee, `chat:<chatId>` otherwise. */
+  /** Stable across the chat being opened: `agent:<id>` for a partner, `chat:<chatId>` otherwise. */
   key: string;
   title: string;
-  /** What the employee is doing, shown under the name in the header. */
+  /** What the partner is doing, shown under the name in the header. */
   status?: string | undefined;
   /** The last message, shown as the row's tooltip in the full list. */
   preview?: string | undefined;
@@ -84,13 +84,13 @@ export function ChatStrip({ entries, current, rest, expanded, onPick, onToggleAl
 }
 
 /** The people panel, floating over the left of the conversation: the full list, one row per conversation, or one
- *  employee's profile opened from it. */
+ *  partner's profile opened from it. */
 export function ChatRoster({ sections, current, onPick, onClose, label, searchLabel, closeLabel, emptyLabel, profile, onProfile, onBack }: {
   sections: readonly ChatSection[]; current: string | undefined; onPick(entry: ChatEntry): void; onClose(): void;
   label: string; searchLabel: string; closeLabel: string; emptyLabel: string;
-  /** An employee's profile, shown in place of the list. */
+  /** A partner's profile, shown in place of the list. */
   profile?: { label: string; backLabel: string; content: ReactNode } | undefined;
-  /** Opens an employee's profile from its row. */
+  /** Opens a partner's profile from its row. */
   onProfile?: { label: string; available(entry: ChatEntry): boolean; open(entry: ChatEntry): void } | undefined;
   onBack?(): void;
 }) {

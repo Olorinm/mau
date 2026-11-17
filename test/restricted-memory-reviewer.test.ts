@@ -3,7 +3,7 @@ import { CodexRestrictedMemoryReviewer, CODEX_REVIEW_THREAD, codexReviewProfile,
   type ReviewRuntimeBinding } from "../src/restricted-memory-reviewer.js";
 import type { MemoryReviewSubmission } from "../src/memory-review.js";
 
-const scope = { owner: "alice", agentId: "original-employee" };
+const scope = { owner: "alice", agentId: "original-partner" };
 const signal = () => AbortSignal.timeout(1000);
 function fixture() {
   const profile = codexReviewProfile({ id: "memory-review", cwd: "/srv/review/workspace", command: "/opt/codex-0.165.0/codex",
@@ -40,7 +40,7 @@ it("generates a public Host CLI profile with frozen thread policy and no per-tur
   expect(() => codexReviewProfile({ id: "bad", cwd: "relative", command: "codex", home: "/tmp/home", codexHome: "/tmp/codex" })).toThrow("profile_invalid");
 });
 
-it("verifies installed policy/native version/effective MCP and submits through Router with original-employee provenance", async () => {
+it("verifies installed policy/native version/effective MCP and submits through Router with original-partner provenance", async () => {
   const f = fixture(), input = await submission(f);
   const proof = await f.adapter.capabilities(scope, signal()); expect(proof).toMatchObject({ ...scope, status: "available", memory: true, skills: false });
   await f.adapter.submit(input, signal());
@@ -79,7 +79,7 @@ it("refuses custom or changing catalogs and unaudited OAuth provider paths", asy
   }
 });
 
-it("requires explicit original-employee scope even when the execution worker has a different agent ID", async () => {
+it("requires explicit original-partner scope even when the execution worker has a different agent ID", async () => {
   for (const alter of [
     (f: ReturnType<typeof fixture>) => { f.binding.installed.toolBinding.memory.scope = { owner: "alice", agentId: "review-worker" }; },
     (f: ReturnType<typeof fixture>) => { f.binding.employee = { ...scope, owner: "bob" }; },
