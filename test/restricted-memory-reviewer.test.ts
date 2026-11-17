@@ -17,10 +17,10 @@ function fixture() {
     discover: vi.fn(async () => ({ native: { initialize: { userAgent: "fixture/0.165.0 (test)" } } })),
     host: { nativeRequest: vi.fn(async () => structuredClone(effective)) },
   };
-  const binding: ReviewRuntimeBinding = { employee: scope, profile, sessions: sessions as unknown as ReviewRuntimeBinding["sessions"],
+  const binding: ReviewRuntimeBinding = { partner: scope, profile, sessions: sessions as unknown as ReviewRuntimeBinding["sessions"],
     installed: { profileDigest: reviewProfileDigest(profile), homeIsolation: "dedicated-private", modelCatalog: "bundled-0.165.0",
-      toolBinding: { enforcement: "server-dispatch-allowlist", memory: { scope, tool: "employee_memory", origin: "review", destructiveWrites: "stage-for-owner-approval" },
-        skills: { mode: "unavailable" }, allowedTools: ["employee_memory"], otherTools: "denied", delivery: "disabled", recursion: "disabled" } } };
+      toolBinding: { enforcement: "server-dispatch-allowlist", memory: { scope, tool: "memory", origin: "review", destructiveWrites: "stage-for-owner-approval" },
+        skills: { mode: "unavailable" }, allowedTools: ["memory"], otherTools: "denied", delivery: "disabled", recursion: "disabled" } } };
   const resolve = vi.fn(async () => binding), adapter = new CodexRestrictedMemoryReviewer({ resolve });
   return { profile, effective, sessions, binding, resolve, adapter };
 }
@@ -48,7 +48,7 @@ it("verifies installed policy/native version/effective MCP and submits through R
   const sent = f.sessions.submit.mock.calls[0]![0];
   expect(sent).toMatchObject({ eventId: input.eventId, sessionId: input.sessionId,
     admission: { kind: "delegation", owner: "alice", agentId: "review-worker", reference: input.eventId, toolGrants: {}, maxToolCalls: 20 },
-    context: { origin: "review", employee: scope, reviewMemory: true, reviewSkills: false, copiedTranscript: input.snapshot } });
+    context: { origin: "review", partner: scope, reviewMemory: true, reviewSkills: false, copiedTranscript: input.snapshot } });
   expect(sent).not.toHaveProperty("settings"); expect(sent).not.toHaveProperty("instructions");
   input.snapshot.items.push("changed"); expect((sent.context as any).copiedTranscript.items).toHaveLength(1);
   expect(f.sessions).not.toHaveProperty("fork"); expect(f.sessions).not.toHaveProperty("deliver");
@@ -82,9 +82,9 @@ it("refuses custom or changing catalogs and unaudited OAuth provider paths", asy
 it("requires explicit original-partner scope even when the execution worker has a different agent ID", async () => {
   for (const alter of [
     (f: ReturnType<typeof fixture>) => { f.binding.installed.toolBinding.memory.scope = { owner: "alice", agentId: "review-worker" }; },
-    (f: ReturnType<typeof fixture>) => { f.binding.employee = { ...scope, owner: "bob" }; },
+    (f: ReturnType<typeof fixture>) => { f.binding.partner = { ...scope, owner: "bob" }; },
     (f: ReturnType<typeof fixture>) => { f.sessions.owner = "bob"; },
-    (f: ReturnType<typeof fixture>) => { f.binding.installed.toolBinding.allowedTools.push("work_sessions"); },
+    (f: ReturnType<typeof fixture>) => { f.binding.installed.toolBinding.allowedTools.push("partners"); },
     (f: ReturnType<typeof fixture>) => { (f.binding.installed.toolBinding.memory as any).origin = "delegation"; },
   ]) {
     const f = fixture(); alter(f); expect(await f.adapter.capabilities(scope, signal())).toMatchObject({ status: "unsupported" });

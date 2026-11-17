@@ -19,6 +19,8 @@ import { AgentSkills } from "./agent-skills.js";
 import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, type ProactivePort } from "./proactive.js";
 import { NativePartnerTools } from "./native-work.js";
+import { Partners } from "./partners.js";
+import { closeRunApprovals } from "./connector-approvals.js";
 import { SessionHistory, historyQuery } from "./session-history.js";
 import { checkConnector } from "./connector-precheck.js";
 import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
@@ -37,7 +39,7 @@ const optionsSchema = z.object({
   feishuBotReaders: feishuBotReadersSchema,
   connectorAccounts: connectorAccountsSchema,
   connectedApps: connectedAppsSchema,
-  nativeWork: z.object({ employeeTools: z.boolean().default(false),
+  nativeWork: z.object({ partnerTools: z.boolean().default(false),
     memory: z.object({ writeApproval: z.boolean().default(false) }).strict().default({ writeApproval: false }),
     backgroundReview: z.object({ enabled: z.boolean().default(true), memoryInterval: z.number().int().min(0).max(1000000).default(10),
       skillInterval: z.number().int().min(0).max(1000000).default(15) }).strict().prefault({}),
@@ -106,6 +108,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       afterDelete: async agent => {
         environments.forgetAgent(agent.id);
         facts.forget(agent.owner, agent.id);
+        partners.forget(agent.owner, agent.id);
         history.forget(agent.owner, agent.id);
         proactive.forgetAgent(agent.id);
         forgetPartnerRecords(businessStore, agent.owner, agent.id);
@@ -199,9 +202,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     ...(dependencies.reviewer ? { reviewer: dependencies.reviewer } : {}),
     sourceSessions: scope => sessions(scope.owner, scope.agentId),
   });
-  const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.employeeTools);
+  const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.partnerTools);
   const nativeRelay = new NativeRelay(businessStore, {
-    partners: () => options.nativeWork.employeeTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
+    partners: () => options.nativeWork.partnerTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
       try { return [{ agentId: b.agentId, owner: router.service.agent(b.agentId).owner, operationId: b.operationId, runtimeId: b.runtimeId }]; }
       catch { return []; }
     }) : [],
@@ -212,13 +215,37 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     record: (owner, agentId, sessionId, source, text) => history.append(owner, agentId, sessionId, source, text),
   });
   const reviewOrigin = (admission: import("./run-admission.js").RunAdmission) => reviews.list({ owner: admission.owner, agentId: admission.agentId }).find(job => job.id === admission.reference);
+  const routerOf = (agentId: string) => router.service.runtime(agentId).then(r => r.extension, () => undefined);
+  const partners = new Partners(businessStore, {
+    agents: owner => router.service.agents(owner),
+    create: (owner, name) => router.service.create(owner, name),
+    sessions,
+    conversations: async agentId => (await routerOf(agentId))?.communication,
+    turnEnded: async (agentId, taskId) => {
+      const runtime = await router.service.runtime(agentId), input = runtime.extension?.communication?.input(taskId);
+      // A turn that answers in a conversation has ended when its answer is recorded there.
+      return input ? input.state === "done" : ["completed", "failed", "canceled", "rejected"].includes(runtime.work.inspect(taskId).status);
+    },
+    duty: agentId => environments.duty(agentId),
+    environmentHolder: agentId => environments.sharedFrom(agentId) ?? agentId,
+    kernel: agentId => environments.kernel(agentId),
+    environmentState: (owner, agentId) => environments.summary(owner, agentId)?.state,
+    assertShareable: (owner, holder) => environments.assertShareable(owner, holder),
+    share: (owner, agentId, holder, duty) => environments.beginShared(owner, agentId, holder, duty),
+    models: (owner, agentId) => modelSettings.view(owner, agentId),
+    defaultModel: agentId => modelSettings.defaultModel(agentId),
+    connections: (owner, agentId) => connectedApps.connections(agentId, owner),
+    closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
+  });
   business.setAdmissionValidator(admission => {
+    const partner = partners.allows(admission);
+    if (partner !== undefined) return partner;
     const review = reviewOrigin(admission);
     return review ? admission.kind === "delegation" && ["submitting", "running"].includes(review.status) && !review.cancellationRequested
       : proactive.allows(admission);
   });
-  business.setPartnerTools((agentId, owner) => new NativePartnerTools(owner, agentId, () => sessions(owner, agentId),
-    facts, connectedApps, proactive, options.nativeWork.employeeTools, { history,
+  business.setPartnerTools((agentId, owner) => new NativePartnerTools(owner, agentId, partners,
+    facts, proactive, options.nativeWork.partnerTools, { history,
       reminders: (admission, hostSessionId) => {
         const sessionId = completedTurns.publicSession(admission.owner, admission.agentId, hostSessionId);
         return sessionId ? reviews.nudges({ owner: admission.owner, agentId: admission.agentId, sessionId }).prompt : "";
@@ -226,6 +253,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       isMemoryReview: admission => Boolean(reviewOrigin(admission)),
     }));
   business.onCompleted(turn => {
+    partners.turnCompleted(turn.admission);
     if (!reviewOrigin(turn.admission)) completedTurns.enqueue(turn);
   });
   const app = express();
@@ -350,6 +378,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     ...router.connections.summary(router.service.owned(id, owner)),
     duty: environments.duty(id) ?? null,
     environment: environments.summary(owner, id),
+    dismissed: partners.dismissedAt(id) ?? null,
   });
   product.get("/agents", (_req, res) => res.json({ data: router.service.agents(res.locals.owner).map(a => summary(a.owner, a.id)) }));
   // A partner gets an environment of its own (`profileId`) or runs in another partner's (`shareWith`).
@@ -371,6 +400,18 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.status(202).json(summary(owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
+  // Dismissing archives a partner: everything it has is kept, and it leaves the roster until it is restored.
+  for (const action of ["dismiss", "restore"] as const) product.post(`/agents/:id/${action}`, (req, res) => {
+    z.object({}).strict().parse(req.body);
+    const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;
+    if (action === "dismiss") partners.archive(owner, id, "owner"); else partners.restore(owner, id);
+    res.json(summary(owner, id));
+  });
+  product.get("/partners", async (_req, res) => res.json({ data: await partners.list(res.locals.owner) }));
+  product.get("/partners/messages", (req, res) => {
+    const filter = z.object({ agentId: z.uuid().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).strict().parse(req.query);
+    res.json({ data: partners.messages(res.locals.owner, filter) });
+  });
   product.delete("/agents/:id", async (req, res) => {
     await router.service.delete(res.locals.owner, String(req.params.id));
     res.status(204).end();
@@ -422,11 +463,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, proactive, facts, reviews, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); },
+  return { app, router, environments, proactive, facts, reviews, partners, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); if (options.nativeWork.partnerTools) partners.start(); },
     // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`) first, then SSH, which
     // answers 404 for every other path.
     attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId),
       (req, socket, head) => router.upgrade(req, socket, head))); },
-    close: async () => { for (const close of sshServers) close(); await proactive.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
+    close: async () => { for (const close of sshServers) close(); await proactive.close(); await partners.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

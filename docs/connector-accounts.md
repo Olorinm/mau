@@ -62,7 +62,7 @@ minutes per environment):
 - The guide's command (`gws`, `lark-cli`) is installed in `/usr/local/bin` as a two-line script that runs Agent Host's
   `agent-host-relay`. The Agent types the official CLI's commands; Agent Host relays them, bound to the running shell
   command, through the run's `connected_apps` tool. Credentials stay in ConnectorService, writes keep their approval
-  cards, and scheduled or delegated runs stay read-only.
+  cards, and scheduled runs stay read-only.
 - For a browser connection the command is `agent-browser`: a small Node client Mau installs in `/usr/local/bin` that
   talks to the same Agent Host relay. It passes the agent-browser arguments and the shell's directory, retries
   `upload` on `agent_browser_write` (the owner approves the files and the current site), and prints the paths of saved
@@ -123,11 +123,37 @@ working. `not_supported` operations are listed but cannot be set.
 
 - Owner conversations get write-capable tokens: `allow` runs, `ask` shows the existing approval card (for reads too),
   `deny` is refused.
-- Scheduled and delegated work keeps read-only tokens: it never writes, even when allowed, and an operation set to
+- A [partner's turn](#approvals-for-a-partners-turn) gets what the owner's turn that its message came from had.
+- Scheduled work keeps read-only tokens: it never writes, even when allowed, and an operation set to
   `ask` returns `owner_approval_unavailable_here`, saying the owner cannot approve there.
 - The owner-private rule (Feishu personal access only in the owner's private conversation) is checked first.
 - Changes apply to the next call. `connected_apps`' tool definition does not change, only what `action: "tools"` lists,
   so no session rotation is needed. Disconnect and reconnect keep the settings; reset restores the defaults.
+
+### Approvals for a partner's turn
+
+A partner that handles [another partner's message](native-work.md#partners) works in its own conversation, which the
+owner may not be looking at, and it cannot ask the owner there. Its connected-app calls follow the turn the message
+was sent in:
+
+- The token is for the connections of the message's grant: what the sending turn could use, within the connections
+  assigned to the partner, without the connections that act as the owner's personal identity (see
+  [rule 1](#rule-1-personal-access-only-in-the-owners-private-conversation)). It is write-capable when the sending turn
+  was the owner's.
+- When an operation needs the owner's approval, the card appears in the conversation the message was sent from, on
+  the connection the owner used there. It is a Router owner request (`source: "product"`), not a card of any run. It
+  names the partner that asks and the partner whose message it is handling, and shows the operation's summary, its
+  connection and its arguments, with 批准这次操作 and 拒绝这次操作. Arguments are never cut off silently: when they are too
+  long for the card, every value is shown shortened and the card says so, and when even that does not fit, no card is
+  shown and the call fails as below.
+- The partner's tool call waits. Approval runs the operation once with the grant bound to what the card showed, and
+  the result goes to the partner. A refusal returns `owner_denied`. No answer before the call's deadline is a refusal
+  (`reason: approval_expired`).
+- The card is withdrawn when the partner's call is cancelled and when its turn ends; the operation is denied.
+- When the owner cannot be asked there (the sender or its conversation is gone, the card cannot be recorded), the
+  call fails at once with `owner_approval_unavailable` and the operation is denied. It is never left waiting.
+- The turn that hands a result back to its sender answers the owner itself, so its own writes show the ordinary
+  approval card of a run in that conversation.
 
 ## Verification and remaining live acceptance
 
@@ -174,8 +200,10 @@ own records, not from the Agent:
   message that is not the owner's direct input (a group or visitor session).
 - Schedules: allowed, read-only. Rules are created by the owner, and Router requires their target and conversation
   sessions to be owner conversations (`notification_requires_owner_conversation`); delivery goes only there.
-- Delegated work and memory reviews: refused. Unknown usage (service unavailable): every connection is treated as
-  owner-private (fail closed).
+- A turn a partner's message started (one that handles the message, or one that hands its result over): refused,
+  wherever the message was sent from. The owner asks that partner directly in its own conversation instead.
+- Memory reviews: refused. Unknown usage (service unavailable): every connection is treated as owner-private (fail
+  closed).
 
 Elsewhere, `action: "tools"` lists them in `unavailableHere` and a call returns `connected_app_owner_private_only` with a
 message for the requester. The installed `lark-cli` relay goes through the same check.
@@ -211,7 +239,7 @@ An application page checks the connection when it opens (重新检查 appears on
 authorized account, the Agents using the connection and per-operation permissions (读取权限 / 写入和删除权限 / 后台操作,
 each 允许 / 请求 / 不允许) from `GET /_mau/v1/connector-accounts/:id/policy`; changes use `PUT …/policy` and
 `POST …/policy/reset`. Allowing a write asks for confirmation. Operations that need more access offer 添加 when they are
-grantable (`POST …/connect` with `{ "operations": [...] }`). In scheduled or delegated work, operations set to 请求 are
+grantable (`POST …/connect` with `{ "operations": [...] }`). In scheduled work, operations set to 请求 are
 refused. A server without the policy API shows what it enforces, read-only. Messaging channels live in 设置 → 消息渠道,
 which reuses Router's channel setup flow; deleted environments are omitted without modifying their records.
 

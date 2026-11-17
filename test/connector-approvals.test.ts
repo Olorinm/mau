@@ -8,7 +8,8 @@ import { ServiceHttp } from "@agent-router/server";
 import { ConnectorService, ServiceError, Sealer, Store, TokenVerifier, type Caller, type Connector } from "@olorinm/agent-connectors";
 import { decodeJwt } from "jose";
 import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
-import { BusinessHost } from "../src/business-tools.js";
+import { BusinessHost, type PartnerTools } from "../src/business-tools.js";
+import { closeRunApprovals, type ApprovalDesk } from "../src/connector-approvals.js";
 import { DurableStore } from "../src/store.js";
 import { ConnectorAccounts } from "../src/connector-accounts.js";
 import { ConnectedApps, type ConnectedAppReader } from "../src/connected-apps.js";
@@ -25,7 +26,7 @@ const scheduleAdmission = { kind: "schedule" as const, ...principal, reference: 
 const temp = () => { const dir = mkdtempSync(join(tmpdir(), "mau-approvals-")); cleanup.push(() => rmSync(dir, { recursive: true, force: true })); return dir; };
 
 /** Real connector service and token verifier; only HTTP transport is replaced by direct calls. */
-async function fixture(options: { deadlineMs?: number; files?: boolean } = {}) {
+async function fixture(options: { deadlineMs?: number; files?: boolean; partner?: PartnerTools } = {}) {
   const dir = temp();
   const caller = await generateSigningKey("caller"), authority = await generateSigningKey("authority");
   privateFile(join(dir, "authority.json"), authority.privateJwk);
@@ -115,14 +116,14 @@ async function fixture(options: { deadlineMs?: number; files?: boolean } = {}) {
     }
   }("https://host.fixture", "host-secret");
   const hosting = { connections: ["browser"], browser: ["browser"], approvals: accounts, ...(options.files === false ? {} : { files: async () => files }) };
-  const make = () => new BusinessHost(http, undefined, store, "agent:binding", reader, principal, undefined, undefined, hosting);
+  const make = () => new BusinessHost(http, undefined, store, "agent:binding", reader, principal, options.partner, undefined, hosting);
   const host = make();
   const call = (name: string, args: Record<string, unknown>, id = "call-1") => {
     pending = [...pending.filter(c => c.id !== id), { id, runId: "run", kind: "tool", name: "connected_apps", status: "pending",
       input: { action: "call", name, arguments: args }, deadlineAt: new Date(Date.now() + (options.deadlineMs ?? 300_000)).toISOString() }];
   };
   const text = (id = "call-1") => JSON.parse(resolved.get(id).contentItems[0].text);
-  return { host, make, call, text, resolved, readerCalls, executed, service, grants, steered, workspace, sandbox, store,
+  return { host, make, call, text, resolved, readerCalls, executed, service, grants, steered, workspace, sandbox, store, accounts,
     setTamper: (fn: typeof tamper) => { tamper = fn; }, pending: () => pending, start: (admission: unknown = ownerAdmission) =>
       host.start({ sessionId: "session", runtimeId: "personal", instructions: "", input: "go", admission } as any) };
 }
@@ -359,4 +360,125 @@ it.skipIf(!existsSync(webInteractions))("renders Mau's cards in the web console 
   const handoff = web.describeInteraction({ method: card.name, params: card.input });
   expect(handoff).toMatchObject({ kind: "questions", questions: [{ id: "handoff", options: [{ label: "取消接管" }] }] });
   expect(web.answerInteraction(handoff, { answers: { handoff: "取消接管" } })).toEqual({ answers: { handoff: { answers: ["取消接管"] } } });
+});
+
+// A turn that handles a partner's message has no owner conversation of its own. Its approval card is put where the
+// message was sent from (a desk), and the tool call waits for the answer given there.
+const partnerAdmission = { kind: "delegation" as const, ...principal, reference: "pm-1", toolGrants: { connectedApps: { connections: ["browser"] } } };
+function desk() {
+  const cards = new Map<string, { card: Parameters<ApprovalDesk["open"]>[0]; state: "pending" | "approved" | "denied" | "expired" }>(), withdrawn: string[] = [];
+  let unavailable = false;
+  const value: ApprovalDesk = {
+    open: async card => { if (unavailable) throw new Error("host_sessions_unavailable"); cards.set(card.id, { card, state: "pending" }); },
+    status: async id => cards.get(id)?.state ?? "expired",
+    withdraw: async id => { withdrawn.push(id); },
+  };
+  const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
+    authority: admission => admission.reference === "pm-1" ? { write: true, approvals: value, tool: "partners" } : undefined };
+  return { partner, cards, withdrawn, only: () => [...cards.values()][0]!, answer: (state: "approved" | "denied") => { [...cards.values()][0]!.state = state; }, close: () => { unavailable = true; } };
+}
+
+it("asks the owner where a partner's message came from and runs the write once it is approved there", async () => {
+  const d = desk(), f = await fixture({ partner: d.partner }); await f.start(partnerAdmission);
+  f.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  const listed = await f.host.calls("run");
+  // The partner's turn got a write token, as the owner's turn the message came from would.
+  expect(f.readerCalls[0]!.options).toEqual({ write: true });
+  // No card of this run: the run has no conversation to show it in. The card is at the desk.
+  expect(listed).toEqual([]); expect(f.resolved.size).toBe(0);
+  expect(d.only().card).toMatchObject({ id: expect.stringMatching(/^partner-approval-[0-9a-f]{40}$/), summary: "Click buy on https://shop.example", connection: "browser",
+    arguments: { site: "https://shop.example", ref: "buy" }, deadlineAt: f.pending()[0].deadlineAt });
+  // Unanswered, the call keeps waiting, across a restart of Mau too.
+  await f.make().calls("run");
+  expect(f.resolved.size).toBe(0); expect(f.executed).toEqual([]);
+  d.answer("approved");
+  const restarted = f.make();
+  await restarted.calls("run"); await restarted.settled("run");
+  expect(f.executed).toEqual([{ tool: "click", input: { site: "https://shop.example", ref: "buy" } }]);
+  expect(f.text()).toMatchObject({ status: "completed", result: { clicked: true } });
+  expect(decodeJwt(f.grants[0]!)).toMatchObject({ sub: owner, apv: owner });
+  // Answered once: later polls neither ask nor run again.
+  await restarted.calls("run"); await restarted.settled("run");
+  expect(f.executed).toHaveLength(1); expect(d.cards.size).toBe(1); expect(d.withdrawn).toEqual([]);
+});
+
+it("treats a refusal and a timeout at the desk as owner_denied, and withdraws the card of a call that is gone", async () => {
+  const refused = desk(), f = await fixture({ partner: refused.partner }); await f.start(partnerAdmission);
+  f.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  await f.host.calls("run"); refused.answer("denied");
+  await f.host.calls("run"); await f.host.settled("run");
+  expect(f.text()).toMatchObject({ status: "failed", error: "owner_denied" }); expect(f.executed).toEqual([]); expect(f.grants).toEqual([]);
+  expect((await f.service.operation(f.text().operationId))?.status).toBe("denied");
+  // Nobody answers before the call's deadline: denied as expired, and the card is withdrawn.
+  const silent = desk(), g = await fixture({ partner: silent.partner, deadlineMs: 400 }); await g.start(partnerAdmission);
+  g.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  await g.host.calls("run");
+  await new Promise(r => setTimeout(r, 450));
+  silent.answer("approved"); // An answer after the deadline changes nothing.
+  await g.host.calls("run"); await g.host.settled("run");
+  expect(g.text()).toMatchObject({ status: "failed", error: "owner_denied", reason: "approval_expired" });
+  expect(g.executed).toEqual([]); expect(silent.withdrawn).toEqual([silent.only().card.id]);
+  // The Host cancelled the tool call while the card was open.
+  const gone = desk(), h = await fixture({ partner: gone.partner }); await h.start(partnerAdmission);
+  h.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  await h.host.calls("run");
+  h.pending().length = 0;
+  await h.host.calls("run"); await h.host.settled("run");
+  expect(gone.withdrawn).toEqual([gone.only().card.id]); expect(h.executed).toEqual([]);
+  const operations = h.store.entries<{ operationId: string; status: string }>("connector_approvals");
+  expect(operations.map(row => row.value.status)).toEqual(["settled"]);
+  expect((await h.service.operation(operations[0]!.value.operationId))?.status).toBe("denied");
+});
+
+it("refuses at once when there is nowhere to ask the owner, and closes the cards a finished run left open", async () => {
+  const closed = desk(); closed.close();
+  const f = await fixture({ partner: closed.partner }); await f.start(partnerAdmission);
+  f.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  expect(await f.host.calls("run")).toEqual([]);
+  // The call is answered now, not left waiting for a card nobody can see.
+  expect(f.text()).toMatchObject({ status: "failed", error: "owner_approval_unavailable", instruction: expect.stringContaining("Do not retry") });
+  expect(f.resolved.get("call-1").success).toBe(false); expect(f.executed).toEqual([]);
+  expect((await f.service.operation(f.text().operationId))?.status).toBe("denied");
+  expect(f.store.entries("connector_approvals")).toEqual([]);
+  // A run that ended with its card unanswered: the card is withdrawn and the operation denied.
+  const open = desk(), g = await fixture({ partner: open.partner }); await g.start(partnerAdmission);
+  g.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  await g.host.calls("run");
+  const withdrawn: string[] = [];
+  await closeRunApprovals(g.store, g.accounts, "another-agent", "run", async id => { withdrawn.push(id); });
+  await closeRunApprovals(g.store, g.accounts, agentId, "another-run", async id => { withdrawn.push(id); });
+  expect(withdrawn).toEqual([]);
+  await closeRunApprovals(g.store, g.accounts, agentId, "run", async id => { withdrawn.push(id); });
+  expect(withdrawn).toEqual([open.only().card.id]);
+  const record = g.store.entries<{ operationId: string; status: string; outcome: unknown }>("connector_approvals")[0]!.value;
+  expect(record).toMatchObject({ status: "settled", outcome: { error: "owner_denied", reason: "run_ended" } });
+  expect((await g.service.operation(record.operationId))?.status).toBe("denied");
+  // An approval that arrives afterwards finds nothing to approve.
+  open.answer("approved");
+  await g.host.calls("run"); await g.host.settled("run");
+  expect(g.executed).toEqual([]); expect(g.grants).toEqual([]);
+  // A card of the owner's own run is not a desk card and is left to Router.
+  const own = await fixture(); await own.start();
+  own.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  await own.host.calls("run");
+  await closeRunApprovals(own.store, own.accounts, agentId, "run", async id => { withdrawn.push(id); });
+  expect(own.store.entries<{ status: string }>("connector_approvals")[0]!.value.status).toBe("pending");
+});
+
+it("a turn that hands results to their sender asks with a card of its own run, and a schedule stays read-only", async () => {
+  // The turn answers the owner, so Router presents its cards like an owner turn's.
+  const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
+    authority: admission => admission.reference === "pr-1" ? { write: true, tool: "partners" } : undefined };
+  const f = await fixture({ partner }); await f.start({ ...partnerAdmission, reference: "pr-1" });
+  f.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  const listed = await f.host.calls("run");
+  expect(f.readerCalls[0]!.options).toEqual({ write: true });
+  expect(listed.map(call => call.id)).toEqual(["mau-approval:call-1"]);
+  await f.host.resolve("run", "mau-approval:call-1", { choice: "once" }); await f.host.settled("run");
+  expect(f.executed).toHaveLength(1);
+  // The same tools object gives a schedule nothing.
+  const g = await fixture({ partner }); await g.start(scheduleAdmission);
+  g.call("browser__click", { site: "https://shop.example", ref: "buy" });
+  expect(await g.host.calls("run")).toEqual([]);
+  expect(g.readerCalls[0]!.options).toBeUndefined(); expect(g.executed).toEqual([]);
 });

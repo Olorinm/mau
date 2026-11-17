@@ -91,8 +91,8 @@ without `send` conversations are read-only.
   as download cards. Messages that arrived on another channel are labelled with it.
 - A failed send keeps the draft for a retry with the same idempotency key.
 - "New chat" starts a fresh session, and settings can clear a chat's history, when Router offers `reset`.
-- An Agent's instructions (`AGENTS.md`, read-only) and its two memory files (`MEMORY.md`, `USER.md`,
-  edited one entry at a time) open beside the conversation.
+- An Agent's instructions (`AGENTS.md`, read-only) and its memory (`MEMORY.md`, edited as one
+  document) open beside the conversation.
 
 Host health alone does not verify message routing; live acceptance must send a
 message through the console and observe the Agent's reply.

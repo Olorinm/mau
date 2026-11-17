@@ -7,7 +7,7 @@ import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connector
 import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-connectors/cloudflare-read-client";
 import { DurableStore } from "./store.js";
 import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
-import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalPort } from "./connector-approvals.js";
+import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalDesk, type ApprovalPort } from "./connector-approvals.js";
 import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, prepareBrowser, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
 import { ownerPrivateRefusal, OWNER_PRIVATE_ONLY, type OwnerPrivatePolicy } from "./owner-private.js";
@@ -25,14 +25,35 @@ const feishuDefinition = { name: "feishu_bot_read", timeoutMs: 90_000,
 type BotReader = Pick<FeishuBotReader, "read">;
 // Native tool catalogs are frozen per session, so older sessions still list removed tools.
 // Answer those calls at once instead of leaving them pending until Host's deadline.
-const removedTools = new Set(["business_data"]);
+const removedTools = new Set(["business_data", "employee_memory", "work_sessions"]);
+const toolRemoved = { isError: true, error: "tool_removed",
+  instruction: "This tool no longer exists. This conversation still lists the tools it began with; the owner can start a new conversation to load the current ones." };
 const sameTool = (definition: Pick<HostTool, "name" | "namespace">, call: HostCall) =>
   definition.name === call.name && (definition.namespace ?? null) === (call.namespace ?? null);
+/** What the product grants a turn that a partner's message started, beyond its tool grants. */
+export interface PartnerAuthority {
+  /** Connected-app writes can ask the owner, as in the owner's turn the message came from. */
+  write: boolean;
+  /** Where the owner is asked when the turn itself has no owner conversation to ask in. */
+  approvals?: ApprovalDesk;
+  /** The tool whose delivery the turn's input is: a kernel that takes tool output is given the input under this name. */
+  tool: string;
+}
 export interface PartnerTools {
   definitions: NonNullable<Parameters<HostPort["start"]>[0]["tools"]>;
   context(admission: RunAdmission, input: string, sessionKey?: string): unknown;
   scheduledContext?(admission: RunAdmission): ScheduledMemoryContext | undefined;
-  reminders?(admission: RunAdmission, sessionId: string): string;
+  /**
+   * What a turn is told beside its input: a memory reminder, the roster, notes partners left. Keys become context
+   * members. `tools` names the product tools of the turn's session, which may have begun with an earlier set.
+   */
+  turnContext?(admission: RunAdmission, sessionId: string, tools: string[]): Promise<Record<string, unknown>>;
+  /** Defined only for a turn a partner's message started: one that handles the message, or one that hands its result over. */
+  authority?(admission: RunAdmission): PartnerAuthority | undefined;
+  /** Every run seen at the Host, running or ended. */
+  observe?(run: { id: string; status: string }): void;
+  /** The result of a call of one of these tools has reached the Host. */
+  delivered?(name: string, admission: RunAdmission, callId: string): void;
   execute(name: string, input: unknown, admission: RunAdmission, callId: string, runId: string): Promise<unknown>;
 }
 export class BusinessTools {
@@ -94,16 +115,18 @@ interface ConnectedAppHosting {
   ownerPrivate?: OwnerPrivatePolicy;
 }
 const WAITING = Symbol("approval_waiting");
+class Removed extends Error {}
+const delivered = (admission: RunAdmission | undefined, toolOutput: unknown) => Boolean(toolOutput) || (admission !== undefined && admission.kind !== "owner");
 const HANDOFF_PREFIX = "mau-handoff:";
 const handoffCancel = "取消接管";
 // A structured single-choice question both Router's chat cards and the web console render with buttons.
 const handoffMethod = "item/tool/requestUserInput";
-/** Scheduled and delegated work cannot ask the owner, so an operation set to ask is refused there with this explanation. */
+/** Work that cannot ask the owner (a schedule) is refused an operation set to ask, with this explanation. */
 const APPROVAL_UNAVAILABLE_HERE = "owner_approval_unavailable_here";
 const approvalUnavailableHere = (refusal: Record<string, unknown>) => {
   const detail = z.object({ operation: z.string().max(100).nullable().optional(), label: z.string().max(200).optional() }).passthrough().safeParse(refusal.detail).data;
   return { status: "failed", error: APPROVAL_UNAVAILABLE_HERE, ...(detail?.operation ? { operation: detail.operation } : {}), ...(detail?.label ? { label: detail.label } : {}),
-    message: "这个操作被设置为每次都要你批准，但定时任务和委派任务里无法向你弹出批准卡片，所以这里不能执行。",
+    message: "这个操作被设置为每次都要你批准，但定时任务这类后台任务无法向你弹出批准卡片，所以这里不能执行。",
     instruction: "The owner cannot approve here. Do not retry in this task; tell the owner it needs their approval in their own conversation, or that they can allow it in Mau's connector settings." };
 };
 const approvalRequired = z.object({ status: z.literal("approval_required"), operationId: z.string().min(1).max(64),
@@ -136,13 +159,18 @@ export class BusinessHost extends HttpAgentHost {
     const requestId = input.requestKey ? `${this.scope}:${input.runtimeId}:${input.requestKey}` : undefined;
     const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const sessionKey = `${this.scope}:${input.sessionId}`;
-    const prepare = () => {
+    /** The session's product tools: the ones it began with, or for a new session the ones this turn is admitted to. */
+    const partnerTurn = admission && this.partner?.authority?.(admission);
+    const catalog = () => {
+      // A partner's message opens the same session an owner's message would: the whole catalog. Calls stay bound to the run's grants.
       const granted = (kind: "feishu" | "connectedApps") => admission &&
-        (admission.kind === "owner" && !admission.toolGrants || Boolean(admission.toolGrants?.[kind]));
+        (admission.kind === "owner" && !admission.toolGrants || Boolean(partnerTurn) || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
         ...(granted("connectedApps") && this.appReader ? [connectedAppDefinition] : []),
         ...(admission && admission.kind !== "schedule" ? this.partner?.definitions ?? [] : [])];
-      const added = this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
+      return this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
+    };
+    const prepare = (added: ReturnType<typeof catalog>, told: Record<string, unknown>) => {
       const priorInstructions = this.store.get<string>("business_session_instructions", sessionKey);
       const snapshot = priorInstructions === undefined && admission ? this.partner?.context(admission, input.input, sessionKey) : undefined;
       const memory = snapshot && typeof snapshot === "object" && "text" in snapshot && typeof snapshot.text === "string" ? snapshot.text : "";
@@ -150,9 +178,11 @@ export class BusinessHost extends HttpAgentHost {
       // turn in an existing conversation retains that conversation's original snapshot.
       const instructions = priorInstructions ?? (memory ? `${request.instructions}\n\n${memory}` : request.instructions);
       // Admission is consumed here; native model input cannot grant itself access.
-      const reminder = admission?.kind === "owner" ? this.partner?.reminders?.(admission, input.sessionId) : undefined;
       const scheduledMemory = admission?.kind === "schedule" ? this.partner?.scheduledContext?.(admission) : undefined;
-      let toolOutput = request.toolOutput;
+      // Router labels delegated input with the product's former delegation tool. A partner's turn names the tool that
+      // sent it, in a session that has that tool; a session that began with the former one keeps Router's label.
+      let toolOutput = partnerTurn && request.toolOutput?.namespace === "mau" && added.some(tool => tool.name === partnerTurn.tool)
+        ? { ...request.toolOutput, name: partnerTurn.tool } : request.toolOutput;
       let memoryContext: ScheduledMemoryContext | Omit<ScheduledMemoryContext, "text"> | undefined = scheduledMemory;
       if (scheduledMemory && toolOutput) {
         let original = toolOutput.output;
@@ -165,15 +195,18 @@ export class BusinessHost extends HttpAgentHost {
       }
       const forwarded = { ...request, instructions, ...(added.length ? { tools: [...(request.tools ?? []), ...added] } : {}),
         ...(toolOutput ? { toolOutput } : {}),
-        ...(reminder || memoryContext ? { context: { requestContext: request.context ?? null,
-          ...(reminder ? { memoryMaintenanceReminder: reminder } : {}), ...(memoryContext ? { scheduledMemory: memoryContext } : {}) } } : {}) };
+        ...(Object.keys(told).length || memoryContext ? { context: { requestContext: request.context ?? null,
+          ...told, ...(memoryContext ? { scheduledMemory: memoryContext } : {}) } } : {}) };
       return { hash, request: forwarded, sessionKey, added,
         ...(admission ? { admission } : {}) };
     };
     let selected = requestId ? this.store.get<ReturnType<typeof prepare>>("business_run_requests", requestId) : undefined;
     if (selected && selected.hash !== hash) throw new RouterError("business_run_request_conflict", 409);
     if (!selected) {
-      selected = prepare();
+      // What the turn is told is read once, with its first request; a retry sends what was saved.
+      const added = catalog();
+      selected = prepare(added, admission && admission.kind !== "schedule"
+        ? await this.partner?.turnContext?.(admission, input.sessionId, added.map(tool => tool.name)) ?? {} : {});
       if (requestId && !this.store.insert("business_run_requests", requestId, selected)) {
         selected = this.store.get<ReturnType<typeof prepare>>("business_run_requests", requestId)!;
         if (selected.hash !== hash) throw new RouterError("business_run_request_conflict", 409);
@@ -183,8 +216,10 @@ export class BusinessHost extends HttpAgentHost {
     const run = await super.start(selected.request);
     this.store.set("business_session_catalog", sessionKey, selected.added);
     this.saveGrant(run.id, selected.admission);
+    // Only an owner's turn has a human's input. Delivered input is a tool output, or text for a runtime that takes no tool output.
     this.store.set("business_turn_inputs", `${this.scope}:${run.id}`, { sessionKey, sessionId: input.sessionId,
-      input: input.toolOutput ? JSON.stringify(input.toolOutput) : input.input, inputRole: input.toolOutput ? "tool" : "user" });
+      input: input.toolOutput ? JSON.stringify(input.toolOutput) : input.input, inputRole: delivered(selected.admission, input.toolOutput) ? "tool" : "user" });
+    this.partner?.observe?.(run);
     this.observeCompleted(run);
     return run;
   }
@@ -198,15 +233,16 @@ export class BusinessHost extends HttpAgentHost {
         this.store.set("business_session_catalog", pending.sessionKey, pending.added);
         this.store.set("business_session_instructions", pending.sessionKey, pending.request.instructions);
         this.store.set("business_turn_inputs", `${this.scope}:${run.id}`, { sessionKey: pending.sessionKey, sessionId: pending.request.sessionId,
-          input: pending.request.toolOutput ? JSON.stringify(pending.request.toolOutput) : pending.request.input, inputRole: pending.request.toolOutput ? "tool" : "user" });
+          input: pending.request.toolOutput ? JSON.stringify(pending.request.toolOutput) : pending.request.input, inputRole: delivered(pending.admission, pending.request.toolOutput) ? "tool" : "user" });
         this.saveGrant(run.id, pending.admission);
+        this.partner?.observe?.(run);
         this.observeCompleted(run);
       }
     }
     return run;
   }
   override async get(id: string) {
-    const run = await super.get(id); this.observeCompleted(run); return run;
+    const run = await super.get(id); this.partner?.observe?.(run); this.observeCompleted(run); return run;
   }
   private observeCompleted(run: Awaited<ReturnType<HostPort["get"]>>) {
     if (!this.completed || run.status !== "completed" || run.outcome?.outcomeUnknown) return;
@@ -260,11 +296,11 @@ export class BusinessHost extends HttpAgentHost {
         operation = (async () => {
           const grantKey = `${this.scope}:${id}`;
           const grant = this.store.get<{ admission?: RunAdmission; count: number }>("business_runs", grantKey);
-          let result: unknown;
+          let result: unknown, delivered: (() => void) | undefined;
           try {
-            if (removedTools.has(call.name) && !call.namespace) throw new Error("tool_removed");
+            if (removedTools.has(call.name) && !call.namespace) throw new Removed();
             const admission = this.admission(grant?.admission);
-            if (!grant || !admission || call.runId !== id || !Number.isFinite(Date.parse(call.deadlineAt)) || Date.parse(call.deadlineAt) <= Date.now()) throw new Error("business_tool_not_authorized");
+            if (!grant || !admission || call.runId !== id) throw new Error("business_tool_not_authorized");
             const productTool = this.partner?.definitions.some(d => sameTool(d, call));
             const kind = call.name === connectedAppDefinition.name ? "connectedApps" : "feishu";
             if (productTool ? admission.kind === "schedule" : !(admission.kind === "owner" && !admission.toolGrants) && !admission.toolGrants?.[kind]) throw new Error("business_tool_not_authorized");
@@ -276,7 +312,11 @@ export class BusinessHost extends HttpAgentHost {
               if (prior.hash !== hash) throw new Error("business_call_changed");
               result = prior.approval && prior.result === undefined ? WAITING
                 : prior.result ?? { isError: true, status: "uncertain", error: "business_call_outcome_unknown" };
+              // Only the tool's own result counts as delivered, not the notice that its outcome is unknown.
+              if (productTool && prior.result !== undefined) delivered = () => this.partner?.delivered?.(call.name, admission, call.id);
             } else {
+            // A call past its deadline is not started. One that waits for the owner is ended by its approval record above.
+            if (!(Date.parse(call.deadlineAt) > Date.now())) throw new Error("business_tool_not_authorized");
             if (grant.count >= (admission.maxToolCalls ?? 1000)) throw new Error("business_tool_budget_exhausted");
             this.store.transaction(() => {
               this.store.set("business_runs", grantKey, { ...grant, count: grant.count + 1 });
@@ -284,6 +324,7 @@ export class BusinessHost extends HttpAgentHost {
             });
             if (productTool) {
               result = await this.partner!.execute(call.name, call.input, admission, call.id, id);
+              delivered = () => this.partner?.delivered?.(call.name, admission, call.id);
             } else if (call.name === connectedAppDefinition.name) {
               const parsed = connectedAppInput.safeParse(call.input);
               if (!this.appReader || !parsed.success) throw new Error("business_tool_not_authorized");
@@ -296,19 +337,18 @@ export class BusinessHost extends HttpAgentHost {
             this.store.set("business_call_receipts", receiptKey, result === WAITING ? { hash, approval: true } : { hash, result });
             }
           } catch (error) {
-            const dependencyErrors = ["work_dependency_capacity_exhausted", "work_dependency_same_session", "work_dependency_run_not_active", "work_dependency_run_not_current", "work_dependency_context_mismatch", "work_dependency_wait_in_progress", "work_dependency_wait_unsupported", "invalid_dependency_wait_context"];
-            result = { isError: true, error: error instanceof Error && ["tool_removed", "business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required", "steer_owner_admission_required", ...dependencyErrors].includes(error.message)
-              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.partner?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "feishu_read_unavailable",
-              ...(error instanceof Error && error.message === "work_dependency_capacity_exhausted" ? { instruction: "The fixed execution capacity is full. Finish this turn and inspect the existing event later; do not create a replacement task." } : {}) };
+            result = error instanceof Removed ? toolRemoved
+              : { isError: true, error: error instanceof Error && ["business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required"].includes(error.message)
+                ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.partner?.definitions.some(d => d.name === call.name) ? "partner_tool_unavailable" : "feishu_read_unavailable" };
           }
           // A write awaiting the owner keeps its Host call pending; the approval card resolves it.
-          if (result !== WAITING) await this.deliver(id, call.id, result);
+          if (result !== WAITING) { await this.deliver(id, call.id, result); delivered?.(); }
         })().finally(() => this.pending.delete(pendingKey));
         this.pending.set(pendingKey, operation);
       }
       await operation;
     }
-    const cards = [...await this.approvals?.synthetic(id, calls) ?? [], ...this.handoffCards(id)];
+    const cards = [...await this.approvals?.synthetic(id, calls, this.desk(id)) ?? [], ...this.handoffCards(id)];
     return [...calls.filter(call => !this.ownsCall(call) || call.kind !== "tool"), ...cards];
   }
   /** Synthetic IDs are answered here and never forwarded to Host. */
@@ -319,6 +359,11 @@ export class BusinessHost extends HttpAgentHost {
     }
     if (callId.startsWith(HANDOFF_PREFIX)) return this.answerHandoff(id, callId.slice(HANDOFF_PREFIX.length), result);
     return super.resolve(id, callId, result);
+  }
+  /** Where the owner is asked for a run that handles a partner's message: the conversation that message came from. */
+  private desk(runId: string) {
+    const admission = this.admission(this.store.get<{ admission?: RunAdmission }>("business_runs", `${this.scope}:${runId}`)?.admission);
+    return admission && this.partner?.authority?.(admission)?.approvals;
   }
   /** Test and shutdown hook: wait for decided approvals of a run to reach Host. */
   async settled(runId: string) { await this.approvals?.waitFor(runId); }
@@ -340,7 +385,10 @@ export class BusinessHost extends HttpAgentHost {
   private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
     const granted = admission.toolGrants?.connectedApps, apps = this.apps;
     let connections = (apps?.connections ?? []).filter(id => !granted || granted.connections.includes(id));
-    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation.
+    // A turn a partner's message started may write where the owner's turn that message came from could.
+    const partnerTurn = this.partner?.authority?.(admission);
+    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation,
+    // in a turn the owner started. No partner turn is one.
     let blocked: string[] = [];
     if (apps?.ownerPrivate && !(await apps.ownerPrivate.admitted(admission))) {
       const ids = await apps.ownerPrivate.connections();
@@ -349,8 +397,8 @@ export class BusinessHost extends HttpAgentHost {
     }
     const scope = blocked.length ? { connections, ...(granted?.operations ? { operations: granted.operations } : {}) } : granted;
     const browser = (apps?.browser ?? []).filter(id => connections.includes(id));
-    // Only the owner's own conversation can approve; schedules and delegations keep read-only tokens.
-    const write = admission.kind === "owner" && !!this.approvals;
+    // The owner can be asked in the owner's own turn, and for a partner turn that came from one. Schedules keep read-only tokens.
+    const write = (admission.kind === "owner" || partnerTurn?.write === true) && !!this.approvals;
     const options = write ? { write: true } : undefined;
     const read = (value: z.infer<typeof connectedAppInput>) => options ? this.appReader!(value, scope, options)
       : scope ? this.appReader!(value, scope) : this.appReader!(value);
@@ -374,13 +422,13 @@ export class BusinessHost extends HttpAgentHost {
       catch (error) { if (error instanceof RelayError) return { status: "failed", error: error.message }; throw error; }
     }
     const outcome = await read({ ...input, arguments: args });
-    // The owner set this operation to ask; only the owner's own conversation can show the approval card.
+    // The owner set this operation to ask, and this turn has no way to ask.
     const refusal = z.object({ status: z.literal("failed"), error: z.literal("connector_operation_requires_approval") }).passthrough().safeParse(outcome);
     if (refusal.success) return approvalUnavailableHere(refusal.data);
     const approval = approvalRequired.safeParse(outcome);
     if (approval.success) {
       if (!write || !this.approvals) return { status: "failed", error: "owner_approval_unavailable" };
-      const requested = await this.approvals.request(call, input.name!, { owner: admission.owner, agentId: admission.agentId, connections }, approval.data);
+      const requested = await this.approvals.request(call, input.name!, { owner: admission.owner, agentId: admission.agentId, connections }, approval.data, partnerTurn?.approvals);
       return "result" in requested ? requested.result : WAITING;
     }
     return this.finishApp(call, input.name ?? "", outcome);

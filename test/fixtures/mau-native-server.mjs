@@ -40,16 +40,19 @@ createInterface({ input: process.stdin }).on("line", async line => {
   const turnId = `mau-turn-${++nextId}`, threadId = params.threadId;
   reply(message.id, { turn: { id: turnId } });
   if (orchestration) {
-    const created = await ask(threadId, turnId, "work_sessions", { action: "create", input: "child fixture work" });
-    const event = JSON.parse(created.contentItems[0].text);
-    if (!event.eventId) return complete(threadId, turnId, JSON.stringify({ error: "child_not_created", created }));
-    let after, observed;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const response = await ask(threadId, turnId, "work_sessions", { action: "wait", eventIds: [event.eventId], timeoutMs: 5000, ...(after ? { after } : {}) });
-      observed = JSON.parse(response.contentItems[0].text); after = observed.cursor;
-      if (observed.data?.[0]?.status === "completed") break;
+    // The owner's turn recruits a partner, hands it work and waits for the reply inside the turn.
+    const text = params.input.find(item => item.text?.includes("partner-orchestrate")).text;
+    const call = async (args) => JSON.parse((await ask(threadId, turnId, "partners", args)).contentItems[0].text);
+    if (text.includes("partner-orchestrate-later")) {
+      // The turn ends at once; the reply comes back as a turn of its own.
+      const sent = await call({ action: "message", to: "scout", text: "later fixture work", intent: "ask" });
+      return complete(threadId, turnId, JSON.stringify({ sent }));
     }
-    return complete(threadId, turnId, JSON.stringify({ event, observed }));
+    const roster = await call({ action: "roster" });
+    const recruited = await call({ action: "recruit", name: "scout", duty: "Does fixture work", message: "child fixture work", intent: "relay" });
+    if (!recruited.message?.messageId) return complete(threadId, turnId, JSON.stringify({ error: "partner_not_recruited", recruited }));
+    const waited = await call({ action: "wait", messageIds: [recruited.message.messageId], timeoutSeconds: 30 });
+    return complete(threadId, turnId, JSON.stringify({ roster: { partners: roster.partners, kernels: roster.recruit.kernels }, recruited, waited }));
   }
   const input = JSON.parse(params.toolOutput.output);
   if (params.toolOutput.name === "proactive_work") return complete(threadId, turnId, JSON.stringify({

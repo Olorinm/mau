@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ServiceHttp } from "@agent-router/server";
-import { BusinessHost, BusinessTools } from "../src/business-tools.js";
+import { BusinessHost, BusinessTools, type PartnerTools } from "../src/business-tools.js";
 import { DurableStore } from "../src/store.js";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
@@ -178,10 +178,128 @@ it("preserves foreign namespaces with the same tool name for their original call
 
 it("answers a removed tool still listed in an older session's frozen catalog instead of leaving it pending", async () => {
   const f = fixture(); await f.host.start({ ...input, admission });
-  f.setCalls("business_data", "", { tool: "catalog", arguments: {} });
-  expect((await f.host.calls("run")).map(call => call.name)).toEqual(["channel"]);
-  expect(f.call).not.toHaveBeenCalled();
-  expect(f.resolved.at(-1)).toMatchObject({ success: false }); expect(JSON.stringify(f.resolved.at(-1))).toContain("tool_removed");
+  for (const [name, body] of [["business_data", { tool: "catalog", arguments: {} }], ["work_sessions", { action: "create", input: "Research the issue" }],
+    ["employee_memory", { action: "add", target: "user", content: "Prefers short answers" }]] as const) {
+    f.setCalls(name, "", body, `${name}-call`);
+    expect((await f.host.calls("run")).map(call => call.name)).toEqual(["channel"]);
+    // Answered at once, with what the model can tell the owner.
+    expect(f.resolved.at(-1).success).toBe(false);
+    expect(JSON.parse(f.resolved.at(-1).contentItems[0].text)).toEqual({ isError: true, error: "tool_removed",
+      instruction: "This tool no longer exists. This conversation still lists the tools it began with; the owner can start a new conversation to load the current ones." });
+  }
+  expect(f.resolved).toHaveLength(3); expect(f.call).not.toHaveBeenCalled();
+  // Another component's tool of the same name is not Mau's to answer.
+  f.setCalls("work_sessions", "", { action: "list" }, "foreign", "run", "other_plugin");
+  expect((await f.host.calls("run")).map(call => call.name)).toEqual(["work_sessions", "channel"]);
+  expect(f.resolved).toHaveLength(3);
+});
+
+it("keeps a session that began before this release on the tools and instructions it began with", async () => {
+  // What a session of the previous release stored: the catalog with the tools that were since removed or renamed,
+  // and its instructions with the two-file memory snapshot.
+  const f = fixture(), executed: unknown[] = [];
+  const before = [
+    { name: "work_sessions", description: "Manage this employee's work sessions.", inputSchema: { type: "object" }, timeoutMs: 60_000 },
+    { name: "employee_memory", description: "Maintain concise durable notes: memory (MEMORY.md) and user (USER.md).", inputSchema: { type: "object" }, timeoutMs: 10_000 },
+    { name: "session_search", description: "Search original stored conversation text for this employee.", inputSchema: { type: "object" }, timeoutMs: 10_000 }];
+  const instructions = "Stable role\n\nRemembered notes (frozen when this session began). Maintain concise durable notes with employee_memory.";
+  f.store.set("business_session_catalog", "agent:binding:session", before);
+  f.store.set("business_session_instructions", "agent:binding:session", instructions);
+  const current = [{ name: "partners", description: "Work with the owner's other partners.", inputSchema: { type: "object" }, timeoutMs: 90_000 },
+    { name: "memory", description: "Maintain your one durable memory document.", inputSchema: { type: "object" }, timeoutMs: 10_000 },
+    { name: "session_search", description: "Search the original stored text of your own conversations.", inputSchema: { type: "object" }, timeoutMs: 10_000 }];
+  const partner: PartnerTools = { definitions: current, context: () => ({ text: "Your memory (frozen when this session began)." }),
+    turnContext: async (_admission, _sessionId, names) => ({ sessionTools: names }),
+    execute: async (name, body) => { executed.push([name, body]); return { data: [] }; } };
+  const host = new BusinessHost(f.http, undefined, f.store, "agent:binding", undefined, principal, partner);
+  await host.start({ ...input, instructions: "Stable role", admission, tools });
+  // Host compares a session with its definition: both parts are exactly what the session was created with.
+  expect(f.submitted().tools).toEqual([...tools, ...before]);
+  expect(f.submitted().instructions).toBe(instructions);
+  // What a turn is told beside its input is decided by the tools its session has, not by the current ones.
+  expect(f.submitted().context).toEqual({ requestContext: null, sessionTools: ["work_sessions", "employee_memory", "session_search"] });
+  // A tool that kept its name still works there; the removed ones are answered at once; the new ones are not offered.
+  f.setCalls("session_search", "", { query: "invoice" }, "search-call");
+  await host.calls("run");
+  expect(executed).toEqual([["session_search", { query: "invoice" }]]);
+  expect(JSON.parse(f.resolved.at(-1).contentItems[0].text)).toEqual({ data: [] });
+  f.setCalls("employee_memory", "", { action: "read" }, "memory-call");
+  await host.calls("run");
+  expect(JSON.parse(f.resolved.at(-1).contentItems[0].text)).toMatchObject({ error: "tool_removed" });
+  expect(executed).toHaveLength(1);
+  // A new conversation of the same partner begins with the current tools and memory text.
+  await host.start({ ...input, sessionId: "new-window", instructions: "Stable role", admission, tools });
+  expect(f.submitted().tools).toEqual([...tools, ...current]);
+  expect(f.submitted().instructions).toBe("Stable role\n\nYour memory (frozen when this session began).");
+  expect(f.submitted().context).toEqual({ requestContext: null, sessionTools: ["partners", "memory", "session_search"] });
+  expect(f.store.get("business_session_catalog", "agent:binding:session")).toEqual(before);
+});
+
+it("opens a conversation with the whole catalog when a partner's message is its first turn, and records delivered input as not the owner's", async () => {
+  const completed: any[] = [], runs: any[] = [];
+  const f = fixture(), apps = vi.fn(async () => ({ status: "completed", tools: [] }));
+  const definitions = [{ name: "partners", description: "", inputSchema: { type: "object" }, timeoutMs: 90_000 }];
+  const partner: PartnerTools = { definitions, context: () => undefined, execute: async () => ({}), observe: run => { runs.push([run.id, run.status]); },
+    authority: turn => turn.reference === "pm-1" ? { write: true, tool: "partners" } : undefined };
+  const host = new BusinessHost(f.http, { read: f.call }, f.store, "agent:binding", apps, principal, partner, turn => completed.push(turn));
+  // The message grants no Feishu reader and no connection, but the session it opens is the owner's conversation.
+  const message = { kind: "delegation" as const, ...principal, reference: "pm-1", toolGrants: { feishu: false, connectedApps: { connections: [] } } };
+  await host.start({ ...input, input: "[Automated delivery: this input is not a message from a human user]\n...", admission: message });
+  expect(f.submitted().tools.map((tool: { name: string }) => tool.name)).toEqual(["feishu_bot_read", "connected_apps", "partners"]);
+  // Having the tool in the catalog grants nothing: the run's own grants decide each call.
+  f.setCalls("feishu_bot_read", "docs list");
+  await host.calls("run");
+  expect(f.call).not.toHaveBeenCalled(); expect(JSON.stringify(f.resolved.at(-1))).toContain("business_tool_not_authorized");
+  // Any other delegation opens a session with what it was granted, as before.
+  await host.start({ ...input, sessionId: "review", admission: { ...message, reference: "memory-review-1" } });
+  expect(f.submitted().tools.map((tool: { name: string }) => tool.name)).toEqual(["connected_apps", "partners"]);
+  // Text delivered to a runtime that takes no tool output is still not the owner's input.
+  expect(f.store.get<{ inputRole: string }>("business_turn_inputs", "agent:binding:run")).toMatchObject({ inputRole: "tool" });
+  expect(f.store.get<{ inputRole: string }>("business_turn_inputs", "agent:binding:child-run")).toMatchObject({ inputRole: "tool" });
+  const g = fixture();
+  await new BusinessHost(g.http, undefined, g.store, "agent:binding", undefined, principal, partner).start({ ...input, admission });
+  expect(g.store.get<{ inputRole: string }>("business_turn_inputs", "agent:binding:run")).toMatchObject({ inputRole: "user" });
+  // Every run that reaches the Host is reported, for the roster's view of who is working.
+  expect(runs).toEqual([["run", "running"], ["child-run", "running"], ["run", "running"]]);
+  expect(completed).toEqual([]);
+  // Router labels a delegated tool output with the former delegation tool. A partner's turn gets it under the tool that sent it.
+  const delivery = { namespace: "mau", name: "work_sessions", retain: false, output: JSON.stringify({ source: { kind: "delegation", reference: "pm-1" }, message: "Hello" }) };
+  const delivered = async (toolOutput: typeof delivery, turn: typeof message, began?: string[]) => {
+    const one = fixture();
+    if (began) one.store.set("business_session_catalog", "agent:binding:session", began.map(name => ({ name, description: "", inputSchema: { type: "object" }, timeoutMs: 1000 })));
+    await new BusinessHost(one.http, undefined, one.store, "agent:binding", undefined, principal, partner).start({ ...input, input: "", toolOutput, admission: turn });
+    return one.submitted().toolOutput;
+  };
+  expect(await delivered(delivery, message)).toEqual({ ...delivery, name: "partners" });
+  // A session that began with the former tool, and not with this one, keeps the label of a tool it has.
+  expect((await delivered(delivery, message, ["work_sessions", "employee_memory"])).name).toBe("work_sessions");
+  expect((await delivered({ ...delivery, namespace: "other" }, message)).name).toBe("work_sessions");
+  expect((await delivered(delivery, { ...message, reference: "memory-review-1" })).name).toBe("work_sessions");
+
+});
+
+it("tells a product tool that its result was delivered only when the result itself reached the Host", async () => {
+  const f = fixture(), delivered: string[] = [];
+  const partner: PartnerTools = { definitions: [{ name: "partners", description: "", inputSchema: { type: "object" }, timeoutMs: 90_000 }], context: () => undefined,
+    execute: async () => ({ results: [] }), delivered: (name, _admission, callId) => { delivered.push(`${name}:${callId}`); } };
+  const host = new BusinessHost(f.http, undefined, f.store, "agent:binding", undefined, principal, partner);
+  await host.start({ ...input, admission });
+  f.setCalls("partners", "", { action: "wait" }, "wait-1");
+  await host.calls("run");
+  expect(delivered).toEqual(["partners:wait-1"]);
+  // The same call listed again answers from its receipt, which is the same result.
+  await new BusinessHost(f.http, undefined, f.store, "agent:binding", undefined, principal, partner).calls("run");
+  expect(delivered).toEqual(["partners:wait-1", "partners:wait-1"]);
+  // A call that was interrupted before its result was saved is answered as unknown: nothing was delivered.
+  f.setCalls("partners", "", { action: "wait" }, "wait-2");
+  const interrupted: PartnerTools = { ...partner, execute: async () => { throw Object.assign(new Error("process stopped"), { stop: true }); } };
+  await new BusinessHost(f.http, undefined, f.store, "agent:binding", undefined, principal, interrupted).calls("run");
+  expect(JSON.stringify(f.resolved.at(-1))).toContain("partner_tool_unavailable");
+  f.store.set("business_call_receipts", "agent:binding:run:wait-3", { hash: (f.store.get<{ hash: string }>("business_call_receipts", "agent:binding:run:wait-2"))!.hash });
+  f.setCalls("partners", "", { action: "wait" }, "wait-3");
+  await host.calls("run");
+  expect(JSON.stringify(f.resolved.at(-1))).toContain("business_call_outcome_unknown");
+  expect(delivered).toEqual(["partners:wait-1", "partners:wait-1"]);
 });
 
 it("prepares connector skills before a run, and a failed preparation never blocks the run", async () => {
@@ -225,4 +343,16 @@ it("admits owner-identity connections only in the owner's private conversation, 
   privateConversation = true; read.mockClear();
   expect((await answer({ action: "tools" }, "dm-tools")).tools).toHaveLength(2);
   expect((await answer({ action: "call", name: "alice_feishu__read", arguments: {} }, "dm-call")).status).toBe("completed");
+  // A turn a partner's message started has write authority from the turn that sent the message, and still no
+  // personal identity: what admits it is the owner's own turn, which the policy decides, not the partner tools.
+  const g = fixture(), asked: unknown[] = [];
+  const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}), authority: () => ({ write: true, tool: "partners" }) };
+  const partnerHost = new BusinessHost(g.http, undefined, g.store, "private:binding", read, principal, partner, undefined,
+    { ...hosting, ownerPrivate: { connections: async () => new Set(["alice-feishu"]), admitted: async turn => { asked.push(turn.kind); return turn.kind === "owner"; } } });
+  await partnerHost.start({ ...input, tools, admission: { kind: "delegation", ...principal, reference: "pm-1", toolGrants: { connectedApps: { connections: ["alice-feishu", "alice-gmail"] } } } });
+  g.setCalls("connected_apps", "", { action: "call", name: "alice_feishu__read", arguments: {} }, "partner-call"); read.mockClear();
+  await partnerHost.calls("run");
+  expect(JSON.parse(g.resolved.at(-1).contentItems[0].text)).toMatchObject({ status: "failed", error: "connected_app_owner_private_only", connection: "alice-feishu",
+    message: expect.stringContaining("伙伴之间的消息") });
+  expect(read).not.toHaveBeenCalled(); expect(asked).toEqual(["delegation"]);
 });

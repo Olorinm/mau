@@ -32,9 +32,9 @@ export type NewPartnerEnvironment = { profileId: string } | { shareWith: string 
 export const canShareEnvironment = ({ environment }: AgentSummary) =>
   !!environment && !environment.sharedFrom && !["deleting", "deleted"].includes(environment.state);
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
-/** One of a partner's two memory files: `memory` (MEMORY.md, working knowledge) or `user` (USER.md, the owner's preferences). */
-export interface MemoryFile { target: "memory" | "user"; file: string; entries: string[]; usage: { used: number; limit: number } }
-/** Entries of a memory file are separated by this line; the server stores and counts them joined with it. */
+/** A partner's memory: one document (MEMORY.md) of entries. */
+export interface MemoryFile { file: string; entries: string[]; usage: { used: number; limit: number } }
+/** Entries of the memory are separated by this line; the server stores and counts them joined with it. */
 export const memoryDelimiter = "\n§\n";
 export type MemoryOperation = { action: "add"; content: string } | { action: "remove"; old_text: string } | { action: "replace"; old_text: string; content: string };
 export interface ConnectorAccountState {
@@ -123,10 +123,10 @@ export function mauApi(token: string) {
     /** `null` returns a choice to the runtime's default. */
     selectModelSettings: (id: string, change: { model?: string | null; effort?: string | null }) =>
       request<ModelSettings>(mau + agent(id) + "/model-settings", { token, method: "PUT", body: change, timeoutMs: 45_000 }),
-    agentMemory: (id: string) => request<{ files: MemoryFile[] }>(mau + agent(id) + "/memory", { token }),
-    /** Applies the owner's changes to one memory file, in order and all or none. */
-    changeAgentMemory: (id: string, target: MemoryFile["target"], operations: MemoryOperation[]) =>
-      request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", target, operations } }),
+    agentMemory: (id: string) => request<MemoryFile>(mau + agent(id) + "/memory", { token }),
+    /** Applies the owner's changes to the memory, in order and all or none. */
+    changeAgentMemory: (id: string, operations: MemoryOperation[]) =>
+      request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", operations } }),
     /** With `shareWith` no environment is created and the partner is usable when the request returns. */
     createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),

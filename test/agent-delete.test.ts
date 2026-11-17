@@ -27,8 +27,8 @@ it("deletes a partner with its environment, memory, schedules and product record
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
   const kept = await f.service.create("@alice:example.test", "kept");
-  f.mau.facts.mutate("@alice:example.test", f.agent.id, { action: "add", content: "prefers tea", target: "memory" });
-  f.mau.facts.mutate("@alice:example.test", kept.id, { action: "add", content: "prefers coffee", target: "memory" });
+  f.mau.facts.mutate("@alice:example.test", f.agent.id, { action: "add", content: "prefers tea" });
+  f.mau.facts.mutate("@alice:example.test", kept.id, { action: "add", content: "prefers coffee" });
   const schedules = f.mau.proactive.store;
   schedules.set("rules", "r1", rule(f.agent.id, "r1"));
   schedules.set("rules", "r2", rule(kept.id, "r2"));
@@ -49,7 +49,7 @@ it("deletes a partner with its environment, memory, schedules and product record
   expect((await f.api(`/agents/${f.agent.id}`)).status).toBe(404);
   expect(existsSync(join(f.directory, "mau", "agents", f.agent.id))).toBe(false);
   expect(readdirSync(join(f.directory, "mau", "memories"))).toHaveLength(1);
-  expect(JSON.stringify(f.mau.facts.read("@alice:example.test", kept.id).files)).toContain("prefers coffee");
+  expect(JSON.stringify(f.mau.facts.read("@alice:example.test", kept.id).entries)).toContain("prefers coffee");
   expect(schedules.entries("rules").map((r) => r.id)).toEqual(["r2"]);
   expect(schedules.entries("triggers")).toHaveLength(0);
   expect(schedules.entries("daily_budgets")).toHaveLength(0);

@@ -12,7 +12,7 @@ import { createMau } from "@olorinm/mau";
 import { count, close } from "./cloud-driver.mjs";
 const root = await mkdtemp(join(tmpdir(), "cloud-bootstrap-"));
 const owner = "@alice:example.test";
-let service, mau, server;
+let service, mau, server, partnerTimer;
 const allocation = createServer().listen(0, "127.0.0.1");
 await new Promise((r) => allocation.once("listening", r));
 const port = allocation.address().port;
@@ -78,7 +78,7 @@ try {
     // Owners sign in at the edge in production; this fixture's CLI and API calls use the bearer account below.
     edgeIdentity: { provider: "cloudflare-access", teamDomain: "https://example-team.cloudflareaccess.com", audiences: ["fixture"],
       owners: { "alice@example.test": owner } },
-    nativeWork: { employeeTools: true },
+    nativeWork: { partnerTools: true },
     environments: {
       configFile: provider,
       modulePath: resolve("cloud-driver.mjs"),
@@ -141,6 +141,8 @@ try {
     }
     throw new Error("Host worker did not complete");
   }
+  // Mau's own start is not used here, so the delivery of partner messages is driven as its timer would.
+  partnerTimer = setInterval(() => { void mau?.partners.tick(); }, 100);
   const first = await turn("first cloud turn");
   assert.ok(JSON.stringify(first.artifacts).includes("first cloud turn"));
   assert.equal((await cli("pause")).state, "paused");
@@ -165,7 +167,7 @@ try {
       headers: { authorization: "Bearer fixture-owner", "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value = await response.json(); assert.ok(response.ok, JSON.stringify(value)); return value;
   };
-  await api(`/agents/${agent.id}/memory`, { action: "add", target: "user", content: "Use concise fixture reports" });
+  await api(`/agents/${agent.id}/memory`, { action: "add", content: "Use concise fixture reports" });
   assert.equal((await api(`/agents/${agent.id}/native/skills`)).data[0].skills[0].name, "fixture-skill");
   assert.equal((await api(`/agents/${agent.id}/native/memory`)).state, "disabled");
   const runtime = await service.runtime(agent.id), sessions = runtime.extension.sessions;
@@ -194,7 +196,37 @@ try {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   assert.ok(orchestrated, "owner orchestration did not complete");
-  assert.ok(JSON.stringify(orchestrated.artifacts).includes("Delegated fixture: child fixture work"), JSON.stringify(orchestrated.artifacts));
+  // The owner's turn recruited a partner into its own environment, sent it work and read the reply with wait.
+  // The answer of a finished turn is recorded in the conversation by the channel loop, a moment after the task ends.
+  const answered = async (text) => {
+    for (let n = 0; n < 400; n++) {
+      const found = (await web(`/chats/${encodeURIComponent(chat.chatId)}/events?limit=200`)).events
+        .find(event => event.kind === "message" && event.role === "assistant" && event.text.includes(text));
+      if (found) return found;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  };
+  const told = JSON.parse((await answered("recruited")).text);
+  assert.deepEqual(told.roster, { partners: [], kernels: ["codex"] });
+  assert.equal(told.recruited.status, "recruited"); assert.equal(told.recruited.message.status, "sent");
+  assert.equal(told.waited.results[0].status, "completed"); assert.deepEqual(told.waited.pending, []);
+  assert.match(told.waited.results[0].answer, /^Delegated fixture: \[Partner message: delivered by the system, not written by the owner\]/);
+  assert.match(told.waited.results[0].answer, /child fixture work$/);
+  const scout = service.agents(owner).find(candidate => candidate.name === "scout");
+  assert.equal(mau.environments.summary(owner, scout.id).sharedFrom, agent.id); assert.equal(count(), 1);
+  // The partner handled the message in its own conversation with the owner, where the owner finds it as sent by the other partner.
+  const scoutChat = await web("/chats/dm", { agentId: scout.id });
+  const scoutEvents = (await web(`/chats/${encodeURIComponent(scoutChat.chatId)}/events?limit=200`)).events.filter(event => event.kind === "message");
+  assert.deepEqual(scoutEvents.map(event => [event.role, event.sender.type, event.sender.id]), [["user", "agent", agent.id], ["assistant", "agent", scout.id]]);
+  // A reply that was not waited for comes back as a turn of the sender, whose answer goes to the owner's conversation.
+  await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-2", text: "partner-orchestrate-later" });
+  const returned = await answered("[Partner results");
+  assert.ok(returned, "the partner's reply did not come back to the owner's conversation");
+  assert.match(returned.text, /^Delegated fixture: \[Partner results: delivered by the system, not written by the owner\]/);
+  assert.match(returned.text, /From: partner "scout"/); assert.match(returned.text, /Delegated fixture: \[Partner message[^]*later fixture work/);
+  // The hand-over is recorded as done when the ending of its turn has been read from Router's settlement feed.
+  for (let n = 0; n < 200 && mau.partners.messages(owner)[0].status !== "returned"; n++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.deepEqual(mau.partners.messages(owner).map(message => [message.intent, message.status, message.deliveredBy]), [["ask", "returned", "turn"], ["relay", "collected", "wait"]]);
   const fork = await sessions.fork(incoming.conversationId, "restricted-fork");
   assert.equal(fork.parentSessionId, incoming.conversationId);
   const forked = await sessions.submit({ eventId: "restricted-followup", sessionId: "restricted-fork", input: "fork fixture work",
@@ -252,11 +284,16 @@ try {
   // A rule without notify defaults to `web`: the reminder is recorded in the conversation.
   assert.equal(mau.proactive.rule(owner, direct.id).notify.channel, "web");
   assert.equal(await recorded("Fixed fixture reminder"), 1);
+  // The environment cannot go while a partner still works in it; that partner is deleted first, with its records.
+  const removed = await fetch(`${base}/_mau/v1/agents/${scout.id}`, { method: "DELETE", headers: { authorization: "Bearer fixture-owner" } });
+  assert.equal(removed.status, 204);
+  assert.deepEqual(mau.partners.messages(owner).map(message => message.to.name), []);
   assert.equal((await cli("destroy")).state, "deleted");
   console.log(
-    "PASS: independent Mau/Router/Environment/Host archives, CLI setup, restart/resume, owner tool -> delegated task -> wait, narrowed fork, native skills/memory, frozen bounded memory, schedule held during manual pause -> explicit resume -> native toolOutput with current read-only memory -> stable outbox, trigger deduplication, and explicit destruction. Cloud lifecycle and Codex protocol are fixtures; no cloud/model acceptance is implied.",
+    "PASS: independent Mau/Router/Environment/Host archives, CLI setup, restart/resume, owner tool -> recruited partner in the same environment -> message -> wait, a reply returned as a turn that answers the owner, narrowed fork, native skills/memory, frozen bounded memory, schedule held during manual pause -> explicit resume -> native toolOutput with current read-only memory -> stable outbox, trigger deduplication, and explicit destruction. Cloud lifecycle and Codex protocol are fixtures; no cloud/model acceptance is implied.",
   );
 } finally {
+  clearInterval(partnerTimer);
   await shutdown();
   await close();
   await rm(root, { recursive: true, force: true });

@@ -73,7 +73,7 @@ export interface ReviewToolBinding {
 export interface ReviewRuntimeBinding {
   /** The trusted original partner whose memory is being maintained. The worker
    * may have another agent ID, but its tools must remain mapped to this scope. */
-  employee: MemoryReviewScope;
+  partner: MemoryReviewScope;
   sessions: Pick<WorkSessions, "owner" | "agentId" | "runtimeId" | "submit" | "lookup" | "cancel" | "discover" | "host">;
   profile: CodexReviewProfile;
   /** The launcher must derive this from the installed profile, and verify private
@@ -115,7 +115,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
     return binding.sessions.submit({ eventId: input.eventId, sessionId: input.sessionId, input: input.prompt,
       admission: { kind: "delegation", owner: binding.sessions.owner, agentId: binding.sessions.agentId,
         reference: input.eventId, toolGrants: {}, maxToolCalls: this.maxToolCalls, expiresAt: expiresAt.toISOString() },
-      context: { origin: "review", policyId: capabilities.policyId, employee: { owner: input.owner, agentId: input.agentId },
+      context: { origin: "review", policyId: capabilities.policyId, partner: { owner: input.owner, agentId: input.agentId },
         reviewMemory: input.reviewMemory, reviewSkills: input.reviewSkills,
         copiedTranscript: structuredClone(input.snapshot) } });
   }
@@ -128,7 +128,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
   private async bound(scope: MemoryReviewScope, signal: AbortSignal): Promise<ReviewRuntimeBinding> {
     const binding = await this.deps.resolve({ owner: scope.owner, agentId: scope.agentId }, signal);
     signal.throwIfAborted();
-    if (!sameScope(scope, binding.employee) || binding.sessions.owner !== scope.owner || binding.sessions.runtimeId !== binding.profile.id)
+    if (!sameScope(scope, binding.partner) || binding.sessions.owner !== scope.owner || binding.sessions.runtimeId !== binding.profile.id)
       throw new Error("review_runtime_scope_mismatch");
     return binding;
   }
@@ -166,7 +166,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
     signal.throwIfAborted(); return binding;
   }
   private proof(binding: ReviewRuntimeBinding): ReviewCapabilities {
-    return { ...binding.employee, status: "available", runtimeId: binding.profile.id,
+    return { ...binding.partner, status: "available", runtimeId: binding.profile.id,
       policyId: createHash("sha256").update(JSON.stringify(canonical({ version: CODEX_REVIEW_VERSION, profile: binding.installed.profileDigest, tools: binding.installed.toolBinding }))).digest("hex"),
       isolation: "dedicated-runtime", enforcement: "runtime-tool-allowlist", otherTools: "denied",
       contextAccess: "copied-session-and-managed-memory-skills", sideEffects: "managed-memory-skills-only",

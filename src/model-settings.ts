@@ -87,5 +87,8 @@ export class ModelSettings {
     return { ...current, selection: { ...(model ? { model } : {}), ...(effort ? { effort } : {}) } };
   }
 
+  /** The runtime's own model as it was last read for the agent, without asking its Host. */
+  defaultModel(agentId: string) { return this.store.get<Reading>(collection, agentId)?.defaultModel; }
+
   forget(agentId: string) { this.store.delete(collection, agentId); }
 }

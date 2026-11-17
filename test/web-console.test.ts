@@ -301,18 +301,19 @@ it.skipIf(!built)(
     const f = await mauFixture(cleanup, { webRoot });
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
     const memory = `/agents/${f.agent.id}/memory`;
-    await f.api(memory, { action: "add", target: "user", content: "Prefers short answers." });
     // Entries a Markdown editor writes back in its own way; they have to stay four entries, in order.
     const tricky = ["Naming: use snake_case_names; 2*3 = 6; path C:\\tmp\\a_b", "Checklist:\n- first item\n- second item\n1. numbered",
       "中文条目：先说结论，**重点**加粗。# 不是标题", "<b>html</b> & [link](https://example.test/a_b) `code`"];
-    for (const content of tricky) await f.api(memory, { action: "add", target: "memory", content });
+    for (const content of tricky) await f.api(memory, { action: "add", content });
     const { page, errors } = await browser(f);
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "文档");
     const profile = profileCard(page);
-    await see(profile.locator(".agent-list-row", { hasText: "USER.md" })).toContainText("22 / 1375");
+    // One memory document: the two-file layout's USER.md is gone.
+    await see(profile.locator(".agent-list-row")).toHaveText([/AGENTS\.md/, /MEMORY\.md/]);
+    await see(profile.locator(".agent-list-row", { hasText: "MEMORY.md" })).toContainText("/ 4000");
     // The instructions open as a card beside the conversation, at its level, and cannot be changed.
     await profile.getByRole("button", { name: "AGENTS.md", exact: true }).click();
     const document = page.getByRole("complementary", { name: "文档" });
@@ -332,8 +333,8 @@ it.skipIf(!built)(
     await save.click();
     await see(page.getByRole("region", { name: "通知" })).toContainText("已保存");
     await see(save).toBeDisabled();
-    const entries = async (target: string) => (await f.api(memory)).data.files.find((file: { target: string }) => file.target === target).entries as string[];
-    const saved = await entries("memory");
+    const entries = async () => (await f.api(memory)).data.entries as string[];
+    const saved = await entries();
     expect(saved).toHaveLength(4);
     expect(saved[0]).toContain("snake_case_names"); expect(saved[1]).toContain("second item"); expect(saved[1]).toContain("1. numbered");
     expect(saved[2]).toBe(tricky[2] + " Added."); expect(saved[3]).toBe(tricky[3]);
@@ -347,15 +348,14 @@ it.skipIf(!built)(
     await page.keyboard.press("Enter"); await page.keyboard.type("Remember the release checklist.");
     await save.click();
     await see(save).toBeDisabled();
-    expect(await entries("memory")).toEqual([...saved, "Remember the release checklist."]);
+    expect(await entries()).toEqual([...saved, "Remember the release checklist."]);
     // Deleting an entry's text removes the entry; the divider left behind separates nothing.
     await editor.getByText("Remember the release checklist.").click({ clickCount: 3 }); await page.keyboard.press("Backspace");
     await see(editor).not.toContainText("release checklist");
     await save.click();
     await see(save).toBeDisabled();
-    expect(await entries("memory")).toEqual(saved);
+    expect(await entries()).toEqual(saved);
     await see(editor.locator("hr")).toHaveCount(3);
-    await see(profile.locator(".agent-list-row", { hasText: "USER.md" })).toContainText("22 / 1375");
     await document.getByRole("button", { name: "关闭", exact: true }).click();
     await see(document).toHaveCount(0);
     expect(errors).toEqual([]);

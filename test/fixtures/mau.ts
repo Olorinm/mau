@@ -16,7 +16,9 @@ export const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
-  hostCapabilities?: { runIdempotency?: boolean } } = {}, extraOptions: Record<string, unknown> = {},
+  hostCapabilities?: { runIdempotency?: boolean };
+  /** Members added to the runtime description Host returns, for example `capabilities`. */
+  runtime?: Record<string, unknown> } = {}, extraOptions: Record<string, unknown> = {},
   /** Router service settings. Ledger flags given here replace the fixture's (send, cards, control and groups on). */
   routerConfig: Record<string, unknown> = {},
   /** Extra Router dependencies, for example `{ edgeIdentityCerts }`. */
@@ -109,7 +111,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       if (url.pathname.endsWith("/health"))
         return Response.json({ protocolVersion: 1, ...(serving.hostCapabilities ? { capabilities: serving.hostCapabilities } : {}) });
       if (url.pathname.endsWith("/runtimes/inspect"))
-        return Response.json({ id: "personal", cwd: "/home/user/workspace", available: true });
+        return Response.json({ id: "personal", cwd: "/home/user/workspace", available: true, ...serving.runtime });
       if (url.pathname.endsWith("/runtimes"))
         return Response.json({ runtimes: [{ id: "personal" }] });
       if (serving.host) return serving.host(url, init);
@@ -125,64 +127,67 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     ],
   });
   const access = await accessIssuer(cleanup);
-  privateFile(optionsFile, {
-    edgeIdentity: access.config({ [aliceEmail]: alice }),
-    ...extraOptions,
-    environments: {
-      configFile: "providers.json",
-      profiles: [
-        {
-          id: "cloud",
-          label: "Cloud",
-          provider: "cloud",
-          template: "tools",
-          kernel: "codex",
-          runtimeId: "personal",
-          hostConfigFile,
-          instructions: "Work carefully.\nAnswer in the owner's language.",
-          owners: [alice],
-        },
-      ],
-    },
-  });
-  const mau = createMau(
-    {
-      serverName: "example.test",
-      publicUrl: "http://127.0.0.1" + root,
-      stateDir: directory,
-      ...routerConfig,
-    },
-    optionsFile,
-    { environments: async () => ({ provider: (id: string) => {
-      if (id !== "cloud") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
-      return provider;
-    } }),
-      router: {
-      edgeIdentityCerts: access.certsUrl,
-      ...routerDependencies,
-      authenticate: async (token) => {
-        if (token === "alice") return alice;
-        if (token === "bob") return bob;
-        throw new WorkError("account_session_invalid", 401);
+  /** One Mau process on the fixture's state directory. `restart` closes it and opens another, as a deployment would. */
+  const open = async (extra: Record<string, unknown>) => {
+    privateFile(optionsFile, {
+      edgeIdentity: access.config({ [aliceEmail]: alice }),
+      ...extra,
+      environments: {
+        configFile: "providers.json",
+        profiles: [
+          {
+            id: "cloud",
+            label: "Cloud",
+            provider: "cloud",
+            template: "tools",
+            kernel: "codex",
+            runtimeId: "personal",
+            hostConfigFile,
+            instructions: "Work carefully.\nAnswer in the owner's language.",
+            owners: [alice],
+          },
+        ],
       },
-    } },
-    serving,
-  );
-  const service = mau.router.service;
-  const server = mau.app.listen(0, "127.0.0.1");
-  mau.attach(server);
-  await new Promise<void>((r) => server.once("listening", r));
-  cleanup.push(
-    () =>
-      new Promise<void>((r) => {
-        server.closeAllConnections();
-        server.close(() => r());
-      }),
-  );
-  cleanup.push(() => mau.close());
-  const base = `http://127.0.0.1:${(server.address() as any).port}`;
+    });
+    const mau = createMau(
+      {
+        serverName: "example.test",
+        publicUrl: "http://127.0.0.1" + root,
+        stateDir: directory,
+        ...routerConfig,
+      },
+      optionsFile,
+      { environments: async () => ({ provider: (id: string) => {
+        if (id !== "cloud") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
+        return provider;
+      } }),
+        router: {
+        edgeIdentityCerts: access.certsUrl,
+        ...routerDependencies,
+        authenticate: async (token) => {
+          if (token === "alice") return alice;
+          if (token === "bob") return bob;
+          throw new WorkError("account_session_invalid", 401);
+        },
+      } },
+      serving,
+    );
+    const server = mau.app.listen(0, "127.0.0.1");
+    mau.attach(server);
+    await new Promise<void>((r) => server.once("listening", r));
+    let closed: Promise<void> | undefined;
+    const close = () => closed ??= (async () => {
+      server.closeAllConnections();
+      await new Promise<void>((r) => server.close(() => r()));
+      await mau.close();
+    })();
+    return { mau, close, base: `http://127.0.0.1:${(server.address() as any).port}` };
+  };
+  let current = await open(extraOptions);
+  cleanup.push(() => current.close());
+  const service = current.mau.router.service;
   const api = async (path: string, body?: unknown, owner = "alice", prefix = root, method?: "PUT") => {
-    const response = await fetch(base + prefix + path, {
+    const response = await fetch(current.base + prefix + path, {
       method: method ?? (body === undefined ? "GET" : "POST"),
       headers: {
         authorization: "Bearer " + owner,
@@ -203,12 +208,18 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     throw new Error("fixture_timeout");
   };
   return {
-    base,
+    get base() { return current.base; },
     directory,
     cloud,
     provider,
-    service,
-    mau,
+    get service() { return current.mau.router.service; },
+    get mau() { return current.mau; },
+    /** Stop this Mau and start another on the same state, optionally with other product options. */
+    restart: async (options: Record<string, unknown> = extraOptions) => {
+      await current.close();
+      current = await open(options);
+      await current.mau.router.service.start();
+    },
     api,
     agent,
     path,
