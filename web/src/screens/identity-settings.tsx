@@ -67,8 +67,8 @@ export function IdentitySettings({ session }: { session: Session }) {
             : <span>{item.fixed === "identity_in_use" ? zh ? "当前登录" : "Signed in" : zh ? "由配置固定" : "Fixed by configuration"}</span>} />)}
     </SettingsSection>
     <SettingsSection title={zh ? "关联新渠道" : "Link a channel"}
-      note={zh ? "生成关联码后，在要关联的渠道里私聊你的任一 Agent 发送 /link 关联码。关联码 1 小时内有效，只能使用一次。邮件默认不支持关联。"
-        : "Generate a code, then send /link <code> to any of your Agents in a direct chat on the channel to link. Codes are valid for one hour and work once. Mail does not support pairing by default."}>
+      note={zh ? "生成关联码后，在要关联的渠道里私聊你的任一伙伴发送 /link 关联码。关联码 1 小时内有效，只能使用一次。邮件默认不支持关联。"
+        : "Generate a code, then send /link <code> to any of your partners in a direct chat on the channel to link. Codes are valid for one hour and work once. Mail does not support pairing by default."}>
       {issued && !expired ? <div className="mau-pairing-code" aria-live="polite">
         <strong className="mau-pairing-code-value">{issued.code}</strong>
         <span className="mau-muted">{zh ? "剩余" : "Expires in"} {remaining(issued.expiresAt, now)}</span>

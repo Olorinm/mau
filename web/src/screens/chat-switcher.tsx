@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { SearchField } from "@olorinm/agent-ui/pages";
+import { ProductIcon, TextButton } from "@olorinm/agent-ui/app";
 
 /** One conversation the owner can switch to: a partner (with or without a chat yet), a group, or another channel's session. */
 export interface ChatEntry {
@@ -11,6 +12,8 @@ export interface ChatEntry {
   /** The last message, shown as the row's tooltip in the full list. */
   preview?: string | undefined;
   time?: string | undefined;
+  /** What the partner waits for from the owner, shown in the row in place of the time. */
+  note?: string | undefined;
   unread: number;
   avatar(size: number): ReactNode;
 }
@@ -19,6 +22,8 @@ export interface ChatSection {
   title: string;
   entries: ChatEntry[];
   action?: { label: string; onSelect(): void } | undefined;
+  /** Entries put away from the section (dismissed partners): one row at its end opens them, each with its action. */
+  archived?: { label: string; entries: ChatEntry[]; action: { label: string; pending?: boolean; onSelect(entry: ChatEntry): void } } | undefined;
 }
 
 const stripKey = "mau.chatStrip";
@@ -96,7 +101,24 @@ export function ChatRoster({ sections, current, onPick, onClose, label, searchLa
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
-  const shown = sections.map((section) => ({ ...section, entries: section.entries.filter((entry) => entry.title.toLowerCase().includes(query)) }));
+  const matches = (entry: ChatEntry) => entry.title.toLowerCase().includes(query);
+  const shown = sections.map((section) => ({ ...section, entries: section.entries.filter(matches),
+    archived: section.archived && { ...section.archived, entries: section.archived.entries.filter(matches) } }));
+  // Sections whose put-away entries are listed; a search that finds one lists them too.
+  const [opened, setOpened] = useState<readonly string[]>([]);
+  const row = (entry: ChatEntry, trailing?: ReactNode) => (
+    <div key={entry.key} className="mau-roster-item" data-trailing={trailing ? "" : undefined}>
+      <button type="button" className="mau-roster-row" data-chat-key={entry.key} aria-current={entry.key === current ? "true" : undefined}
+        title={entry.preview} onClick={() => onPick(entry)}>
+        {entry.avatar(30)}
+        <span className="mau-roster-name">{entry.title}</span>
+        {trailing ? null : <span className="mau-roster-meta">{entry.note ? <span className="mau-roster-note">{entry.note}</span> : null}
+          {entry.unread ? <span className="mau-badge">{entry.unread}</span> : entry.note ? null : entry.time}</span>}
+      </button>
+      {trailing ?? (onProfile?.available(entry) ? <button type="button" className="mau-roster-info" aria-label={`${onProfile.label} · ${entry.title}`}
+        title={onProfile.label} onClick={() => onProfile.open(entry)}>i</button> : null)}
+    </div>
+  );
   useEffect(() => {
     // Escape closes the panel, unless it is closing a dialog or menu opened from the profile.
     const escape = (event: KeyboardEvent) => {
@@ -120,27 +142,29 @@ export function ChatRoster({ sections, current, onPick, onClose, label, searchLa
         <SearchField value={search} onChange={setSearch} placeholder={searchLabel} />
         <button type="button" className="mau-roster-close" aria-label={closeLabel} title={closeLabel} onClick={onClose}>×</button>
       </div>
-      {shown.map((section) => section.entries.length || (section.action && !query) ? (
+      {shown.map((section) => section.entries.length || section.archived?.entries.length || (section.action && !query) ? (
         <section key={section.id} aria-label={section.title}>
           <h3>
             <span>{section.title} · {section.entries.length}</span>
             {section.action ? <button type="button" aria-label={section.action.label} title={section.action.label} onClick={section.action.onSelect}>+</button> : null}
           </h3>
-          {section.entries.map((entry) => (
-            <div key={entry.key} className="mau-roster-item">
-              <button type="button" className="mau-roster-row" data-chat-key={entry.key} aria-current={entry.key === current ? "true" : undefined}
-                title={entry.preview} onClick={() => onPick(entry)}>
-                {entry.avatar(30)}
-                <span className="mau-roster-name">{entry.title}</span>
-                <span className="mau-roster-meta">{entry.unread ? <span className="mau-badge">{entry.unread}</span> : entry.time}</span>
+          {section.entries.map((entry) => row(entry))}
+          {section.archived?.entries.length ? (() => {
+            const archived = section.archived, open = opened.includes(section.id) || !!query;
+            return <>
+              <button type="button" className="mau-roster-archive" aria-expanded={open}
+                onClick={() => setOpened((ids) => ids.includes(section.id) ? ids.filter((id) => id !== section.id) : [...ids, section.id])}>
+                <ProductIcon name="next" size={12} />
+                <span>{archived.label} · {archived.entries.length}</span>
               </button>
-              {onProfile?.available(entry) ? <button type="button" className="mau-roster-info" aria-label={`${onProfile.label} · ${entry.title}`}
-                title={onProfile.label} onClick={() => onProfile.open(entry)}>i</button> : null}
-            </div>
-          ))}
+              {open ? archived.entries.map((entry) => row(entry,
+                <TextButton className="mau-roster-restore" disabled={archived.action.pending} aria-label={`${archived.action.label} · ${entry.title}`}
+                  onClick={() => archived.action.onSelect(entry)}>{archived.action.label}</TextButton>)) : null}
+            </>;
+          })() : null}
         </section>
       ) : null)}
-      {query && shown.every((section) => !section.entries.length) ? <p className="mau-muted mau-roster-empty">{emptyLabel}</p> : null}
+      {query && shown.every((section) => !section.entries.length && !section.archived?.entries.length) ? <p className="mau-muted mau-roster-empty">{emptyLabel}</p> : null}
     </aside>
   );
 }

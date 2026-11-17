@@ -20,7 +20,9 @@ export interface Turn {
   call(name: string, input: unknown): Promise<any>;
 }
 type Script = (turn: Turn) => Promise<string> | string;
-interface Run { record: Record<string, unknown>; calls: Array<Record<string, unknown>>; answers: Map<string, (value: unknown) => void>; requestKey?: string }
+interface Run { record: Record<string, unknown>; calls: Array<Record<string, unknown>>; answers: Map<string, (value: unknown) => void>; requestKey?: string;
+  /** What the run did, as a Host reports it: a tool call when it starts and when its answer has arrived. */
+  events: Array<Record<string, unknown>> }
 
 export function scriptedHost() {
   const runs = new Map<string, Run>(), turns: Turn[] = [];
@@ -33,14 +35,15 @@ export function scriptedHost() {
       const prior = [...runs.values()].find(run => body.requestKey && run.requestKey === body.requestKey);
       if (prior) return json(prior.record);
       const id = `run-${runs.size + 1}`, run: Run = { record: { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "" },
-        calls: [], answers: new Map(), ...(body.requestKey ? { requestKey: body.requestKey } : {}) };
+        calls: [], answers: new Map(), events: [], ...(body.requestKey ? { requestKey: body.requestKey } : {}) };
       runs.set(id, run);
       const context = typeof body.context === "object" && body.context ? body.context : {}, request = context.requestContext ?? context;
       const delivered = body.toolOutput ? JSON.parse(body.toolOutput.output).message : undefined;
       const turn: Turn = { runId: id, agentId: request.agentId, body, text: delivered ?? body.input, told: context.requestContext ? context : {},
         call: (name, input) => new Promise(resolve => {
           const callId = `${id}-call-${run.calls.length + 1}`;
-          run.answers.set(callId, value => resolve(JSON.parse((value as any).contentItems[0].text)));
+          run.events.push({ type: "tool.started", runId: id, callId, tool: name, input });
+          run.answers.set(callId, value => { run.events.push({ type: "tool.finished", runId: id, callId, tool: name, result: value }); resolve(JSON.parse((value as any).contentItems[0].text)); });
           run.calls.push({ id: callId, runId: id, kind: "tool", name, input, status: "pending", deadlineAt: new Date(Date.now() + deadlineMs).toISOString() });
         }) };
       turns.push(turn);
@@ -58,7 +61,10 @@ export function scriptedHost() {
         { model: "small", displayName: "Small", supportedReasoningEfforts: [{ reasoningEffort: "low" }] }] } } });
     const match = /^\/v1\/runs\/(run-\d+)(?:\/(events|calls|cancel)|\/calls\/([^/]+)\/result)?$/.exec(path), run = match && runs.get(match[1]!);
     if (!match || !run) return json({ error: "fixture_unknown_path" }, 404);
-    if (match[2] === "events") return json({ events: [], cursor: 0, hasMore: false, historyTruncated: false });
+    if (match[2] === "events") {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      return json({ events: run.events.map((event, index) => ({ sequence: index + 1, event })).filter(item => item.sequence > after), cursor: run.events.length, hasMore: false, historyTruncated: false });
+    }
     if (match[2] === "calls") return json({ calls: run.calls });
     if (match[2] === "cancel") { if (run.record.status === "running") Object.assign(run.record, { status: "cancelled" }); return json({}); }
     if (match[3]) {
@@ -80,9 +86,12 @@ export function scriptedHost() {
 }
 
 /** Mau with the partner tools on and the fixture's partner ("helper") in a ready environment of its own. */
-export async function partnersFixture(cleanup: Array<() => unknown>, options: { runtime?: Record<string, unknown>; mau?: Record<string, unknown> } = {}) {
+export async function partnersFixture(cleanup: Array<() => unknown>, options: { runtime?: Record<string, unknown>; mau?: Record<string, unknown>;
+  /** The built console, served by the fixture's Mau for browser tests. */
+  webRoot?: string } = {}) {
   const scripted = scriptedHost();
-  const f = await mauFixture(cleanup, { host: scripted.host, hostCapabilities: { runIdempotency: true }, ...(options.runtime ? { runtime: options.runtime } : {}) },
+  const f = await mauFixture(cleanup, { host: scripted.host, hostCapabilities: { runIdempotency: true }, ...(options.runtime ? { runtime: options.runtime } : {}),
+    ...(options.webRoot ? { webRoot: options.webRoot } : {}) },
     { nativeWork: { partnerTools: true }, ...options.mau });
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
@@ -140,6 +149,22 @@ export async function partnersFixture(cleanup: Array<() => unknown>, options: { 
       const open = new Map<string, (answer: string) => void>();
       scripted.respond(turn => new Promise<string>(resolve => { open.set(turn.runId, resolve); }));
       return (turn: Turn, answer = "done") => open.get(turn.runId)!(answer);
+    },
+    /**
+     * A connected-app write of the partner that handles `message` waits for the owner: the approval's record, and its
+     * card where the message was sent from, opened through the partner's own desk as the connector approval does.
+     * The connector service that would make the request is not part of this fixture.
+     */
+    approval: async (message: PartnerMessage, card: { id: string; summary: string; connection: string; arguments: unknown; deadlineAt?: string }) => {
+      const turn = { kind: "delegation" as const, owner: "@alice:example.test", agentId: message.to.agentId, reference: message.id, toolGrants: { connectedApps: { connections: [] } } };
+      const desk = f.mau.partners.authority(turn)!.approvals!, id = `partner-approval-${card.id}`;
+      const write = (status: string) => { const store = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test");
+        try { store.set("connector_approvals", `fixture:${id}`, { status, agentId: message.to.agentId, desk: id, summary: card.summary }); } finally { store.close(); } };
+      write("pending");
+      await desk.open({ id, summary: card.summary, connection: card.connection, arguments: card.arguments, deadlineAt: card.deadlineAt ?? new Date(Date.now() + 120_000).toISOString() });
+      return { id, status: () => desk.status(id), withdraw: () => desk.withdraw(id),
+        /** The approval is decided, as it is once the answer on the card has been read. */
+        settle: () => write("settled") };
     },
     record: (id: string) => { const store = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test"); try { return store.get<PartnerMessage>("partner_messages", id)!; } finally { store.close(); } },
   };

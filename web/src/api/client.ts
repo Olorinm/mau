@@ -25,6 +25,16 @@ export interface AgentSummary {
   /** One line saying what the partner is responsible for; fixed when it is created. */
   duty: string | null;
   environment: EnvironmentView | null;
+  /** When the partner was dismissed: it keeps its conversation and memory, and is not listed until it is restored. */
+  dismissed?: string | null;
+}
+/** A partner as it works with the others: who recruited it and what waits at it. */
+export interface PartnerView {
+  id: string; name: string; duty: string | null; status: string;
+  kernel: string | null; model: string | null; effort: string | null; lastActivityAt: string | null;
+  /** Messages of other partners it has not answered yet, and its operations that wait for the owner's approval. */
+  waiting: { messages: number; approvals: number };
+  sharesEnvironmentOf?: string; recruitedBy?: string; recruitedAt?: string; dismissedAt?: string;
 }
 /** Where a new partner runs: in an environment of its own, or in another partner's. */
 export type NewPartnerEnvironment = { profileId: string } | { shareWith: string };
@@ -130,6 +140,11 @@ export function mauApi(token: string) {
     /** With `shareWith` no environment is created and the partner is usable when the request returns. */
     createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
+    /** The owner's partners, dismissed ones included. */
+    partners: () => request<{ data: PartnerView[] }>(mau + "/partners", { token }).then((r) => r.data),
+    /** Archive a partner (it keeps everything and leaves the roster), or bring it back. */
+    dismissAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/dismiss", { token, body: {} }),
+    restoreAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/restore", { token, body: {} }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),
     environment: (id: string) => request<EnvironmentView>(mau + agent(id) + "/environment", { token }),
     createEnvironment: (id: string, profileId: string) =>

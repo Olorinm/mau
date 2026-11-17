@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
   Conversation,
@@ -9,11 +9,13 @@ import {
   RoomHeaderActions,
   type ConversationComposer,
   type MessageView,
+  type PartnerLinkResolver,
 } from "@olorinm/agent-ui/pages";
-import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, TextButton } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, StatusLine, TextButton, useToast } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
+import { isPartnerText, partnerMessage, partnerResults, type PartnerResult } from "../api/partner-text";
 import { ApiError } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
@@ -22,7 +24,7 @@ import {
   type PendingAnswer,
 } from "../api/ledger";
 import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
-import { errorMessage, useI18n } from "../i18n";
+import { errorMessage, errorSentence, failureMessage, useI18n } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 import { AgentDetail } from "./agent-detail";
@@ -46,11 +48,15 @@ const cardStatusNames: Record<string, [string, string]> = {
   answered: ["已回答", "Answered"], approved: ["已允许", "Approved"], rejected: ["已拒绝", "Rejected"],
   expired: ["已过期", "Expired"], canceled: ["已取消", "Canceled"],
 };
+/** How a request of a partner closed; one that is closed before it was answered was withdrawn by the partner's side. */
+const requestStatusKeys = { approved: "card.approved", rejected: "card.rejected", expired: "card.expired", canceled: "card.withdrawn" } as const;
+/** The partner a request card is about, from the title Mau gives it. */
+const requestPartner = (card: Card) => card.source === "product" ? /^伙伴「([a-z][a-z0-9-]{0,47})」/.exec(card.text)?.[1] : undefined;
 
 /**
- * A ledger card outside a run surface (Router's own "重新执行 / 不用了" card, or a turn without a loaded run):
- * buttons answer by choice, free-text cards by text. A pending handoff card reads its live text (the private link
- * is never stored in history).
+ * A ledger card outside a run surface (Router's own "重新执行 / 不用了" card, a partner's request for approval, or a
+ * turn without a loaded run): buttons answer by choice, free-text cards by text. A pending handoff card reads its
+ * live text (the private link is never stored in history).
  */
 function LedgerCardView({ client, api, chatId, card, answer }: {
   client: LedgerClient; api: LedgerApi; chatId: string; card: Card; answer: PendingAnswer | undefined;
@@ -62,10 +68,14 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
   const [draft, setDraft] = useState("");
   const busy = answer?.state === "sending";
   const send = (body: { choiceId: string } | { text: string }) => void client.answerCard(chatId, card.cardId, body).catch(() => undefined);
-  return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status}>
-    <ChatMarkdown markdown={live.data?.text ?? card.text} />
+  // A request of the product is plain text with a title line: the operation's arguments are shown as they are written.
+  const request = card.source === "product", [heading, ...rest] = request ? card.text.split("\n\n") : [];
+  const closed = request ? requestStatusKeys[card.status as keyof typeof requestStatusKeys] : undefined;
+  return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status} data-card-source={card.source}>
+    {request ? <div className="mau-card-text">{rest.length ? <strong>{heading}</strong> : null}<p>{rest.length ? rest.join("\n\n") : heading}</p></div>
+      : <ChatMarkdown markdown={live.data?.text ?? card.text} />}
     {pending && card.kind === "sensitive" ? <p className="mau-muted">{zh ? "请在执行内核的原生入口完成敏感输入，不要在聊天中发送密码或令牌。" : "Complete sensitive input in the runtime's native prompt; never send secrets in chat."}</p> : null}
-    {pending && card.kind !== "sensitive" && card.choices.length ? <div className="mau-card-actions">
+    {pending && card.kind !== "sensitive" && card.choices.length && answer?.state !== "stale" ? <div className="mau-card-actions">
       {card.choices.map((choice) => <TextButton key={choice.choiceId} tone={choice.style === "danger" ? "danger" : "primary"} disabled={busy}
         onClick={() => send({ choiceId: choice.choiceId })}>{choice.label}</TextButton>)}
     </div> : null}
@@ -74,8 +84,9 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
       <input aria-label={zh ? "回答" : "Answer"} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={zh ? "输入回答…" : "Type an answer…"} />
       <Button type="submit" disabled={busy || !draft.trim()}>{zh ? "回答" : "Answer"}</Button>
     </form> : null}
-    {card.status !== "pending" ? <p className="mau-muted">{cardStatusNames[card.status]?.[zh ? 0 : 1] ?? card.status}</p> : null}
-    {answer?.state === "stale" ? <p className="mau-muted">{zh ? "已在其他地方回答。" : "Already answered elsewhere."}</p> : null}
+    {card.status !== "pending" ? <p className="mau-muted mau-card-status"><StatusLine tone={card.status === "approved" ? "success" : "neutral"}>
+      {closed ? t(closed) : cardStatusNames[card.status]?.[zh ? 0 : 1] ?? card.status}</StatusLine></p> : null}
+    {answer?.state === "stale" ? <p className="mau-muted">{t("card.answeredElsewhere")}</p> : null}
     {answer && (answer.state === "failed" || answer.state === "rejected") ? <p role="alert">{errorMessage(t, answer.error ?? "request_failed")}
       {answer.state === "failed" ? <Button onClick={() => send(answer.body as { choiceId: string } | { text: string })}>{t("common.retry")}</Button> : null}
       <Button onClick={() => client.dismissAnswer(chatId, card.cardId)}>{zh ? "放弃" : "Dismiss"}</Button></p> : null}
@@ -83,9 +94,9 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
 }
 
 /** One ledger turn rendered with the existing run surface, keyed by turnId. */
-function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls }: {
+function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
-  controls?: RunControls | undefined;
+  controls?: RunControls | undefined; partnerLink?: PartnerLinkResolver | undefined;
 }) {
   const terminal = terminalTurn.includes(turn.state);
   const detail = useQuery({
@@ -101,7 +112,7 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
     : <WorkingSurface fallback={fallback} />;
   const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
-  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />;
+  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />;
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
@@ -170,9 +181,14 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
 }) {
   const { t, language } = useI18n();
   const zh = language === "zh-CN";
+  const { toast } = useToast();
+  const queries = useQueryClient();
   const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: () => mauApi(session.token).agents(),
     // Provisioning and lifecycle changes are durable server operations; poll faster only while one runs.
     refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000 : 10_000 });
+  // The partners as they work together: who recruited whom, and what waits at each. Read more often while something waits.
+  const partnerViews = useQuery({ queryKey: ["partners", session.owner], queryFn: () => mauApi(session.token).partners(), retry: false,
+    refetchInterval: (query) => query.state.data?.some((item) => item.waiting.messages || item.waiting.approvals) ? 3000 : 10_000 });
   const api = useMemo(() => ledgerApi(session.token), [session.token]);
   const client = useMemo(() => new LedgerClient(api, { socket: (url) => new WebSocket(url) as unknown as LedgerSocket }), [api]);
   useSyncExternalStore(client.subscribe, client.getVersion);
@@ -222,10 +238,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     return () => client.closeChat(selected);
   }, [client, selected]);
   const list = client.chatList();
+  // A turn that starts or ends, or a card that opens or closes, changes what waits at the partners.
+  const activity = list.map((chat) => `${chat.chatId}:${chat.activeTurns}:${chat.pendingCards}`).join("\n");
+  useEffect(() => { void queries.invalidateQueries({ queryKey: ["partners", session.owner] }); }, [activity]);
   // On a wide screen the first conversation opens by itself: a chat with a partner before another channel's session.
   useEffect(() => {
     if (selected || !agents.isSuccess || !matchMedia("(min-width: 901px)").matches) return;
-    const partners = new Set(agents.data.map(({ agent }) => agent.id));
+    const partners = new Set(agents.data.flatMap(({ agent, dismissed }) => dismissed ? [] : [agent.id]));
     const first = list.find((chat) => chat.kind === "dm" && partners.has(chat.agentIds[0] ?? ""))
       ?? list.find((chat) => chat.kind === "group") ?? list.find((chat) => !observedKey(chat)?.startsWith("work:"));
     if (first) setSelected(first.chatId);
@@ -319,15 +338,26 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const known = new Set((agents.data ?? []).map(({ agent }) => agent.id));
   const dms = new Map(list.flatMap((chat) => chat.kind === "dm" && chat.agentIds[0] ? [[chat.agentIds[0], chat] as const] : []));
   const unavailable = ["unconfigured", "paused", "deleting", "deleted", "needs_action"];
-  const agentEntries: Entry[] = (agents.data ?? []).map(({ agent, environment }) => {
-    const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured";
-    // The figure's eyes carry the state: aside while a reply runs, closed when the environment cannot take messages.
-    const figure = chat?.activeTurns ? "working" : unavailable.includes(state) ? "offline" : "idle";
-    return { key: "agent:" + agent.id, title: agent.name, status: chat?.activeTurns ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
-      preview: chat?.lastEvent?.preview, time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
+  const views = new Map(partnerViews.data?.map((item) => [item.id, item]) ?? []);
+  // What partners write each other is recorded as the text their models read; it is not a preview of a conversation.
+  const preview = (chat: ChatSummary | undefined) => chat?.lastEvent && !isPartnerText(chat.lastEvent.preview) ? chat.lastEvent.preview : undefined;
+  const partnerEntry = ({ agent, environment, dismissed }: NonNullable<typeof agents.data>[number]): Entry => {
+    const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured", waiting = dismissed ? undefined : views.get(agent.id)?.waiting;
+    const working = !!chat?.activeTurns || !!waiting?.messages;
+    // The figure's eyes carry the state: aside while a reply runs (the owner's or another partner's message), closed
+    // when the environment cannot take messages or the partner is dismissed.
+    const figure = dismissed ? "offline" : working ? "working" : unavailable.includes(state) ? "offline" : "idle";
+    return { key: "agent:" + agent.id, title: agent.name,
+      status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
+      preview: preview(chat), time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
+      ...(waiting?.approvals ? { note: t("partners.waitingApproval") } : {}),
       avatar: (size) => <PartnerAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
-  });
-  const chatEntry = (chat: ChatSummary): Entry => ({ key: "chat:" + chat.chatId, title: titleOf(chat), preview: chat.lastEvent?.preview,
+  };
+  // A dismissed partner keeps its conversation and is put away from the list.
+  const activeAgents = (agents.data ?? []).filter((item) => !item.dismissed);
+  const agentEntries: Entry[] = activeAgents.map(partnerEntry);
+  const dismissedEntries: Entry[] = (agents.data ?? []).filter((item) => item.dismissed).map(partnerEntry);
+  const chatEntry = (chat: ChatSummary): Entry => ({ key: "chat:" + chat.chatId, title: titleOf(chat), preview: preview(chat),
     time: clock(chat.lastEvent?.at), unread: chat.unread, chat,
     ...(chat.kind === "group" ? { status: `${chat.agentIds.length + 1} ${zh ? "位成员" : "participants"}` }
       : { agentId: chat.agentIds[0], status: zh ? "只读" : "Read-only" }),
@@ -343,7 +373,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
   // The header row holds partners first, then groups. Another channel's session is listed in the full list only,
   // and joins the row while it is the one being read.
-  const strip = useChatStrip([...recent(agentEntries), ...recent(groupEntries), ...otherEntries.filter((entry) => entry.key === currentKey)], currentKey);
+  const strip = useChatStrip([...recent(agentEntries), ...recent(groupEntries),
+    ...[...otherEntries, ...dismissedEntries].filter((entry) => entry.key === currentKey)], currentKey);
   // The profile card follows the conversation; it closes on one that has no single partner.
   const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
   useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
@@ -364,6 +395,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [panelOpen, currentKey]);
+  const show = (entry: Entry) => {
+    remember(entry.key);
+    setRosterOpen(false);
+    setProfile(undefined);
+    if (entry.chat) setSelected(entry.chat.chatId);
+    else if (entry.agentId) start.mutate(entry.agentId);
+  };
   const pick = (entry: Entry) => {
     // The current one again: its profile (a group: its members).
     if (entry.key === currentKey && !rosterOpen) {
@@ -371,12 +409,40 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       else if (entry.agentId && known.has(entry.agentId)) setProfile((open) => open === entry.agentId ? undefined : entry.agentId);
       return;
     }
-    remember(entry.key);
-    setRosterOpen(false);
-    setProfile(undefined);
-    if (entry.chat) setSelected(entry.chat.chatId);
-    else if (entry.agentId) start.mutate(entry.agentId);
+    show(entry);
   };
+  // Another partner named in a conversation (the sender of a message, a recruit, the one that asks for approval)
+  // leads to the conversation with it.
+  const partnerIds = new Map((agents.data ?? []).map(({ agent }) => [agent.name, agent.id]));
+  const openPartner = (agentId: string | undefined) => {
+    const entry = agentId && agentId !== currentAgent ? [...agentEntries, ...dismissedEntries].find((item) => item.agentId === agentId) : undefined;
+    return entry ? () => show(entry) : undefined;
+  };
+  const partnerLink: PartnerLinkResolver = (name) => openPartner(partnerIds.get(name));
+  const partnerAuthor = (agentId: string | undefined, name: string) => {
+    const open = openPartner(agentId);
+    return { title: name, avatar: <PartnerAvatar seed={agentId ?? name} fallbackName={name} size={28} animated={false} />, ...(open ? { onAuthorClick: open } : {}) };
+  };
+  // A result that is not completed says so under the partner's name, with the reason in words where there is one.
+  const resultStatus = (result: PartnerResult) => {
+    if (result.status === "completed" && !result.cut) return {};
+    const cut = result.cut ? t("partners.result.cut", { name: result.partner }) : "";
+    if (result.status === "completed") return { state: "note", status: cut };
+    const status = t(`partners.result.${result.status}`), reason = result.reason;
+    // A reason that is a code has a sentence here, or stays behind the status as its tooltip; the runtime's own words are shown.
+    const code = reason && /^[A-Za-z0-9_.:-]+$/.test(reason) ? reason : undefined;
+    const said = code ? errorSentence(t, code) : reason;
+    const text = said ? t("partners.result.reason", { status, reason: said }) : status;
+    return { state: "failed", status: <span {...(code && !said ? { title: code } : {})}>{[text, cut].filter(Boolean).join(" ")}</span> };
+  };
+  const restore = useMutation({
+    mutationFn: (entry: Entry) => mauApi(session.token).restoreAgent(entry.agentId!),
+    onSuccess: (_summary, entry) => {
+      toast({ kind: "success", title: t("partners.restored", { name: entry.title }) });
+      return Promise.all([agents.refetch(), partnerViews.refetch()]);
+    },
+    onError: (failed) => { if (!(failed instanceof ApiError && failed.status === 401)) toast({ kind: "error", title: failureMessage(t, failed) }); },
+  });
 
   const insertPrompt = (value: string) => { if (selected) setDrafts((values) => ({ ...values, [selected]: value })); };
   const actorAvatar = (bubble: LedgerBubble) => <PartnerAvatar seed={bubble.sender.id} fallbackName={bubble.sender.name} size={28} animated={false} {...(bubble.sender.type === "person" ? { appearance: "illustrated" as const } : {})} />;
@@ -439,7 +505,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         avatar: <PartnerAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
-          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} />,
+          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} />,
       };
     };
     for (const item of fold.items) {
@@ -447,6 +513,24 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       // Replies and Host cards of a turn are shown inside its run surface; Router's own cards have no Host call there.
       if (turn && item.role !== "user" && (item.kind === "message" || item.kind === "card" && item.card?.source !== "router")) {
         if (!placed.has(turn.turnId)) { placed.add(turn.turnId); messages.push(turnView(turn)); }
+        continue;
+      }
+      // What partners sent each other is recorded as an input no person wrote. It is shown as the partner's own words,
+      // beside its figure: a message in the conversation of the partner that received it, and each result in the
+      // conversation of the partner that had sent the message. Text that does not have the expected form is shown whole.
+      if (item.kind === "message" && item.role === "user" && item.origin === "delegation" && !item.redacted
+          && (item.sender.type === "agent" || isPartnerText(item.text))) {
+        const results = partnerResults(item.text);
+        if (results) results.forEach((result, index) => messages.push({
+          id: `${item.eventId}:${index}`, role: "assistant", ...partnerAuthor(partnerIds.get(result.partner), result.partner),
+          ...(result.answer ? { copyText: result.answer, content: <ChatMarkdown markdown={result.answer} /> } : {}), ...resultStatus(result) }));
+        else {
+          const message = partnerMessage(item.text), text = message?.text ?? item.text;
+          messages.push({ id: item.eventId, role: "assistant", copyText: text, content: <ChatMarkdown markdown={text} />,
+            ...(item.sender.type === "agent" ? partnerAuthor(item.sender.id, item.sender.name) : partnerAuthor(undefined, t("partners.results"))),
+            ...(message?.intent ? { subtitle: t(`partners.intent.${message.intent}`) } : {}) });
+        }
+        for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
         continue;
       }
       const system = item.kind === "notice" || item.kind === "window" || item.kind === "member" || item.kind === "action";
@@ -459,11 +543,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         content: <span className="mau-chat-divider" data-kind={item.kind}>{text}</span> });
         for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
         continue; }
+      // A partner's request for approval stands under that partner's figure, in the conversation it was asked in.
+      const requester = item.kind === "card" && item.card ? requestPartner(item.card) : undefined;
       messages.push({
         id: item.eventId, role: item.role === "user" ? "user" : "assistant",
         ...(item.redacted ? {} : { copyText: text }),
-        title: item.sender.name,
-        avatar: actorAvatar(item),
+        ...(requester && partnerIds.has(requester) ? partnerAuthor(partnerIds.get(requester), requester) : { title: item.sender.name, avatar: actorAvatar(item) }),
         ...(channel || details ? { subtitle: <>{channel}{channel && details ? " " : null}{details}</> } : {}),
         content: item.kind === "card" && item.card ? <LedgerCardView client={client} api={api} chatId={current.chatId} card={item.card} answer={answers.get(item.card.cardId)} />
           : item.redacted ? <p className="mau-muted mau-redacted">{item.sender.type === "person" ? (zh ? "消息已撤回" : "Message withdrawn") : (zh ? "消息已删除" : "Message deleted")}</p>
@@ -568,14 +653,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
 
   const sections: ChatSection[] = [
     { id: "agents", title: zh ? "伙伴" : "Partners", entries: agentEntries,
-      action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } } },
+      action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } },
+      ...(dismissedEntries.length ? { archived: { label: t("partners.dismissedState"), entries: dismissedEntries,
+        action: { label: t("partners.restoreShort"), pending: restore.isPending, onSelect: (entry: Entry) => restore.mutate(entry) } } } : {}) },
     { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
       action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } },
     { id: "others", title: zh ? "其他渠道" : "Other channels", entries: otherEntries },
   ];
   const header = (
     <header className="room-header mau-strip-header">
-      <ChatStrip entries={strip} current={currentKey} rest={allEntries.length - strip.length} expanded={panelOpen}
+      <ChatStrip entries={strip} current={currentKey} rest={allEntries.filter((entry) => !strip.includes(entry)).length} expanded={panelOpen}
         onPick={pick} onToggleAll={() => { remember(currentKey); setProfile(undefined); setRosterOpen(true); }}
         label={zh ? "对话" : "Conversations"} allLabel={zh ? "全部对话" : "All conversations"} />
       {current ? <div className="room-header-actions">
@@ -594,7 +681,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
 
   return (
     <>
-      {!allEntries.length ? (
+      {!allEntries.length && !dismissedEntries.length ? (
         <CollectionEmptyState label={zh ? "对话" : "Conversations"} loading={!failure && (chats.isPending || agents.isPending)} illustration="messages"
           title={t("agents.empty")} description={t("agents.emptyDetail")}
           actions={[{ label: t("agents.create"), variant: "primary", onClick: () => setCreating(true) }]}
@@ -609,7 +696,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
             onBack={() => { setProfile(undefined); setRosterOpen(true); }}
             profile={profileSummary ? { label: zh ? "伙伴资料" : "Partner profile", backLabel: zh ? "全部对话" : "All conversations",
               content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
-                partners={agents.data ?? []} onPartner={setProfile}
+                partners={agents.data ?? []} partner={views.get(profileSummary.agent.id)} onPartner={setProfile}
                 document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
                 onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
@@ -688,7 +775,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           )} />
         </div>
       )}
-      {creating ? <CreateAgentDialog session={session} partners={agents.data ?? []} onClose={() => setCreating(false)}
+      {creating ? <CreateAgentDialog session={session} partners={activeAgents} onClose={() => setCreating(false)}
         onCreated={(id) => { setCreating(false); void agents.refetch().then(() => start.mutate(id)); }} /> : null}
       {withdrawing ? (
         <Dialog open onOpenChange={(value) => { if (!value) setWithdrawing(undefined); }}>
@@ -718,10 +805,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       ) : null}
       <PurgeChatDialog chat={purging} onClose={() => setPurging(undefined)}
         purge={(chatId, cancelActive) => client.purge(chatId, chatId, cancelActive)} />
-      <LedgerCreateGroupDialog token={session.token} open={grouping} agents={agents.data ?? []}
+      <LedgerCreateGroupDialog token={session.token} open={grouping} agents={activeAgents}
         onOpenChange={setGrouping} onCreated={(summary) => { setGrouping(false); open(summary); }} />
       {room.group && membersOpen ? <LedgerGroupMembersDialog token={session.token} open chat={room.group}
-        members={room.members} agents={agents.data ?? []} onOpenChange={setMembersOpen}
+        members={room.members} agents={activeAgents} onOpenChange={setMembersOpen}
         onChanged={(change) => room.applyChange(change, (summary) => client.updateSummary(summary))} /> : null}
     </>
   );

@@ -7,6 +7,7 @@ import { createActivityPresentation } from "./activity-presentation";
 import { createRoomRunPresentation } from "./room-run-presentation";
 import { SharedChatProvider } from "./shared-chat-provider";
 import type { MessagePart } from "./parts";
+import { PartnerLinkProvider, type PartnerLinkResolver } from "./partner-link";
 
 /** Locale-bound functions and component identities remain stable across streaming updates.
  * The original presentation operates on display records, with no service or storage access.
@@ -28,15 +29,18 @@ export type RunMessageProps = Omit<BodyProps, "answerGroups" | "processGroups" |
   parts: MessagePart[];
   fallbackText?: string;
   resourceOperations?: ResourceOperations;
+  /** What opens a partner an activity row names. */
+  partnerLink?: PartnerLinkResolver;
 };
 
 /** Original room presentation, including its own answer bubbles; place in MessageView.body. */
-export function RunMessage({ id, parts, fallbackText = "", resourceOperations = {}, ...props }: RunMessageProps) {
+const noPartnerLink: PartnerLinkResolver = () => undefined;
+export function RunMessage({ id, parts, fallbackText = "", resourceOperations = {}, partnerLink = noPartnerLink, ...props }: RunMessageProps) {
   const { splitAssistantPartsForSurface, RoomAgentMessageBody } = useRunPresentation(resourceOperations.resolveArtifactUrl);
   const groups = useMemo(() => splitAssistantPartsForSurface(parts, id), [parts, id, splitAssistantPartsForSurface]);
-  return <ResourceOperationsProvider value={resourceOperations}><SharedChatProvider><RoomAgentMessageBody {...props} {...groups}
+  return <ResourceOperationsProvider value={resourceOperations}><PartnerLinkProvider value={partnerLink}><SharedChatProvider><RoomAgentMessageBody {...props} {...groups}
     fallbackText={fallbackText} hasTextPart={groups.answerGroups.some(group => group.type === "text" && !!group.part.text.trim())} />
-  </SharedChatProvider></ResourceOperationsProvider>;
+  </SharedChatProvider></PartnerLinkProvider></ResourceOperationsProvider>;
 }
 
 export { createActivityModel } from "./activity-model";
@@ -51,3 +55,4 @@ export type * from "./resource-model";
 export type { ActivityItem, ActivityEntry, ActivityArtifactCard } from "./activity-model";
 
 export type {ResourceOperations} from "./resource-operations";
+export type { PartnerLinkResolver } from "./partner-link";

@@ -485,6 +485,18 @@ button.agent-list-row-main:focus-visible {
   line-height: var(--lh-body);
 }
 
+/* A long secondary line shows three lines until it is opened. */
+.agent-detail-hero p[data-clamped] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.agent-detail-hero .agent-text-button {
+  margin: -4px 0 0;
+  font-size: var(--fs-note);
+}
+
 .agent-initial-avatar {
   display: inline-flex;
   flex: none;

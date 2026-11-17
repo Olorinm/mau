@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
-import { dictionaries, failureMessage, translator, type MessageKey } from "../web/src/i18n";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { dictionaries, errorMessage, errorSentence, failureMessage, translator, type MessageKey } from "../web/src/i18n";
 import { ApiError } from "../web/src/api/http";
 
 it("never throws for a label the server introduced later, such as a new channel kind", () => {
@@ -39,4 +42,47 @@ it("says a shared-environment refusal in words in both languages, naming the par
   expect(failureMessage(zh, new ApiError("some_new_code", 409, { partner: helper }))).toBe("操作失败（some_new_code）");
   expect(failureMessage(en, new Error("offline"))).toBe("Operation failed (request_failed)");
   expect(Object.keys(dictionaries.en).sort()).toEqual(Object.keys(dictionaries["zh-CN"]).sort());
+});
+
+it("says every refusal of the partners tool, of dismissing and of the memory document in words, in both languages", () => {
+  const zh = translator("zh-CN"), en = translator("en");
+  // Every code `src/partners.ts` gives a call of the tool, read from the source so that a new one cannot be missed.
+  // Its other names of this form are the collections it stores in and the events it logs for operators.
+  const source = readFileSync(new URL("../src/partners.ts", import.meta.url), "utf8");
+  const internal = ["partner_messages", "partner_returns", "partner_cursors", "partner_recruits", "partner_dismissals", "partner_activity", "partner_failure_wakes",
+    "partner_delivery_failed", "partner_settlements_unread", "partner_return_not_submitted"];
+  const refusals = [...new Set([...source.matchAll(/"(partners?_[a-z_]+)"/g)].map((match) => match[1]!))].filter((code) => !internal.includes(code));
+  expect(refusals).toEqual(expect.arrayContaining(["partner_owner_conversation_required", "partner_chain_limit", "partner_layer_limit", "partner_message_limit_reached",
+    "partner_unavailable", "partner_not_found", "partner_dismissed", "partner_limit_reached", "partner_recruit_failed", "partners_invalid_input"]));
+  // What a message's result may end with, and what the owner's own requests (dismiss, restore, memory) are refused with.
+  const others = ["no_answer_after_48_hours", "partner_deleted", "outcome_unknown", "tool_removed", "operation_failed", "agent_not_found", "connected_app_owner_private_only", "owner_approval_unavailable",
+    "memory_capacity_exceeded", "memory_duplicate", "memory_no_match", "memory_ambiguous_match", "memory_file_changed", "memory_invalid_content",
+    "memory_unsafe_content", "memory_file_unreadable", "memory_directory_unavailable", "memory_write_failed"];
+  for (const code of [...refusals, ...others]) for (const t of [zh, en]) {
+    expect(errorSentence(t, code), code).toEqual(expect.any(String));
+    expect(errorMessage(t, code), code).not.toContain(code);
+  }
+  expect(errorMessage(zh, "partner_chain_limit")).toBe("伙伴之间已经来回了太多轮，等你发下一条消息后才能继续。");
+  expect(errorMessage(en, "partner_owner_conversation_required")).toBe("Partners can be recruited, messaged and dismissed only from your private conversation with this partner.");
+  expect(errorSentence(zh, "some_new_code")).toBeUndefined();
+});
+
+it("the English console says partner, never agent, for the owner's partners", () => {
+  // A word of its own: identifiers, class names, paths and package names are not copy.
+  const word = /(?<![-.\w@/])agents?(?![-\w:/.])/i;
+  expect(Object.entries(dictionaries.en).filter(([, text]) => word.test(text))).toEqual([]);
+  // The console's own compiler reads its sources, so that only what is written in string literals is looked at.
+  const ts = createRequire(new URL("../web/package.json", import.meta.url))("typescript") as typeof import("../web/node_modules/typescript");
+  const root = fileURLToPath(new URL("../web/src/", import.meta.url)), found: string[] = [];
+  for (const name of readdirSync(root, { recursive: true }) as string[]) {
+    if (!/\.tsx?$/.test(name) || name === "i18n.ts") continue;
+    // English sentences written beside their Chinese ones: the string literals of the source that have a space in them.
+    const tree = ts.createSourceFile(name, readFileSync(root + name, "utf8"), ts.ScriptTarget.Latest, true);
+    (function visit(node: import("../web/node_modules/typescript").Node) {
+      const text = ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) ? node.text : "";
+      if (text.includes(" ") && word.test(text) && !/[\u4e00-\u9fff]/.test(text)) found.push(`${name}: ${text}`);
+      ts.forEachChild(node, visit);
+    })(tree);
+  }
+  expect(found).toEqual([]);
 });

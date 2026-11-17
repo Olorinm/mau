@@ -228,10 +228,17 @@ body {
 
 /* Ledger cards and run controls (phase 4). */
 /* Approval and question cards: a compact grey panel with text actions, not a row of bare buttons. */
-.mau-ledger-card { display: grid; gap: var(--sp-2); min-width: 0; border-radius: var(--r-panel); background: var(--c-panel); padding: 10px var(--space-row-x); font-size: var(--fs-body); }
+.mau-ledger-card { display: grid; gap: var(--sp-2); min-width: 0; font-size: var(--fs-body); }
+/* The message bubble around the card is the panel, in the bubble's own colour: one box, not a box in a box. */
+.mau-stage .room-chat-message .room-chat-bubble:has(> .mau-ledger-card) { width: min(560px, 100%); border-radius: var(--r-panel); padding: 12px var(--space-row-x); white-space: normal; }
 .mau-card-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); padding: 0 6px; }
 .mau-card-reply { display: flex; gap: var(--sp-2); }
 .mau-card-reply input { flex: 1; min-width: 0; }
+/* A partner's request: its title, then the text as it was written (the arguments of the operation keep every character). */
+.mau-card-text { display: grid; gap: 4px; min-width: 0; }
+.mau-card-text strong { font-weight: var(--fw-semibold); }
+.mau-card-text p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mau-card-status { margin: 0; }
 /* New-chat, notice and member lines: a centred grey line like the time separator, no bubble. */
 .room-chat-system:has(> .mau-chat-divider) {
   background: none;
@@ -526,6 +533,18 @@ body {
 .mau-profile-value {
   color: var(--c-text-secondary);
 }
+/* Another partner named on the profile: its figure and name. */
+.mau-profile-partner {
+  gap: 6px;
+  margin: 0 -6px 0 0;
+}
+.mau-profile-state {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-note);
+}
 .mau-roster[data-view="profile"] .mau-roster-top {
   padding: 0 8px;
 }
@@ -667,9 +686,50 @@ body {
   font-weight: 600;
 }
 .mau-roster-meta {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  gap: 6px;
   color: var(--c-text-tertiary);
   font-size: 11.5px;
+}
+/* Dismissed partners: one quiet row at the end of the section opens them; each can be brought back from its row. */
+.mau-roster-archive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 2px;
+  border: 0;
+  border-radius: var(--r-nav-item);
+  background: none;
+  color: var(--c-text-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-caption);
+  padding: 6px 8px 6px 10px;
+  text-align: left;
+}
+.mau-roster-archive:hover {
+  background: var(--c-fill);
+  color: var(--c-text-secondary);
+}
+.mau-roster-archive svg {
+  transition: transform 0.15s;
+}
+.mau-roster-archive[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.mau-roster-item[data-trailing] .mau-roster-row {
+  padding-right: 56px;
+}
+.mau-roster-restore {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  margin: 0;
+  transform: translateY(-50%);
+  font-size: var(--fs-caption);
 }
 .mau-roster-empty {
   margin: 12px 8px;

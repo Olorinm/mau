@@ -202,12 +202,12 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
         <span className="room-chat-avatar-gap" aria-hidden="true" />
       ) : !isUser ? (
         message.onAuthorClick ? (
-          <Tooltip content={t("partner.profileSettingsTitle")} side="right">
+          <Tooltip content={t("partner.openConversation", { name: senderDisplayName })} side="right">
             <button
               className="room-chat-avatar-button"
               type="button"
               onClick={() => message.onAuthorClick?.()}
-              aria-label={t("partner.openSettingsFor", {
+              aria-label={t("partner.openConversation", {
                 name: senderDisplayName,
               })}
             >
@@ -254,6 +254,13 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
                 </motion.span>
                 <>{message.title}</>
               </motion.button>
+            ) : message.onAuthorClick ? (
+              // A sender that has a conversation of its own: its name leads there, like its figure.
+              <button className="room-chat-author-link" type="button" onClick={() => message.onAuthorClick?.()}>
+                <strong>
+                  <>{message.title}</>
+                </strong>
+              </button>
             ) : (
               <strong>
                 <>{message.title}</>
@@ -269,7 +276,7 @@ export function RoomMessageItem({ message }: { message: MessageView }) {
             <RoomTextBubble isUser={false}>{message.content}</RoomTextBubble>
             {message.status ? (
               <div className="room-chat-status-row">
-                <div className="room-chat-status">{message.status}</div>
+                <div className="room-chat-status" data-status={message.state}>{message.status}</div>
               </div>
             ) : null}
           </div>

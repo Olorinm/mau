@@ -35,7 +35,7 @@ export function ExtensionsPage() {
   const rows: Array<[string, Parameters<typeof ProductIcon>[0]["name"]]> = [["Skills", "tools"], ["MCP", "network"], [zh ? "内核插件" : "Kernel plugins", "extensions"],
     ["Hooks", "refresh"], ["Tools", "tools"], ["CLI", "kernel"]];
   return <SettingsPage title={zh ? "扩展" : "Extensions"}>
-    <SettingsSection note={zh ? "Mau 尚未接入图形化扩展管理。伙伴可以在自己的环境里安装和使用这些扩展。" : "Graphical extension management is not connected to Mau yet. Agents can install and use extensions in their own environment."}>
+    <SettingsSection note={zh ? "Mau 尚未接入图形化扩展管理。伙伴可以在自己的环境里安装和使用这些扩展。" : "Graphical extension management is not connected to Mau yet. Partners can install and use extensions in their own environment."}>
       {rows.map(([label, icon]) => <ListRow key={label} icon={<span className="mau-settings-glyph"><ProductIcon name={icon} size={18} /></span>}
         title={label} trailing={<span>{zh ? "尚未接入" : "Not connected"}</span>} />)}
     </SettingsSection>
@@ -53,7 +53,7 @@ export function DataControlsPage({ session }: { session: Session }) {
   return <SettingsPage title={zh ? "数据控制" : "Data controls"}>
     <SettingsSection title={zh ? "聊天记录" : "Chat history"}
       note={zh ? "清空会永久删除你在所有渠道（网页、飞书、邮件等）与该伙伴或群聊的记录，并开始新对话；伙伴已经写入的记忆不会被删除。"
-        : "Clearing permanently deletes your messages in that chat on every channel and starts a new chat; memories the Agent already wrote are kept."}>
+        : "Clearing permanently deletes your messages in that chat on every channel and starts a new chat; memories the partner already wrote are kept."}>
       {chats.isPending ? <ListRow muted title={zh ? "正在读取…" : "Loading…"} />
         : chats.isError ? <ListRow muted title={errorMessage(t, chats.error instanceof ApiError ? chats.error.code : "request_failed")} />
         : writable.length ? writable.map((chat) => <ListRow key={chat.chatId} title={chat.title}
