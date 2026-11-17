@@ -149,3 +149,25 @@ it("learns owner-private connections from the service, caches them and fails clo
   expect(calls).toBe(2);
   expect([...(await new OwnerPrivateConnections(["x"]).ids())!]).toEqual(["x"]);
 });
+
+it("a partner in a shared environment is assigned the connections of the partner that has it", async () => {
+  const { f } = await product();
+  const reader = vi.spyOn(ConnectedApps.prototype, "reader");
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  // The fixture's Agent ID is not known when its configuration is written: assign its connections here.
+  (reader.mock.contexts[0] as any).config.assignments.push({ agentId: f.agent.id, owner: alice, connections: ["alice-feishu"] });
+  const scout = (await f.api("/agents", { name: "scout", shareWith: f.agent.id })).data.agent;
+  // Its Host is composed with a connected-apps reader of its own.
+  expect(reader.mock.calls.at(-1)).toEqual([scout.id, alice]);
+  expect(reader.mock.results.at(-1)!.value).toBeTypeOf("function");
+  const assigned = async () => Object.fromEntries((await f.api("/connector-accounts")).data.data.map((account: any) => [account.id, account.assignedAgents ?? []]));
+  expect(await assigned()).toEqual({ "alice-feishu": [f.agent.id, scout.id], "alice-gmail": [] });
+  // Using the connection does not let it replace the application behind the owner's personal authorization.
+  expect(await f.api("/connector-accounts/alice-feishu/feishu-application", { agentId: scout.id })).toEqual({ status: 409, data: { error: "connector_assigned_through_partner", partner: { id: f.agent.id, name: "helper" } } });
+  expect((await f.api("/connector-accounts/alice-gmail/feishu-application", { agentId: scout.id })).data.error).toBe("connector_not_assigned_to_agent");
+  expect((await f.api("/connector-accounts/alice-feishu/feishu-application", { agentId: f.agent.id })).data.error).toBe("feishu_chat_not_connected");
+  const removed = await fetch(`${f.base}/_mau/v1/agents/${scout.id}`, { method: "DELETE", headers: { authorization: "Bearer alice" } });
+  expect(removed.status).toBe(204);
+  expect(await assigned()).toEqual({ "alice-feishu": [f.agent.id], "alice-gmail": [] });
+});

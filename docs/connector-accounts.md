@@ -69,6 +69,9 @@ minutes per environment):
   files. Mau reads upload files from the workspace (below the working directory, at most 10 MB in total) and asks the
   browser for the current origin; screenshots, PDFs and downloads are saved under `browser_downloads/` in the working
   directory. Handoff stays a `connected_apps` operation (`handoff_start`), whose live view only the owner receives.
+- Partners [sharing an environment](environments.md#partners-sharing-an-environment) share these files: the
+  guides and commands installed are those of the partner that has the environment. A sharing partner without an
+  assignment of its own uses that partner's connections.
 - Files Mau installs carry an `Installed by Mau` marker; unassigned ones are removed. Files without the marker (an
   owner's own skill or CLI) are never overwritten. Environments whose Agent Host predates the relay client get guides
   but no commands.
