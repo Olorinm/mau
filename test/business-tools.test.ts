@@ -264,12 +264,15 @@ it("opens a conversation with the whole catalog when a partner's message is its 
   expect(completed).toEqual([]);
   // Router labels a delegated tool output with the former delegation tool. A partner's turn gets it under the tool that sent it.
   const delivery = { namespace: "mau", name: "work_sessions", retain: false, output: JSON.stringify({ source: { kind: "delegation", reference: "pm-1" }, message: "Hello" }) };
-  const delivered = async (toolOutput: typeof delivery, turn: typeof message) => {
+  const delivered = async (toolOutput: typeof delivery, turn: typeof message, began?: string[]) => {
     const one = fixture();
+    if (began) one.store.set("business_session_catalog", "agent:binding:session", began.map(name => ({ name, description: "", inputSchema: { type: "object" }, timeoutMs: 1000 })));
     await new BusinessHost(one.http, undefined, one.store, "agent:binding", undefined, principal, partner).start({ ...input, input: "", toolOutput, admission: turn });
     return one.submitted().toolOutput;
   };
   expect(await delivered(delivery, message)).toEqual({ ...delivery, name: "partners" });
+  // A session that began with the former tool, and not with this one, keeps the label of a tool it has.
+  expect((await delivered(delivery, message, ["work_sessions", "employee_memory"])).name).toBe("work_sessions");
   expect((await delivered({ ...delivery, namespace: "other" }, message)).name).toBe("work_sessions");
   expect((await delivered(delivery, { ...message, reference: "memory-review-1" })).name).toBe("work_sessions");
 

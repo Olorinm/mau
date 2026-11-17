@@ -181,8 +181,10 @@ export class BusinessHost extends HttpAgentHost {
       const instructions = priorInstructions ?? (memory ? `${request.instructions}\n\n${memory}` : request.instructions);
       // Admission is consumed here; native model input cannot grant itself access.
       const scheduledMemory = admission?.kind === "schedule" ? this.partner?.scheduledContext?.(admission) : undefined;
-      // Router labels delegated input with the product's former delegation tool. A partner's turn names the tool that sent it.
-      let toolOutput = partnerTurn && request.toolOutput?.namespace === "mau" ? { ...request.toolOutput, name: partnerTurn.tool } : request.toolOutput;
+      // Router labels delegated input with the product's former delegation tool. A partner's turn names the tool that
+      // sent it, in a session that has that tool; a session that began with the former one keeps Router's label.
+      let toolOutput = partnerTurn && request.toolOutput?.namespace === "mau" && added.some(tool => tool.name === partnerTurn.tool)
+        ? { ...request.toolOutput, name: partnerTurn.tool } : request.toolOutput;
       let memoryContext: ScheduledMemoryContext | Omit<ScheduledMemoryContext, "text"> | undefined = scheduledMemory;
       if (scheduledMemory && toolOutput) {
         let original = toolOutput.output;
