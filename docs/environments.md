@@ -102,8 +102,9 @@ routes are deleted, with no compatibility aliases or automatic state migration.
 
 A partner normally gets an environment of its own. It can instead run in the environment of another
 partner of the same owner: the same sandbox, Host, runtime and working directory. It is still a
-complete Agent, with its own Router identity, conversations, ledger, memory files, schedules and
-model settings, and creating it makes no cloud request.
+complete Agent, with its own Router identity, conversations, ledger, memory, schedules and
+model settings, and creating it makes no cloud request. A partner that another partner
+[recruits](native-work.md#partners) is created this way, in the recruiter's environment.
 
 `POST /_mau/v1/agents` takes `name` and exactly one of:
 
@@ -153,6 +154,11 @@ Rules:
 - Every partner in the environment reads the same native event stream. A native turn that Router did
   not start is delivered only to the owner's private conversation of the partner whose session ran
   it.
+
+- Partners in one environment can message each other. Each has its own Host sessions and native
+  threads, and their turns run side by side up to the runtime's limit of concurrent runs. A runtime
+  that runs one turn at a time refuses the turn of a message sent while the sender's own turn still
+  runs; the sender is told that the message failed.
 
 Partners in one environment see the same files, native kernel home and login. Give a partner an
 environment of its own when its work must be isolated.

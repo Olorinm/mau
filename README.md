@@ -70,8 +70,8 @@ channels and checks in a browser. The CLI offers the same operations.
 The console also provides [connector account management](docs/connector-accounts.md)
 when a separate OAuth account service is configured. Account connection, Agent tool access
 and background permission are separate. [Native work integration](docs/native-work.md)
-provides owner-scoped session tools, bounded Hermes-style memory, native skill/memory management,
-and persisted proactive rules. Product tools require explicit configuration; no
+lets an owner's partners recruit and message each other, and provides bounded Hermes-style memory,
+native skill/memory management and persisted proactive rules. Product tools require explicit configuration; no
 rules or new account authorizations are created by enabling the integration.
 
 Mau sits behind Cloudflare Access. The operator supplies the Mau URL and maps your Access email (or an Access

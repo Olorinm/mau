@@ -4,7 +4,9 @@ Mau composes Router's public `WorkSessions` API and Host's native adapters. Code
 
 ## Configuration
 
-The Mau setting `"nativeWork": {"employeeTools": true}` enables stable product tools for admitted owner/delegated work: `work_sessions`, `employee_memory`, `session_search`, and `proactive_work`. This setting defaults to false to avoid silently changing the tool definition fingerprint of existing native sessions. It does not create rules or authorize accounts. Existing sessions need a deliberate migration or a new independent work session when adding tools. Changing a connector account does not change the stable tool definitions.
+The Mau setting `"nativeWork": {"partnerTools": true}` enables stable product tools for admitted owner turns and partner turns: `partners`, `memory`, `session_search`, and `proactive_work`. This setting defaults to false to avoid silently changing the tool definition fingerprint of existing native sessions. It does not create rules or authorize accounts. Changing a connector account does not change the stable tool definitions.
+
+A session keeps the tools and the instructions it began with: Mau stores both per Host session and sends them unchanged with every later turn, so a change to the tool definitions never invalidates an existing session. Such a session does not see tools that were added later. It gets them when its conversation starts a new window ("new chat", `/new`), which opens a new Host session. A tool that was removed since (`work_sessions`, `employee_memory`, `business_data`) is still listed in a session that began with it; a call to it is answered at once with `tool_removed` and the advice to start a new conversation.
 
 Use [host-native-work.json](../examples/cloud/host-native-work.json) as the trusted Host profile for skills/memory management. The runtime `nativeAccess` allowlist is server-owned and defaults closed when omitted. A method being allowed does not mean the installed Codex supports it: memory endpoints are experimental and native errors are retained. This profile does not enable native memory generation. Enable it only after selecting and verifying the runtime's own native home and memory trust boundary. Private owner work and public group work must not share private memory merely because they use different thread IDs.
 
@@ -29,6 +31,9 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `GET/POST /agents/:id/memory` | Read the memory document / execute a bounded memory operation. |
 | `POST /agents/:id/memory/search` | SQLite original-history search with explicit index coverage. |
 | `POST /agents/:id/memory/history/import` | Import one page from this partner’s native history, using `{sessionId,cursor?}`. |
+| `GET /partners` | The owner's partners: `id`, `name`, `duty`, `kernel`, `model`, `effort`, `status`, `lastActivityAt`, `waiting: { messages, approvals }`, and where they apply `sharesEnvironmentOf`, `recruitedBy`, `recruitedAt`, `dismissedAt`. |
+| `GET /partners/messages` | Messages between the owner's partners, newest first (`?agentId=` for one partner, `?limit=`): `from`, `to`, `intent`, `text`, `status`, `connectionId`, and when known `ran`, `result`, `deliveredBy`, `reason`. |
+| `POST /agents/:id/dismiss`, `/restore` | `{}`. Archive a partner, or bring it back. `GET /agents` and `/agents/:id` return `dismissed` (a time, or `null`). |
 | `GET/POST /proactive` | List/create owner rules. |
 | `GET/PUT /proactive/:id` | Read or replace with `{expectedVersion, rule}`. |
 | `GET /proactive/:id/runs` | Cached run records and distinct notification receipts, without waking the Host. |
@@ -36,15 +41,63 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `POST /proactive/:id/run` | `{requestId}` for a stable manual trigger. |
 | `POST /proactive/:id/cancel` | Cancel the known active event; pausing alone does not cancel. |
 
-The `work_sessions` tool supports list, native read/history, create/send, fork, rename, archive/unarchive, steer, wait and cancel. It chooses neither owner nor Host from model arguments. Wait observes Router state and does not hold the worker's dispatch loop. `employee_memory` maintains bounded MEMORY.md and USER.md files; it does not edit Codex-generated native memory. Scheduled Agent work receives a fresh screened read-only view per event, saved for identical retries, and cannot invoke memory tools. See [Hermes memory](hermes-memory.md) for snapshots, approval, history and background-review boundaries.
+`memory` maintains the partner's one bounded MEMORY.md; it does not edit Codex-generated native memory. Scheduled Agent work receives a fresh screened read-only view per event, saved for identical retries, and cannot invoke memory tools. See [Hermes memory](hermes-memory.md) for snapshots, approval, history and background-review boundaries.
 
-The `proactive_work` tool supports rule creation/update and inspection/pause/resume/manual run. Changes require an owner-admitted turn; delegated work may only inspect rules and run history. This prevents a short-lived or narrowed delegation from creating broader persistent background permission. Steering a running session also requires owner admission because it would otherwise use the target run's grant. New rules default to paused. An active rule requires explicit status and valid assigned accounts and must be requested by the user.
+The `proactive_work` tool supports rule creation/update and inspection/pause/resume/manual run. Changes require an owner-admitted turn; a partner turn may only inspect rules and run history, so that a message between partners cannot create persistent background permission. New rules default to paused. An active rule requires explicit status and valid assigned accounts and must be requested by the user.
+
+## Partners
+
+A partner is an Agent of the owner: its own Router identity, its own conversation with the owner, its own memory and model settings, and one line saying what it is responsible for (its duty). The `partners` tool lets a partner work with the owner's other partners. It is not a sub-agent mechanism: a kernel's own sub-agents stay helpers inside one turn and are not managed here.
+
+| Action | Behavior |
+| --- | --- |
+| `roster` | The owner's other partners (name, duty, kernel, model, effort, status, last activity, what waits at each), the caller's messages that wait for replies, what a recruit may choose (`kernels`, `models` with their efforts, `efforts`, and the caller's own settings), the limits, and the guide. `includeDismissed` also lists dismissed partners. |
+| `recruit` | `name` and `duty`, optionally `kernel`, `model`, `effort`, and a first `message` with `intent`. The new partner runs in the recruiter's environment (the one the recruiter shares, when it shares one) and needs no approval. Values left out are the recruiter's own. Only values the roster lists are accepted; anything else is refused with the allowed values (`partner_kernel_not_available`, `partner_model_not_available`, `partner_effort_not_available`), never replaced by a default. `kernel` accepts the recruiter's own kernel only. A name that exists is refused (`partner_name_taken`), unless that partner was dismissed: then it is restored. |
+| `message` | `to`, `text`, `intent`. `relay` passes on what the owner asked for, `ask` is the sender's own question; both expect a reply. `inform` expects none and starts no turn anywhere: the recipient reads it at the start of its next turn. A partner whose environment a message cannot wake (paused, being deleted, in need of attention, or missing) is refused at once with `partner_unavailable`. |
+| `wait` | Waits up to 60 seconds (default 30) for replies, to the caller's waiting messages or to `messageIds`. A reply the turn that sent the message reads this way is not delivered a second time, once the answer of the `wait` call has reached that turn; if it did not (the call timed out at the Host), the reply comes back as a turn. A result stays readable by its id afterwards, and reading the result of an earlier turn's message does not stop its delivery. While a `wait` runs, a stop request for that turn takes effect when the `wait` returns. |
+| `dismiss` | Archives a partner: its Agent, conversation and memory are kept, it leaves the roster, and it is not messaged. Recruiting its name restores it. Only a turn the owner started may dismiss. |
+
+**Where a message runs.** A `relay` or `ask` is a turn of the recipient's own conversation with the owner (Router's owner conversation, opened if the owner has not written there yet), submitted with the sender as its `sender`. The context therefore stays in the recipient's long-lived conversation, and the owner finds the message, marked as sent by the other partner, and the answer in the recipient's chat. The recipient cannot ask the owner in that turn: its questions are not presented, and it is told to answer with what is missing so that the sender asks the owner.
+
+**How the reply returns.** When the recipient's turn ends, Mau submits a turn to the conversation the message was sent from, with Router's `reply` on the connection the owner used there, so the sender's answer reaches the owner on the web or the channel the owner wrote on. The turn's input says that the system delivered it, that the owner did not write it and that it gives no new authorization, and carries for each result the partner, the original message, the status, the duration, the kernel, model and effort the partner's turn was submitted with, and the answer marked as the partner's own report, between two lines that carry a value chosen after the answer was written. Results that are ready together reach their sender in one turn (at most eight). A result is never handed over while the turn that sent its message still runs.
+
+**Authorization.** A message is not the owner's authorization. The recipient's turn is admitted as a delegation whose grants are what the sending turn could use within the connections assigned to the recipient; whether connected-app writes can ask the owner and whether owner-identity connections are admitted follow the sending turn. The turn that hands results over acts within what the turns that sent those messages could use. See [connector approvals](connector-accounts.md#approvals-for-a-partners-turn).
+
+**Limits.**
+
+- One layer: a turn that handles a partner's message can read the roster, and cannot recruit, message or dismiss (`partner_layer_limit`).
+- A sender may have four messages waiting for replies. A further one is refused, not queued (`partner_message_limit_reached`). An `inform` is not counted; twenty of them may wait for one partner's next turn (`partner_note_limit_reached`).
+- A turn that hands results over may send messages again. Four such generations may follow one message of the owner; the next is refused until the owner writes (`partner_chain_limit`).
+- Partners are recruited, messaged and dismissed only from the owner's private conversation with the caller, because that is where a reply returns. Other owner turns (a group of the owner and the owner's Agents, work submitted through Router's work-events API) can read the roster; the rest is refused with `partner_owner_conversation_required`.
+- A message is at most 16,000 bytes. An answer longer than the room one Router input has is cut in the hand-over and says so; the full answer is in the recipient's conversation.
+
+**Delivery.** The record of every message is kept in Mau's store (`partner_messages`), with what became of it:
+
+| Status | Meaning |
+| --- | --- |
+| `queued` | An `inform` that its recipient's next turn will carry. `seen` once a completed turn carried it. |
+| `sending`, `running` | Recorded, then in the recipient's work queue until that turn ends. A send interrupted between the two is finished by the delivery loop. |
+| `settled` | The result is known and waits for its sender. |
+| `returning`, `returned` | Handed over in a turn of the sender, or, for a sender no longer woken, in a notice. |
+| `collected` | Read by the sender with `wait`, or refused at once when the message could not be sent. |
+| `dropped` | Never handed over. The result stays readable (`wait` with its id, `GET /partners/messages`). |
+
+- The endings of turns are read from Router's settlement feed with a cursor per Agent, so a restart of Mau or of Router loses nothing. Every 15 seconds the open turns are also read from their work events: a turn that ended without an entry in the feed is settled from there, and a turn whose outcome has been unknown for two minutes (Router finds a run again by itself after an interrupted submission) is reported to the sender as `unknown`. Nothing is run again in the partner's place.
+- A message whose recipient has not ended its turn after 48 hours fails with `no_answer_after_48_hours`, and that turn is cancelled.
+- A hand-over that fails (the turn could not be submitted, or failed) is tried again after 5 s, 15 s, 1 min, 5 min, 15 min, 1 h and 3 h: eight attempts in all, then the result is `dropped`. Waiting for the sending turn to end is not an attempt, and a turn submitted to a busy conversation waits in Router's queue behind the running one. A turn the owner stopped is not repeated.
+- A result that could not be handed over for 48 hours is `dropped`, and so is one whose hand-over turn has not ended after 48 hours; that turn is cancelled.
+- A sender is woken at most three times in a row for results that all failed. After that a failure leaves a notice in the owner's conversation instead of a turn, until that partner sends a message in a turn the owner started, or a result succeeds.
+- A failed or rejected result is final for its message: Mau does not retry the partner's work, run it elsewhere or answer in its place.
+
+**What a turn is shown.** Every turn in the owner's private conversation, the owner's own and one that hands results over, is given the current roster (name, duty, status) and what the partner waits for, beside its input (Codex: `additionalContext`), when its session has the `partners` tool; it and a turn that handles a message are given the `inform` notes left for the partner. This is not part of the tool definitions or the session's instructions, so it is always current and changes no session fingerprint. How to use the tool is said in three places that belong to the tool and to no kernel: its description (rules that always hold), the guide in the roster, and the `next` of each `recruit`, `message`, `wait` and `dismiss` result.
+
+Deleting a partner removes the messages it sent and the finished ones it received. A message another partner still waits on ends as `failed` (`partner_deleted`).
 
 ## Proactive rule contract
 
 Rules contain `agentId`, `targetSessionId` (an existing owner private conversation), `name`, `goal`, `timeZone` (IANA), and `schedule`: either `{type:"interval",minutes:5..10080}` or `{type:"daily",at:"HH:MM"}`. Other fields are assigned `connections`, optional operation names and native skill references, notification mode (`changes`, `always`, `none`), optional quiet hours, `maxRunsPerDay`, `maxToolCalls`, `timeoutSeconds`, and status.
 
-Scheduled and delegated work uses the native standalone tool-output delivery shape and retains the actual `mau` tool namespace/name. It is not a synthetic human instruction. Native tool outputs cannot be combined with `UserInput` skill items: scheduled skill references are validated against native discovery, then supplied by canonical name/path for native on-demand loading. This is not a guarantee of forced skill injection. Explicit user turns can use structured native skill input items through Router.
+Scheduled work and partner turns use Router's delivery for input that no human wrote: the native standalone tool output for a kernel that takes one, and text behind Router's fixed notice for a kernel that does not. It is not a synthetic human instruction, and Mau records it as such whichever form it took. Native tool outputs cannot be combined with `UserInput` skill items: scheduled skill references are validated against native discovery, then supplied by canonical name/path for native on-demand loading. This is not a guarantee of forced skill injection. Explicit user turns can use structured native skill input items through Router.
 
 Daily schedules execute once per local date. A nonexistent DST wall time skips that date; a repeated time uses its first occurrence. Delayed intervals coalesce into one check. A rule has one active trigger, and hitting a budget does not mint replacement triggers. The triggering identity is derived from rule ID, version and scheduled occurrence; manual requests include the caller's stable request ID.
 
@@ -62,7 +115,7 @@ Notifications use Router's stable outbox identity and receipt query. Quiet hours
 
 ## Trusted grants
 
-Router supplies `HostAdmission` through the embedding interface for owner, delegated or scheduled work. Mau consumes it before public Host HTTP submission. Tool names and model text do not establish authorization. Mau validates owner/partner, current rule state, expiry, call budget and connector operation intersection on every call. The stable tool catalog is retained for the native session and inherited by forks, while each child's calls use its own run grants. Revoked grants stop actual execution immediately. Persisted run requests restore grants after lost start responses and preserve the exact context on retries. Persisted call receipts prevent duplicate execution after worker recreation; ambiguous calls remain uncertain.
+Router supplies `HostAdmission` through the embedding interface for owner turns, partner turns and scheduled work. Mau consumes it before public Host HTTP submission. Tool names and model text do not establish authorization. Mau validates owner/partner, current rule state, expiry, call budget and connector operation intersection on every call. The stable tool catalog is retained for the native session and inherited by forks, while each child's calls use its own run grants. Revoked grants stop actual execution immediately. Persisted run requests restore grants after lost start responses and preserve the exact context on retries. Persisted call receipts prevent duplicate execution after worker recreation; ambiguous calls remain uncertain.
 
 ## Trusted read tools
 
@@ -86,6 +139,6 @@ reader and may still be present in the sandbox.
 
 ## Verification
 
-`npm test`, `npm run typecheck`, and the independent package consumer test cover implementation and protocol fixtures. Proactive tests cover lost submission/restart, source isolation, missing and forged cursor proofs, cursor regression, atomic notifications, daily limits, overlap, cancellation during submission, pause, quiet hours, invalid authorization, and DST. These are distinct from real model, cloud wakeup, account access and provider delivery acceptance, which require separate evidence.
+`npm test`, `npm run typecheck`, and the independent package consumer test cover implementation and protocol fixtures. The partner tests run real Router runtimes against a scripted Host: recruiting, the three intents, the reply's way back, restarts, the delivery limits and the approval card in the sender's conversation. The package consumer runs a recruit, a message read with `wait` and a reply returned as a turn through a real Host process. None of this shows how a model uses the tool, or delivery on an external channel. Proactive tests cover lost submission/restart, source isolation, missing and forged cursor proofs, cursor regression, atomic notifications, daily limits, overlap, cancellation during submission, pause, quiet hours, invalid authorization, and DST. These are distinct from real model, cloud wakeup, account access and provider delivery acceptance, which require separate evidence.
 
 No dedicated restricted review runtime is provisioned by default, so background review reports `unsupported / restricted_review_runtime_required` even when its preference is enabled. External notification acceptance and any additional native capabilities require their own evidence.
