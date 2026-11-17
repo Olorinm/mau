@@ -210,10 +210,10 @@ export class Partners {
    * owner, whether owner-identity connections are admitted, and for a turn that handles a message, where the owner
    * is asked. `undefined` for every other turn.
    */
-  authority(admission: RunAdmission): { write: boolean; ownerPrivate: boolean; approvals?: ApprovalDesk } | undefined {
+  authority(admission: RunAdmission): { write: boolean; ownerPrivate: boolean; approvals?: ApprovalDesk; tool: string } | undefined {
     const turn = this.turn(admission);
-    if (turn?.kind === "message") return { write: turn.message.grants.write, ownerPrivate: turn.message.grants.ownerPrivate, approvals: this.desk(turn.message) };
-    if (turn?.kind === "return") return { write: turn.batch.authorization.write, ownerPrivate: turn.batch.authorization.ownerPrivate };
+    if (turn?.kind === "message") return { write: turn.message.grants.write, ownerPrivate: turn.message.grants.ownerPrivate, approvals: this.desk(turn.message), tool: "partners" };
+    if (turn?.kind === "return") return { write: turn.batch.authorization.write, ownerPrivate: turn.batch.authorization.ownerPrivate, tool: "partners" };
     return undefined;
   }
   /** The owner conversation a turn runs in, or a refusal: partners are messaged only from there. */

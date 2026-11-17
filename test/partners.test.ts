@@ -42,6 +42,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // The message is a turn of the partner's own conversation with the owner, delivered as a tool output that names its sender.
   const record = f.record(seen.recruit.message.messageId);
   expect(work.body.input).toBe("");
+  expect(work.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners", retain: false });
   expect(JSON.parse(work.body.toolOutput.output)).toEqual({ source: { kind: "delegation", reference: record.id, sender: { kind: "agent", id: f.agent.id, name: "helper" } }, message: incomingText(record) });
   expect(work.text).toContain('[Partner message: delivered by the system, not written by the owner]\nFrom: partner "helper"\nIntent: relay: the sender passes on what the owner asked for.');
   expect(work.text.endsWith("Everything below this line is the message.\n\nThe owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.")).toBe(true);
@@ -58,6 +59,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(back.text).toContain("Status: completed\nTook: ");
   expect(back.text).toContain("Ran on: kernel codex, model large, effort default\n" + f.answer(record.id, "Draft: five days in Seoul. Missing: the travel dates."));
   expect(JSON.parse(back.body.toolOutput.output).source).toMatchObject({ kind: "delegation", sender: { kind: "agent", id: trip.id, name: "korea-trip" } });
+  expect(back.body.toolOutput.name).toBe("partners");
   expect(back.body.sessionId).toBe(hub.body.sessionId);
   expect(back.told.partners).toContain(`- korea-trip [idle]: ${JSON.stringify(duty)}`);
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");

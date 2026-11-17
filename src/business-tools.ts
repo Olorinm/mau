@@ -38,6 +38,8 @@ export interface PartnerAuthority {
   ownerPrivate: boolean;
   /** Where the owner is asked when the turn itself has no owner conversation to ask in. */
   approvals?: ApprovalDesk;
+  /** The tool whose delivery the turn's input is: a kernel that takes tool output is given the input under this name. */
+  tool: string;
 }
 export interface PartnerTools {
   definitions: NonNullable<Parameters<HostPort["start"]>[0]["tools"]>;
@@ -160,9 +162,9 @@ export class BusinessHost extends HttpAgentHost {
     const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const sessionKey = `${this.scope}:${input.sessionId}`;
     /** The session's product tools: the ones it began with, or for a new session the ones this turn is admitted to. */
+    const partnerTurn = admission && this.partner?.authority?.(admission);
     const catalog = () => {
       // A partner's message opens the same session an owner's message would: the whole catalog. Calls stay bound to the run's grants.
-      const partnerTurn = admission && this.partner?.authority?.(admission);
       const granted = (kind: "feishu" | "connectedApps") => admission &&
         (admission.kind === "owner" && !admission.toolGrants || Boolean(partnerTurn) || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
@@ -179,7 +181,8 @@ export class BusinessHost extends HttpAgentHost {
       const instructions = priorInstructions ?? (memory ? `${request.instructions}\n\n${memory}` : request.instructions);
       // Admission is consumed here; native model input cannot grant itself access.
       const scheduledMemory = admission?.kind === "schedule" ? this.partner?.scheduledContext?.(admission) : undefined;
-      let toolOutput = request.toolOutput;
+      // Router labels delegated input with the product's former delegation tool. A partner's turn names the tool that sent it.
+      let toolOutput = partnerTurn && request.toolOutput?.namespace === "mau" ? { ...request.toolOutput, name: partnerTurn.tool } : request.toolOutput;
       let memoryContext: ScheduledMemoryContext | Omit<ScheduledMemoryContext, "text"> | undefined = scheduledMemory;
       if (scheduledMemory && toolOutput) {
         let original = toolOutput.output;

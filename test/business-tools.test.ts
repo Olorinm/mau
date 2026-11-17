@@ -240,7 +240,7 @@ it("opens a conversation with the whole catalog when a partner's message is its 
   const f = fixture(), apps = vi.fn(async () => ({ status: "completed", tools: [] }));
   const definitions = [{ name: "partners", description: "", inputSchema: { type: "object" }, timeoutMs: 90_000 }];
   const partner: PartnerTools = { definitions, context: () => undefined, execute: async () => ({}), observe: run => { runs.push([run.id, run.status]); },
-    authority: turn => turn.reference === "pm-1" ? { write: true, ownerPrivate: true } : undefined };
+    authority: turn => turn.reference === "pm-1" ? { write: true, ownerPrivate: true, tool: "partners" } : undefined };
   const host = new BusinessHost(f.http, { read: f.call }, f.store, "agent:binding", apps, principal, partner, turn => completed.push(turn));
   // The message grants no Feishu reader and no connection, but the session it opens is the owner's conversation.
   const message = { kind: "delegation" as const, ...principal, reference: "pm-1", toolGrants: { feishu: false, connectedApps: { connections: [] } } };
@@ -262,6 +262,17 @@ it("opens a conversation with the whole catalog when a partner's message is its 
   // Every run that reaches the Host is reported, for the roster's view of who is working.
   expect(runs).toEqual([["run", "running"], ["child-run", "running"], ["run", "running"]]);
   expect(completed).toEqual([]);
+  // Router labels a delegated tool output with the former delegation tool. A partner's turn gets it under the tool that sent it.
+  const delivery = { namespace: "mau", name: "work_sessions", retain: false, output: JSON.stringify({ source: { kind: "delegation", reference: "pm-1" }, message: "Hello" }) };
+  const delivered = async (toolOutput: typeof delivery, turn: typeof message) => {
+    const one = fixture();
+    await new BusinessHost(one.http, undefined, one.store, "agent:binding", undefined, principal, partner).start({ ...input, input: "", toolOutput, admission: turn });
+    return one.submitted().toolOutput;
+  };
+  expect(await delivered(delivery, message)).toEqual({ ...delivery, name: "partners" });
+  expect((await delivered({ ...delivery, namespace: "other" }, message)).name).toBe("work_sessions");
+  expect((await delivered(delivery, { ...message, reference: "memory-review-1" })).name).toBe("work_sessions");
+
 });
 
 it("tells a product tool that its result was delivered only when the result itself reached the Host", async () => {
