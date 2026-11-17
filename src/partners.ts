@@ -86,8 +86,8 @@ export interface PartnerMessage {
   origin: Origin;
   /** What the sending turn could use, and what the recipient's turn may use: the former within the recipient's connections. */
   sender: Authorization; grants: Authorization;
-  /** What the recipient's turn was submitted to run on. */
-  ran?: { kernel: string | null; model: string | null; effort: string | null };
+  /** The kernel, model and effort the recipient's turn was submitted with. What the kernel then used is not read back. */
+  sentTo?: { kernel: string | null; model: string | null; effort: string | null };
   result?: { status: "completed" | "failed" | "cancelled" | "rejected" | "unknown"; answer: string; error?: string; settledAt: string; durationMs: number };
   delivery?: { attempts: number; nextAttemptAt: string; batchId?: string; via?: "turn" | "wait" | "notice" | "call"; reason?: string;
     /** The wait call that returned this result to the turn that sent the message. It counts once that call's answer has reached the Host. */
@@ -571,7 +571,7 @@ export class Partners {
       .filter(message => message.owner === owner && (!filter.agentId || message.from.agentId === filter.agentId || message.to.agentId === filter.agentId))
       .reverse().slice(0, filter.limit ?? 50).map(message => ({ id: message.id, from: { id: message.from.agentId, name: message.from.name }, to: { id: message.to.agentId, name: message.to.name },
         intent: message.intent, text: message.text, status: message.status, createdAt: message.createdAt, connectionId: message.origin.connectionId,
-        ...(message.ran ? { ran: message.ran } : {}), ...(message.result ? { result: message.result } : {}),
+        ...(message.sentTo ? { sentTo: message.sentTo } : {}), ...(message.result ? { result: message.result } : {}),
         ...(message.delivery?.via ? { deliveredBy: message.delivery.via } : {}), ...(message.delivery?.reason ? { reason: message.delivery.reason } : {}) }));
   }
   /**
@@ -604,7 +604,7 @@ export class Partners {
   private async submit(message: PartnerMessage) {
     const work = await this.port.sessions(message.owner, message.to.agentId), { sessionId } = work.openOwnerConversation();
     const settings = work.defaultSettings(), grants = message.grants;
-    const ran = { kernel: this.port.kernel(message.to.agentId) ?? null,
+    const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? this.port.defaultModel(this.port.environmentHolder(message.to.agentId)) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
@@ -613,7 +613,7 @@ export class Partners {
       admission: { kind: "delegation", owner: message.owner, agentId: message.to.agentId, reference: message.id,
         toolGrants: { feishu: grants.feishu, connectedApps: { connections: grants.connections, ...(grants.operations ? { operations: grants.operations } : {}) } },
         ...(grants.expiresAt ? { expiresAt: grants.expiresAt } : {}), ...(grants.maxToolCalls ? { maxToolCalls: grants.maxToolCalls } : {}) } });
-    this.transition(message.id, ["sending"], current => ({ ...current, status: "running", ran }));
+    this.transition(message.id, ["sending"], current => ({ ...current, status: "running", sentTo }));
   }
   private settle(message: PartnerMessage, result: { status: NonNullable<PartnerMessage["result"]>["status"]; answer: string; error?: string }, at = Date.now()) {
     return this.transition(message.id, ["sending", "running"], current => ({ ...current, status: "settled", delivery: { attempts: 0, nextAttemptAt: iso(at) },

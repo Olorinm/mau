@@ -57,7 +57,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(f.boundary(record.id)).toMatch(/^[0-9a-f]{12}$/);
   expect(back.text).toContain('Result 1 of 1\nFrom: partner "korea-trip"\nYour message (relay, sent ');
   expect(back.text).toContain("Status: completed\nTook: ");
-  expect(back.text).toContain("Ran on: kernel codex, model large, effort default\n" + f.answer(record.id, "Draft: five days in Seoul. Missing: the travel dates."));
+  expect(back.text).toContain("Sent to: kernel codex, model large, effort default\n" + f.answer(record.id, "Draft: five days in Seoul. Missing: the travel dates."));
   expect(JSON.parse(back.body.toolOutput.output).source).toMatchObject({ kind: "delegation", sender: { kind: "agent", id: trip.id, name: "korea-trip" } });
   expect(back.body.toolOutput.name).toBe("partners");
   expect(back.body.sessionId).toBe(hub.body.sessionId);
@@ -67,7 +67,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
     "The trip partner drafted five days in Seoul and needs your travel dates."]);
   await f.until(() => f.record(record.id).status === "returned", "returned");
   expect(f.record(record.id)).toMatchObject({ status: "returned", intent: "relay", from: { name: "helper" }, to: { name: "korea-trip", duty },
-    origin: { connectionId: "web", chain: 0 }, grants: { write: true, connections: [] }, ran: { kernel: "codex", model: "large", effort: null },
+    origin: { connectionId: "web", chain: 0 }, grants: { write: true, connections: [] }, sentTo: { kernel: "codex", model: "large", effort: null },
     result: { status: "completed", answer: "Draft: five days in Seoul. Missing: the travel dates." }, delivery: { via: "turn" } });
   // In the sender's conversation the result stands after the answer of the turn that sent the message.
   expect((await f.events(f.agent.id)).filter(event => event.kind === "message").map(event => [event.role, event.sender.type, event.kind === "message" && event.origin || "channel"])).toEqual([
@@ -168,7 +168,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
   expect(waited).toEqual({ results: [{ messageId: id, to: "trip", intent: "ask", sentAt: f.record(id).createdAt, status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    ranOn: "kernel codex, model large, effort default", answer: "Seoul first, then Busan." }], pending: [], next: NEXT.results });
+    sentTo: "kernel codex, model large, effort default", answer: "Seoul first, then Busan." }], pending: [], next: NEXT.results });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);
   // The sender has had the result, so no turn hands it over.
