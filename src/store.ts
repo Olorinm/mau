@@ -40,7 +40,9 @@ export class DurableStore {
     return this.db.prepare(`SELECT id,value FROM documents WHERE collection=? AND json_extract(value,'$.status') IN (${statuses.map(() => "?").join(",")}) ORDER BY rowid`)
       .all(collection, ...statuses).map(row => ({ id: row.id as string, value: JSON.parse(row.value as string) as T }));
   }
+  /** All of `work` or none of it. Work that is already inside a transaction joins it. */
   transaction<T>(work: () => T): T {
+    if (this.db.isTransaction) return work();
     this.db.exec("BEGIN IMMEDIATE");
     try { const result = work(); this.db.exec("COMMIT"); return result; }
     catch (error) { this.db.exec("ROLLBACK"); throw error; }
