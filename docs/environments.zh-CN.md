@@ -53,7 +53,7 @@ mau resume
 - `otherKernels` 最多四项，只写模板里已安装、有凭证、打算用的内核；目前接受 `codex` 和 `claude`，自带网关的内核不在此列。同一方案内内核和 runtime ID 都不能重复。
 - Host 配置里必须有对应 `id` 和 `kernel` 的 runtime，且 `cwd` 与主 runtime 相同，否则创建环境返回 `environment_runtime_profile_mismatch`。示例见 [host-two-kernels.json](../examples/cloud/host-two-kernels.json)，Mau 原样上传该文件。
 - 每项的 `files` 是该内核的私有文件（模型凭证），创建环境时和方案自己的 `files` 一起上传，权限 0600。凭证按内核注入，不按伙伴隔离：沙箱里所有伙伴以同一个用户运行，各内核、各伙伴都能读到其他内核的凭证文件；不能接受时请使用独占环境。凭证不进仓库，也不写进 Host 配置。
-- 每次创建和恢复环境时，Mau 把环境需要的模型服务告诉云服务：`codex` 对应 `openai`，`claude` 对应 `anthropic`。网关只放行这些服务里审核过的地址；私有模型网关或其他服务商需要改网关规则。方案里有 Mau 不认识的内核时不指定，沿用云服务的默认值。
+- 方案声明了 `otherKernels` 时，每次创建和恢复环境，Mau 把全部内核需要的模型服务告诉云服务：`codex` 对应 `openai`，`claude` 对应 `anthropic`。网关只放行这些服务里审核过的地址；私有模型网关或其他服务商需要改网关规则。没有 `otherKernels` 的方案不指定，发给云服务的请求与之前完全相同，由网关默认值决定。网关会保留最后一次收到的列表：从方案里去掉 `otherKernels` 后，已有环境仍沿用较宽的列表，需要运营者在网关侧重置。
 - `otherKernels` 不属于环境的身份标识：之后再加内核不会让已有绑定和会话失效，已有伙伴的 runtime 不变。Mau 不改写已存在环境里的文件：需要自己把 runtime 加进沙箱的 `host.json`（同时更新 `ready.json` 的哈希）、放好凭证，让方案的 Host 配置与之逐字节一致，并等 Host 重启；出口放行在环境下一次恢复时生效。
 - 伙伴的内核在创建时选定（`shareWith` 旁的 `kernel`，或[招募](native-work.md#partners)时的 `kernel`），之后不能改；不填就用主内核。方案没有提供的内核返回 `environment_kernel_not_available` 和 `kernels`；Host 里没有或不可用的返回 `environment_kernel_not_ready`。`GET /_mau/v1/options` 列出方案的 `kernels`，Agent 概要里的 `kernel` 是它自己运行的内核。
 

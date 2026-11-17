@@ -15,7 +15,7 @@ const known = (kernel: string | undefined): kernel is PartnerKernel => kernel !=
 export const shellRelay = (kernel: string | undefined) => known(kernel) && kernels[kernel].shellRelay;
 
 /**
- * The model endpoints an environment needs for its kernels, as its provider names them. Nothing when one of the
+ * The model endpoints the kernels of an environment need, as its provider names them. Nothing when one of the
  * kernels is not known here: the provider's own default then stays in place.
  */
 export function modelServices(names: string[]): string[] | undefined {

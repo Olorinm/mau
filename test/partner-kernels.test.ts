@@ -215,14 +215,17 @@ it("an environment with one kernel is set up, bound and offered exactly as befor
   expect(JSON.stringify(next.body.tools)).toBe(JSON.stringify(first.turn.body.tools));
 }, 90_000);
 
-it("sets up an environment with one kernel through the same sandbox operations as before", async () => {
-  // Recorded on the release before a profile could offer other kernels, for this profile: every command and every
-  // file written to the sandbox, in order, and what Router is given for the partner and for one that shares with it.
+it("sets up an environment with one kernel through the same provider requests and sandbox operations as before", async () => {
+  // Recorded on the release before a profile could offer other kernels, for this profile: the requests that create
+  // and resume the environment member for member, every command and every file written to the sandbox, in order,
+  // and what Router is given for the partner and for one that shares with it.
   const login = { fixture: "not-a-credential" };
   const f = await mauFixture(cleanup), source = join(f.directory, "native-login.json"), log: unknown[][] = [];
   privateFile(source, login);
   f.mau.environments.options.profiles[0]!.files.push({ source, destination: "/home/user/.codex/auth.json" });
-  const { exec, writeFile } = f.provider, directory = "/home/user/.agent-host-service";
+  const { create, resume, exec, writeFile } = f.provider, directory = "/home/user/.agent-host-service", requests: unknown[][] = [];
+  f.provider.create = async (...args) => { requests.push(["create", ...args]); return create(...args); };
+  f.provider.resume = async (...args) => { requests.push(["resume", ...args]); return resume(...args); };
   f.provider.exec = (id, argv, options) => { log.push(["exec", ...argv]); return exec(id, argv, options); };
   f.provider.writeFile = async (id, path, data) => { log.push(["write", path, /token|ready/.test(path) ? "" : sha256(data)]); return writeFile(id, path, data); };
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
@@ -235,6 +238,12 @@ it("sets up an environment with one kernel through the same sandbox operations a
     ["exec", "chmod", "--", "600", `${directory}/host.json.upload`, `${directory}/token.upload`],
     ["exec", "mv", "--", `${directory}/host.json.upload`, `${directory}/host.json`], ["exec", "mv", "--", `${directory}/token.upload`, `${directory}/token`],
     ["write", `${directory}/ready.json.upload`, ""], ["exec", "mv", "--", `${directory}/ready.json.upload`, `${directory}/ready.json`]]);
+  // A paused environment is resumed with its id and lifetime, and nothing else.
+  expect((await f.api(f.path + "/pause", {})).status).toBe(202); expect((await f.settled()).state).toBe("paused");
+  expect((await f.api(f.path + "/resume", {})).status).toBe(202); expect((await f.settled()).state).toBe("ready");
+  expect(requests).toStrictEqual([["create", { template: "tools", timeoutSeconds: 3600, onTimeout: "kill", metadata: { "mau-operation": operationId } }],
+    ["resume", [...f.cloud.keys()][0], 3600]]);
+  expect(JSON.stringify(requests[0]![1])).toBe(`{"template":"tools","timeoutSeconds":3600,"onTimeout":"kill","metadata":{"mau-operation":"${operationId}"}}`);
   const scout = (await f.api("/agents", { name: "scout", shareWith: f.agent.id, duty: "Watches the inbox" })).data.agent;
   const channels = (agentId: string) => readFileSync(join(f.mau.router.connections.agentDirectory(agentId), "channels.json"), "utf8");
   expect(channels(f.agent.id)).toBe(JSON.stringify({ agents: [{ agentId: f.agent.id, connections: [], host: { runtimeId: "personal", instanceName: "channel-host",
@@ -244,21 +253,22 @@ it("sets up an environment with one kernel through the same sandbox operations a
       "You are this partner. Where other instructions or files in this environment give a different name or role, this section applies to you." } }] }, null, 2) + "\n");
 }, 60_000);
 
-it("admits the model endpoints of a profile's kernels at the provider, and uploads each kernel's private files", async () => {
+it("names the model endpoints of a profile that offers other kernels to the provider, and uploads each kernel's private files", async () => {
   const requests: Array<{ call: string; modelServices: unknown }> = [];
   const observe = (f: Awaited<ReturnType<typeof mauFixture>>) => {
     const { create, resume } = f.provider;
     f.provider.create = async (input) => { requests.push({ call: "create", modelServices: (input as { modelServices?: unknown }).modelServices }); return create(input); };
     f.provider.resume = async (id, seconds, options) => { requests.push({ call: "resume", modelServices: options?.modelServices }); return resume(id, seconds, options); };
   };
-  // One kernel: the provider is named the service it admits without being told. Two kernels: both.
+  // One kernel names none (the test above pins its requests whole): the provider's default decides.
   const single = await mauFixture(cleanup); observe(single);
   expect((await single.api(single.path, { profileId: "cloud" })).status).toBe(202);
   expect((await single.settled()).state).toBe("ready");
-  expect(requests).toEqual([{ call: "create", modelServices: ["openai"] }]);
+  expect(requests).toEqual([{ call: "create", modelServices: undefined }]);
   requests.length = 0;
   const credentials = join(single.directory, "claude-settings.json");
   privateFile(credentials, { env: { EXAMPLE_MODEL_KEY: "fixture-not-a-credential" } });
+  // Other kernels: the services of all the profile's kernels, the main one's included.
   const f = await mauFixture(cleanup, { runtimes: { claude }, profile: { files: [{ source: join(single.directory, "profile.json"), destination: "/home/user/.codex/auth.json" }],
     otherKernels: [{ kernel: "claude", runtimeId: "claude", files: [{ source: credentials, destination: "/home/user/.claude/settings.json" }] }] } });
   observe(f);

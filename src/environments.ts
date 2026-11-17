@@ -122,8 +122,15 @@ const profileHash = (p: Profile) =>
   );
 /** Every kernel of a profile with its runtime, the main one first. */
 const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, ...p.otherKernels.map(({ kernel, runtimeId }) => ({ runtimeId, kernel: kernel as string }))];
-/** The model endpoints the profile's kernels need, for the provider to admit; nothing leaves the provider's default. */
-const admitted = (p: Profile) => { const services = modelServices(runtimes(p).map(({ kernel }) => kernel)); return services ? { modelServices: services } : {}; };
+/**
+ * The model endpoints the provider is to admit for a profile that offers other kernels: those of all its kernels. A
+ * profile with one kernel names none, so its requests to the provider are what they always were and the provider's
+ * default decides; so does one with a kernel that is not known here.
+ */
+const admitted = (p: Profile) => {
+  const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined;
+  return services ? { modelServices: services } : undefined;
+};
 /** The private files of a profile: its own, then those of its other kernels. */
 const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
 // One failed renewal request is not evidence the environment stopped. Three 30-second
@@ -975,7 +982,7 @@ export class EnvironmentManager {
     delete record.error;
     this.save(record);
     if (
-      (await provider.resume(id, profile.lifetimeSeconds, admitted(profile))).state !== "running"
+      (await provider.resume(id, profile.lifetimeSeconds, ...(admitted(profile) ? [admitted(profile)] : []))).state !== "running"
     )
       throw new WorkError("environment_resume_pending", 409);
     const config = this.configuration.configuration(

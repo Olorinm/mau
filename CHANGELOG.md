@@ -28,8 +28,9 @@ copied from it.
   connectors' guides and how to run their commands through the tool. The relay of native
   wake-ups follows Codex runtimes only. See
   [partners on another kernel](docs/native-work.md#partners-on-another-kernel).
-- The provider is told which model endpoints an environment's kernels need (`openai` for
-  `codex`, `anthropic` for `claude`) with every create and resume.
+- A profile that offers other kernels tells the provider which model endpoints its kernels need
+  (`openai` for `codex`, `anthropic` for `claude`) with every create and resume. A profile with
+  one kernel sends the same requests as before.
 - Chat events carry what a console shows as members instead of text to parse: a partner's
   message has `display.partnerMessage`, a hand-over `display.partnerResults`, and a partner's
   approval card `card.display.partnerApproval`. The console renders from them, words approval

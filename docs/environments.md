@@ -141,12 +141,15 @@ must be isolated.
   kernel, not per partner: every partner in the sandbox runs as the same user, so each kernel, and
   each partner, can read the other kernels' credential files. Use an environment of its own where
   that is not acceptable. No credential belongs in this repository or in the Host configuration.
-- The provider is told which model endpoints the environment needs: `openai` for `codex`,
-  `anthropic` for `claude`, with every create and resume (`modelServices` of
+- A profile that offers other kernels tells the provider which model endpoints the environment
+  needs: `openai` for `codex`, `anthropic` for `claude`, for all its kernels, with every create
+  and resume (`modelServices` of
   [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment)). The gateway
   admits only reviewed endpoints of those services; a private model gateway or another provider is
-  a change to the gateway's rules. A profile whose kernels are not all known to Mau names none and
-  keeps the provider's default.
+  a change to the gateway's rules. A profile without `otherKernels` names none: its requests to
+  the provider are the same as before, and the gateway's default applies. The gateway keeps the
+  last list it was given, so after `otherKernels` is removed from a profile its existing
+  environments keep the wider list until an operator resets it at the gateway.
 - `otherKernels` is not part of what identifies an existing environment. Offering a kernel later
   does not invalidate bindings or sessions, and the partners that exist keep their runtime. Mau
   does not rewrite the files of an environment that already exists: add the runtime to its
