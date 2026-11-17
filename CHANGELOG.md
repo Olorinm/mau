@@ -19,12 +19,12 @@ copied from it.
   destroyed or replaced, nor its partner deleted, while other partners run in it. Idle pause and
   wake count every partner in the environment. See
   [Partners sharing an environment](docs/environments.md#partners-sharing-an-environment).
-- The console's new-partner dialog takes the duty and offers an environment of its own (the
-  default) or one shared with a partner that has its own. A profile shows the duty under the
-  partner's name. A sharing partner's profile names the partner whose environment it runs in and
-  has no environment controls; that partner's profile lists the partners sharing its
-  environment. Refusals about shared environments are shown as sentences naming the partners
-  involved.
+- The console's new-partner dialog is one page, without tabs: name and duty, then an environment
+  of its own (the default) or one shared with a partner that has its own. Environment profiles
+  show their full name and kernel. A profile shows the duty under the partner's name. A sharing
+  partner's profile names the partner whose environment it runs in and has no environment
+  controls; that partner's profile lists the partners sharing its environment. Refusals about
+  shared environments are shown as sentences naming the partners involved.
 
 ## [0.1.0-alpha.48] - 2026-11-13
 

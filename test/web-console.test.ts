@@ -141,11 +141,13 @@ it.skipIf(!built)(
     await dialog.getByLabel("名称").fill("Writer");
     await see(dialog.getByRole("button", { name: "创建" })).toBeDisabled();
     await dialog.getByLabel("名称").fill("writer");
-    await dialog.getByRole("tab", { name: "运行环境" }).click();
-    await see(dialog.getByRole("button", { name: /Cloud/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // One page, without tabs: the only environment profile is selected, its name and kernel shown in full.
+    await see(dialog.getByRole("tab")).toHaveCount(0);
+    const cloud = dialog.getByRole("group", { name: "环境方案" }).getByRole("button", { name: "Cloud codex", exact: true });
+    await see(cloud).toHaveAttribute("aria-pressed", "true");
+    await see(cloud.locator("strong")).toHaveText("Cloud");
+    await see(cloud.locator("small")).toHaveText("codex");
+    expect(await cloud.evaluate((option) => [...option.children].every((part) => part.scrollWidth <= part.clientWidth && part.clientWidth > 30))).toBe(true);
     await dialog.getByRole("button", { name: "创建" }).click();
     // The new partner's conversation opens; its figure opens its profile.
     const writer = page.locator(".mau-chip[aria-selected='true']");
@@ -382,6 +384,16 @@ it.skipIf(!built)(
     let form = await newPartnerDialog(page);
     await see(form.kind("独立环境")).toHaveAttribute("aria-pressed", "true");
     await see(form.kind("与伙伴共用")).toBeDisabled();
+    await see(form.dialog.getByRole("group", { name: "环境方案" }).getByRole("button", { name: "Cloud codex", exact: true })).toBeVisible();
+    // The blocks of the form keep the same distance from one another, whichever environment is chosen (measured once
+    // the dialog has finished opening).
+    const gaps = () => form.dialog.evaluate((dialog) => {
+      const box = (selector: string) => dialog.querySelector(selector)!.getBoundingClientRect();
+      const identity = box(".partner-dialog-identity-card"), environment = box(".agent-settings-section"), actions = box(".modal-actions");
+      const choice = box(".agent-segmented"), chosen = box(".partner-dialog-kernel-list, .agent-group-panel");
+      return [environment.top - identity.bottom, actions.top - environment.bottom, chosen.top - choice.bottom];
+    });
+    await see.poll(gaps).toEqual([20, 20, 10]);
     // The duty is one line of at most 200 characters, counted as it is typed.
     const duty = form.dialog.getByLabel("职责");
     await duty.fill("x".repeat(230));
@@ -399,6 +411,8 @@ it.skipIf(!built)(
     await see(form.kind("独立环境")).toHaveAttribute("aria-pressed", "true");
     await form.kind("与伙伴共用").click();
     await see(form.partner).toContainText("helper");
+    await see(form.dialog.getByRole("group", { name: "环境方案" })).toHaveCount(0);
+    await see.poll(gaps).toEqual([20, 20, 10]);
     // Escape closes the open menu, not the dialog around it.
     await form.partner.click(); await see(page.getByRole("option", { name: "helper", exact: true })).toBeVisible();
     await page.keyboard.press("Escape"); await see(page.getByRole("listbox")).toHaveCount(0); await see(form.dialog).toBeVisible();

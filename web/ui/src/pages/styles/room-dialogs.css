@@ -18,11 +18,16 @@
   --partner-dialog-hover-bg: color-mix(in srgb, var(--c-text) 10%, var(--c-surface-grouped));
   --partner-dialog-control-border: transparent;
   --rooms-border-strong: var(--partner-dialog-control-border);
-  --room-dialog-kernel-active-border: var(--c-link);
-  gap: var(--sp-2);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   width: min(640px, calc(100vw - 32px));
+}
+
+/* The form's blocks, spaced like the group dialog's. Menus opened in the form render after this, outside the grid. */
+.partner-dialog-body {
+  display: grid;
+  gap: var(--sp-5);
+  min-width: 0;
 }
 
 .partner-dialog .modal-title,
@@ -31,72 +36,9 @@
   font-weight: var(--fw-semibold);
 }
 
-.partner-dialog-preview {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 48px;
-  border-radius: var(--r-md);
-  background: var(--room-dialog-preview-bg);
-  padding: 8px;
-}
-
-.partner-dialog-preview .rooms-avatar {
-  width: 34px;
-  height: 34px;
-  font-size: var(--fs-sm);
-}
-
-.partner-dialog-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--sp-1);
-  border-radius: var(--r-sm);
-  background: var(--partner-dialog-control-bg);
-  padding: var(--sp-1);
-}
-
-.partner-dialog-tabs button {
-  min-width: 0;
-  min-height: 36px;
-  border: 0;
-  border-radius: var(--r-xs);
-  background: transparent;
-  color: var(--rooms-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
-}
-
-.partner-dialog-tabs button:hover {
-  background: var(--partner-dialog-hover-bg);
-  color: var(--rooms-text);
-}
-
-.partner-dialog-tabs button[data-active="true"] {
-  background: var(--c-surface);
-  color: var(--rooms-text);
-  box-shadow: var(--shadow-sm);
-}
-
-.partner-dialog-tabs button:focus-visible {
-  outline: none;
-  box-shadow: var(--room-dialog-field-focus-shadow);
-}
-
-.partner-dialog-card {
-  display: grid;
-  gap: var(--sp-3);
-  min-width: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-
 .partner-dialog-identity-card {
+  display: grid;
+  min-width: 0;
   gap: var(--sp-4);
   border-radius: var(--r-lg);
   background: var(--c-surface-grouped);
@@ -109,12 +51,6 @@
   min-height: calc(var(--sp-10) + var(--sp-10) + var(--sp-8));
 }
 
-.partner-dialog-profile-hero .rooms-avatar {
-  width: 100%;
-  height: 100%;
-  font-size: var(--fs-lg);
-}
-
 .partner-dialog-profile-name-row {
   align-items: center;
   border-radius: var(--r-md);
@@ -122,39 +58,7 @@
   padding: var(--sp-3) var(--sp-4);
 }
 
-.partner-dialog-runtime-card {
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--sp-5);
-}
-
-.partner-dialog-avatar-tabs button[data-active="true"] {
-  background: transparent;
-  color: var(--c-text);
-  font-weight: var(--fw-medium);
-  box-shadow: none;
-}
-
-.partner-dialog-avatar-option[data-active="true"] {
-  border-color: var(--room-dialog-kernel-active-border);
-  box-shadow: var(--room-dialog-field-focus-shadow);
-}
-
-.partner-dialog-avatar-mode-card small,
-.partner-dialog-avatar-error {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  overflow-wrap: anywhere;
-}
-
-.partner-dialog-avatar-error {
-  margin: 0;
-  color: var(--c-error);
-}
-
-.partner-dialog-preview div,
 .partner-dialog-field,
-.partner-dialog-runtime,
 .rooms-create-group-members {
   min-width: 0;
 }
@@ -223,24 +127,6 @@
   font: inherit;
 }
 
-.partner-dialog-preview strong,
-.partner-dialog-preview small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.partner-dialog-preview strong {
-  color: var(--rooms-text);
-  font-size: var(--fs-base);
-}
-
-.partner-dialog-preview small {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-}
-
 .partner-dialog-field {
   display: grid;
   gap: var(--sp-1);
@@ -249,59 +135,28 @@
   font-size: var(--fs-base);
 }
 
-.partner-dialog-field > small {
-  color: var(--rooms-muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-}
-
-.partner-dialog-runtime {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: var(--sp-2);
-}
-
-.partner-dialog-runtime-fields > .partner-dialog-warning {
-  margin: var(--sp-2);
-}
-
-.partner-dialog-contract-segmented button[data-active="true"] {
-  background: var(--partner-dialog-active-bg);
-  color: var(--rooms-text);
-  box-shadow: none;
-}
-
-.partner-dialog-runtime-title {
-  margin: 0;
-  padding: 0 var(--sp-1);
-  color: var(--rooms-text);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  line-height: var(--lh-normal);
-}
-
 .partner-dialog-kernel-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   align-content: start;
   gap: var(--sp-2);
   padding: 1px 2px 1px 1px;
 }
 
+/* An environment profile: its name over its kernel, both shown in full. */
 .partner-dialog-kernel-option {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: var(--sp-2);
-  align-items: center;
+  align-content: center;
+  gap: 1px;
   min-width: 0;
-  min-height: 42px;
+  min-height: 48px;
   border: 0;
   border-radius: var(--r-sm);
   background: var(--partner-dialog-control-bg);
   color: var(--rooms-text);
   cursor: pointer;
   font: inherit;
-  padding: var(--sp-1) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
 
@@ -318,29 +173,10 @@
   box-shadow: none;
 }
 
-.partner-dialog-kernel-option[data-ready="false"] {
-  background: var(--room-dialog-kernel-disabled-bg);
-  color: var(--room-dialog-kernel-disabled-fg);
-}
-
-.partner-dialog-kernel-option[data-ready="false"][data-active="true"] {
-  border-color: var(--room-dialog-kernel-disabled-active-border);
-  background: var(--room-dialog-kernel-disabled-active-bg);
-  color: var(--room-dialog-kernel-disabled-active-fg);
-  box-shadow: var(--room-dialog-kernel-disabled-active-shadow);
-}
-
-.partner-dialog-kernel-option span:last-child {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
 .partner-dialog-kernel-option strong,
 .partner-dialog-kernel-option small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .partner-dialog-kernel-option strong {
@@ -354,16 +190,6 @@
   font-size: var(--fs-sm);
 }
 
-.partner-dialog-warning {
-  border-radius: var(--r-sm);
-  background: var(--room-dialog-warning-bg);
-  color: var(--room-dialog-warning-fg);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  padding: 8px 10px;
-}
-
-.partner-dialog-section-note,
 .partner-dialog-field > small {
   margin: 0;
   color: var(--rooms-muted);
@@ -385,27 +211,7 @@
   padding: var(--sp-2) var(--sp-3);
 }
 
-.partner-dialog-submit-error button {
-  flex: 0 0 auto;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-weight: var(--fw-medium);
-  padding: var(--sp-1) var(--sp-2);
-}
-
-.partner-dialog-submit-error button:hover,
-.partner-dialog-submit-error button:focus-visible {
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  outline: none;
-}
-
-.partner-dialog-field input,
-.partner-dialog-field select,
-.partner-dialog-field textarea {
+.partner-dialog-field input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -416,51 +222,11 @@
   font: inherit;
   font-size: var(--fs-base);
   outline: none;
-}
-
-.partner-dialog .partner-dialog-field [data-inline-select-button] {
-  min-height: 32px;
-  border: 0;
-  background: var(--partner-dialog-control-bg);
-}
-
-.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button] {
-  width: auto;
-  min-height: 24px;
-  background: transparent;
-  padding: 0 var(--sp-1) 0 var(--sp-2);
-}
-
-.partner-dialog .partner-dialog-field [data-inline-select-button]:hover,
-.partner-dialog .partner-dialog-field [data-inline-select-button][aria-expanded="true"] {
-  background: var(--partner-dialog-hover-bg);
-}
-
-.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button]:hover,
-.partner-dialog .partner-dialog-runtime-fields .partner-dialog-field [data-inline-select-button]:focus-visible,
-.partner-dialog
-  .partner-dialog-runtime-fields
-  .partner-dialog-field
-  [data-inline-select-button][aria-expanded="true"] {
-  background: var(--c-fill);
-  outline: none;
-}
-
-.partner-dialog-field input,
-.partner-dialog-field select {
   height: 32px;
   padding: 0 10px;
 }
 
-.partner-dialog-field textarea {
-  resize: vertical;
-  min-height: 74px;
-  padding: 9px 10px;
-}
-
-.partner-dialog-field:focus-within input,
-.partner-dialog-field:focus-within select,
-.partner-dialog-field:focus-within textarea {
+.partner-dialog-field:focus-within input {
   border-color: var(--room-dialog-field-focus-border);
   box-shadow: var(--room-dialog-field-focus-shadow);
 }
