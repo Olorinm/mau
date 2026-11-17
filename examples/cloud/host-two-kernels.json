@@ -1,0 +1,16 @@
+{
+  "stateDirectory": "/home/user/.agent-host-service/state",
+  "workspaceFiles": true,
+  "runtimes": [
+    {"id": "personal", "kernel": "codex", "cwd": "/home/user/workspace"},
+    {
+      "id": "claude",
+      "kernel": "claude",
+      "cwd": "/home/user/workspace",
+      "allowedSettings": {
+        "model": {"values": ["EXAMPLE-MODEL-ID"]},
+        "effort": {"values": ["low", "medium", "high"]}
+      }
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { DurableStore } from "./store.js";
 import { privateFile } from "./files.js";
 import { prepareSsh, type SshConnection } from "./ssh.js";
 import type { SandboxFiles } from "./browser-relay.js";
+import { PARTNER_KERNELS, modelServices } from "./kernels.js";
 
 const key = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
 const remotePath = z
@@ -22,6 +23,8 @@ const remotePath = z
       p !== "/",
     "absolute normalized path required",
   );
+const runtimeId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/);
+const files = z.array(z.object({ source: z.string().min(1), destination: remotePath }).strict()).max(30).default([]);
 export const environmentOptionsSchema = z
   .object({
     configFile: z.string().min(1),
@@ -36,7 +39,12 @@ export const environmentOptionsSchema = z
             provider: z.string().min(1),
             template: z.string().min(1),
             kernel: z.string().min(1).max(48),
-            runtimeId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/),
+            runtimeId,
+            /**
+             * Kernels a partner in this environment may run on beside `kernel`. Each is another runtime of the same
+             * Host with the same working directory; `files` are that kernel's private files, its model credentials.
+             */
+            otherKernels: z.array(z.object({ kernel: z.enum(PARTNER_KERNELS), runtimeId, files }).strict()).max(4).default([]),
             hostConfigFile: z.string().min(1),
             instructions: z.string().max(200_000).optional(),
             directory: remotePath.default("/home/user/.agent-host-service"),
@@ -45,17 +53,7 @@ export const environmentOptionsSchema = z
             lifetimeSeconds: z.number().int().min(600).max(86400).default(3600),
             onTimeout: z.enum(["kill", "pause"]).default("kill"),
             idlePauseSeconds: z.number().int().min(600).max(2_592_000).optional(),
-            files: z
-              .array(
-                z
-                  .object({
-                    source: z.string().min(1),
-                    destination: remotePath,
-                  })
-                  .strict(),
-              )
-              .max(30)
-              .default([]),
+            files,
           })
           .strict(),
       )
@@ -101,6 +99,8 @@ interface SharedBinding {
   /** That environment's operation, which is also this partner's Host binding in Router. */
   operationId: string;
   createdAt: string;
+  /** The runtime the partner runs on, when it is not the environment's main one. */
+  runtimeId?: string;
 }
 const hash = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
@@ -120,6 +120,12 @@ const profileHash = (p: Profile) =>
   hash(
     JSON.stringify([p.provider, p.template, p.kernel, p.runtimeId, p.directory, p.port]),
   );
+/** Every kernel of a profile with its runtime, the main one first. */
+const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, ...p.otherKernels.map(({ kernel, runtimeId }) => ({ runtimeId, kernel: kernel as string }))];
+/** The model endpoints the profile's kernels need, for the provider to admit; nothing leaves the provider's default. */
+const admitted = (p: Profile) => { const services = modelServices(runtimes(p).map(({ kernel }) => kernel)); return services ? { modelServices: services } : {}; };
+/** The private files of a profile: its own, then those of its other kernels. */
+const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
 // One failed renewal request is not evidence the environment stopped. Three 30-second
 // attempts stay well inside the shortest 600-second lifetime.
 const renewalAttempts = 3;
@@ -167,8 +173,10 @@ export class EnvironmentManager {
       throw new Error("duplicate_environment_profile");
     for (const p of this.options.profiles) {
       if (p.ssh?.port === p.port) throw new Error("ssh_port_conflicts_with_host");
+      if (new Set(runtimes(p).map((r) => r.kernel)).size !== runtimes(p).length || new Set(runtimes(p).map((r) => r.runtimeId)).size !== runtimes(p).length)
+        throw new Error("duplicate_environment_kernel");
       p.hostConfigFile = resolve(base, p.hostConfigFile);
-      for (const f of p.files) f.source = resolve(base, f.source);
+      for (const f of privateFiles(p)) f.source = resolve(base, f.source);
     }
     this.store = new DurableStore(
       join(directory, "environments.sqlite"),
@@ -257,17 +265,29 @@ export class EnvironmentManager {
     const { id, name } = this.service.agent(share.sharedFrom);
     throw new WorkError("environment_shared_from_partner", 409).with({ partner: { id, name } });
   }
-  /** The owner's partner whose own, undeleted environment another partner may run in. Sharing does not chain. */
-  assertShareable(owner: string, agentId: string) {
-    this.shareable(owner, agentId);
+  /**
+   * The owner's partner whose own, undeleted environment another partner may run in, on `kernel` when one is named.
+   * Sharing does not chain. A kernel beside the main one has to be one the profile offers, and while the environment
+   * runs, a runtime its Host has available now.
+   */
+  async assertShareable(owner: string, agentId: string, kernel?: string) {
+    const { record, runtime } = this.shareable(owner, agentId, kernel);
+    if (runtime.runtimeId === this.profile(record).runtimeId || record.phase !== "ready") return;
+    let available = false;
+    try { available = (await this.http(agentId, record.operationId).request("/v1/runtimes/inspect", { body: { runtimeId: runtime.runtimeId } })).available === true; }
+    catch { /* A Host that does not have the runtime, or does not answer, cannot run the partner. */ }
+    if (!available) throw new WorkError("environment_kernel_not_ready", 409).with({ kernel: runtime.kernel });
   }
-  private shareable(owner: string, agentId: string) {
+  private shareable(owner: string, agentId: string, kernel?: string) {
     this.service.owned(agentId, owner);
     if (this.sharedBinding(agentId)) throw new WorkError("environment_share_chain_not_allowed", 409);
     const record = this.binding(agentId);
     if (!record || record.phase === "deleting" || record.phase === "deleted" || this.jobs.get(agentId)?.kind === "retirement")
       throw new WorkError("environment_share_target_unavailable", 409);
-    return { record, profile: this.profile(record) };
+    const profile = this.profile(record), offered = runtimes(profile);
+    const runtime = kernel === undefined ? offered[0]! : offered.find((item) => item.kernel === kernel);
+    if (!runtime) throw new WorkError("environment_kernel_not_available", 409).with({ kernels: offered.map((item) => item.kernel) });
+    return { record, profile, runtime };
   }
   /** A duty is recorded with the Agent's environment binding and is fixed from then on. */
   private assertDuty(agentId: string, duty: string | undefined) {
@@ -405,6 +425,7 @@ export class EnvironmentManager {
         timeoutSeconds: profile.lifetimeSeconds,
         onTimeout: profile.onTimeout,
         metadata: { "mau-operation": record.operationId },
+        ...admitted(profile),
       });
       this.save(record); // durable ID precedes bootstrap or further network work
       await this.bootstrap(owner, record, provider, profile);
@@ -413,19 +434,25 @@ export class EnvironmentManager {
   }
   /**
    * Run a partner in another partner's environment: the same sandbox, Host and working directory, with no cloud
-   * request. The partner keeps its own Router identity, conversations, memory and settings. Repeating the request
-   * completes a binding that was recorded but not yet given to Router.
+   * request. The partner keeps its own Router identity, conversations, memory and settings. It runs on the
+   * environment's main kernel, or on `kernel`, one of those the profile offers: another runtime of the same Host. Its
+   * kernel is fixed from then on. Repeating the request completes a binding that was recorded but not yet given to
+   * Router.
    */
-  async beginShared(owner: string, agentId: string, sharedFrom: string, duty?: string) {
+  async beginShared(owner: string, agentId: string, sharedFrom: string, duty?: string, kernel?: string) {
     this.assertOpen();
-    const agent = this.service.owned(agentId, owner), { record, profile } = this.shareable(owner, sharedFrom);
+    await this.assertShareable(owner, sharedFrom, kernel);
+    this.assertOpen();
+    const agent = this.service.owned(agentId, owner), { record, profile, runtime } = this.shareable(owner, sharedFrom, kernel);
     let share = this.sharedBinding(agentId);
-    if (share ? share.sharedFrom !== sharedFrom || share.operationId !== record.operationId : this.binding(agentId))
+    if (share ? share.sharedFrom !== sharedFrom || share.operationId !== record.operationId
+      || kernel !== undefined && (share.runtimeId ?? profile.runtimeId) !== runtime.runtimeId : this.binding(agentId))
       throw new WorkError("environment_already_bound", 409);
     if (share) this.assertDuty(agentId, duty);
     else {
       if (this.configuration.configuration(agent)?.host) throw new WorkError("host_already_bound", 409);
-      share = { agentId, sharedFrom, operationId: record.operationId, createdAt: new Date().toISOString() };
+      share = { agentId, sharedFrom, operationId: record.operationId, createdAt: new Date().toISOString(),
+        ...(runtime.runtimeId === profile.runtimeId ? {} : { runtimeId: runtime.runtimeId }) };
       this.assertLease();
       // No await since the checks above: the environment cannot be retired or the partner bound in between.
       this.store.transaction(() => {
@@ -433,7 +460,7 @@ export class EnvironmentManager {
         if (duty !== undefined) this.store.set(duties, agentId, duty);
       });
     }
-    const host = { binding: share.operationId, runtimeId: profile.runtimeId, instanceName: "channel-host",
+    const host = { binding: share.operationId, runtimeId: share.runtimeId ?? profile.runtimeId, instanceName: "channel-host",
       instructions: sharedInstructions(profile.instructions ?? "", agent.name, this.duty(agentId)) };
     if (this.configuration.configuration(agent)?.host?.binding !== host.binding)
       await this.configuration.edit(owner, agentId, (config) => { config.host = host; });
@@ -468,7 +495,7 @@ export class EnvironmentManager {
     this.launch(record, async () => {
       const provider = await this.provider(record);
       record.ref = await provider.create({ template: profile.template, timeoutSeconds: profile.lifetimeSeconds,
-        onTimeout: profile.onTimeout, metadata: { "mau-operation": record.operationId } });
+        onTimeout: profile.onTimeout, metadata: { "mau-operation": record.operationId }, ...admitted(profile) });
       this.save(record);
       await this.bootstrap(owner, record, provider, profile);
     });
@@ -513,13 +540,11 @@ export class EnvironmentManager {
       runtimes?: Array<{ id: string; kernel: string; cwd?: string }>;
       stateDirectory?: string;
     };
-    if (
-      !config.runtimes?.some(
-        (r) => r.id === profile.runtimeId && r.kernel === profile.kernel,
-      )
-    )
+    // Every kernel the profile offers is a runtime of this Host, and all of them work in the main one's directory.
+    const [main, ...others] = runtimes(profile).map((offered) => config.runtimes?.find((r) => r.id === offered.runtimeId && r.kernel === offered.kernel));
+    if (!main || others.some((runtime) => !runtime || runtime.cwd !== main.cwd))
       throw new WorkError("environment_runtime_profile_mismatch", 409);
-    for (const file of profile.files) readFileSync(file.source);
+    for (const file of privateFiles(profile)) readFileSync(file.source);
     return content;
   }
   private launch(
@@ -604,7 +629,7 @@ export class EnvironmentManager {
     await this.exec(provider, id, ["mkdir", "-p", "--", profile.directory]);
     await this.exec(provider, id, ["chmod", "--", "700", profile.directory]);
     // The image's entrypoint is already waiting. Publish readiness only after all private files.
-    for (const file of profile.files) {
+    for (const file of privateFiles(profile)) {
       await this.exec(provider, id, [
         "mkdir",
         "-p",
@@ -730,22 +755,41 @@ export class EnvironmentManager {
     };
   }
   /**
-   * Every Agent whose environment is ready, with its Host binding and runtime, for background observers that must
-   * not wake it. Partners in one environment are listed separately and name the same operation and runtime.
+   * Every Agent whose environment is ready, with its Host binding, runtime and kernel, for background observers that
+   * must not wake it. Partners in one environment are listed separately and name the same operation; each names the
+   * runtime it runs on.
    */
   readyBindings() {
     return this.store.entries<Binding>(collection).map(({ value }) => value)
       .filter((record) => record.phase === "ready" && record.ref)
-      .flatMap((record) => {
-        const profile = this.options.profiles.find((p) => p.id === record.profileId);
-        return profile ? [record.agentId, ...this.sharedBy(record.agentId)]
-          .map((agentId) => ({ agentId, operationId: record.operationId, runtimeId: profile.runtimeId, kernel: profile.kernel })) : [];
-      });
+      .flatMap((record) => [record.agentId, ...this.sharedBy(record.agentId)].flatMap((agentId) => {
+        const runtime = this.runtime(agentId);
+        return runtime ? [{ agentId, operationId: record.operationId, ...runtime }] : [];
+      }));
   }
-  /** The kernel of the environment an Agent runs in: its own, or the one it shares. */
+  /** The runtime an Agent runs on and its kernel: the main one of its environment, or the one it was bound to in a shared one. */
+  private runtime(agentId: string) {
+    const share = this.sharedBinding(agentId), record = this.binding(share?.sharedFrom ?? agentId);
+    const profile = record && this.options.profiles.find((p) => p.id === record.profileId);
+    return profile && runtimes(profile).find((item) => item.runtimeId === (share?.runtimeId ?? profile.runtimeId));
+  }
+  /** The kernel an Agent runs on. */
   kernel(agentId: string) {
+    return this.runtime(agentId)?.kernel;
+  }
+  /** The kernels a partner in the Agent's environment can run on, the main one first. */
+  kernels(agentId: string) {
     const record = this.binding(this.sharedFrom(agentId) ?? agentId);
-    return record && this.options.profiles.find((p) => p.id === record.profileId)?.kernel;
+    const profile = record && this.options.profiles.find((p) => p.id === record.profileId);
+    return profile ? runtimes(profile).map((item) => item.kernel) : [];
+  }
+  /** What a kernel of the Agent's environment reports about itself now (Host discovery of its runtime). */
+  async discover(agentId: string, kernel: string) {
+    const holder = this.sharedFrom(agentId) ?? agentId, record = this.binding(holder);
+    const profile = record && this.options.profiles.find((p) => p.id === record.profileId);
+    const runtime = profile && runtimes(profile).find((item) => item.kernel === kernel);
+    if (!record || !runtime) throw new WorkError("environment_kernel_not_available", 409);
+    return this.http(holder, record.operationId).request("/v1/runtimes/discover", { body: { runtimeId: runtime.runtimeId } });
   }
   /** Native work outside Router runs (background subagents) keeps a ready environment awake, whichever partner's it is. */
   touch(agentId: string) {
@@ -931,7 +975,7 @@ export class EnvironmentManager {
     delete record.error;
     this.save(record);
     if (
-      (await provider.resume(id, profile.lifetimeSeconds)).state !== "running"
+      (await provider.resume(id, profile.lifetimeSeconds, admitted(profile))).state !== "running"
     )
       throw new WorkError("environment_resume_pending", 409);
     const config = this.configuration.configuration(

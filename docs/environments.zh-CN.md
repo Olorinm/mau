@@ -30,15 +30,40 @@ mau resume
 
 方案可显式设置 `idlePauseSeconds`：空闲后暂停环境，仅在存在可投递且已授权的工作时唤醒。默认不自动暂停；手动暂停不会被消息自动唤醒。
 
-已有绑定的云服务、模板、内核、runtime ID、Host 目录和端口不能修改；显示名、账号、指令、时长、空闲和初始化文件设置可以修改。
+已有绑定的云服务、模板、内核、runtime ID、Host 目录和端口不能修改；显示名、账号、指令、时长、空闲、初始化文件设置以及方案提供的[其他内核](#一个环境里的多个内核)可以修改。
 
 公开仓库只有通用模板。真实地址、资源 ID、部署拓扑、凭据和用户数据留在私有配置中。旧 Router 产品入口已删除，没有兼容别名或自动生产数据迁移。
+
+## 一个环境里的多个内核
+
+环境有一个主内核（`kernel`、`runtimeId`）。方案可以用 `otherKernels` 再提供几个内核，给[共用该环境](#伙伴共用环境)的伙伴使用：每个内核是同一个 Host 进程里的另一个 runtime，同一个沙箱、同一个工作目录。这样换内核不需要新容器；需要隔离时仍应使用独占环境。
+
+```json
+{
+  "kernel": "codex",
+  "runtimeId": "personal",
+  "otherKernels": [
+    { "kernel": "claude", "runtimeId": "claude",
+      "files": [{ "source": "/private/alice/claude-settings.json", "destination": "/home/user/.claude/settings.json" }] }
+  ],
+  "hostConfigFile": "cloud/host-two-kernels.json"
+}
+```
+
+- `otherKernels` 最多四项，只写模板里已安装、有凭证、打算用的内核；目前接受 `codex` 和 `claude`，自带网关的内核不在此列。同一方案内内核和 runtime ID 都不能重复。
+- Host 配置里必须有对应 `id` 和 `kernel` 的 runtime，且 `cwd` 与主 runtime 相同，否则创建环境返回 `environment_runtime_profile_mismatch`。示例见 [host-two-kernels.json](../examples/cloud/host-two-kernels.json)，Mau 原样上传该文件。
+- 每项的 `files` 是该内核的私有文件（模型凭证），创建环境时和方案自己的 `files` 一起上传，权限 0600。凭证按内核注入，不按伙伴隔离：沙箱里所有伙伴以同一个用户运行，各内核、各伙伴都能读到其他内核的凭证文件；不能接受时请使用独占环境。凭证不进仓库，也不写进 Host 配置。
+- 每次创建和恢复环境时，Mau 把环境需要的模型服务告诉云服务：`codex` 对应 `openai`，`claude` 对应 `anthropic`。网关只放行这些服务里审核过的地址；私有模型网关或其他服务商需要改网关规则。方案里有 Mau 不认识的内核时不指定，沿用云服务的默认值。
+- `otherKernels` 不属于环境的身份标识：之后再加内核不会让已有绑定和会话失效，已有伙伴的 runtime 不变。Mau 不改写已存在环境里的文件：需要自己把 runtime 加进沙箱的 `host.json`（同时更新 `ready.json` 的哈希）、放好凭证，让方案的 Host 配置与之逐字节一致，并等 Host 重启；出口放行在环境下一次恢复时生效。
+- 伙伴的内核在创建时选定（`shareWith` 旁的 `kernel`，或[招募](native-work.md#partners)时的 `kernel`），之后不能改；不填就用主内核。方案没有提供的内核返回 `environment_kernel_not_available` 和 `kernels`；Host 里没有或不可用的返回 `environment_kernel_not_ready`。`GET /_mau/v1/options` 列出方案的 `kernels`，Agent 概要里的 `kernel` 是它自己运行的内核。
+
+内核之间的差异留给内核自己：各自读自己的说明文件和技能目录（Codex 读 `AGENTS.md`，Claude 读 `CLAUDE.md`，可以在工作目录的 `CLAUDE.md` 里引用前者），各自的权限设置也在各自的 runtime 配置里。由伙伴消息发起的一轮无法询问所有者，所以默认每条命令都要确认的内核，需要在 runtime 配置里设成不需交互的权限模式才能在这种轮次里工作。不同内核的伙伴共享文件，不共享原生上下文，彼此只通过[消息](native-work.md#partners)交换信息。非 Codex 伙伴能用和不能用的能力见[英文说明](native-work.md#partners-on-another-kernel)。
 
 ## 伙伴共用环境
 
 伙伴默认拥有独占环境，也可以在同一账号下另一个伙伴的环境里运行：同一个沙箱、Host、runtime 和工作目录，创建时不申请云资源。它仍然是完整的 Agent，有自己的 Router 身份、会话、记忆、定时任务和模型设置。
 
-`POST /_mau/v1/agents` 接收 `name`，以及 `profileId`（独占环境）或 `shareWith`（被共用伙伴的 ID）二者之一；两种方式都可以带 `duty`（一行纯文本职责，最长 200 字符，创建后不可修改）。读取接口返回 `duty`，并在 `environment` 中用 `sharedFrom`（共用谁的环境）和 `sharedBy`（被哪些伙伴共用）说明关系。
+`POST /_mau/v1/agents` 接收 `name`，以及 `profileId`（独占环境）或 `shareWith`（被共用伙伴的 ID，可同时带 `kernel` 选择该环境方案提供的内核）二者之一；两种方式都可以带 `duty`（一行纯文本职责，最长 200 字符，创建后不可修改）。读取接口返回 `duty`，并在 `environment` 中用 `sharedFrom`（共用谁的环境）和 `sharedBy`（被哪些伙伴共用）说明关系。
 
 - 被共用的伙伴必须属于同一账号、拥有未销毁的独占环境；不能共用另一个共用者的环境。
 - 共用者的 Host 请求、自检和文件转发都落到被共用的环境及其 Host token；固定说明为环境方案的固定说明加一段包含名字和职责的身份说明。拥有环境的伙伴的固定说明不变。

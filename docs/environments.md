@@ -71,8 +71,9 @@ the environment, and the first reply waits for resume. Active or unresolved runs
 count as activity. An explicit `mau pause` is never woken by messages.
 
 Provider, template, kernel, runtime ID, Host directory and port identify an
-existing binding and must not change. Labels, owners, instructions, lifetime, idle
-and bootstrap file settings may change.
+existing binding and must not change. Labels, owners, instructions, lifetime, idle,
+bootstrap file settings and the [other kernels](#more-than-one-kernel-in-an-environment) a profile
+offers may change.
 
 Host requests use Environment's application endpoint/traffic token and a separate
 Host token per environment. Cloud management credentials stay in Mau. Private gateways
@@ -98,6 +99,76 @@ not real model authentication. Router's former product commands and provisioning
 routes are deleted, with no compatibility aliases or automatic state migration.
 
 
+## More than one kernel in an environment
+
+An environment has one main kernel (`kernel`, `runtimeId`). A profile can offer further kernels for
+the partners that [share the environment](#partners-sharing-an-environment): each is another
+runtime of the same Host process, in the same sandbox and the same working directory. Changing
+kernels this way needs no second container; give a partner an environment of its own when its work
+must be isolated.
+
+```json
+{
+  "id": "cloud-codex",
+  "kernel": "codex",
+  "runtimeId": "personal",
+  "otherKernels": [
+    {
+      "kernel": "claude",
+      "runtimeId": "claude",
+      "files": [
+        { "source": "/private/alice/claude-settings.json", "destination": "/home/user/.claude/settings.json" }
+      ]
+    }
+  ],
+  "hostConfigFile": "cloud/host-two-kernels.json",
+  "files": [
+    { "source": "/private/alice/codex-auth.json", "destination": "/home/user/.codex/auth.json" }
+  ]
+}
+```
+
+- `otherKernels` (at most four) lists only the kernels that are installed in the template, have
+  credentials and are meant to be used. Accepted kernels: `codex`, `claude`. Kernels that bring
+  their own gateway are not offered this way. A kernel may appear once in a profile and every
+  runtime ID once (`duplicate_environment_kernel` at start).
+- The Host configuration must have a runtime with that `id` and `kernel` for each entry, with the
+  same `cwd` as the main runtime; otherwise creating an environment is refused with
+  `environment_runtime_profile_mismatch`. See
+  [host-two-kernels.json](../examples/cloud/host-two-kernels.json). Mau uploads the file as it is.
+- `files` of an entry are that kernel's private files, its model credentials: they are uploaded
+  with the profile's own `files` when the environment is created, mode 0600. Credentials are per
+  kernel, not per partner: every partner in the sandbox runs as the same user, so each kernel, and
+  each partner, can read the other kernels' credential files. Use an environment of its own where
+  that is not acceptable. No credential belongs in this repository or in the Host configuration.
+- The provider is told which model endpoints the environment needs: `openai` for `codex`,
+  `anthropic` for `claude`, with every create and resume (`modelServices` of
+  [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment)). The gateway
+  admits only reviewed endpoints of those services; a private model gateway or another provider is
+  a change to the gateway's rules. A profile whose kernels are not all known to Mau names none and
+  keeps the provider's default.
+- `otherKernels` is not part of what identifies an existing environment. Offering a kernel later
+  does not invalidate bindings or sessions, and the partners that exist keep their runtime. Mau
+  does not rewrite the files of an environment that already exists: add the runtime to its
+  `host.json` (with the matching `ready.json` hash) and place the credentials there yourself, keep
+  the profile's Host configuration byte-identical to it, and let the Host restart. The model
+  endpoints follow at the environment's next resume.
+- A partner's kernel is chosen when it is created (`kernel` beside `shareWith`, or `kernel` of a
+  [recruit](native-work.md#partners)) and is fixed afterwards. Without one it runs on the main
+  kernel. A kernel the profile does not offer is refused with `environment_kernel_not_available`
+  and `kernels`; one whose runtime the running Host does not have, or reports unavailable, with
+  `environment_kernel_not_ready`. `GET /_mau/v1/options` lists a profile's `kernels`, and an Agent
+  summary has the `kernel` that Agent runs on.
+
+What differs between kernels stays with the kernels. A runtime reads its own instruction files and
+skill directories: Codex reads `AGENTS.md`, Claude reads `CLAUDE.md` (a `CLAUDE.md` in the working
+directory can import the other file). A runtime's permission settings are its own too: a turn that
+a partner's message started cannot ask the owner, so a kernel that asks before every command needs
+a non-interactive permission setting in its runtime profile to work there. Partners on different
+kernels share files, not native context: they exchange what they know as
+[messages](native-work.md#partners). See [native work](native-work.md#partners-on-another-kernel)
+for what a partner on another kernel can and cannot use.
+
 ## Partners sharing an environment
 
 A partner normally gets an environment of its own. It can instead run in the environment of another
@@ -109,7 +180,8 @@ model settings, and creating it makes no cloud request. A partner that another p
 `POST /_mau/v1/agents` takes `name` and exactly one of:
 
 - `profileId`: an environment of its own (the behavior described above);
-- `shareWith`: the ID of the partner whose environment it runs in.
+- `shareWith`: the ID of the partner whose environment it runs in, optionally with `kernel`, one of
+  the [kernels the environment's profile offers](#more-than-one-kernel-in-an-environment).
 
 Both accept an optional `duty`, one line of plain text (at most 200 characters) saying what the
 partner is responsible for. The duty is fixed once the partner has an environment binding; there is
@@ -129,7 +201,8 @@ Rules:
   partner is the state of the environment it runs in plus `sharedFrom` (that partner's ID); the
   `environment` of a partner whose environment is shared lists the sharing partners in `sharedBy`.
 - The sharing partner's Host requests, checks and file relay use the shared environment and its
-  Host token. Its runtime ID is the environment's. Its fixed instructions are the environment
+  Host token. Its runtime ID is the environment's main one, or that of the kernel it was created
+  on. Its fixed instructions are the environment
   profile's instructions followed by a `## Partner identity` section with its name and duty, written
   when it is created. The instructions of the partner that has the environment do not change.
 - Idle pause counts the Host requests, unresolved runs and running native threads of every partner
@@ -150,17 +223,18 @@ Rules:
   owner's private conversation with the partner making the call, and the application behind such a
   connection is still set up through the partner it is assigned to
   (`connector_assigned_through_partner`). Connector guides and commands are files of the
-  environment and follow the assignment of the partner that has it.
-- Every partner in the environment reads the same native event stream. A native turn that Router did
-  not start is delivered only to the owner's private conversation of the partner whose session ran
-  it.
+  environment and follow the assignment of the partner that has it; a partner on a kernel whose
+  shell does not relay them gets the guides with the `connected_apps` tool instead.
+- Every Codex partner in the environment reads the same native event stream. A native turn that
+  Router did not start is delivered only to the owner's private conversation of the partner whose
+  session ran it. This relay follows Codex runtimes only.
 
 - Partners in one environment can message each other. Each has its own Host sessions and native
   threads, and their turns run side by side up to the runtime's limit of concurrent runs. A runtime
   that runs one turn at a time refuses the turn of a message sent while the sender's own turn still
   runs; the sender is told that the message failed.
 
-Partners in one environment see the same files, native kernel home and login. Give a partner an
+Partners in one environment see the same files, native kernel homes and logins. Give a partner an
 environment of its own when its work must be isolated.
 
 ## SSH access

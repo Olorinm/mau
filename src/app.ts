@@ -153,6 +153,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   };
   const assertOwned = (owner: string, agentId: string) => { router.service.owned(agentId, owner); };
   const modelSettings = new ModelSettings(businessStore, sessions);
+  /** What a kernel of the environment an Agent runs in offers, whether or not a partner runs on it yet. */
+  const kernelModels = (agentId: string, kernel: string) =>
+    modelSettings.kernelView(environments.sharedFrom(agentId) ?? agentId, kernel, () => environments.discover(agentId, kernel));
   const facts = new PartnerContext(businessStore, assertOwned, { directory: join(config.stateDir, "mau", "memories"), writeApproval: options.nativeWork.memory.writeApproval });
   const history = new SessionHistory(businessStore, assertOwned);
   const proactiveStore = new DurableStore(join(config.stateDir, "proactive.sqlite"), config.serverName);
@@ -229,11 +232,18 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     duty: agentId => environments.duty(agentId),
     environmentHolder: agentId => environments.sharedFrom(agentId) ?? agentId,
     kernel: agentId => environments.kernel(agentId),
+    kernels: agentId => environments.kernels(agentId),
     environmentState: (owner, agentId) => environments.summary(owner, agentId)?.state,
-    assertShareable: (owner, holder) => environments.assertShareable(owner, holder),
-    share: (owner, agentId, holder, duty) => environments.beginShared(owner, agentId, holder, duty),
+    assertShareable: (owner, holder, kernel) => environments.assertShareable(owner, holder, kernel),
+    share: (owner, agentId, holder, duty, kernel) => environments.beginShared(owner, agentId, holder, duty, kernel),
     models: (owner, agentId) => modelSettings.view(owner, agentId),
-    defaultModel: agentId => modelSettings.defaultModel(agentId),
+    kernelModels: (owner, agentId, kernel) => { assertOwned(owner, agentId); return kernelModels(agentId, kernel); },
+    // A partner whose own runtime was not read yet uses what was read of its kernel in its environment.
+    defaultModel: agentId => {
+      const holder = environments.sharedFrom(agentId) ?? agentId, kernel = environments.kernel(agentId);
+      return modelSettings.defaultModel(agentId) ?? (kernel !== undefined && kernel !== environments.kernel(holder)
+        ? modelSettings.kernelDefaultModel(holder, kernel) : modelSettings.defaultModel(holder));
+    },
     connections: (owner, agentId) => connectedApps.connections(agentId, owner),
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
   });
@@ -372,11 +382,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.json(result);
   });
   product.get("/options", (_req, res) => res.json({
-    environments: environments.profiles(res.locals.owner).map(({ id, label, kernel }) => ({ id, label, kernel })),
+    environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, otherKernels }) =>
+      ({ id, label, kernel, kernels: [kernel, ...otherKernels.map(other => other.kernel)] })),
   }));
   const summary = (owner: string, id: string) => ({
     ...router.connections.summary(router.service.owned(id, owner)),
     duty: environments.duty(id) ?? null,
+    kernel: environments.kernel(id) ?? null,
     environment: environments.summary(owner, id),
     dismissed: partners.dismissedAt(id) ?? null,
   });
@@ -384,13 +396,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // A partner gets an environment of its own (`profileId`) or runs in another partner's (`shareWith`).
   const newAgent = { name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), duty: dutySchema.optional() };
   const newAgentInput = z.union([z.object({ ...newAgent, profileId: z.string().min(1).max(48) }).strict(),
-    z.object({ ...newAgent, shareWith: z.uuid() }).strict()]);
+    z.object({ ...newAgent, shareWith: z.uuid(), kernel: z.string().min(1).max(48).optional() }).strict()]);
   product.post("/agents", async (req, res) => {
     const input = newAgentInput.parse(req.body), owner = res.locals.owner as string;
     if ("shareWith" in input) {
-      environments.assertShareable(owner, input.shareWith);
+      await environments.assertShareable(owner, input.shareWith, input.kernel);
       const agent = await router.service.create(owner, input.name);
-      await environments.beginShared(owner, agent.id, input.shareWith, input.duty);
+      await environments.beginShared(owner, agent.id, input.shareWith, input.duty, input.kernel);
       res.status(202).json(summary(owner, agent.id)); return;
     }
     const profile = environments.profiles(owner).find(p => p.id === input.profileId);

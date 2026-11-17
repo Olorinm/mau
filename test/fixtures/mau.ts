@@ -18,7 +18,13 @@ export const alice = "@alice:example.test",
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
   hostCapabilities?: { runIdempotency?: boolean };
   /** Members added to the runtime description Host returns, for example `capabilities`. */
-  runtime?: Record<string, unknown> } = {}, extraOptions: Record<string, unknown> = {},
+  runtime?: Record<string, unknown>;
+  /** Other runtimes of the fixture's Host by id, each with its `kernel` and what else its description has. */
+  runtimes?: Record<string, Record<string, unknown>>;
+  /** Members added to the fixture's environment profile, for example `otherKernels`. */
+  profile?: Record<string, unknown>;
+  /** The runtimes written to the profile's Host configuration, when they are not the ones the Host has. */
+  hostConfigRuntimes?: unknown[] } = {}, extraOptions: Record<string, unknown> = {},
   /** Router service settings. Ledger flags given here replace the fixture's (send, cards, control and groups on). */
   routerConfig: Record<string, unknown> = {},
   /** Extra Router dependencies, for example `{ edgeIdentityCerts }`. */
@@ -110,8 +116,12 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       );
       if (url.pathname.endsWith("/health"))
         return Response.json({ protocolVersion: 1, ...(serving.hostCapabilities ? { capabilities: serving.hostCapabilities } : {}) });
-      if (url.pathname.endsWith("/runtimes/inspect"))
-        return Response.json({ id: "personal", cwd: "/home/user/workspace", available: true, ...serving.runtime });
+      if (url.pathname.endsWith("/runtimes/inspect")) {
+        // A Host with one runtime describes it whatever is asked for; one with several answers for the one named.
+        const runtimeId = serving.runtimes ? String(JSON.parse(String(init?.body)).runtimeId) : "personal";
+        if (runtimeId !== "personal" && !serving.runtimes?.[runtimeId]) return Response.json({ error: "runtime_not_found" }, { status: 404 });
+        return Response.json({ id: runtimeId, cwd: "/home/user/workspace", available: true, ...(runtimeId === "personal" ? serving.runtime : serving.runtimes![runtimeId]) });
+      }
       if (url.pathname.endsWith("/runtimes"))
         return Response.json({ runtimes: [{ id: "personal" }] });
       if (serving.host) return serving.host(url, init);
@@ -122,8 +132,9 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
     hostConfigFile = join(directory, "profile.json");
   privateFile(hostConfigFile, {
     stateDirectory: "state",
-    runtimes: [
+    runtimes: serving.hostConfigRuntimes ?? [
       { id: "personal", kernel: "codex", cwd: "/home/user/workspace" },
+      ...Object.entries(serving.runtimes ?? {}).map(([id, runtime]) => ({ id, kernel: runtime.kernel, cwd: "/home/user/workspace" })),
     ],
   });
   const access = await accessIssuer(cleanup);
@@ -145,6 +156,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
             hostConfigFile,
             instructions: "Work carefully.\nAnswer in the owner's language.",
             owners: [alice],
+            ...serving.profile,
           },
         ],
       },
@@ -210,6 +222,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
   return {
     get base() { return current.base; },
     directory,
+    hostConfigFile,
     cloud,
     provider,
     get service() { return current.mau.router.service; },

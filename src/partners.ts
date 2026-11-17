@@ -7,7 +7,7 @@ import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import type { ApprovalDesk } from "./connector-approvals.js";
 import { dutySchema } from "./environments.js";
-import { GUIDE, NEXT, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
@@ -130,12 +130,18 @@ export interface PartnersPort {
   duty(agentId: string): string | undefined;
   /** The partner whose environment the agent runs in: itself, or the one it shares. */
   environmentHolder(agentId: string): string;
+  /** The kernel the agent runs on. */
   kernel(agentId: string): string | undefined;
+  /** The kernels a partner in the agent's environment can run on. */
+  kernels(agentId: string): string[];
   environmentState(owner: string, agentId: string): string | undefined;
-  /** Refuses when another partner cannot run in the holder's environment. */
-  assertShareable(owner: string, holder: string): void;
-  share(owner: string, agentId: string, holder: string, duty: string): Promise<unknown>;
+  /** Refuses when another partner cannot run in the holder's environment on that kernel. */
+  assertShareable(owner: string, holder: string, kernel: string | undefined): Promise<void>;
+  share(owner: string, agentId: string, holder: string, duty: string, kernel: string | undefined): Promise<unknown>;
   models(owner: string, agentId: string): Promise<ModelSettingsView>;
+  /** What another kernel of the agent's environment offers; nobody's selection. */
+  kernelModels(owner: string, agentId: string, kernel: string): Promise<ModelSettingsView>;
+  /** The model a partner's runtime uses when none is selected, as far as it was read. */
   defaultModel(agentId: string): string | undefined;
   connections(owner: string, agentId: string): string[];
   /** Withdraw the owner cards a finished run left open. */
@@ -337,7 +343,18 @@ export class Partners {
     const mine = this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self.agentId);
     let options: ModelSettingsView | undefined;
     try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
-    const kernel = this.port.kernel(self.agentId);
+    const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
+    const choices = (view: ModelSettingsView | undefined) => ({
+      models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
+      efforts: view?.efforts ?? [] });
+    // What the other kernels of the environment offer is read one after the other: each reading starts that kernel.
+    const otherKernels: Array<Record<string, unknown>> = [];
+    for (const name of others) {
+      let view: ModelSettingsView | undefined;
+      try { view = await this.port.kernelModels(owner, self.agentId, name); } catch { /* Listed as unavailable below. */ }
+      otherKernels.push({ kernel: name, ...choices(view), default: { model: view?.defaultModel ?? "default", effort: "default" },
+        ...(view && view.source !== "none" ? {} : { unavailable: "The model list of this kernel could not be read now. Recruit on it without model and effort, or call roster again later." }) });
+    }
     return {
       you: { name: self.name, duty: self.duty ?? null },
       partners: (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId).map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
@@ -348,11 +365,11 @@ export class Partners {
       waitingForReplies: mine.map(message => ({ messageId: message.id, to: message.to.name, intent: message.intent, sentAt: message.createdAt,
         state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you" : "not answered yet" })),
       recruit: {
-        kernels: kernel ? [kernel] : [],
-        models: options?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
-        efforts: options?.efforts ?? [],
+        kernels: kernel ? [kernel, ...others] : others,
+        ...choices(options),
         yours: { kernel: kernel ?? null, model: options?.selection.model ?? options?.defaultModel ?? "default", effort: options?.selection.effort ?? "default" },
         ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
+        ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
       },
       limits: { waitingMessages: WAITING_LIMIT },
       guide: GUIDE,
@@ -367,23 +384,30 @@ export class Partners {
     if (input.message !== undefined && !input.intent) throw new PartnerError("partner_intent_required", { instruction: "A first message needs intent: relay, ask or inform." });
     if (input.message === undefined && input.intent) throw new PartnerError("partner_message_required", { instruction: "intent goes with a first message. Leave both out to recruit without one." });
     if (input.message !== undefined) this.checkText(input.message);
-    const selection = await this.selection(admission, input);
     const key = JSON.stringify([owner, name.data]), existing = this.partners(owner).find(agent => agent.name === name.data);
     const record = this.store.get<{ agentId?: string }>(RECRUITS, key);
+    // A dismissed partner comes back as it was: on its own kernel, whatever the recruit names.
+    const returning = existing && this.dismissed(existing.id) && existing.id !== self.agentId ? existing : undefined;
+    const selection = await this.selection(admission, input, returning?.id);
     let restored = false, agent: { id: string; name: string } | undefined = existing;
-    if (existing && this.dismissed(existing.id) && existing.id !== self.agentId) { this.store.delete(DISMISSALS, existing.id); restored = true; }
+    if (returning) { this.store.delete(DISMISSALS, returning.id); restored = true; }
     else if (existing && !(record && !record.agentId)) throw new PartnerError("partner_name_taken", {
       partner: { name: existing.name, duty: this.port.duty(existing.id) ?? null },
       instruction: existing.id === self.agentId ? "That is your own name. Choose another." : "A partner with this name exists. Send it a message, or choose another name." });
     else {
       const holder = this.port.environmentHolder(self.agentId);
-      try { this.port.assertShareable(owner, holder); }
-      catch (error) { throw new PartnerError("partner_environment_unavailable", { reason: code(error, "environment_unavailable"), instruction: "A new partner runs in your environment, which cannot take one now. Tell the owner." }); }
+      try { await this.port.assertShareable(owner, holder, selection.kernel); }
+      catch (error) {
+        // The profile offers the kernel, but the environment's Host does not have its runtime available.
+        if (code(error, "") === "environment_kernel_not_ready") throw new PartnerError("partner_kernel_not_available", { kernel: selection.kernel, reason: "kernel_runtime_unavailable",
+          instruction: "This kernel is listed, but its runtime is not available in your environment now. Nothing was recruited. Recruit on another listed kernel, or tell the owner." });
+        throw new PartnerError("partner_environment_unavailable", { reason: code(error, "environment_unavailable"), instruction: "A new partner runs in your environment, which cannot take one now. Tell the owner." });
+      }
       // The intent is recorded first: a recruit that stopped half way is finished by repeating it.
       this.store.set(RECRUITS, key, { owner, name: name.data, by: { agentId: self.agentId, name: self.name }, at: iso() });
       try {
         agent = await this.port.create(owner, name.data);
-        await this.port.share(owner, agent.id, holder, described.data);
+        await this.port.share(owner, agent.id, holder, described.data, selection.kernel);
       } catch (error) {
         throw new PartnerError(code(error, "") === "agent_limit_reached" ? "partner_limit_reached" : "partner_recruit_failed", { reason: code(error, "recruit_failed"),
           instruction: "The partner was not recruited. Tell the owner; repeating the same recruit finishes one that stopped half way." });
@@ -392,39 +416,50 @@ export class Partners {
     }
     const partner = this.party(agent!);
     const settings = await this.applySelection(owner, partner.agentId,
-      restored ? { ...(input.model !== undefined && selection.model ? { model: selection.model } : {}), ...(input.effort !== undefined && selection.effort ? { effort: selection.effort } : {}) } : selection, restored);
+      restored ? { ...(input.model !== undefined && selection.model ? { model: selection.model } : {}), ...(input.effort !== undefined && selection.effort ? { effort: selection.effort } : {}) }
+        : { ...(selection.model ? { model: selection.model } : {}), ...(selection.effort ? { effort: selection.effort } : {}) }, restored);
     const sent = input.message === undefined ? undefined
       : await this.send(admission, turn, origin, callId, partner, input.intent!, input.message).catch((error: unknown) => {
         if (error instanceof PartnerError) return { isError: true as const, error: error.message, ...error.details };
         throw error;
       });
-    const kept = restored && partner.duty !== described.data;
+    const kept = restored && partner.duty !== described.data, kernel = this.port.kernel(partner.agentId);
     return { status: restored ? "restored" : "recruited",
-      partner: { name: partner.name, duty: partner.duty ?? null, kernel: this.port.kernel(partner.agentId) ?? null, model: settings.model ?? "default", effort: settings.effort ?? "default" },
+      partner: { name: partner.name, duty: partner.duty ?? null, kernel: kernel ?? null, model: settings.model ?? "default", effort: settings.effort ?? "default" },
       ...(kept ? { dutyKept: "This partner already had a duty, which cannot be changed. It is the one shown." } : {}),
+      ...(restored && input.kernel !== undefined && input.kernel !== kernel ? { kernelKept: KERNEL_KEPT } : {}),
       ...(selection.dropped && !restored ? { effortNote: `Your effort "${selection.dropped}" is not offered for this model, so the partner uses the model's default.` } : {}),
       ...(sent ? { message: sent } : {}),
       next: [restored ? NEXT.restored(partner.name) : NEXT.recruited(partner.name),
         sent && !("isError" in sent) ? sent.next : sent ? NEXT.firstMessageFailed : NEXT.noFirstMessage].join(" ") };
   }
-  /** kernel, model and effort of a recruit: the recruiter's own unless given, and only values the roster lists. */
-  private async selection(admission: RunAdmission, input: Input): Promise<{ model?: string; effort?: string; dropped?: string }> {
-    const kernel = this.port.kernel(admission.agentId);
-    if (input.kernel !== undefined && input.kernel !== kernel) throw new PartnerError("partner_kernel_not_available", { allowed: kernel ? [kernel] : [],
-      instruction: "A partner runs on the same kernel as its recruiter. Leave kernel empty." });
+  /**
+   * kernel, model and effort of a recruit, and only values the roster lists. On the recruiter's kernel what is left
+   * out is the recruiter's own. On another kernel of the environment nothing is carried over: what is left out is that
+   * kernel's default. A partner that returns (`returning`) stays on its kernel and is checked against it.
+   */
+  private async selection(admission: RunAdmission, input: Input, returning?: string): Promise<{ kernel?: string; model?: string; effort?: string; dropped?: string }> {
+    const own = this.port.kernel(admission.agentId), offered = this.port.kernels(admission.agentId);
+    if (!returning && input.kernel !== undefined && !offered.includes(input.kernel)) throw new PartnerError("partner_kernel_not_available", { allowed: offered,
+      instruction: "Use a kernel listed by roster, or leave kernel empty to use your own." });
+    const kernel = returning ? this.port.kernel(returning) : input.kernel ?? own, inherits = kernel === own;
     let view: ModelSettingsView | undefined;
-    try { view = await this.port.models(admission.owner, admission.agentId); } catch { /* Refused below when a value was asked for. */ }
+    try {
+      view = returning && !inherits ? await this.port.models(admission.owner, returning)
+        : inherits || !kernel ? await this.port.models(admission.owner, admission.agentId) : await this.port.kernelModels(admission.owner, admission.agentId, kernel);
+    } catch { /* Refused below when a value was asked for. */ }
     if ((!view || view.source === "none") && (input.model !== undefined || input.effort !== undefined)) throw new PartnerError("partner_model_options_unavailable", {
-      instruction: "The model list cannot be read now, so model and effort cannot be checked. Recruit without them to use your own settings." });
-    if (!view) return {};
+      instruction: inherits ? "The model list cannot be read now, so model and effort cannot be checked. Recruit without them to use your own settings."
+        : "The model list of this kernel cannot be read now, so model and effort cannot be checked. Recruit without them to use the kernel's default." });
+    if (!view) return { ...(kernel ? { kernel } : {}) };
     if (input.model !== undefined && !view.models.some(option => option.id === input.model)) throw new PartnerError("partner_model_not_available", { allowed: view.models.map(option => option.id),
-      instruction: "Use a listed model id, or leave model empty to use your own." });
-    const model = input.model ?? view.selection.model;
+      instruction: inherits ? "Use a listed model id, or leave model empty to use your own." : "Use a model id listed for this kernel, or leave model empty to use the kernel's default." });
+    const model = input.model ?? (inherits ? view.selection.model : undefined);
     const efforts = view.models.find(option => option.id === (model ?? view.defaultModel))?.efforts ?? view.efforts;
     if (input.effort !== undefined && !efforts.includes(input.effort)) throw new PartnerError("partner_effort_not_available", { allowed: efforts,
       instruction: "Use an effort listed for the model, or leave effort empty." });
-    const inherited = view.selection.effort, effort = input.effort ?? (inherited && efforts.includes(inherited) ? inherited : undefined);
-    return { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(input.effort === undefined && inherited && !effort ? { dropped: inherited } : {}) };
+    const inherited = inherits ? view.selection.effort : undefined, effort = input.effort ?? (inherited && efforts.includes(inherited) ? inherited : undefined);
+    return { ...(kernel ? { kernel } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(input.effort === undefined && inherited && !effort ? { dropped: inherited } : {}) };
   }
   /** A new partner starts with the selection; a restored one keeps its own settings unless values were given. */
   private async applySelection(owner: string, agentId: string, selection: { model?: string; effort?: string }, restored: boolean) {
@@ -615,7 +650,7 @@ export class Partners {
     const work = await this.port.sessions(message.owner, message.to.agentId), { sessionId } = work.openOwnerConversation();
     const settings = work.defaultSettings(), grants = message.grants;
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
-      model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? this.port.defaultModel(this.port.environmentHolder(message.to.agentId)) ?? null,
+      model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
