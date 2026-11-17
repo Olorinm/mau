@@ -4,6 +4,46 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.51] - 2026-11-18
+
+- An environment can offer more than one kernel. A profile's `otherKernels` lists kernels beside
+  its main one (`codex`, `claude`), each a further runtime of the same Host in the same working
+  directory, with that kernel's own private files. A profile without it is set up, bound and
+  fingerprinted exactly as before, and adding a kernel later invalidates no binding or session.
+  See [environments](docs/environments.md#more-than-one-kernel-in-an-environment).
+- A recruit can name any kernel its roster lists. `roster` lists the kernels of the caller's
+  environment and, for the ones other than its own, their models, efforts and default
+  (`otherKernels`); `recruit` binds the new partner to the named kernel's runtime, checks model
+  and effort against that kernel, carries nothing over from the recruiter to another kernel, and
+  refuses a kernel that is not offered or whose runtime the Host does not have. Left out, the
+  kernel is the recruiter's, as before. The `partners` tool definition is unchanged, so no
+  session is invalidated. `POST /_mau/v1/agents` accepts `kernel` beside `shareWith`,
+  `GET /_mau/v1/options` lists a profile's `kernels`, and an Agent summary has the `kernel` that
+  Agent runs on.
+- A partner on a kernel other than Codex works with the others like any partner: messages reach
+  it as text behind Router's notice where its runtime takes no native tool output, results return
+  the same way, and memory, the roster beside its input, schedules and approvals are the same.
+  The connector commands in the shell work for Codex partners only and are no longer installed
+  by other kernels' runs; such a partner uses `connected_apps`, whose catalog now carries the
+  connectors' guides and how to run their commands through the tool. The relay of native
+  wake-ups follows Codex runtimes only. See
+  [partners on another kernel](docs/native-work.md#partners-on-another-kernel).
+- The provider is told which model endpoints an environment's kernels need (`openai` for
+  `codex`, `anthropic` for `claude`) with every create and resume.
+- Chat events carry what a console shows as members instead of text to parse: a partner's
+  message has `display.partnerMessage`, a hand-over `display.partnerResults`, and a partner's
+  approval card `card.display.partnerApproval`. The console renders from them, words approval
+  cards in the interface language, and shows an event without them as its whole text. The card's
+  own text no longer repeats the partner's name in its title and its first line.
+- `GET /_mau/v1/partners` returns `recruitedBy` as `{ id, name }`.
+- Messages between partners that have ended, and finished hand-overs, are removed 30 days after
+  they were created. `GET /_mau/v1/partners/messages` reads only the messages it returns.
+- The console's new-partner dialog offers the kernels of the environment being shared, a
+  partner's profile shows the kernel that partner runs on, and the settings pages no longer list
+  dismissed partners under a connection or among the channels.
+- Builds on Agent Kit 0.11.0-alpha.2: model endpoints selected per environment, and `display` on
+  submitted work and owner requests.
+
 ## [0.1.0-alpha.50] - 2026-11-17
 
 - An owner's partners work together through one tool, `partners`, which replaces `work_sessions`:
