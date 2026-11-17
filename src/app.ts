@@ -235,7 +235,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     models: (owner, agentId) => modelSettings.view(owner, agentId),
     defaultModel: agentId => modelSettings.defaultModel(agentId),
     connections: (owner, agentId) => connectedApps.connections(agentId, owner),
-    ownerPrivate: async admission => ownerPrivateAdmission(admission, await routerOf(admission.agentId)),
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
   });
   business.setAdmissionValidator(admission => {

@@ -144,7 +144,7 @@ it("adds scopes only for grantable operations, from the connector's own mapping"
 it("keeps the connected_apps tool definition unchanged, so policy changes never rotate sessions", () => {
   // Policy changes only what action=tools lists and how calls are admitted. Changing this definition changes every
   // session's tool fingerprint (Host and Mau's frozen session catalog) and needs a planned session rotation.
-  expect(createHash("sha256").update(JSON.stringify(connectedAppDefinition)).digest("hex")).toBe("2ceb3c3b8868c745384fa8248a145448cc8a228ccfbec0e02cf0cc38f5e39db0");
+  expect(createHash("sha256").update(JSON.stringify(connectedAppDefinition)).digest("hex")).toBe("541df6a62e11a5ad2c9d41b00b2a3fb5abca0e621ea6773b55d8c770bf022cab");
 });
 
 /**

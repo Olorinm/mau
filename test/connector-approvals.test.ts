@@ -374,7 +374,7 @@ function desk() {
     withdraw: async id => { withdrawn.push(id); },
   };
   const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
-    authority: admission => admission.reference === "pm-1" ? { write: true, ownerPrivate: true, approvals: value, tool: "partners" } : undefined };
+    authority: admission => admission.reference === "pm-1" ? { write: true, approvals: value, tool: "partners" } : undefined };
   return { partner, cards, withdrawn, only: () => [...cards.values()][0]!, answer: (state: "approved" | "denied") => { [...cards.values()][0]!.state = state; }, close: () => { unavailable = true; } };
 }
 
@@ -468,7 +468,7 @@ it("refuses at once when there is nowhere to ask the owner, and closes the cards
 it("a turn that hands results to their sender asks with a card of its own run, and a schedule stays read-only", async () => {
   // The turn answers the owner, so Router presents its cards like an owner turn's.
   const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
-    authority: admission => admission.reference === "pr-1" ? { write: true, ownerPrivate: true, tool: "partners" } : undefined };
+    authority: admission => admission.reference === "pr-1" ? { write: true, tool: "partners" } : undefined };
   const f = await fixture({ partner }); await f.start({ ...partnerAdmission, reference: "pr-1" });
   f.call("browser__click", { site: "https://shop.example", ref: "buy" });
   const listed = await f.host.calls("run");

@@ -240,7 +240,7 @@ it("opens a conversation with the whole catalog when a partner's message is its 
   const f = fixture(), apps = vi.fn(async () => ({ status: "completed", tools: [] }));
   const definitions = [{ name: "partners", description: "", inputSchema: { type: "object" }, timeoutMs: 90_000 }];
   const partner: PartnerTools = { definitions, context: () => undefined, execute: async () => ({}), observe: run => { runs.push([run.id, run.status]); },
-    authority: turn => turn.reference === "pm-1" ? { write: true, ownerPrivate: true, tool: "partners" } : undefined };
+    authority: turn => turn.reference === "pm-1" ? { write: true, tool: "partners" } : undefined };
   const host = new BusinessHost(f.http, { read: f.call }, f.store, "agent:binding", apps, principal, partner, turn => completed.push(turn));
   // The message grants no Feishu reader and no connection, but the session it opens is the owner's conversation.
   const message = { kind: "delegation" as const, ...principal, reference: "pm-1", toolGrants: { feishu: false, connectedApps: { connections: [] } } };
@@ -343,4 +343,16 @@ it("admits owner-identity connections only in the owner's private conversation, 
   privateConversation = true; read.mockClear();
   expect((await answer({ action: "tools" }, "dm-tools")).tools).toHaveLength(2);
   expect((await answer({ action: "call", name: "alice_feishu__read", arguments: {} }, "dm-call")).status).toBe("completed");
+  // A turn a partner's message started has write authority from the turn that sent the message, and still no
+  // personal identity: what admits it is the owner's own turn, which the policy decides, not the partner tools.
+  const g = fixture(), asked: unknown[] = [];
+  const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}), authority: () => ({ write: true, tool: "partners" }) };
+  const partnerHost = new BusinessHost(g.http, undefined, g.store, "private:binding", read, principal, partner, undefined,
+    { ...hosting, ownerPrivate: { connections: async () => new Set(["alice-feishu"]), admitted: async turn => { asked.push(turn.kind); return turn.kind === "owner"; } } });
+  await partnerHost.start({ ...input, tools, admission: { kind: "delegation", ...principal, reference: "pm-1", toolGrants: { connectedApps: { connections: ["alice-feishu", "alice-gmail"] } } } });
+  g.setCalls("connected_apps", "", { action: "call", name: "alice_feishu__read", arguments: {} }, "partner-call"); read.mockClear();
+  await partnerHost.calls("run");
+  expect(JSON.parse(g.resolved.at(-1).contentItems[0].text)).toMatchObject({ status: "failed", error: "connected_app_owner_private_only", connection: "alice-feishu",
+    message: expect.stringContaining("伙伴之间的消息") });
+  expect(read).not.toHaveBeenCalled(); expect(asked).toEqual(["delegation"]);
 });

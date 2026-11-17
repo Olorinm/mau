@@ -69,8 +69,6 @@ export interface Authorization {
   feishu: boolean; connections: string[]; operations?: string[];
   /** Connected-app writes can ask the owner. */
   write: boolean;
-  /** Connections acting as the owner's personal identity are admitted. */
-  ownerPrivate: boolean;
   expiresAt?: string; maxToolCalls?: number;
 }
 /** The owner conversation a message was sent from: where its reply and its approvals go. */
@@ -133,7 +131,6 @@ export interface PartnersPort {
   models(owner: string, agentId: string): Promise<ModelSettingsView>;
   defaultModel(agentId: string): string | undefined;
   connections(owner: string, agentId: string): string[];
-  ownerPrivate(admission: RunAdmission): Promise<boolean>;
   /** Withdraw the owner cards a finished run left open. */
   closeApprovals(agentId: string, runId: string, withdraw: (requestId: string) => Promise<void>): Promise<void>;
 }
@@ -210,13 +207,13 @@ export class Partners {
   }
   /**
    * What the product grants a partner turn beyond its tool grants: whether its connected-app writes can ask the
-   * owner, whether owner-identity connections are admitted, and for a turn that handles a message, where the owner
-   * is asked. `undefined` for every other turn.
+   * owner, and for a turn that handles a message, where the owner is asked. `undefined` for every other turn.
+   * Connections that act as the owner's personal identity are not part of it: no partner turn is the owner's own.
    */
-  authority(admission: RunAdmission): { write: boolean; ownerPrivate: boolean; approvals?: ApprovalDesk; tool: string } | undefined {
+  authority(admission: RunAdmission): { write: boolean; approvals?: ApprovalDesk; tool: string } | undefined {
     const turn = this.turn(admission);
-    if (turn?.kind === "message") return { write: turn.message.grants.write, ownerPrivate: turn.message.grants.ownerPrivate, approvals: this.desk(turn.message), tool: "partners" };
-    if (turn?.kind === "return") return { write: turn.batch.authorization.write, ownerPrivate: turn.batch.authorization.ownerPrivate, tool: "partners" };
+    if (turn?.kind === "message") return { write: turn.message.grants.write, approvals: this.desk(turn.message), tool: "partners" };
+    if (turn?.kind === "return") return { write: turn.batch.authorization.write, tool: "partners" };
     return undefined;
   }
   /** The owner conversation a turn runs in, or a refusal: partners are messaged only from there. */
@@ -242,14 +239,14 @@ export class Partners {
     return { ...conversation, taskId };
   }
   /** What the running turn may use: an owner's turn everything assigned to its partner, a result turn what its messages' turns could. */
-  private async authorization(admission: RunAdmission, turn: Turn): Promise<Authorization> {
+  private authorization(admission: RunAdmission, turn: Turn): Authorization {
     const own = this.port.connections(admission.owner, admission.agentId);
     if (turn.kind === "return") return { ...turn.batch.authorization, connections: turn.batch.authorization.connections.filter(id => own.includes(id)) };
     const granted = admission.toolGrants;
     return { feishu: granted ? Boolean(granted.feishu) : true,
       connections: !granted ? own : own.filter(id => granted.connectedApps?.connections.includes(id)),
       ...(granted?.connectedApps?.operations ? { operations: granted.connectedApps.operations } : {}),
-      write: true, ownerPrivate: await this.port.ownerPrivate(admission),
+      write: true,
       ...(admission.expiresAt ? { expiresAt: admission.expiresAt } : {}), ...(admission.maxToolCalls ? { maxToolCalls: admission.maxToolCalls } : {}) };
   }
 
@@ -476,7 +473,7 @@ export class Partners {
       instruction: `"${to.name}" cannot be woken by a message now: its environment is ${environment ?? "missing"}. Nothing was sent. Tell the owner.` });
     if (intent === "inform" && this.outstanding(owner, ["queued"]).filter(message => message.to.agentId === to.agentId).length >= NOTE_LIMIT)
       throw new PartnerError("partner_note_limit_reached", { instruction: `${NOTE_LIMIT} notes already wait for "${to.name}" to read. Nothing was recorded. Send what matters as a message with intent ask or relay.` });
-    const sender = await this.authorization(admission, turn), theirs = this.port.connections(owner, to.agentId);
+    const sender = this.authorization(admission, turn), theirs = this.port.connections(owner, to.agentId);
     const grants: Authorization = { ...sender, connections: sender.connections.filter(id => theirs.includes(id)) };
     const id = `pm-${digest([owner, from.agentId, admission.reference, callId]).slice(0, 32)}`;
     const message: PartnerMessage = { id, owner, from, to, intent, text, status: intent === "inform" ? "queued" : "sending", createdAt: iso(), origin, sender, grants };
@@ -770,7 +767,7 @@ export class Partners {
       const origin = { sessionId: ready[0]!.origin.sessionId, connectionId: ready[0]!.origin.connectionId, chain: Math.max(...ready.map(message => message.origin.chain)) };
       const authorization: Authorization = { feishu: ready.every(message => message.sender.feishu),
         connections: ready[0]!.sender.connections.filter(id => ready.every(message => message.sender.connections.includes(id))),
-        write: ready.every(message => message.sender.write), ownerPrivate: ready.every(message => message.sender.ownerPrivate) };
+        write: ready.every(message => message.sender.write) };
       const operations = ready.map(message => message.sender.operations).filter((value): value is string[] => !!value);
       if (operations.length) authorization.operations = operations[0]!.filter(name => operations.every(list => list.includes(name)));
       let batch: ReturnBatch | undefined;

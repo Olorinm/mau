@@ -22,7 +22,7 @@ it("puts a partner's approval card in the conversation its message came from, wh
   // The turn that handles the message may ask; other admissions get nothing.
   const partnerTurn = { kind: "delegation" as const, owner: alice, agentId: trip.id, reference: id, toolGrants: { connectedApps: { connections: [] } } };
   const authority = f.mau.partners.authority(partnerTurn)!;
-  expect(authority).toMatchObject({ write: true, ownerPrivate: true, tool: "partners" });
+  expect(authority).toMatchObject({ write: true, tool: "partners" }); expect(authority).not.toHaveProperty("ownerPrivate");
   expect(f.mau.partners.allows(partnerTurn)).toBe(true);
   expect(f.mau.partners.authority({ ...partnerTurn, agentId: f.agent.id })).toBeUndefined();
   expect(f.mau.partners.authority({ ...partnerTurn, reference: "pm-unknown" })).toBeUndefined();
@@ -82,7 +82,7 @@ it("puts a partner's approval card in the conversation its message came from, wh
   // The turn that hands the result over answers the owner itself, so it asks with cards of its own and needs no desk.
   const batch = f.store(store => store.entries<{ id: string }>("partner_returns"))[0]!.value;
   const handing = { ...partnerTurn, agentId: f.agent.id, reference: batch.id };
-  expect(f.mau.partners.authority(handing)).toEqual({ write: true, ownerPrivate: true, tool: "partners" });
+  expect(f.mau.partners.authority(handing)).toEqual({ write: true, tool: "partners" });
   expect(f.mau.partners.allows(handing)).toBe(true);
   end(back, "The form is sent.");
   await f.until(() => f.record(id).status === "returned", "returned");

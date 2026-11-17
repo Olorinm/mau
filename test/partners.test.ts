@@ -67,7 +67,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
     "The trip partner drafted five days in Seoul and needs your travel dates."]);
   await f.until(() => f.record(record.id).status === "returned", "returned");
   expect(f.record(record.id)).toMatchObject({ status: "returned", intent: "relay", from: { name: "helper" }, to: { name: "korea-trip", duty },
-    origin: { connectionId: "web", chain: 0 }, grants: { write: true, ownerPrivate: true, connections: [] }, ran: { kernel: "codex", model: "large", effort: null },
+    origin: { connectionId: "web", chain: 0 }, grants: { write: true, connections: [] }, ran: { kernel: "codex", model: "large", effort: null },
     result: { status: "completed", answer: "Draft: five days in Seoul. Missing: the travel dates." }, delivery: { via: "turn" } });
   // In the sender's conversation the result stands after the answer of the turn that sent the message.
   expect((await f.events(f.agent.id)).filter(event => event.kind === "message").map(event => [event.role, event.sender.type, event.kind === "message" && event.origin || "channel"])).toEqual([

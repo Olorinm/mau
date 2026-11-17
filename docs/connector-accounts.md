@@ -137,7 +137,9 @@ owner may not be looking at, and it cannot ask the owner there. Its connected-ap
 was sent in:
 
 - The token is for the connections of the message's grant: what the sending turn could use, within the connections
-  assigned to the partner. It is write-capable when the sending turn was the owner's.
+  assigned to the partner, without the connections that act as the owner's personal identity (see
+  [rule 1](#rule-1-personal-access-only-in-the-owners-private-conversation)). It is write-capable when the sending turn
+  was the owner's.
 - When an operation needs the owner's approval, the card appears in the conversation the message was sent from, on
   the connection the owner used there. It is a Router owner request (`source: "product"`), not a card of any run. It
   names the partner that asks and the partner whose message it is handling, and shows the operation's summary, its
@@ -198,9 +200,8 @@ own records, not from the Agent:
   message that is not the owner's direct input (a group or visitor session).
 - Schedules: allowed, read-only. Rules are created by the owner, and Router requires their target and conversation
   sessions to be owner conversations (`notification_requires_owner_conversation`); delivery goes only there.
-- A turn a partner's message started (one that handles the message, or one that hands its result over): as the
-  owner's turn the message was sent in. A message sent from the owner's private conversation admits them; nothing else
-  can send one.
+- A turn a partner's message started (one that handles the message, or one that hands its result over): refused,
+  wherever the message was sent from. The owner asks that partner directly in its own conversation instead.
 - Memory reviews: refused. Unknown usage (service unavailable): every connection is treated as owner-private (fail
   closed).
 

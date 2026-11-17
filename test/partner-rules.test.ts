@@ -274,7 +274,7 @@ it("stops a line of messages that results keep extending without the owner", asy
   await f.until(async () => (await f.answers(f.agent.id)).some(answer => answer.includes('"status":"sent"')), "new line");
 }, 90_000);
 
-it("gives a partner's turn what the sending turn could use within the partner's own connections", async () => {
+it("gives a partner's turn what the sending turn could use within the partner's own connections, never the owner's personal identity", async () => {
   const f = await partnersFixture(cleanup), key = await generateSigningKey("caller");
   privateFile(join(f.directory, "caller.json"), key.privateJwk);
   const end = f.hold();
@@ -292,33 +292,55 @@ it("gives a partner's turn what the sending turn could use within the partner's 
       { agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu", "trip-browser"] }] } });
   const tools = vi.spyOn(ConnectorReadClient.prototype, "tools").mockResolvedValue([]);
   const call = vi.spyOn(ConnectorReadClient.prototype, "call").mockResolvedValue({ status: "completed", result: {} });
+  const personal = { action: "call", name: "alice_feishu__docs_read", arguments: {} };
+  const seen = new Map<string, any[]>(), keep = (key: string, value: any[]) => { seen.set(key, value); };
   f.respond(async (turn: Turn) => {
-    if (f.name(turn.agentId) === "helper") {
-      if (turn.text.includes("[Partner results")) return "Reported.";
+    const name = f.name(turn.agentId);
+    if (name === "helper") {
+      // The turn that brings the results back is not the owner's own turn either.
+      if (turn.text.includes("[Partner results")) { keep("helper results", [await turn.call("connected_apps", { action: "tools" }), await turn.call("connected_apps", personal)]); return "Reported."; }
+      keep("helper owner", [await turn.call("connected_apps", personal)]);
       await Promise.all([turn.call("partners", { action: "message", to: "trip", text: "Check the calendar", intent: "relay" }),
         turn.call("partners", { action: "message", to: "plain", text: "Check the mail", intent: "relay" })]);
       return "Asked both.";
     }
-    await Promise.all([turn.call("connected_apps", { action: "tools" }),
-      turn.call("connected_apps", { action: "call", name: "alice_feishu__docs_read", arguments: {} }),
-      turn.call("connected_apps", { action: "call", name: "trip_browser__open", arguments: {} })]);
+    const owners = !turn.text.includes("[Partner message");
+    keep(`${name} ${owners ? "owner" : "message"}`, [await turn.call("connected_apps", { action: "tools" }), await turn.call("connected_apps", personal),
+      await turn.call("connected_apps", { action: "call", name: "trip_browser__open", arguments: {} })]);
     return "Checked.";
   });
   await f.say(f.agent.id, "Ask trip and plain");
   await f.until(() => f.messages().length === 2 && f.messages().every(message => f.record(message.id).status === "returned"), "both returned", 2000);
   const records = Object.fromEntries(f.messages().map(message => [message.to.name, f.record(message.id)]));
-  expect(records.trip).toMatchObject({ sender: { feishu: true, connections: ["alice-mail", "alice-calendar", "alice-feishu"], write: true, ownerPrivate: true },
-    grants: { feishu: true, connections: ["alice-calendar", "alice-feishu"], write: true, ownerPrivate: true } });
+  expect(records.trip).toMatchObject({ sender: { feishu: true, connections: ["alice-mail", "alice-calendar", "alice-feishu"], write: true },
+    grants: { feishu: true, connections: ["alice-calendar", "alice-feishu"], write: true } });
   expect(records.plain!.grants.connections).toEqual(["alice-mail", "alice-calendar", "alice-feishu"]);
-  // The connector service is asked as the partner itself, for the granted connections only.
-  expect(tools).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu"] });
-  expect(tools).toHaveBeenCalledWith({ agentId: plain.id, owner: alice, connections: ["alice-mail", "alice-calendar", "alice-feishu"] });
-  // The owner's personal connection is admitted because the message came from the owner's private conversation.
-  expect(call).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu"] }, "alice_feishu__docs_read", {});
+  for (const record of Object.values(records)) { expect(record!.sender).not.toHaveProperty("ownerPrivate"); expect(record!.grants).not.toHaveProperty("ownerPrivate"); }
+  // The connection that acts as the owner's personal identity works in the turn the owner started and nowhere else:
+  // not in a turn that handles a partner's message, and not in the turn that brings the results back.
+  const refusal = { status: "failed", error: "connected_app_owner_private_only", connection: "alice-feishu",
+    message: "这个连接使用你的个人身份（例如飞书个人权限），只能在你与 Agent 的私聊中、由你发起的那一轮里使用，群聊、其他人的对话和伙伴之间的消息中不可用。",
+    instruction: expect.stringContaining("the owner has to ask in that private conversation") };
+  expect(seen.get("helper owner")![0]).toMatchObject({ status: "completed" });
+  for (const turn of ["trip message", "plain message", "helper results"]) {
+    expect(seen.get(turn)![0], turn).toMatchObject({ status: "completed", unavailableHere: [{ connection: "alice-feishu", reason: "connected_app_owner_private_only" }] });
+    expect(seen.get(turn)![1], turn).toEqual(refusal);
+  }
+  expect(call.mock.calls.filter(([, name]) => name === "alice_feishu__docs_read").map(([principal]) => principal.agentId)).toEqual([f.agent.id]);
+  // The connector service is asked as the partner itself, for the granted connections without the personal one.
+  expect(tools).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar"] });
+  expect(tools).toHaveBeenCalledWith({ agentId: plain.id, owner: alice, connections: ["alice-mail", "alice-calendar"] });
+  expect(tools).toHaveBeenCalledWith({ agentId: f.agent.id, owner: alice, connections: ["alice-mail", "alice-calendar"] });
   // A connection of its own that the sending turn did not have is not in the partner's token for this turn, so the
   // connector service refuses its tools.
-  expect(call).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu"] }, "trip_browser__open", {});
+  expect(call).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar"] }, "trip_browser__open", {});
   // The turn that hands the results over acts within what both sending turns could use.
   const batch = f.store(store => store.entries<{ authorization: unknown; origin: unknown }>("partner_returns"))[0]!.value;
-  expect(batch.authorization).toMatchObject({ feishu: true, connections: ["alice-mail", "alice-calendar", "alice-feishu"], write: true, ownerPrivate: true });
+  expect(batch.authorization).toEqual({ feishu: true, connections: ["alice-mail", "alice-calendar", "alice-feishu"], write: true });
+  // The partner's own conversation with the owner is as before: a turn the owner starts there uses the personal connection.
+  await f.say(trip.id, "Read my document");
+  await f.until(() => seen.get("trip owner"), "trip's own owner turn");
+  expect(seen.get("trip owner")![0]).not.toHaveProperty("unavailableHere");
+  expect(seen.get("trip owner")![1]).toMatchObject({ status: "completed" });
+  expect(call).toHaveBeenCalledWith({ agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu", "trip-browser"] }, "alice_feishu__docs_read", {});
 }, 90_000);

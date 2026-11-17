@@ -34,8 +34,6 @@ const sameTool = (definition: Pick<HostTool, "name" | "namespace">, call: HostCa
 export interface PartnerAuthority {
   /** Connected-app writes can ask the owner, as in the owner's turn the message came from. */
   write: boolean;
-  /** Owner-identity connections are admitted, as in that turn. */
-  ownerPrivate: boolean;
   /** Where the owner is asked when the turn itself has no owner conversation to ask in. */
   approvals?: ApprovalDesk;
   /** The tool whose delivery the turn's input is: a kernel that takes tool output is given the input under this name. */
@@ -387,11 +385,12 @@ export class BusinessHost extends HttpAgentHost {
   private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
     const granted = admission.toolGrants?.connectedApps, apps = this.apps;
     let connections = (apps?.connections ?? []).filter(id => !granted || granted.connections.includes(id));
-    // A turn a partner's message started acts within the owner's turn that message came from.
+    // A turn a partner's message started may write where the owner's turn that message came from could.
     const partnerTurn = this.partner?.authority?.(admission);
-    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation.
+    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation,
+    // in a turn the owner started. No partner turn is one.
     let blocked: string[] = [];
-    if (apps?.ownerPrivate && !(partnerTurn ? partnerTurn.ownerPrivate : await apps.ownerPrivate.admitted(admission))) {
+    if (apps?.ownerPrivate && !(await apps.ownerPrivate.admitted(admission))) {
       const ids = await apps.ownerPrivate.connections();
       blocked = connections.filter(id => !ids || ids.has(id));
       connections = connections.filter(id => !blocked.includes(id));
