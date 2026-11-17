@@ -96,6 +96,10 @@ it("keeps what a model is told about partners unchanged: the guide, what follows
     notice: noticeText([failed]),
   };
   expect(seen.results[1]).toContain("Result 2 of 2");
+  // What every turn is shown stays small however many partners the owner has.
+  const many = contextText({ you: "desk", waiting: [], notes: [], roster: Array.from({ length: 50 }, (_, index) => ({ name: `partner-${index}`, duty: "d".repeat(200), status: "idle" })) }).partners!;
+  expect(many.split("\n")).toHaveLength(33); expect(many).toContain("- and 20 more: action=roster lists every partner.");
+  expect(Buffer.byteLength(many)).toBeLessThan(8000);
   // What comes back is cut to the size Router admits for one input, and says that it was cut.
   const long = returnText(Array.from({ length: 8 }, (_, index) => message({ id: `pm-${String(index).padStart(32, "0")}`, text: "问".repeat(5000),
     result: { status: "completed", answer: "答".repeat(20_000), settledAt: at, durationMs: 1000 } })), "0123456789ab");

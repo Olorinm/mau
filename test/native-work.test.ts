@@ -82,7 +82,11 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review")).resolves.toMatchObject({ staged: true });
   await expect(partner.execute("session_search", { query: "fact" }, review, "review-history")).rejects.toThrow("memory_review_tool_not_authorized");
   await expect(partner.execute("partners", { action: "roster" }, review, "review-partners")).rejects.toThrow("memory_review_tool_not_authorized");
-  expect(await partner.turnContext(review, "session", ["partners"])).toEqual({});
+  expect(await partner.turnContext(review, "session", ["partners", "memory"])).toEqual({});
+  // A session that began with an earlier set of tools is told nothing about tools it does not have.
+  expect(await partner.turnContext(admission, "session", ["work_sessions", "employee_memory"])).toEqual({});
+  expect(await partner.turnContext(admission, "session", ["memory"])).toEqual({ memoryMaintenanceReminder: "Maintain useful durable notes when appropriate." });
+  expect(await partner.turnContext(admission, "session", ["partners"])).toEqual({ partners: "The owner has no other partners now." });
   await partner.execute("session_search", { query: "exact phrase" }, admission, "history-search");
   expect(search).toHaveBeenCalledWith(owner, agentId, { query: "exact phrase", limit: 10, offset: 0 });
   // A schedule has none of these tools, whatever a reused conversation's catalog lists.

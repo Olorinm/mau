@@ -38,8 +38,8 @@ export class NativePartnerTools implements PartnerTools {
   }
   async turnContext(admission: RunAdmission, sessionId: string, tools: string[]) {
     if (!this.mine(admission) || admission.kind === "schedule" || this.options.isMemoryReview?.(admission)) return {};
-    const reminder = admission.kind === "owner" ? this.options.reminders?.(admission, sessionId) : undefined;
-    // A session that began before the partners tool existed is not shown a roster it cannot act on.
+    // A session that began with an earlier set of tools is not reminded of a tool, or shown a roster, it cannot act on.
+    const reminder = admission.kind === "owner" && tools.includes("memory") ? this.options.reminders?.(admission, sessionId) : undefined;
     return { ...(reminder ? { memoryMaintenanceReminder: reminder } : {}), ...await this.partners.turnContext(admission, tools.includes("partners")) };
   }
   authority(admission: RunAdmission) { return this.mine(admission) ? this.partners.authority(admission) : undefined; }

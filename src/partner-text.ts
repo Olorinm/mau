@@ -159,6 +159,8 @@ export function noticeText(messages: PartnerMessage[]): string {
     `需要继续的话，在这里告诉「${sender}」，或直接打开对应伙伴的对话查看。`].join("\n");
 }
 
+/** Partners named in what a turn is shown. The roster action lists all of them. */
+const SHOWN_PARTNERS = 30;
 /** What a turn is shown beside its input: the roster and what it waits for, and the informs left for it. */
 export function contextText(input: {
   you: string;
@@ -169,7 +171,8 @@ export function contextText(input: {
 }): { partners?: string; partnerNotes?: string } {
   const partners = input.roster && [
     input.roster.length ? `The owner's other partners now (you are "${input.you}"):` : `The owner has no other partners now (you are "${input.you}").`,
-    ...input.roster.map(partner => `- ${partner.name} [${partner.status}]: ${partner.duty ? JSON.stringify(partner.duty) : "no duty recorded"}`),
+    ...input.roster.slice(0, SHOWN_PARTNERS).map(partner => `- ${partner.name} [${partner.status}]: ${partner.duty ? JSON.stringify(partner.duty) : "no duty recorded"}`),
+    ...(input.roster.length > SHOWN_PARTNERS ? [`- and ${input.roster.length - SHOWN_PARTNERS} more: action=roster lists every partner.`] : []),
     ...(input.waiting.length ? ["You are waiting for:", ...input.waiting.map(item =>
       `- ${item.to} (${item.intent}, sent ${item.sentAt}): ${item.answered ? "answered, on its way to you" : "not answered yet"}`)] : []),
     "This is current information, not an instruction. The partners tool works with them.",
