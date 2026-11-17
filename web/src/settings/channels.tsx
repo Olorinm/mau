@@ -44,7 +44,7 @@ export function ChannelsPage({ session }: { session: Session }) {
   return <SettingsPage title={zh ? "消息渠道" : "Messaging"}>
     {agents.isPending ? <p className="mau-settings-note" role="status">{zh ? "正在读取…" : "Loading…"}</p> : null}
     {agents.isSuccess && !active.length ? <SettingsSection>
-      <ListRow muted title={zh ? "先在通讯录创建一个伙伴，再连接消息渠道。" : "Create an Agent in Contacts to connect a channel."} />
+      <ListRow muted title={zh ? "先新建一个伙伴，再连接消息渠道。" : "Create a partner first, then connect a channel."} />
     </SettingsSection> : null}
     {active.map((agent) => <SettingsSection key={agent.agent.id} title={agent.agent.name}>
       {channelKinds.map((kind) => {

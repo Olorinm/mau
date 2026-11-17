@@ -423,19 +423,39 @@ export function DetailHero({
   title,
   subtitle,
   titleRef,
+  expandable,
 }: {
   icon?: ReactNode | undefined;
   title: ReactNode;
   subtitle?: ReactNode | undefined;
   titleRef?: Ref<HTMLHeadingElement> | undefined;
+  /** Keeps the secondary line to three lines; a longer one is opened and closed with these labels. */
+  expandable?: { expand: string; collapse: string } | undefined;
 }) {
+  const line = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  // Whether the line is longer than what is shown is only known once it is laid out, and changes with the width.
+  useEffect(() => {
+    const element = line.current;
+    if (!expandable || !element) return;
+    const measure = () => { if (element.dataset.clamped !== undefined) setLong(element.scrollHeight > element.clientHeight + 1); };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [expandable !== undefined, subtitle]);
   return (
     <header className="agent-detail-hero">
       {icon}
       <h2 ref={titleRef} tabIndex={-1}>
         {title}
       </h2>
-      {subtitle ? <p>{subtitle}</p> : null}
+      {subtitle ? <p ref={line} data-clamped={expandable && !open ? "" : undefined}>{subtitle}</p> : null}
+      {subtitle && expandable && (long || open) ? (
+        <TextButton aria-expanded={open} onClick={() => setOpen(!open)}>{open ? expandable.collapse : expandable.expand}</TextButton>
+      ) : null}
     </header>
   );
 }

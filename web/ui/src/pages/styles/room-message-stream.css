@@ -101,6 +101,22 @@
   font-weight: var(--fw-semibold);
 }
 
+.room-chat-author-link {
+  display: inline-flex;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.room-chat-author-link:hover strong,
+.room-chat-author-link:focus-visible strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .room-chat-author-name {
   display: inline-flex;
   min-width: 0;

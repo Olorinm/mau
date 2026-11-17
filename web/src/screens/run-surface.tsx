@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
-import { RunMessage } from "@olorinm/agent-ui/pages";
+import { RunMessage, type PartnerLinkResolver } from "@olorinm/agent-ui/pages";
 import { Button } from "@olorinm/agent-ui/app";
 import { Disclosure } from "@olorinm/agent-ui";
 import { mauApi } from "../api/client";
@@ -9,7 +9,7 @@ import { answerInteraction, describeInteraction, type Interaction as HostRequest
 import { blockBuildReload } from "../build-version";
 import { ApiError } from "../api/http";
 import { runApi, RunReader, type RunDetail } from "../api/runs";
-import { errorMessage, useI18n } from "../i18n";
+import { errorMessage, errorSentence, useI18n } from "../i18n";
 
 function sameNativeAnswer(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
@@ -55,7 +55,8 @@ export interface TaskLike {
   runs: ReadonlyArray<{ claimId: string; runId: string | null; phase: string }>;
 }
 
-function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, controls }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined }) {
+function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, controls, partnerLink }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+  partnerLink?: PartnerLinkResolver | undefined }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const queries = useQueryClient();
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
@@ -105,7 +106,9 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   const failure = sleeping ? null : query.error ?? cancel.error ?? wake.error;
   const answer = active ? data?.view.text : data?.detail.run.answer || data?.view.text;
   const interactions = calls.map(call => ({call, request: describeInteraction({method: call.name, params: call.input} as NativeRequest)}));
-  const parts = data ? projectHostMessage(data.view.events, {active, answer: answer ?? "", detailsLabel: zh ? "参数与结果" : "Input and output"}) : [];
+  // A refused call of a product tool says why in words; the partners tool always does, whatever its code.
+  const parts = data ? projectHostMessage(data.view.events, {active, answer: answer ?? "", detailsLabel: zh ? "参数与结果" : "Input and output",
+    describeError: (code, tool) => errorSentence(t, code) ?? (/(^|\.)partners$/.test(tool) ? errorMessage(t, code) : undefined)}) : [];
   for (const {call, request} of interactions) {
     const available = active && call.status === "pending" && Date.parse(call.deadlineAt) > Date.now();
     const chosen = request.choices?.find(choice => sameNativeAnswer(answerInteraction(request, {choice: choice.id}), call.result));
@@ -134,6 +137,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
       {...((!data && !terminal && query.error) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
       {...(active || (!data && !terminal && !query.error) ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label: active ? label : zh ? "正在执行" : "Running"}} : {})}
       {...(active && !controls?.stopInComposer ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
+      {...(partnerLink ? {partnerLink} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
     {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
     {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p> : null}
@@ -150,10 +154,12 @@ export function WorkingSurface({ fallback = "" }: { fallback?: string }) {
     onResolveApproval={() => undefined} onResolveQuestion={() => undefined} onInsertPrompt={() => undefined} />;
 }
 
-export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined }) {
+export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls, partnerLink }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+  /** What opens a partner that an activity row of the run names. */
+  partnerLink?: PartnerLinkResolver | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   if (!task.runs.length) return task.status === "canceled" ? <p role="status">{zh ? "已取消" : "Cancelled"}</p> : <WorkingSurface fallback={fallback} />;
-  return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} />
+  return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />
     : run.phase === "unknown" ? <p role="status" key={run.claimId}>{zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically."}</p>
     : <WorkingSurface key={run.claimId} fallback={fallback} />)}</>;
 }

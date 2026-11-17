@@ -79,7 +79,7 @@ export function CreateAgentDialog(props: {
         <div className="partner-dialog-profile-hero">
           <PartnerAvatar
             seed={name || "new-agent"}
-            fallbackName={name || "Agent"}
+            fallbackName={name || "Partner"}
             size={80}
           />
         </div>

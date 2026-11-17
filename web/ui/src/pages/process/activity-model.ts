@@ -62,6 +62,15 @@ export interface ActivityArtifactCard {
 }
 
 
+/** A partner action's title, split around the partner's name so that the name can be a link. */
+export interface PartnerActivityTitle {
+  text: string;
+  before: string;
+  name: string;
+  after: string;
+}
+
+
 export type EditDiffLineKind = "add" | "del" | "context" | "meta";
 
 export interface EditDiffLine {
@@ -72,6 +81,18 @@ export function createActivityModel(translate: TranslationFn, options: { resolve
 
 
 const EXPLORATION_KINDS = new Set(["read", "search"]);
+
+/** Label keys of a partner action: while it runs, when it is done, when it was refused. */
+const PARTNER_ACTION_LABELS: Record<string, readonly [string, string, string]> = {
+  recruit: ["activity.partnerRecruiting", "activity.partnerRecruited", "activity.partnerRecruitFailed"],
+  restore: ["activity.partnerRecruiting", "activity.partnerRestored", "activity.partnerRecruitFailed"],
+  relay: ["activity.partnerRelaying", "activity.partnerRelayed", "activity.partnerRelayFailed"],
+  ask: ["activity.partnerAsking", "activity.partnerAsked", "activity.partnerAskFailed"],
+  inform: ["activity.partnerInforming", "activity.partnerInformed", "activity.partnerInformFailed"],
+  dismiss: ["activity.partnerDismissing", "activity.partnerDismissed", "activity.partnerDismissFailed"],
+  roster: ["activity.partnerRosterReading", "activity.partnerRoster", "activity.partnerRosterFailed"],
+  wait: ["activity.partnerWaiting", "activity.partnerWaitedNone", "activity.partnerWaitFailed"],
+};
 
 const CLAUDE_NATIVE_TOOL_KIND: Record<string, string> = {
   bash: "command",
@@ -349,6 +370,13 @@ function summarizeActivityItems(
         : translate("activity.delegatedAgents", { count: stats.agentCount }),
     );
   }
+  if (stats.partnerTitles.length) {
+    const shown = stats.partnerTitles.slice(0, 3);
+    if (stats.partnerTitles.length > 3) {
+      shown.push(translate("activity.partnerMore", { count: stats.partnerTitles.length - 3 }));
+    }
+    fragments.push(shown.join(translate("activity.partnerSeparator")));
+  }
   if (stats.editCount) {
     fragments.push(translate("activity.editedFiles", { count: stats.editCount }));
   }
@@ -407,6 +435,13 @@ function activityStats(items: ActivityItem[]) {
     commandCount: items.filter((item) => activityItemKind(item) === "command").length,
     monitorCount: items.filter((item) => activityItemKind(item) === "monitor").length,
     agentCount: countDelegatedAgents(items),
+    // What was done with partners is said in the summary itself; reading the roster or waiting is not, and a
+    // refused action is counted with the errors.
+    partnerTitles: items.flatMap((item) => {
+      const call = partnerCall(item);
+      const refused = ["blocked", "incomplete", "rejected", "failed", "error"].includes(activityItemStatus(item));
+      return call && call.action !== "roster" && call.action !== "wait" && !refused ? [activityItemTitle(item)] : [];
+    }),
     editCount: countEditedFiles(items),
     reasoningElapsedMs: aggregateReasoningElapsedMs(items),
     planCount: items.filter((item) => activityItemKind(item) === "planning").length,
@@ -439,6 +474,8 @@ function activeActivitySummary(items: ActivityItem[]): string {
       return target ? translate("activity.monitoringTarget", { target }) : translate("activity.monitoringTask");
     case "agent":
       return target ? translate("activity.delegatingTarget", { target }) : translate("activity.delegatingAgent");
+    case "partner":
+      return activityItemTitle(runningItem);
     case "browser":
       return target ? translate("activity.browsingTarget", { target }) : translate("activity.browsingPage");
     case "reasoning":
@@ -466,6 +503,7 @@ function primaryActivityKind(items: ActivityItem[]): string {
     "question",
     "planning",
     "agent",
+    "partner",
     "edit",
     "search",
     "read",
@@ -549,6 +587,8 @@ function activityItemTitle(item: ActivityItem): string {
       target || translate("activity.backgroundTask"),
     );
   }
+  const partnerTitle = partnerActivityTitle(item);
+  if (partnerTitle) return partnerTitle.text;
   const codexTitle = codexNativeActivityTitle(item, status);
   if (codexTitle) return codexTitle;
   if (kind === "search")
@@ -737,6 +777,12 @@ function activityItemDetailDisplay(
     const label = claudeAgentActivityDetail(item);
     return label ? { label } : null;
   }
+  if (kind === "partner") {
+    // What the partner was told, or what it is responsible for; the arguments stay in the row's full detail.
+    const text = partnerCall(item)?.text ?? "";
+    const label = options.full ? compactMultilineDetail(text) : summarize(compactSingleLine(text), 160);
+    return label ? { label } : null;
+  }
   if (kind === "reasoning") {
     const text = reasoningActivityDetail(item);
     const label = options.full ? compactMultilineDetail(text) : summarize(text, 160);
@@ -780,7 +826,7 @@ function activityItemTitleTooltip(item: ActivityItem): string {
   if (activityItemKind(item) === "agent") {
     return claudeAgentActivityDetail(item);
   }
-  if (activityItemKind(item) === "monitor") {
+  if (activityItemKind(item) === "monitor" || activityItemKind(item) === "partner") {
     return "";
   }
   const fileHints = activityItemFileHints(item);
@@ -912,6 +958,7 @@ function activityItemKind(item: ActivityItem): string {
   if (nativeType === "subAgentActivity" || nativeType === "collabAgentToolCall") return "agent";
   const tool = item.call || item.result;
   const toolId = String(tool?.toolId || "").toLowerCase();
+  if (isPartnersToolId(toolId)) return "partner";
   if (isSkillInvokeToolId(toolId)) return "skill";
   if (toolId === "codex.reasoning" || toolId.includes("reasoning")) return "reasoning";
   if (toolId === "codex.commandexecution") return "command";
@@ -1095,6 +1142,89 @@ function claudeAgentToolLabel(item: ActivityItem): string {
   }
   const name = claudeNativeToolName(item.call?.toolId || item.result?.toolId).toLowerCase();
   return name === "task" ? "Task" : "Agent";
+}
+
+
+function isPartnersToolId(toolId: string): boolean {
+  return toolId === "partners" || toolId.endsWith(".partners");
+}
+
+
+/** A product tool's answer: the JSON its text item carries, or the value itself when the adapter already read it. */
+function productToolResult(value: unknown): Record<string, unknown> {
+  const outer = recordValue(value);
+  const items = Array.isArray(outer.contentItems) ? outer.contentItems : Array.isArray(outer.content) ? outer.content : null;
+  const text = items ? stringValue(recordValue(items[0]).text) : typeof value === "string" ? value : "";
+  if (!items && typeof value !== "string") return outer;
+  try {
+    return recordValue(JSON.parse(text));
+  } catch {
+    return {};
+  }
+}
+
+
+/**
+ * One call of the partners tool: recruiting a partner, sending it a message (relay, ask, inform), waiting for
+ * replies, dismissing one, or reading the roster.
+ */
+function partnerCall(
+  item: ActivityItem,
+): { action: string; name: string; text: string; replies: string[] } | null {
+  if (item.type !== "tool") return null;
+  const tool = item.call || item.result;
+  if (!isPartnersToolId(String(tool?.toolId || "").toLowerCase())) return null;
+  const rawInput = item.call?.input ?? item.result?.input;
+  const input = typeof rawInput === "string" ? productToolResult(rawInput) : recordValue(rawInput);
+  const result = productToolResult(item.result?.result ?? item.call?.result);
+  const action = stringValue(input.action);
+  if (action === "recruit") {
+    return {
+      action: stringValue(result.status) === "restored" ? "restore" : "recruit",
+      name: stringValue(input.name) || stringValue(recordValue(result.partner).name),
+      text: stringValue(input.message) || stringValue(input.duty),
+      replies: [],
+    };
+  }
+  if (action === "message") {
+    const intent = stringValue(input.intent);
+    return {
+      action: intent === "ask" || intent === "inform" ? intent : "relay",
+      name: stringValue(input.to),
+      text: stringValue(input.text),
+      replies: [],
+    };
+  }
+  if (action === "wait") {
+    const replies = Array.isArray(result.results)
+      ? result.results.map((entry) => stringValue(recordValue(entry).to)).filter(Boolean)
+      : [];
+    return { action, name: "", text: "", replies };
+  }
+  if (action === "dismiss") return { action, name: stringValue(input.name), text: "", replies: [] };
+  return { action: "roster", name: "", text: "", replies: [] };
+}
+
+
+function partnerActivityTitle(item: ActivityItem): PartnerActivityTitle | null {
+  const call = partnerCall(item);
+  if (!call) return null;
+  const status = activityItemStatus(item).toLowerCase();
+  const labels = PARTNER_ACTION_LABELS[call.action] ?? PARTNER_ACTION_LABELS.roster!;
+  const running = status === "running";
+  const failed = ["blocked", "incomplete", "rejected", "failed", "error"].includes(status);
+  let key = running ? labels[0] : failed ? labels[2] : labels[1];
+  let name = call.name;
+  const values: Record<string, string | number> = {};
+  if (call.action === "wait" && !running && !failed && call.replies.length) {
+    key = call.replies.length === 1 ? "activity.partnerWaited" : "activity.partnerWaitedCount";
+    name = call.replies.length === 1 ? call.replies[0]! : "";
+    values.count = call.replies.length;
+  }
+  // The name is placed by the label, so the text around it can be shown beside a link to the partner.
+  const mark = "\u0000";
+  const [before = "", after = ""] = translate(key, { ...values, name: mark }).split(mark);
+  return name ? { text: `${before}${name}${after}`, before, name, after } : { text: `${before}${after}`.trim(), before: `${before}${after}`.trim(), name: "", after: "" };
 }
 
 
@@ -2286,5 +2416,5 @@ function askUserQuestionItemsFromInput(input: Record<string, unknown>): unknown[
   }
   return [];
 }
-return { buildActivityRenderNodes, buildActivityItems, choiceFormFromItem, summarizeActivityItems, primaryActivityKind, activityItemTitle, activityItemDetail, artifactCardsFromItem, activityItemDetailDisplay, activityItemTitleTooltip, activityItemError, activityItemStatus, activityItemKind, isImageArtifactKind, formatElapsedMs, editActivityInfo, editDiffFromItem, questionPromptLabel, buildQuestionResponse };
+return { partnerActivityTitle, buildActivityRenderNodes, buildActivityItems, choiceFormFromItem, summarizeActivityItems, primaryActivityKind, activityItemTitle, activityItemDetail, artifactCardsFromItem, activityItemDetailDisplay, activityItemTitleTooltip, activityItemError, activityItemStatus, activityItemKind, isImageArtifactKind, formatElapsedMs, editActivityInfo, editDiffFromItem, questionPromptLabel, buildQuestionResponse };
 }

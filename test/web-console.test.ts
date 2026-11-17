@@ -431,14 +431,18 @@ it.skipIf(!built)(
     await see(hero.locator("p")).toHaveText("Plans the Korea trip");
     // 状态: the environment's state is read, the partner that has it is named, and nothing here operates it.
     await see(profileState(page)).toContainText("可用");
-    await see(profile.getByRole("button", { name: "与 helper 共用环境" })).toBeVisible();
+    // It is a line of information that names the partner, not an action of its own.
+    const shared = profile.locator(".agent-list-row", { hasText: "共用环境" });
+    await see(shared.locator(".agent-list-row-title")).toHaveText("共用环境");
+    await see(shared).not.toHaveAttribute("data-tone", "action");
+    await see(shared.getByRole("button", { name: "helper", exact: true })).toBeVisible();
     for (const name of ["暂停", "恢复", "核对"]) await see(profile.getByRole("button", { name, exact: true })).toHaveCount(0);
     // The check is the partner's own (Router answers it from the shared environment), so it stays.
     await profile.getByRole("button", { name: "运行自检" }).click();
     await see(profile.locator(".agent-list-row", { hasText: "HTTP service and runtime exist" })).toContainText("通过");
     // 配置: the shared environment in place of an environment profile; the partner can be deleted, the environment not destroyed.
     await profileTab(page, "配置");
-    await see(profile.getByRole("button", { name: "与 helper 共用环境" })).toBeVisible();
+    await see(shared.getByRole("button", { name: "helper", exact: true })).toBeVisible();
     await see(profile.locator(".agent-list-row", { hasText: "方案" })).toHaveCount(0);
     await see(profile.getByRole("button", { name: "销毁环境" })).toHaveCount(0);
     await see(profile.getByRole("button", { name: "删除伙伴" })).toBeEnabled();
@@ -454,7 +458,7 @@ it.skipIf(!built)(
 
     // The partner that has the environment: no duty under its name, and the partners sharing it are listed.
     await profileTab(page, "状态");
-    await profile.getByRole("button", { name: "与 helper 共用环境" }).click();
+    await shared.getByRole("button", { name: "helper", exact: true }).click();
     await see(hero.getByRole("heading", { name: "helper" })).toBeVisible();
     await see(hero.locator("p")).toHaveCount(0);
     const sharing = profile.locator(".agent-settings-section", { hasText: "共用此环境的伙伴" });

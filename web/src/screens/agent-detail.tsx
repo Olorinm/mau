@@ -21,6 +21,7 @@ import {
   type ConnectionJob,
   type ConnectorAccount,
   type EnvironmentAction,
+  type PartnerView,
 } from "../api/client";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
@@ -62,8 +63,10 @@ const effortLabel = (value: string, zh: boolean) => (zh ? effortNames[value] : u
 export function AgentDetail(props: {
   session: Session;
   summary: AgentSummary;
-  /** The owner's partners, to name the ones this partner shares an environment with. */
+  /** The owner's partners, to name the ones this partner shares an environment with or was recruited by. */
   partners: readonly AgentSummary[];
+  /** The partner as it works with the others: who recruited it. */
+  partner?: PartnerView | undefined;
   /** Opens another partner's profile in place of this one. */
   onPartner(agentId: string): void;
   /** The document open beside the conversation, and opening another (or closing the open one). */
@@ -109,8 +112,10 @@ export function AgentDetail(props: {
     queryKey: ["jobs", agent.id],
     queryFn: () => router.jobs(agent.id),
   });
-  const refresh = () =>
-    queries.invalidateQueries({ queryKey: ["agents", props.session.owner] });
+  const refresh = () => Promise.all([
+    queries.invalidateQueries({ queryKey: ["agents", props.session.owner] }),
+    queries.invalidateQueries({ queryKey: ["partners", props.session.owner] }),
+  ]);
   // A 401 already returns to sign-in with its own notice.
   const failed = (error: unknown) => {
     if (error instanceof ApiError && error.status === 401) return;
@@ -133,6 +138,16 @@ export function AgentDetail(props: {
     onSuccess: () => {
       toast({ kind: "success", title: t("agents.deleted", { name: agent.name }) });
       void refresh();
+    },
+    onError: failed,
+  });
+  // Dismissing puts the partner away with everything it has; restoring brings it back to the list.
+  const dismissed = !!props.summary.dismissed;
+  const archive = useMutation({
+    mutationFn: (action: "dismiss" | "restore") => action === "dismiss" ? mau.dismissAgent(agent.id) : mau.restoreAgent(agent.id),
+    onSuccess: (_summary, action) => {
+      toast({ kind: "success", title: t(action === "dismiss" ? "partners.dismissed" : "partners.restored", { name: agent.name }) });
+      return refresh();
     },
     onError: failed,
   });
@@ -206,12 +221,33 @@ export function AgentDetail(props: {
     if (result === "primary") remove.mutate();
   };
 
+  const dismiss = async () => {
+    const result = await confirm({
+      title: t("partners.dismissTitle", { name: agent.name }),
+      body: t("partners.dismissBody"),
+      confirmLabel: t("partners.dismissConfirm"),
+    });
+    if (result === "primary") archive.mutate("dismiss");
+  };
+
   const icon = (name: "ops" | "chat" | "extensions" | "copy" | "settings") => <ProductIcon name={name} size={18} />;
-  const sharedRow = host ? <ListRow tone="action" title={t("env.sharedWith", { name: host.name })} onClick={() => props.onPartner(host.id)} /> : null;
+  // Another partner named on the profile: its figure and name, which open its profile. A name nobody has any more is text.
+  const partnerValue = (name: string, id: string | undefined) => id
+    ? <TextButton tone="neutral" className="mau-profile-partner" onClick={() => props.onPartner(id)}>
+        <PartnerAvatar seed={id} fallbackName={name} size={20} animated={false} />{name}
+      </TextButton>
+    : <span className="mau-profile-value">{name}</span>;
+  const sharedRow = host ? <ListRow title={t("env.shared")} trailing={partnerValue(host.name, host.id)} /> : null;
+  const recruiter = props.partner?.recruitedBy;
+  const recruitedRow = recruiter
+    ? <ListRow title={t("partners.recruitedBy")} trailing={partnerValue(recruiter, props.partners.find(({ agent: other }) => other.name === recruiter)?.agent.id)} />
+    : null;
   return (
     <>
       <div className="mau-profile">
-        <DetailHero icon={<PartnerAvatar seed={agent.id} fallbackName={agent.name} size={72} />} title={agent.name} subtitle={duty} />
+        <DetailHero icon={<PartnerAvatar seed={agent.id} fallbackName={agent.name} size={72} {...(dismissed ? { state: "offline" as const } : {})} />}
+          title={agent.name} subtitle={duty} expandable={{ expand: t("duty.expand"), collapse: t("duty.collapse") }} />
+        {dismissed ? <div className="mau-profile-state"><StatusLine>{t("partners.dismissedState")}</StatusLine></div> : null}
         <SegmentedControl<Tab> display="icon" className="mau-profile-tabs" label={zh ? "伙伴资料分类" : "Profile sections"} value={tab} onChange={setTab}
           options={[
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
@@ -230,6 +266,7 @@ export function AgentDetail(props: {
               />
               {environment?.error ? <ListRow muted title={errorMessage(t, environment.error)} /> : null}
               {sharedRow}
+              {recruitedRow}
               {availableActions(environment).map((action) => (
                 <ListRow key={action} tone="action" disabled={busy} title={t(actionLabel[action])} onClick={() => lifecycle.mutate(action)} />
               ))}
@@ -297,6 +334,9 @@ export function AgentDetail(props: {
               {sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
             </SettingsSection>
             <SettingsSection>
+              {dismissed
+                ? <ListRow tone="action" disabled={archive.isPending} title={t("partners.restore")} onClick={() => archive.mutate("restore")} />
+                : <ListRow tone="action" disabled={archive.isPending} title={t("partners.dismiss")} onClick={() => void dismiss()} />}
               {canDestroy(environment) ? <ListRow tone="danger" disabled={busy} title={t("env.destroy")} onClick={() => void destroy()} /> : null}
               <ListRow tone="danger" disabled={busy || remove.isPending} title={remove.isPending ? t("agents.deleting") : t("agents.delete")} onClick={() => void deleteAgent()} />
             </SettingsSection>

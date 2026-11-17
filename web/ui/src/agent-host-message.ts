@@ -23,7 +23,9 @@ function contentItems(value: unknown): unknown {
   return items.length === 1 ? items[0] : items;
 }
 
-export function projectHostMessage(events: readonly HostEvent[], options: { active?: boolean; answer?: string; detailsLabel?: string } = {}): MessagePart[] {
+export function projectHostMessage(events: readonly HostEvent[], options: { active?: boolean; answer?: string; detailsLabel?: string;
+  /** What a refused tool call says: the caller's sentence for the error code its result carries, or nothing to keep the row as it is. */
+  describeError?(code: string, toolId: string): string | undefined } = {}): MessagePart[] {
   const parts = new Map<string, MessagePart>();
   const phases = new Map<string, string>();
   const calls = new Map<string, ToolPart>();
@@ -107,7 +109,7 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     const previous = calls.get(key);
     const finished = row.phase === "finished" || event.type === "tool.finished";
     const result = record(row.result);
-    const failed = result.success === false || result.ok === false || result.isError === true || result.is_error === true || native.isError === true || native.is_error === true ||
+    const failed = result.success === false || result.ok === false || result.isError === true || result.is_error === true || native.isError === true || native.is_error === true || native.success === false ||
       native.status === "failed" || (typeof native.exitCode === "number" && native.exitCode !== 0);
     const nativeName = text(native.name) || text(native.toolName) || text(native.title) || text(native.type);
     const toolId = text(row.tool) || previous?.toolId || nativeName || "tool";
@@ -117,6 +119,10 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
       ["commandExecution", "fileChange", "webSearch"].includes(text(native.type)) ? native :
       native.arguments ?? native.input ?? native.rawInput ?? native.args ?? previous?.input ?? row.native);
     const output = row.result ?? native.result ?? native.output ?? native.rawOutput ?? native.content ?? contentItems(native.contentItems) ?? (finished ? row.native : undefined);
+    // A product tool's refusal is a code inside its answer; only the caller knows what to say for it.
+    const reported = text(native.error) || text(result.error);
+    const code = reported || text(record(contentItems(result.contentItems ?? native.contentItems)).error);
+    const error = failed ? (code && options.describeError?.(code, toolId)) || reported : "";
     const base: ToolPart = {
       id: `${key}:call`, type: "tool", phase: "call", toolId, callId: key,
       title: toolId, input: json(input), status: "running", error: "", approvalId: "", approvalStatus: "",
@@ -129,7 +135,7 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     } else {
       if (previous) previous.status = failed ? "error" : "complete";
       parts.set(`${key}:result`, { ...base, id: `${key}:result`, phase: "result", input: previous?.input ?? json(input),
-        result: json(output), status: failed ? "error" : "complete", error: failed ? text(native.error) || text(result.error) : "" });
+        result: json(output), status: failed ? "error" : "complete", error });
     }
   }
   if (!options.active) for (const part of parts.values()) {

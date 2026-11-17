@@ -14,12 +14,14 @@ import {
   Search,
   Sparkles,
   Terminal,
+  Users,
   Wrench,
 } from "lucide-react";
 import type { ToolPart } from "./parts";
 import { rawDiagnosticText, useI18n, type TranslationFn } from "../presentation/i18n";
 import { ResourceCardFrame } from "./resource-card";
 import { ResourceLink } from "./resource-link";
+import { PartnerLink } from "./partner-link";
 import {
   artifactCardToResource,
   type ChatResourceAction,
@@ -34,7 +36,7 @@ import { createActivityModel } from './activity-model';
 
 type PendingActionResult = void | Promise<unknown>;
 export function createActivityPresentation(translate: TranslationFn, model: ReturnType<typeof createActivityModel>) {
-const { activityItemDetailDisplay, activityItemError, activityItemKind, activityItemStatus, activityItemTitle, activityItemTitleTooltip, artifactCardsFromItem, buildActivityRenderNodes, buildActivityItems, buildQuestionResponse, choiceFormFromItem, editActivityInfo, editDiffFromItem, isImageArtifactKind, primaryActivityKind, questionPromptLabel, summarizeActivityItems } = model;
+const { partnerActivityTitle, activityItemDetailDisplay, activityItemError, activityItemKind, activityItemStatus, activityItemTitle, activityItemTitleTooltip, artifactCardsFromItem, buildActivityRenderNodes, buildActivityItems, buildQuestionResponse, choiceFormFromItem, editActivityInfo, editDiffFromItem, isImageArtifactKind, primaryActivityKind, questionPromptLabel, summarizeActivityItems } = model;
 
 
 function AssistantProcessBlock(props: {
@@ -453,7 +455,7 @@ function ActivityItemRow(props: {
   const choiceForm = choiceFormFromItem(props.item);
   const callerDetail = props.item.type === "tool" ? props.item.result?.detail ?? props.item.call?.detail : undefined;
   // With the caller's full input and output in the expandable code block, the row keeps a one-line summary.
-  const callerSummary = callerDetail && props.item.type === "tool" && !collapsesInlineDetail(kind) && kind !== "edit"
+  const callerSummary = callerDetail && props.item.type === "tool" && !collapsesInlineDetail(kind) && kind !== "edit" && kind !== "partner"
     ? inputSummary(props.item.call?.input ?? props.item.result?.input) : undefined;
   const detail = choiceForm
     ? null
@@ -468,8 +470,11 @@ function ActivityItemRow(props: {
     props.detailMode === "full" && !choiceForm ? collapsibleFullDetail(kind, titleTooltip, detail?.title) : "");
   const artifactCards = props.showArtifactCards === false ? [] : artifactCardsFromItem(props.item);
   const editInfo = kind === "edit" ? editActivityInfo(props.item) : null;
+  // A partner action names its partner, and the name leads to that partner.
+  const partner = kind === "partner" ? partnerActivityTitle(props.item) : null;
   const editDiff = kind === "edit" ? editDiffFromItem(props.item) : null;
   const [editDiffOpen, setEditDiffOpen] = useState(false);
+  const [partnerDetailOpen, setPartnerDetailOpen] = useState(false);
   const errorText = activityItemError(props.item);
   const fullErrorText = errorText ? activityItemError(props.item, { full: true }) : "";
   const editResources = editInfo
@@ -588,6 +593,35 @@ function ActivityItemRow(props: {
               ) : null}
             </div>
             {editDiff && editDiff.length && editDiffOpen ? <EditDiffBlock lines={editDiff} /> : null}
+          </>
+        ) : partner ? (
+          <>
+            <div className="thread-activity-row-title-line">
+              <span className="thread-activity-row-title">
+                {partner.before}
+                {partner.name ? <PartnerLink name={partner.name} /> : null}
+                {partner.after}
+              </span>
+              {/* The name is a link, so the call's arguments and answer open from the chevron beside the title. */}
+              {callerDetail ? (
+                <button
+                  type="button"
+                  className="thread-activity-edit-diff-toggle"
+                  aria-expanded={partnerDetailOpen}
+                  aria-label={callerDetail.label}
+                  title={callerDetail.label}
+                  onClick={() => setPartnerDetailOpen((current) => !current)}
+                >
+                  <ChevronRight size={13} strokeWidth={2.1} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            {detail ? (
+              <div className="thread-activity-row-detail" title={detail.title}>
+                {detail.label}
+              </div>
+            ) : null}
+            {callerDetail && partnerDetailOpen ? <pre className="thread-activity-row-full-detail">{callerDetail.text}</pre> : null}
           </>
         ) : undefined
       }
@@ -1132,6 +1166,9 @@ function ActivitySummaryIcon(props: { kind: string }) {
   }
   if (props.kind === "reasoning") {
     return <Sparkles size={14} />;
+  }
+  if (props.kind === "partner") {
+    return <Users size={14} />;
   }
   if (props.kind === "artifact" || props.kind === "memory") {
     return <Box size={14} />;

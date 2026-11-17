@@ -18,8 +18,11 @@ export type CardStatus = "pending" | "answered" | "approved" | "rejected" | "exp
 export interface Card {
   cardId: string; agentId: string; turnId: string; claimId: string; callId: string;
   kind: "question" | "approval" | "connector_approval" | "sensitive";
-  /** Phase 4: from the callId prefix; `router` marks Router's own cards (the unknown-turn "重新执行 / 不用了"). */
-  source?: "host" | "mau-approval" | "mau-handoff" | "router";
+  /**
+   * Phase 4: from the callId prefix; `router` marks Router's own cards (the unknown-turn "重新执行 / 不用了") and
+   * `product` a card Mau put in the conversation that belongs to no run (a partner's approval request).
+   */
+  source?: "host" | "mau-approval" | "mau-handoff" | "router" | "product";
   text: string;
   choices: Array<{ choiceId: string; label: string; style?: "primary" | "danger" }>;
   freeText: boolean;
@@ -34,7 +37,9 @@ export type ChatEventBody =
       /** Router phase 3: the stored target of a redaction (empty text), also when the `redaction` event is not loaded. */
       redacted?: boolean;
       /** Phase 4: steered into a running turn (rendered inside its run surface). */
-      steer?: boolean }
+      steer?: boolean;
+      /** What started an input that no channel message carried; `delegation` is a partner's message or its results. */
+      origin?: "work" | "delegation" | "schedule" }
   | { kind: "notice"; text: string; level: "info" | "warning" }
   | { kind: "action"; targetCardId: string; label: string }
   | { kind: "card"; card: Card }
@@ -1024,6 +1029,8 @@ export interface LedgerBubble {
   level?: "info" | "warning"; card?: Card; idempotencyKey?: string;
   /** Steered into a running turn (phase 4); shown with that turn's run surface. */
   steer?: boolean;
+  /** What started an input that no channel message carried. */
+  origin?: "work" | "delegation" | "schedule";
 }
 export interface LedgerTurn { turnId: string; agentId: string; state: TurnState; inputEventIds: string[]; error?: string; seq: number }
 export interface LedgerFold { items: LedgerBubble[]; turns: Map<string, LedgerTurn>; cards: Map<string, Card> }
@@ -1044,7 +1051,7 @@ export function foldEvents(events: readonly ChatEvent[]): LedgerFold {
         bubble = { ...base, kind: "message", role: event.role, text: event.text, attachments: event.attachments ?? [], deliveries: [...(event.deliveries ?? [])],
           ...(event.html ? { html: event.html } : {}), ...(event.replyTo ? { replyTo: event.replyTo } : {}),
           ...(event.final ? { final: true } : {}), ...(event.possibleDuplicate ? { possibleDuplicate: true } : {}),
-          ...(event.steer ? { steer: true } : {}),
+          ...(event.steer ? { steer: true } : {}), ...(event.origin ? { origin: event.origin } : {}),
           ...(event.redacted ? { redacted: true, text: "", attachments: [] } : {}) };
         break;
       case "notice": bubble = { ...base, kind: "notice", role: "system", text: event.text, level: event.level }; break;
