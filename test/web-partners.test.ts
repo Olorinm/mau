@@ -394,6 +394,20 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
 
   // The header row leaves a dismissed partner out; its conversation is still there when it is opened from the list.
   expect((await f.api(`/agents/${scene.visa.id}/dismiss`, {})).status).toBe(200);
+  // Settings leave it out too: the channels of each partner, and the partners that use a connection.
+  await page.route("**/_mau/v1/connector-accounts**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [{ id: "work-gmail", kind: "google", label: "Gmail", state: "connected",
+      verification: "oauth", scopes: [], assignedAgents: [f.agent.id, scene.trip.id, scene.visa.id], permission: "read-only" }] } });
+    if (path.endsWith("/policy")) return route.fulfill({ status: 404, json: { error: "not_found" } });
+    return route.fulfill({ json: { state: "connected", verification: "oauth", scopes: [] } });
+  });
+  await page.goto(f.base + "/#/settings/channels");
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await see(settings.locator(".agent-settings-section h3")).toHaveText(["helper", "korea-trip", "notes"]);
+  await settings.getByRole("button", { name: "连接器", exact: true }).click();
+  await settings.getByRole("button", { name: "Gmail", exact: true }).click();
+  await see(settings.locator(".agent-settings-section", { hasText: "使用此连接的伙伴" }).locator(".agent-list-row-title")).toHaveText(["helper", "korea-trip"]);
   await openChat(page, f, f.agent.id);
   await see(chip(page, scene.trip.id)).toBeVisible();
   await see(chip(page, scene.visa.id)).toHaveCount(0);

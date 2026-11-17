@@ -232,6 +232,8 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
 
   const connected = isConnected(account), feishu = account.kind === "feishu";
   const assigned = (account.assignedAgents ?? []).map((id) => agents.data?.find((agent) => agent.agent.id === id)).filter((agent): agent is AgentSummary => !!agent);
+  // A dismissed partner keeps its connections and is not listed.
+  const listed = assigned.filter((agent) => !agent.dismissed);
   const feishuAgent = feishu ? assigned[0] : undefined;
   const chatReady = !feishu || !!feishuAgent?.connections.some((connection) => connection.kind === "feishu");
   const identity = account.account?.email ?? account.account?.name ?? account.name;
@@ -269,7 +271,7 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
       <ListRow icon={<InitialAvatar name={identity} />} title={identity} />
     </SettingsSection> : null}
     <SettingsSection title={zh ? "使用此连接的伙伴" : "Partners using this connection"}>
-      {assigned.length ? assigned.map((agent) => <ListRow key={agent.agent.id}
+      {listed.length ? listed.map((agent) => <ListRow key={agent.agent.id}
         icon={<PartnerAvatar seed={agent.agent.id} fallbackName={agent.agent.name} size={32} />} title={agent.agent.name}
         trailing={account.usage === "owner_private" || feishu ? <span>{zh ? "仅私聊" : "Private chat only"}</span> : null} />)
         : <ListRow muted title={agents.isPending ? zh ? "正在读取…" : "Loading…" : zh ? "暂未分配伙伴" : "No partner assigned"} />}
