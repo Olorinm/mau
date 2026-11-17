@@ -25,7 +25,7 @@ const feishuDefinition = { name: "feishu_bot_read", timeoutMs: 90_000,
 type BotReader = Pick<FeishuBotReader, "read">;
 // Native tool catalogs are frozen per session, so older sessions still list removed tools.
 // Answer those calls at once instead of leaving them pending until Host's deadline.
-const removedTools = new Set(["business_data"]);
+const removedTools = new Set(["business_data", "employee_memory"]);
 const sameTool = (definition: Pick<HostTool, "name" | "namespace">, call: HostCall) =>
   definition.name === call.name && (definition.namespace ?? null) === (call.namespace ?? null);
 export interface PartnerTools {

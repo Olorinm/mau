@@ -26,7 +26,7 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `PUT /agents/:id/model-settings` | `{model?, effort?}`, each a listed value or `null` for the runtime's default. Router sends the choice with every following turn of the partner. |
 | `GET /agents/:id/work-sessions/:sessionId/memory` | Read native thread memory through its authenticated Host binding. |
 | `POST /agents/:id/work-sessions/:sessionId/memory` | `{mode: "enabled" | "disabled"}` through the authenticated Host binding. |
-| `GET/POST /agents/:id/memory` | Read both files / execute a bounded memory operation. |
+| `GET/POST /agents/:id/memory` | Read the memory document / execute a bounded memory operation. |
 | `POST /agents/:id/memory/search` | SQLite original-history search with explicit index coverage. |
 | `POST /agents/:id/memory/history/import` | Import one page from this partner’s native history, using `{sessionId,cursor?}`. |
 | `GET/POST /proactive` | List/create owner rules. |

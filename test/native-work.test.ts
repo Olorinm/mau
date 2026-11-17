@@ -18,7 +18,7 @@ it("enabled partner tools cross the native Host call boundary with server-author
   const agentId = "11111111-1111-4111-8111-111111111111", owner = "alice";
   const directory = mkdtempSync(join(tmpdir(), "mau-native-memory-")); cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
   const facts = new PartnerContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
-  facts.mutate(owner, agentId, { action: "add", target: "user", content: "Prefers concise summaries" });
+  facts.mutate(owner, agentId, { action: "add", content: "Prefers concise summaries" });
   const submitted: unknown[] = [], resolved: unknown[] = []; let pending: any[] = [], request: any;
   const wait = vi.fn(async () => ({ data: [], cursor: "changed" }));
   const work = { wait, submit: vi.fn(async (input: unknown) => { submitted.push(input); return { eventId: "event", taskId: "task", sessionId: "branch", status: "submitted", answer: "", outcomeUnknown: false }; }) } as unknown as WorkSessions;
@@ -42,10 +42,10 @@ it("enabled partner tools cross the native Host call boundary with server-author
   const host = new BusinessHost(http, undefined, store, "tools:binding", undefined, { agentId, owner }, partner);
   const admission = { kind: "owner" as const, agentId, owner, reference: "owner-request" };
   await host.start({ sessionId: "session", runtimeId: "personal", input: "Start a task", instructions: "Stable role", admission });
-  expect(request.tools.map((t: any) => t.name)).toEqual(["work_sessions", "employee_memory", "session_search", "proactive_work"]);
+  expect(request.tools.map((t: any) => t.name)).toEqual(["work_sessions", "memory", "session_search", "proactive_work"]);
   expect(request.tools.every((t: any) => t.inputSchema.type === "object")).toBe(true);
   expect(request.admission).toBeUndefined(); expect(request.instructions).toContain("Stable role");
-  expect(request.instructions).toContain("Prefers concise summaries"); expect(request.instructions).toContain("1375 Unicode characters");
+  expect(request.instructions).toContain("Prefers concise summaries"); expect(request.instructions).toContain("/4000 Unicode characters");
   expect(request.context.memoryMaintenanceReminder).toBe("Maintain useful durable notes when appropriate.");
   pending = [{ id: "create-child", runId: "run", kind: "tool", name: "work_sessions", status: "pending",
     deadlineAt: new Date(Date.now() + 60_000).toISOString(), input: { action: "create", input: "Research the issue" } }];
@@ -71,18 +71,20 @@ it("enabled partner tools cross the native Host call boundary with server-author
   expect(JSON.stringify(resolved.at(-1))).toContain("work_dependency_capacity_exhausted");
   expect(JSON.stringify(resolved.at(-1))).toContain("Finish this turn");
   const narrow = { ...admission, kind: "delegation" as const, toolGrants: {} };
-  await expect(partner.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-write", "run")).resolves.toMatchObject({ done: true });
-  await expect(partner.execute("employee_memory", { action: "add", content: "A durable fact" }, narrow, "memory-duplicate", "run")).resolves.toMatchObject({ isError: true, error: "memory_duplicate", files: expect.any(Array) });
-  await expect(partner.execute("employee_memory", { action: "add", content: "x".repeat(2201) }, admission, "memory-full", "run")).resolves.toMatchObject({ isError: true, error: "memory_capacity_exceeded", usage: { limit: 2200 } });
+  await expect(partner.execute("memory", { action: "add", content: "A durable fact" }, narrow, "memory-write", "run")).resolves.toMatchObject({ done: true });
+  await expect(partner.execute("memory", { action: "add", content: "A durable fact" }, narrow, "memory-duplicate", "run")).resolves.toMatchObject({ isError: true, error: "memory_duplicate", entries: ["Prefers concise summaries", "A durable fact"] });
+  await expect(partner.execute("memory", { action: "add", content: "x".repeat(4001) }, admission, "memory-full", "run")).resolves.toMatchObject({ isError: true, error: "memory_capacity_exceeded", usage: { limit: 4000 } });
+  await expect(partner.execute("memory", { action: "add", target: "user", content: "No second file" }, admission, "memory-target", "run")).resolves.toMatchObject({ isError: true, error: "memory_invalid_input" });
+  await expect(partner.execute("memory", { action: "read" }, admission, "memory-read", "run")).resolves.toMatchObject({ file: "MEMORY.md", entries: ["Prefers concise summaries", "A durable fact"], usage: { limit: 4000 } });
   const review = { ...narrow, reference: "trusted-review" };
-  await expect(partner.execute("employee_memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review", "run")).resolves.toMatchObject({ staged: true });
+  await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review", "run")).resolves.toMatchObject({ staged: true });
   await expect(partner.execute("session_search", { query: "fact" }, review, "review-history", "run")).rejects.toThrow("memory_review_tool_not_authorized");
   await expect(partner.execute("work_sessions", { action: "create", input: "Do more work" }, review, "review-work", "run")).rejects.toThrow("memory_review_tool_not_authorized");
   await partner.execute("session_search", { query: "exact phrase" }, admission, "history-search", "run");
   expect(search).toHaveBeenCalledWith(owner, agentId, { query: "exact phrase", limit: 10, offset: 0 });
   const scheduled = { ...admission, kind: "schedule" as const, toolGrants: {} };
   expect(partner.context(scheduled, "Scheduled work", "scheduled-session")).toBeUndefined();
-  await expect(partner.execute("employee_memory", { action: "read" }, scheduled, "schedule-read", "run")).rejects.toThrow("employee_tool_not_authorized");
+  await expect(partner.execute("memory", { action: "read" }, scheduled, "schedule-read", "run")).rejects.toThrow("employee_tool_not_authorized");
   const originalInstructions = request.instructions;
   await host.start({ sessionId: "session", runtimeId: "personal", input: "Next turn", instructions: "Stable role", admission });
   expect(request.instructions).toBe(originalInstructions); expect(request.instructions).not.toContain("A durable fact");
@@ -94,7 +96,7 @@ it("enabled partner tools cross the native Host call boundary with server-author
   await expect(partner.execute("work_sessions", { action: "steer", sessionId: "owner-main", input: "use broader tools" }, narrow, "forbidden-steer", "run")).rejects.toThrow("steer_owner_admission_required");
   const disabled = new NativePartnerTools(owner, agentId, async () => work, facts, apps, proactive, false);
   expect(disabled.definitions).toEqual([]); expect(disabled.context(admission, "Input", "disabled-session")).toBeUndefined();
-  await expect(disabled.execute("employee_memory", { action: "read" }, admission, "disabled", "run")).rejects.toThrow("employee_tool_not_authorized");
+  await expect(disabled.execute("memory", { action: "read" }, admission, "disabled", "run")).rejects.toThrow("employee_tool_not_authorized");
   await expect(partner.execute("work_sessions", { action: "create", input: "x", owner: "bob" }, admission, "forged", "run")).rejects.toThrow();
 });
 
@@ -120,8 +122,9 @@ it("product native and memory APIs enforce owner identity before touching the Ho
   expect((await f.api(`${base}/native/memory`)).data).toEqual({ state: "disabled" });
   unsupported = true;
   expect(await f.api(`${base}/native/memory`)).toMatchObject({ status: 409, data: { error: "native_method_unsupported", nativeError: { code: -32601 } } });
-  expect((await f.api(`${base}/memory`, { action: "add", target: "user", content: "Prefers short reports" })).status).toBe(200);
-  expect((await f.api(`${base}/memory`)).data.files).toMatchObject([{ target: "memory", entries: [] }, { target: "user", entries: ["Prefers short reports"] }]);
+  expect((await f.api(`${base}/memory`, { action: "add", content: "Prefers short reports" })).status).toBe(200);
+  expect((await f.api(`${base}/memory`, { action: "add", target: "user", content: "No second file" })).status).toBe(400);
+  expect((await f.api(`${base}/memory`)).data).toMatchObject({ file: "MEMORY.md", entries: ["Prefers short reports"], usage: { used: 21, limit: 4000 }, writeApproval: false });
   expect((await f.api(`${base}/memory`, { action: "add", content: "Foreign note" }, "bob")).status).toBe(404);
   expect((await f.api("/proactive", undefined, "bob")).data).toEqual({ data: [] });
 });

@@ -302,8 +302,8 @@ it("deletes a sharing partner with its own records and leaves the environment an
   const f = await mauFixture(cleanup);
   const { operationId, scout } = await shared(f, { duty: "Watches the inbox" });
   const environment = [...f.cloud.keys()][0]!, token = f.cloud.get(environment)!.files.get("/home/user/.agent-host-service/token");
-  f.mau.facts.mutate(alice, scout.id, { action: "add", content: "prefers tea", target: "memory" });
-  f.mau.facts.mutate(alice, f.agent.id, { action: "add", content: "prefers coffee", target: "memory" });
+  f.mau.facts.mutate(alice, scout.id, { action: "add", content: "prefers tea" });
+  f.mau.facts.mutate(alice, f.agent.id, { action: "add", content: "prefers coffee" });
   const schedules = f.mau.proactive.store;
   schedules.set("rules", "r1", { id: "r1", owner: alice, agentId: scout.id, status: "active", version: 1 });
   schedules.set("rules", "r2", { id: "r2", owner: alice, agentId: f.agent.id, status: "active", version: 1 });
@@ -330,7 +330,7 @@ it("deletes a sharing partner with its own records and leaves the environment an
   expect(() => f.mau.router.connections.hosts!.assertReady(scout.id, operationId)).toThrow("environment_not_ready");
   // Its own records are gone, the other partner's remain.
   expect(readdirSync(join(f.directory, "mau", "memories"))).toHaveLength(1);
-  expect(JSON.stringify(f.mau.facts.read(alice, f.agent.id).files)).toContain("prefers coffee");
+  expect(JSON.stringify(f.mau.facts.read(alice, f.agent.id).entries)).toContain("prefers coffee");
   expect(schedules.entries("rules").map((rule) => rule.id)).toEqual(["r2"]);
   const after = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test");
   expect(after.entries("employee_memory_pending").map((record) => record.id)).toEqual(["p2"]);

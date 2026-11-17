@@ -110,7 +110,7 @@ const matches = (job: MemoryReviewJob, scope: MemoryReviewScope & { sessionId?: 
 const briefError = (error: unknown) => error instanceof Error ? error.message.slice(0,200) : "memory_review_failed";
 
 function reminder(memory: boolean, skills: boolean): string {
-  return [memory ? "Periodic memory review: retain only durable user preferences or reusable facts with their source; skip task logs and temporary state. Use the managed memory tool and its write approvals." : "",
+  return [memory ? "Periodic memory review: keep what stays true (owner preferences, reusable facts with their source) and the current state of what you are responsible for; skip step-by-step logs. Use the memory tool and its write approvals." : "",
     skills ? "Periodic skill review: consider a reusable procedure learned from the completed work. Inspect an existing skill before changing it and use only the available managed skill capability." : "",
     memory || skills ? "A reminder grants no additional access. Make no update when there is nothing durable to retain." : ""].filter(Boolean).join("\n");
 }

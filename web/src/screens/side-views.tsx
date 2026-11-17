@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatMarkdown } from "@olorinm/agent-ui";
 import { Button, useToast } from "@olorinm/agent-ui/app";
 import { FileEditor } from "@olorinm/agent-ui/pages";
-import { mauApi, memoryDelimiter, type MemoryFile } from "../api/client";
+import { mauApi, memoryDelimiter } from "../api/client";
 import { memoryDocument, memoryEntries, memoryOperations } from "../api/memory-document";
 import type { Session } from "../api/session";
 import { ApiError } from "../api/http";
@@ -69,25 +69,25 @@ export function FileSideView({ api, attachment, onDownload, onClose }: {
   );
 }
 
-/** A partner's documents: the fixed instructions and the two memory files. */
-export type PartnerDocument = "AGENTS.md" | "MEMORY.md" | "USER.md";
-export const partnerDocuments: readonly PartnerDocument[] = ["AGENTS.md", "MEMORY.md", "USER.md"];
-export const memoryTarget = (name: PartnerDocument): MemoryFile["target"] | undefined => name === "MEMORY.md" ? "memory" : name === "USER.md" ? "user" : undefined;
+/** A partner's documents: the fixed instructions and its memory. */
+export type PartnerDocument = "AGENTS.md" | "MEMORY.md";
+export const partnerDocuments: readonly PartnerDocument[] = ["AGENTS.md", "MEMORY.md"];
+export const isMemory = (name: PartnerDocument) => name === "MEMORY.md";
 const characters = (text: string) => [...text].length;
 
 /**
- * One of a partner's documents beside the conversation. The instructions are read-only. A memory file is edited as
+ * One of a partner's documents beside the conversation. The instructions are read-only. The memory is edited as
  * one Markdown document with a divider between its entries, and saved as the changes to those entries.
  */
 export function DocumentSideView({ session, agentId, name, onClose }: { session: Session; agentId: string; name: PartnerDocument; onClose(): void }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const { toast } = useToast();
   const queries = useQueryClient();
-  const api = mauApi(session.token), target = memoryTarget(name);
+  const api = mauApi(session.token), target = isMemory(name);
   const failure = (error: unknown) => errorMessage(t, error instanceof ApiError ? error.code : "request_failed");
   const instructions = useQuery({ queryKey: ["agent-instructions", agentId], queryFn: () => api.agentInstructions(agentId), enabled: !target });
   const memory = useQuery({ queryKey: ["agent-memory", agentId], queryFn: () => api.agentMemory(agentId), enabled: !!target });
-  const file = memory.data?.files.find((item) => item.target === target);
+  const file = memory.data;
   const saved = file ? memoryDocument(file.entries) : undefined;
   // The document as the editor last wrote it; nothing until something is typed.
   const [draft, setDraft] = useState<string>();
@@ -98,7 +98,7 @@ export function DocumentSideView({ session, agentId, name, onClose }: { session:
   const save = useMutation({
     mutationFn: async () => {
       // The server takes thirty changes at a time.
-      for (let start = 0; start < operations.length; start += 30) await api.changeAgentMemory(agentId, target!, operations.slice(start, start + 30));
+      for (let start = 0; start < operations.length; start += 30) await api.changeAgentMemory(agentId, operations.slice(start, start + 30));
     },
     onSuccess: () => toast({ kind: "success", title: zh ? "已保存，新对话开始时生效" : "Saved. It applies from the next new conversation." }),
     onError: (error) => toast({ kind: "error", title: failure(error) }),

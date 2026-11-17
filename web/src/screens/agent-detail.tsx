@@ -29,7 +29,7 @@ import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
 import { openSettings } from "../settings/route";
-import { partnerDocuments, memoryTarget, type PartnerDocument } from "./side-views";
+import { partnerDocuments, isMemory, type PartnerDocument } from "./side-views";
 
 const actionLabel = {
   pause: "env.pause",
@@ -283,10 +283,10 @@ export function AgentDetail(props: {
         ) : tab === "documents" ? (
           <SettingsSection title={zh ? "文档" : "Documents"}>
             {partnerDocuments.map((name) => {
-              const file = memory.data?.files.find((item) => item.target === memoryTarget(name));
+              const file = isMemory(name) ? memory.data : undefined;
               return <ListRow key={name} icon={<span className="mau-settings-glyph">{icon("copy")}</span>} title={name} ariaLabel={name}
                 onClick={() => props.onDocument?.(props.document === name ? undefined : name)}
-                trailing={<span className="mau-profile-value">{!memoryTarget(name) ? (zh ? "只读" : "Read-only") : file ? `${file.usage.used} / ${file.usage.limit}` : ""}</span>} />;
+                trailing={<span className="mau-profile-value">{!isMemory(name) ? (zh ? "只读" : "Read-only") : file ? `${file.usage.used} / ${file.usage.limit}` : ""}</span>} />;
             })}
           </SettingsSection>
         ) : (

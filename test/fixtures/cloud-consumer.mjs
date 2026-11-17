@@ -165,7 +165,7 @@ try {
       headers: { authorization: "Bearer fixture-owner", "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value = await response.json(); assert.ok(response.ok, JSON.stringify(value)); return value;
   };
-  await api(`/agents/${agent.id}/memory`, { action: "add", target: "user", content: "Use concise fixture reports" });
+  await api(`/agents/${agent.id}/memory`, { action: "add", content: "Use concise fixture reports" });
   assert.equal((await api(`/agents/${agent.id}/native/skills`)).data[0].skills[0].name, "fixture-skill");
   assert.equal((await api(`/agents/${agent.id}/native/memory`)).state, "disabled");
   const runtime = await service.runtime(agent.id), sessions = runtime.extension.sessions;

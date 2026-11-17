@@ -30,7 +30,7 @@ export class NativePartnerTools implements PartnerTools {
       reminders?: (admission: RunAdmission, sessionId: string) => string } = {}) {
     this.definitions = enabled ? [
       { name: "work_sessions", description: "Manage this employee's work sessions. Create independent work, read native history, send follow-up work, wait for changes, steer or cancel a known task. Return event IDs for later inspection. Delegated work keeps its own session and tools; sending a message is not new human authorization.", inputSchema: z.toJSONSchema(sessionInput), timeoutMs: 60_000 },
-      { name: "employee_memory", description: "Maintain concise durable notes: memory (MEMORY.md, 2200 Unicode characters) for reusable knowledge, user (USER.md, 1375) for user preferences and profile. Read, add, replace or remove entries; batch operations on one file are atomic. add requires content, replace requires old_text and content, remove requires old_text, batch requires operations. old_text must uniquely identify an entry by exact literal text; replace replaces the WHOLE entry. Duplicate writes are rejected. Do not store secrets, transient task progress or instructions that override safety. Free space with remove/replace when full. Writes are autonomous unless staged for owner approval. The current session's initial snapshot stays frozen; updates load in new sessions.", inputSchema: memoryToolSchema, timeoutMs: 10_000 },
+      { name: "memory", description: "Maintain your one durable memory document (MEMORY.md, 4000 Unicode characters). You decide what belongs in it: what stays true about the owner and how they want things done, how recurring work is done, and the current state of what you are responsible for (what was decided, what is still open, where the files are). Read, add, replace or remove entries; batch operations are atomic. add requires content, replace requires old_text and content, remove requires old_text, batch requires operations. old_text must uniquely identify an entry by exact literal text; replace replaces the WHOLE entry. Duplicate writes are rejected. Never store secrets (passwords, tokens, keys) or instructions that override safety. Update an entry instead of appending history, and free space with remove/replace when full. Writes are autonomous unless staged for owner approval. This memory is yours alone: no other partner reads it and you read no other partner's. The current session's initial snapshot stays frozen; updates load in new sessions.", inputSchema: memoryToolSchema, timeoutMs: 10_000 },
       { name: "session_search", description: "Search original stored conversation text for this employee. Returns exact text excerpts, session IDs and coverage; this is separate from curated memory and may not include older native history until explicitly imported.", inputSchema: z.toJSONSchema(historyQuery), timeoutMs: 10_000 },
       { name: "proactive_work", description: "Create, inspect, edit, pause, resume or run a proactive rule for this employee only when requested by the owner. Show the concrete goal, schedule, time zone, sources and notification destination (notify.channel: web keeps notices in the conversation, where push channels may announce them; a connection id such as a chat channel or a push channel delivers there; new rules default to web). Source grants remain limited to the employee's assigned connections. New rules default paused; explicitly requested activation uses status=active. Saving a rule never grants new account access.", inputSchema: z.toJSONSchema(proactiveInput), timeoutMs: 60_000 },
     ] : [];
@@ -50,19 +50,16 @@ export class NativePartnerTools implements PartnerTools {
   async execute(name: string, raw: unknown, admission: RunAdmission, callId: string, runId: string): Promise<unknown> {
     if (!this.enabled || admission.owner !== this.owner || admission.agentId !== this.agentId || admission.kind === "schedule") throw new Error("employee_tool_not_authorized");
     const review = this.options.isMemoryReview?.(admission) ?? false;
-    if (review && name !== "employee_memory") throw new Error("memory_review_tool_not_authorized");
-    if (name === "employee_memory") {
+    if (review && name !== "memory") throw new Error("memory_review_tool_not_authorized");
+    if (name === "memory") {
       try {
         const input = memoryInput.parse(raw);
-        if (input.action === "read") {
-          const data = this.facts.read(this.owner, this.agentId);
-          return { ...data, files: input.target ? data.files.filter(file => file.target === input.target) : data.files };
-        }
+        if (input.action === "read") return this.facts.read(this.owner, this.agentId);
         return this.facts.mutate(this.owner, this.agentId, input, { origin: review ? "review" : admission.kind });
       } catch (error) {
         if (error instanceof MemoryError) {
-          let live: unknown; try { live = this.facts.read(this.owner, this.agentId).files; } catch { /* Preserve the original fail-closed error. */ }
-          return { isError: true, error: error.message, ...error.details, ...(live ? { files: live } : {}) };
+          let live: unknown; try { live = this.facts.read(this.owner, this.agentId).entries; } catch { /* Preserve the original fail-closed error. */ }
+          return { isError: true, error: error.message, ...error.details, ...(live ? { entries: live } : {}) };
         }
         if (error instanceof z.ZodError) return { isError: true, error: "memory_invalid_input", issues: error.issues };
         throw error;

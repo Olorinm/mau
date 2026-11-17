@@ -182,6 +182,10 @@ it("answers a removed tool still listed in an older session's frozen catalog ins
   expect((await f.host.calls("run")).map(call => call.name)).toEqual(["channel"]);
   expect(f.call).not.toHaveBeenCalled();
   expect(f.resolved.at(-1)).toMatchObject({ success: false }); expect(JSON.stringify(f.resolved.at(-1))).toContain("tool_removed");
+  // The memory tool an older session knows by its former name is answered the same way, whatever it was asked to do.
+  f.setCalls("employee_memory", "", { action: "add", target: "user", content: "Prefers short answers" }, "memory-call");
+  expect((await f.host.calls("run")).map(call => call.name)).toEqual(["channel"]);
+  expect(f.resolved).toHaveLength(2); expect(JSON.stringify(f.resolved.at(-1))).toContain("tool_removed");
 });
 
 it("prepares connector skills before a run, and a failed preparation never blocks the run", async () => {
