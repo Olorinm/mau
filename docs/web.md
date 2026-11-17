@@ -112,6 +112,43 @@ are disabled. When an Agent hands its browser to the owner, the live view opens 
 The build-version watcher reloads an outdated page only when it is idle: never during a pending change,
 an open dialog or form, or while an input has focus.
 
+## Partners working together
+
+Partners recruit and message one another with the `partners` tool ([Partners](native-work.md#partners)). The
+console shows that work in the conversations it belongs to.
+
+- **Messages and results.** A partner's message is a turn of the recipient's conversation with the owner. It
+  stands there under the sender's figure and name, marked as relayed or asked, as the sender wrote it. Its result
+  returns to the conversation the message was sent from, where each result is a block of the partner that
+  answered: the answer, a line when it did not complete (not completed, stopped, not run, outcome unknown, with
+  the reason in a sentence where the console has one), and a note when a long answer was shortened, whose whole
+  text is in that partner's conversation. The console takes all of this from the `display` Mau records with the
+  event, never from the text written for the model; an event recorded without `display` shows its whole text as
+  it is. A partner's figure or name opens the conversation with it.
+- **The list of conversations** previews a conversation's last event only when a person or the conversation's own
+  partner wrote it. What another partner sent into it, and a system line, is not a preview.
+- **The `partners` tool in a run's process.** Each call is one line (looked at the partners, recruited, passed on,
+  asked, informed, waited, dismissed) whose partner name is a link, with what the partner was told beneath it and
+  the call's arguments and result behind a toggle. A refused call says why in a sentence.
+- **Approval cards.** When a partner's operation needs the owner's approval, the card appears in the conversation
+  the message was sent from, under the asking partner's figure and name. The console words it in the interface
+  language from the members of the request: who asks, whose message it handles, the operation, the connection and
+  the arguments (saying so when long arguments are shown shortened). The two choices follow the interface language
+  too. A card recorded without those members shows the server's text and choices. A card is answered once, and then
+  shows whether it was approved, declined, expired, withdrawn or answered elsewhere. A partner that waits for an
+  approval says so in the list of conversations.
+- **Dismissed partners** leave the header row and the list. A row at the end of the partners opens them, each with
+  its restore, and a search finds them by name. A profile's configuration dismisses and restores a partner, apart
+  from deleting it; a dismissed partner keeps its conversation and memory. Settings leave it out as well: 消息渠道
+  does not list its channels, and a connector's page does not name it among the partners using the connection.
+- **Profile.** A profile names the partner that recruited it and the partner whose environment it runs in, as
+  lines that open that partner's profile. Its configuration shows the kernel the partner itself runs on (partners
+  of one environment can run on different kernels), with the models and reasoning efforts of that kernel.
+- **Kernel of a new partner.** When the environment of the partner chosen under "Share with a partner" offers more
+  than one kernel, the dialog asks which one the new partner runs on; the environment's main kernel is the default.
+  An environment with one kernel shows no choice. A kernel the environment does not offer, or whose runtime is not
+  available there at the moment, is refused in a sentence.
+
 ## Settings
 
 The main navigation has one **设置** entry. It opens a modal over the app with a left navigation: 通用 (language,
@@ -154,6 +191,7 @@ npm run test:web
 This builds the console, runs the connection-layer tests and drives Chromium against a fixture Mau:
 opening from the Access session, Agent creation, sharing an environment, pause and resume, channel connection,
 checks, destruction, settings and connectors, conversations, groups, attachments, run details and approvals,
-language switching, sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing build fails
+partners working together (messages and results, approval cards, dismissal, kernels), language switching,
+sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing build fails
 rather than skips. Cloud lifecycle, Host, Access and channels are fixtures; QR scanning, a real Access
 login, channel authorization and model replies need deployment-specific acceptance.
