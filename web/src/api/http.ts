@@ -1,9 +1,16 @@
+/** A partner the server names beside an error code. */
+export interface PartnerRef { id: string; name: string }
 /** A stable error code from Mau or Router. Messages are never shown raw. */
 export class ApiError extends Error {
-  constructor(readonly code: string, readonly status: number, readonly details: { email?: string } = {}) {
+  constructor(readonly code: string, readonly status: number,
+    readonly details: { email?: string; partner?: PartnerRef; partners?: PartnerRef[] } = {}) {
     super(code);
   }
 }
+const partnerRef = (value: unknown): PartnerRef[] => {
+  const { id, name } = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  return typeof id === "string" && typeof name === "string" ? [{ id, name }] : [];
+};
 /** Fired on `globalThis` whenever an edge access session (Cloudflare Access) turns out to be expired. */
 export const accessExpiredEvent = "mau:access-session-expired";
 
@@ -50,8 +57,13 @@ export async function request<T>(url: string, options: {
         typeof reported === "string" && code.test(reported) ? reported
           : response.status === 429 ? "rate_limited" : "request_failed",
         response.status,
-        // owner_not_configured names the signed-in email so the console can show it.
-        typeof data?.email === "string" ? { email: data.email } : {},
+        {
+          // owner_not_configured names the signed-in email so the console can show it.
+          ...(typeof data?.email === "string" ? { email: data.email } : {}),
+          // Shared-environment refusals name the partner that has the environment, or the partners running in it.
+          ...(partnerRef(data?.partner).length ? { partner: partnerRef(data?.partner)[0]! } : {}),
+          ...(Array.isArray(data?.partners) ? { partners: data.partners.flatMap(partnerRef) } : {}),
+        },
       );
     }
     if (data === undefined) throw new ApiError("invalid_response", response.status);

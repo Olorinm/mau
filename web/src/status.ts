@@ -17,9 +17,12 @@ const tones: Record<EnvironmentState, ProductStatusTone> = {
 export const stateTone = (view: EnvironmentView | null): ProductStatusTone =>
   view?.busy ? "running" : tones[view?.state ?? "unconfigured"];
 
-/** Lifecycle actions offered for a settled state; Mau still validates each request. */
+/**
+ * Lifecycle actions offered for a settled state; Mau still validates each request. A partner in a shared environment
+ * has none: the partner that has the environment operates it.
+ */
 export function availableActions(view: EnvironmentView | null): EnvironmentAction[] {
-  if (!view || view.busy) return [];
+  if (!view || view.busy || view.sharedFrom) return [];
   switch (view.state) {
     case "ready": return ["pause"];
     case "sleeping": return ["resume", "pause"];
@@ -29,4 +32,4 @@ export function availableActions(view: EnvironmentView | null): EnvironmentActio
   }
 }
 export const canDestroy = (view: EnvironmentView | null) =>
-  !!view && !view.busy && !["unconfigured", "deleted", "creating", "deleting"].includes(view.state);
+  !!view && !view.busy && !view.sharedFrom && !["unconfigured", "deleted", "creating", "deleting"].includes(view.state);

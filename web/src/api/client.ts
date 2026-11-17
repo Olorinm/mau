@@ -11,6 +11,10 @@ export interface EnvironmentView {
   profileId?: string;
   updatedAt?: string;
   error?: string;
+  /** The partner whose environment this one runs in; it has no environment of its own. */
+  sharedFrom?: string;
+  /** The partners running in this partner's environment. */
+  sharedBy?: string[];
 }
 export type ChannelKind = "feishu" | "weixin" | "telegram" | "grove-mail";
 export interface AgentSummary {
@@ -18,8 +22,15 @@ export interface AgentSummary {
   host: { runtimeId: string } | null;
   /** Kinds this console does not connect (push, web, room) are listed by the server too. */
   connections: Array<{ id: string; kind: ChannelKind | "bark" | "web" | "room" }>;
+  /** One line saying what the partner is responsible for; fixed when it is created. */
+  duty: string | null;
   environment: EnvironmentView | null;
 }
+/** Where a new partner runs: in an environment of its own, or in another partner's. */
+export type NewPartnerEnvironment = { profileId: string } | { shareWith: string };
+/** A partner another one can run in the environment of: it has its own, not destroyed. Sharing does not chain. */
+export const canShareEnvironment = ({ environment }: AgentSummary) =>
+  !!environment && !environment.sharedFrom && !["deleting", "deleted"].includes(environment.state);
 export interface EnvironmentProfile { id: string; label: string; kernel: string }
 /** One of a partner's two memory files: `memory` (MEMORY.md, working knowledge) or `user` (USER.md, the owner's preferences). */
 export interface MemoryFile { target: "memory" | "user"; file: string; entries: string[]; usage: { used: number; limit: number } }
@@ -105,7 +116,7 @@ export function mauApi(token: string) {
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
-    /** The fixed instructions of the partner's environment profile (read-only; shared by the profile's partners). */
+    /** The partner's fixed instructions (read-only): its environment profile's, or its own text in a shared environment. */
     agentInstructions: (id: string) => request<{ text: string }>(mau + agent(id) + "/instructions", { token }),
     /** The models and efforts the partner's kernel offers and its runtime allows, with the owner's choice. */
     modelSettings: (id: string) => request<ModelSettings>(mau + agent(id) + "/model-settings", { token, timeoutMs: 45_000 }),
@@ -116,8 +127,9 @@ export function mauApi(token: string) {
     /** Applies the owner's changes to one memory file, in order and all or none. */
     changeAgentMemory: (id: string, target: MemoryFile["target"], operations: MemoryOperation[]) =>
       request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", target, operations } }),
-    createAgent: (name: string, profileId: string) =>
-      request<AgentSummary>(mau + "/agents", { token, body: { name, profileId } }),
+    /** With `shareWith` no environment is created and the partner is usable when the request returns. */
+    createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
+      request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),
     environment: (id: string) => request<EnvironmentView>(mau + agent(id) + "/environment", { token }),
     createEnvironment: (id: string, profileId: string) =>
@@ -131,7 +143,7 @@ export function routerApi(token: string) {
   return {
     connectionOptions: () => request<{ mailServices: Array<{ id: string; label: string }> }>(router + "/connection-options", { token }),
     connect: (id: string, body: ConnectionRequest) =>
-      request<ConnectionJob | Omit<AgentSummary, "environment">>(router + agent(id) + "/connections", { token, body }),
+      request<ConnectionJob | Omit<AgentSummary, "environment" | "duty">>(router + agent(id) + "/connections", { token, body }),
     jobs: (id: string) => request<{ data: ConnectionJob[] }>(router + agent(id) + "/connection-jobs", { token }).then((r) => r.data),
     job: (id: string, jobId: string) =>
       request<ConnectionJob>(router + agent(id) + "/connection-jobs/" + encodeURIComponent(jobId), { token }),

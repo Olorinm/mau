@@ -612,7 +612,7 @@ export const presentationLabels: Record<string, Record<string, string>> = {
     "rooms.messageActions": "消息操作",
     "rooms.messageWithoutText": "这条消息没有文本内容",
     "rooms.moreActions": "更多操作",
-    "rooms.noPartnersRecruitFirst": "还没有伙伴，先招聘一个伙伴。",
+    "rooms.noPartnersRecruitFirst": "还没有伙伴，先招募一个。",
     "rooms.noMatchingMembers": "没有匹配成员",
     "rooms.noMatchingMessages": "没有匹配的聊天记录",
     "rooms.noteToneDiagnostic": "诊断",

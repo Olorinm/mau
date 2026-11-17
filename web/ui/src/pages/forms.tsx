@@ -4,6 +4,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  PortalProvider,
   ProductIcon,
 } from "../app/index";
 import identity from "./styles/app-identity.module.css";
@@ -42,14 +43,20 @@ export function ProfileDialog({
   const id = useId();
   const [local, setLocal] = useState(tabs[0]?.id);
   const current = selectedId ?? local;
+  // Menus opened in the form render inside it, within the dialog's focus trap; Escape closes an open menu first.
+  const [form, setForm] = useState<HTMLFormElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="partner-dialog"
         aria-label={title}
         aria-describedby={undefined}
+        onEscapeKeyDown={(event) => {
+          if (form?.querySelector(".agent-select-popup[data-open]")) event.preventDefault();
+        }}
       >
-        <form onSubmit={onSubmit}>
+        <form ref={setForm} onSubmit={onSubmit}>
+          <PortalProvider container={form}>
           <DialogTitle>{title}</DialogTitle>
           {preview ? (
             <div className="partner-dialog-preview">{preview}</div>
@@ -94,6 +101,7 @@ export function ProfileDialog({
           ))}
           {feedback}
           <div className="modal-actions">{actions}</div>
+          </PortalProvider>
         </form>
       </DialogContent>
     </Dialog>

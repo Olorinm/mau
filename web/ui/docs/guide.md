@@ -59,11 +59,12 @@ The components built on them render caller-owned data only:
   navigation becomes the first page and pages get a back button. `Modal`/`ModalActions` (full-width pill primary
   button and a plain-text cancel) and `ConsentDialog` (icon, title, three explanatory items, footnote) share its shell.
 - `SettingsSection` (grey label, panel, optional note), `GroupPanel`, `ListRow` (icon, title, optional second line,
-  separate trailing control), `TextButton`, `SelectMenu` (text and chevron, e.g. Allow / Ask / Don't allow),
-  `SegmentedControl`, `SearchField`, `FeaturedCard`/`FeaturedGrid`, `AppIcon`, `DetailHero`, `CircleBackButton`,
-  `CircleButton` and `InitialAvatar`.
+  separate trailing control), `TextButton`, `SelectMenu` (text and chevron, e.g. Allow / Ask / Don't allow; a
+  placeholder while nothing is chosen), `SegmentedControl` (a segment can be disabled), `SearchField`,
+  `FeaturedCard`/`FeaturedGrid`, `AppIcon`, `DetailHero`, `CircleBackButton`, `CircleButton` and `InitialAvatar`.
 
-Menus opened inside these modals render inside them; Escape closes an open menu before the modal.
+Menus opened inside these modals, and inside `ProfileDialog`, render inside them; Escape closes an open menu before
+the modal.
 
 `PartnerAvatar` draws an agent from a seed (usually its id). Its default appearance is a pixel-art animal
 (`PixelAvatar`): the seed picks one of twenty animals and a colour, the same every time, and the figure is an inline

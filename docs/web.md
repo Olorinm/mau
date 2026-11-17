@@ -76,6 +76,14 @@ without `send` conversations are read-only.
   all of them and opens an Agent's profile: environment state and checks, channels, connectors, documents,
   and configuration (kernel, model and reasoning effort where the runtime allows a choice, environment profile,
   destroy the environment, delete the Agent).
+- A new partner takes a name, an optional duty (one line of at most 200 characters, shown under its name on the
+  profile) and either an environment of its own or the environment of another of the owner's partners
+  ([shared environments](environments.md#partners-sharing-an-environment)). Its own environment is the default;
+  sharing is offered when a partner has an environment of its own that is not destroyed. A partner created in a
+  shared environment is usable when the request returns. Its profile names the partner whose environment it runs in
+  and has no pause, resume, reconcile or destroy; its checks, documents and settings are its own. The profile of
+  the partner that has the environment lists the partners sharing it; destroying that environment or deleting that
+  partner is refused, naming them, until they are deleted.
 - "New group" creates a Router group room with a title and up to 20 of the owner's Agents. In a group only
   the Agents the owner @-mentions (or everyone, with `@all`/`@所有人`) start work; a message without a
   mention is only recorded. The member panel renames the group and adds or removes Agents.
@@ -144,8 +152,8 @@ npm run test:web
 ```
 
 This builds the console, runs the connection-layer tests and drives Chromium against a fixture Mau:
-opening from the Access session, Agent creation, pause and resume, channel connection, checks,
-destruction, settings and connectors, conversations, groups, attachments, run details and approvals,
+opening from the Access session, Agent creation, sharing an environment, pause and resume, channel connection,
+checks, destruction, settings and connectors, conversations, groups, attachments, run details and approvals,
 language switching, sign-out and an expired session. CI sets `MAU_WEB_E2E=1` so a missing build fails
 rather than skips. Cloud lifecycle, Host, Access and channels are fixtures; QR scanning, a real Access
 login, channel authorization and model replies need deployment-specific acceptance.

@@ -154,6 +154,10 @@ async function checkSettingsBrowser(page) {
   await settings.getByRole("button", { name: "Clear search" }).click();
   await settings.getByRole("button", { name: "Connected 1" }).click();
   await expect(settings.getByRole("button", { name: "Connected 1" })).toHaveAttribute("aria-pressed", "true");
+  // A segment that cannot be chosen right now is disabled and dimmed.
+  const archived = settings.getByRole("button", { name: "Archived", exact: true });
+  await expect(archived).toBeDisabled();
+  assert.equal(await archived.evaluate((element) => getComputedStyle(element).opacity), "0.45");
   // Icon segments: named by their label, as wide as their icons, with a divider before a set-apart segment.
   const sections = settings.getByRole("group", { name: "Detail sections" });
   await sections.getByRole("button", { name: "Advanced", exact: true }).click();
@@ -179,6 +183,12 @@ async function checkSettingsBrowser(page) {
   await settings.getByRole("combobox", { name: "Upload files" }).click();
   await page.getByRole("option", { name: "Allow", exact: true }).click();
   await expect(page.getByLabel("Upload setting")).toHaveText("allow");
+  // A menu with nothing chosen yet shows its placeholder until an option is picked.
+  const account = settings.getByRole("combobox", { name: "Account" });
+  await expect(account).toHaveText("Choose an account");
+  await account.click();
+  await page.getByRole("option", { name: "Home", exact: true }).click();
+  await expect(account).toHaveText("Home");
   await settings.getByRole("button", { name: "All connectors" }).click();
   await settings.getByRole("button", { name: "General" }).click();
   await expect(settings.getByRole("heading", { name: "General" })).toBeVisible();

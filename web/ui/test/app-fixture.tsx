@@ -44,9 +44,10 @@ function SettingsFixture() {
   const [section, setSection] = useState<string | null>("apps");
   const [detail, setDetail] = useState(false);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"available" | "connected">("available");
+  const [tab, setTab] = useState<"available" | "connected" | "archived">("available");
   const [part, setPart] = useState<"overview" | "advanced">("overview");
   const [setting, setSetting] = useState<"allow" | "ask" | "deny">("ask");
+  const [account, setAccount] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [connected, setConnected] = useState("no");
   const icon = <AppIcon size="card"><ProductIcon name="globe" /></AppIcon>;
@@ -66,6 +67,8 @@ function SettingsFixture() {
             <SettingsSection title="Write access" note="Ask is refused in scheduled work.">
               <ListRow title="Upload files" trailing={<SelectMenu label="Upload files" value={setting} onChange={setSetting}
                 options={[{ value: "allow", label: "Allow" }, { value: "ask", label: "Ask" }, { value: "deny", label: "Don't allow" }]} />} />
+              <ListRow title="Account" trailing={<SelectMenu label="Account" placeholder="Choose an account" value={account} onChange={setAccount}
+                options={[{ value: "work", label: "Work" }, { value: "home", label: "Home" }]} />} />
               <ListRow title="Manage labels" muted subtitle="Needs more access" trailing={<TextButton>Add</TextButton>} />
             </SettingsSection>
             <output aria-label="Upload setting">{setting}</output>
@@ -73,7 +76,8 @@ function SettingsFixture() {
           : <SettingsPage title="Connectors">
             <SearchField value={query} onChange={setQuery} placeholder="Search" clearLabel="Clear search" />
             <SegmentedControl label="Connector categories" value={tab} onChange={setTab}
-              options={[{ value: "available", label: "Available" }, { value: "connected", label: "Connected", badge: 1 }]} />
+              options={[{ value: "available", label: "Available" }, { value: "connected", label: "Connected", badge: 1 },
+                { value: "archived", label: "Archived", disabled: true }]} />
             <SegmentedControl label="Detail sections" display="icon" value={part} onChange={setPart}
               options={[{ value: "overview", label: "Overview", icon: <ProductIcon name="ops" size={18} /> },
                 { value: "advanced", label: "Advanced", icon: <ProductIcon name="settings" size={18} />, divided: true }]} />
