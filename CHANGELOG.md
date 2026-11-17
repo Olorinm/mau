@@ -4,6 +4,65 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.50] - 2026-11-17
+
+- An owner's partners work together through one tool, `partners`, which replaces `work_sessions`:
+  `roster` lists the other partners and what a recruit may choose, `recruit` adds a partner in the
+  recruiter's environment with a name and a duty, `message` sends text with an intent (`relay`
+  and `ask` expect a reply, `inform` expects none and starts no turn), `wait` reads replies inside
+  the turn for at most 60 seconds, and `dismiss` archives a partner; recruiting its name restores
+  it. See [Partners](docs/native-work.md#partners).
+- A message runs as a turn of the recipient's own conversation with the owner, recorded there
+  with the sending partner as its sender. Its result returns to the conversation it was sent from
+  as a turn of the sender, after the sending turn's answer is recorded, and that turn answers the
+  owner on the connection the owner used. Results that are ready together share one turn, and a
+  result read with `wait` in the sending turn is not delivered again.
+- A message is not the owner's authorization: the recipient's turn may use what the sending turn
+  could, within the connections assigned to the recipient. Connections that act as the owner's
+  personal identity work only in a turn the owner started in a private conversation. When the
+  recipient's connected-app write needs approval, the card appears in the sender's conversation
+  and names the partner and the operation; refusal and timeout are final, and the card is
+  withdrawn when the call or the turn ends.
+- Limits: a turn that handles a message cannot recruit, message or dismiss; four messages of one
+  sender may wait for replies; four generations of messages may follow one owner message; and
+  partners are recruited, messaged and dismissed only from the owner's private conversation. A
+  hand-over is retried eight times with growing delays, a result undelivered for 48 hours is
+  dropped and stays readable, a message nobody answered for 48 hours fails, and after three
+  wake-ups in a row for failures the owner gets a notice instead. Nothing is run again in a
+  partner's place.
+- Memory is one document per partner, `MEMORY.md` (4,000 characters), maintained with the
+  `memory` tool (formerly `employee_memory`, without `target`). An existing `USER.md` is merged
+  into `MEMORY.md` at start and removed; nothing is shortened.
+- The setting `nativeWork.employeeTools` is now `nativeWork.partnerTools`; the former key is
+  refused at start. A session keeps the tools and instructions it began with, so no existing
+  session is invalidated; it sees `partners` and `memory` when its conversation starts a new
+  window, and calls to the former tools there are answered with `tool_removed`.
+- Owner API: `GET /_mau/v1/partners`, `GET /_mau/v1/partners/messages`,
+  `POST /_mau/v1/agents/:id/dismiss` and `/restore`, `dismissed` in agent summaries, and
+  `GET`/`POST /_mau/v1/agents/:id/memory` for the one document.
+- Builds on Agent Kit 0.11.0-alpha.1: the owner conversation as a work target, turns that answer
+  the owner, owner requests, the settlement feed and senders.
+- The console shows what partners send each other as their own words. In the recipient's
+  conversation a message stands under the sender's figure and name, and in the sender's
+  conversation each result is a block of the partner that answered, with a line saying so when it
+  did not complete; the lines written around them for the model are not shown, and text of another
+  form is shown whole. A partner's figure or name there opens the conversation with it.
+- A run's process shows each call of the `partners` tool as one line (recruited, passed on, asked,
+  informed, waited, dismissed) whose partner name is a link, with what the partner was told
+  beneath it; a refused call says why in a sentence.
+- A partner's request for approval is a card under that partner's name in the conversation the
+  message was sent from. It is answered once, and shows whether it was approved, declined,
+  expired, withdrawn or answered elsewhere. A partner that waits for an approval says so in the
+  list of conversations.
+- Dismissed partners leave the header row and the list; a row at the end of the partners opens
+  them, each with its restore. A profile's configuration dismisses and restores a partner, apart
+  from deleting it.
+- A profile names the partner that recruited it and the partner whose environment it runs in as
+  lines of information that open that partner, and folds a duty longer than three lines. Its
+  documents are `AGENTS.md` (read-only) and `MEMORY.md`.
+- Refusals of the partners tool, of dismissing and of the memory document have sentences in
+  Chinese and English, and the English console says partner throughout.
+
 ## [0.1.0-alpha.49] - 2026-11-17
 
 - Agents are called partners. The console says partner where it said employee, and code, tests
