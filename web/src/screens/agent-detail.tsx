@@ -77,7 +77,7 @@ export function AgentDetail(props: {
   const { toast } = useToast();
   const confirm = useConfirm();
   const queries = useQueryClient();
-  const { agent, environment, duty, connections } = props.summary;
+  const { agent, environment, duty, kernel, connections } = props.summary;
   const named = (ids: readonly string[]) => props.partners.flatMap(({ agent: { id, name } }) => ids.includes(id) ? [{ id, name }] : []);
   // In a shared environment the partner only reads its state; `host` is the partner that has it and operates it.
   const host = environment?.sharedFrom ? named([environment.sharedFrom])[0] ?? { id: environment.sharedFrom, name: "…" } : undefined;
@@ -329,7 +329,7 @@ export function AgentDetail(props: {
         ) : (
           <>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
-              <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{profile?.kernel ?? "—"}</span>} />
+              <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{kernel ?? "—"}</span>} />
               {modelRows()}
               {sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
             </SettingsSection>

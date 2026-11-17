@@ -7,7 +7,8 @@ import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 import { openPartnerTurn, partnerConversations, tripAnswer, tripMessage, visaQuestion } from "./fixtures/partner-console.js";
 
 // Browser acceptance of partners working together, in the built console: what they send each other in the
-// conversations, the partners tool in a run's activity, a partner's request for approval, and dismissing.
+// conversations, the partners tool in a run's activity, a partner's request for approval, dismissing, and the kernel
+// a partner runs on.
 const webRoot = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const built = existsSync(webRoot + "index.html");
 const cleanup: Array<() => unknown> = [];
@@ -440,6 +441,66 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
   expect(await lines()).toBe(3);
   // A partner the owner made has no recruiter to name.
   await see(row("招募者")).toHaveCount(0);
+  expect(errors).toEqual([]);
+}, 90_000);
+
+it.skipIf(!built)("a partner sharing an environment that offers several kernels is put on the one the owner chooses, and its profile shows its own", async () => {
+  // The fixture's environment (helper, on codex) also offers claude; the Host does not have that runtime available at first.
+  const claude: Record<string, unknown> = { kernel: "claude", model: "claude-main", capabilities: { features: { "input.nativeItems": { status: "unsupported" } } }, available: false };
+  const f = await partnersFixture(cleanup, { webRoot, runtimes: { claude }, profile: { otherKernels: [{ kernel: "claude", runtimeId: "claude" }] } });
+  f.discovery("claude", { id: "claude", kernel: "claude", model: "claude-main", allowedSettings: { model: { values: ["claude-main", "claude-small"] }, effort: { values: ["low", "high"] } },
+    native: { models: [{ value: "claude-main", displayName: "Main", supportedEffortLevels: ["low", "high"] }, { value: "claude-small", displayName: "Small", supportedEffortLevels: ["low"] }] } });
+  const { page, errors } = await browser(f);
+  const posted: unknown[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
+  await openChat(page, f, f.agent.id);
+  const dialog = page.getByRole("dialog", { name: "新建伙伴" });
+  const sharing = async (name: string) => {
+    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    await roster(page).getByRole("button", { name: "新建伙伴", exact: true }).click();
+    await dialog.getByLabel("名称").fill(name);
+    await dialog.getByRole("group", { name: "环境类型" }).getByRole("button", { name: "与伙伴共用", exact: true }).click();
+    await see(dialog.getByRole("combobox", { name: "伙伴", exact: true })).toContainText("helper");
+  };
+  const kernel = dialog.getByRole("combobox", { name: "内核", exact: true });
+  // The environment's main kernel is the choice until another is made.
+  await sharing("writer");
+  await see(kernel).toContainText("codex");
+  await kernel.click();
+  await see(page.getByRole("option")).toHaveText(["codex", "claude"]);
+  await page.getByRole("option", { name: "claude", exact: true }).click();
+  await see(kernel).toContainText("claude");
+  // The kernel is offered, but its runtime is not available in the environment now: said in words, nothing created.
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog.getByRole("alert")).toHaveText("所选内核的运行时现在在这个环境里不可用，请换一个内核或稍后再试。");
+  delete claude.available;
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog).toHaveCount(0);
+  const writer = await f.until(() => f.partner("writer"), "writer created");
+  await see(chip(page, writer.id)).toHaveAttribute("aria-selected", "true");
+  // Its profile shows the kernel it runs on, and the models of that kernel; the partner that has the environment keeps its own.
+  const card = profile(page), row = (title: string) => card.locator(".agent-list-row").filter({ has: page.locator(".agent-list-row-title", { hasText: new RegExp(`^${title}$`) }) });
+  await chip(page, writer.id).click();
+  await profileTab(page, "配置");
+  await see(row("内核").locator(".mau-profile-value")).toHaveText("claude");
+  await see(card.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Main");
+  await card.getByRole("combobox", { name: "模型", exact: true }).click();
+  await see(page.getByRole("option")).toHaveText(["默认 · Main", "Main", "Small"]);
+  await page.keyboard.press("Escape");
+  await row("共用环境").getByRole("button", { name: "helper", exact: true }).click();
+  await see(card.getByRole("heading", { name: "helper" })).toBeVisible();
+  await profileTab(page, "配置");
+  await see(row("内核").locator(".mau-profile-value")).toHaveText("codex");
+  await see(card.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Large");
+  await page.keyboard.press("Escape");
+  // The main kernel is not named in the request.
+  await sharing("clerk");
+  await see(kernel).toContainText("codex");
+  await dialog.getByRole("button", { name: "创建" }).click();
+  await see(dialog).toHaveCount(0);
+  expect(posted).toEqual([{ name: "writer", shareWith: f.agent.id, kernel: "claude" }, { name: "writer", shareWith: f.agent.id, kernel: "claude" }, { name: "clerk", shareWith: f.agent.id }]);
+  const kernelOf = async (name: string) => (await f.api(`/agents/${f.partner(name).id}`)).data.kernel;
+  expect([await kernelOf("helper"), await kernelOf("writer"), await kernelOf("clerk")]).toEqual(["codex", "claude", "codex"]);
   expect(errors).toEqual([]);
 }, 90_000);
 

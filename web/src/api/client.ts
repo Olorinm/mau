@@ -24,6 +24,8 @@ export interface AgentSummary {
   connections: Array<{ id: string; kind: ChannelKind | "bark" | "web" | "room" }>;
   /** One line saying what the partner is responsible for; fixed when it is created. */
   duty: string | null;
+  /** The kernel the partner itself runs on; partners in one environment can run on different ones. */
+  kernel: string | null;
   environment: EnvironmentView | null;
   /** When the partner was dismissed: it keeps its conversation and memory, and is not listed until it is restored. */
   dismissed?: string | null;
@@ -36,12 +38,13 @@ export interface PartnerView {
   waiting: { messages: number; approvals: number };
   sharesEnvironmentOf?: string; recruitedBy?: PartnerRef; recruitedAt?: string; dismissedAt?: string;
 }
-/** Where a new partner runs: in an environment of its own, or in another partner's. */
-export type NewPartnerEnvironment = { profileId: string } | { shareWith: string };
+/** Where a new partner runs: in an environment of its own, or in another partner's (on its main kernel unless one is named). */
+export type NewPartnerEnvironment = { profileId: string } | { shareWith: string; kernel?: string };
 /** A partner another one can run in the environment of: it has its own, not destroyed. Sharing does not chain. */
 export const canShareEnvironment = ({ environment }: AgentSummary) =>
   !!environment && !environment.sharedFrom && !["deleting", "deleted"].includes(environment.state);
-export interface EnvironmentProfile { id: string; label: string; kernel: string }
+/** `kernels` are the kernels a partner in an environment of this profile can run on, its main one (`kernel`) first. */
+export interface EnvironmentProfile { id: string; label: string; kernel: string; kernels: string[] }
 /** A partner's memory: one document (MEMORY.md) of entries. */
 export interface MemoryFile { file: string; entries: string[]; usage: { used: number; limit: number } }
 /** Entries of the memory are separated by this line; the server stores and counts them joined with it. */
@@ -158,7 +161,7 @@ export function routerApi(token: string) {
   return {
     connectionOptions: () => request<{ mailServices: Array<{ id: string; label: string }> }>(router + "/connection-options", { token }),
     connect: (id: string, body: ConnectionRequest) =>
-      request<ConnectionJob | Omit<AgentSummary, "environment" | "duty">>(router + agent(id) + "/connections", { token, body }),
+      request<ConnectionJob | Omit<AgentSummary, "environment" | "duty" | "kernel">>(router + agent(id) + "/connections", { token, body }),
     jobs: (id: string) => request<{ data: ConnectionJob[] }>(router + agent(id) + "/connection-jobs", { token }).then((r) => r.data),
     job: (id: string, jobId: string) =>
       request<ConnectionJob>(router + agent(id) + "/connection-jobs/" + encodeURIComponent(jobId), { token }),

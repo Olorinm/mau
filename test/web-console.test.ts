@@ -412,6 +412,8 @@ it.skipIf(!built)(
     await form.kind("与伙伴共用").click();
     await see(form.partner).toContainText("helper");
     await see(form.dialog.getByRole("group", { name: "环境方案" })).toHaveCount(0);
+    // Its environment offers one kernel, so there is none to choose.
+    await see(form.dialog.getByRole("combobox")).toHaveCount(1);
     await see.poll(gaps).toEqual([20, 20, 10]);
     // Escape closes the open menu, not the dialog around it.
     await form.partner.click(); await see(page.getByRole("option", { name: "helper", exact: true })).toBeVisible();
