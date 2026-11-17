@@ -117,7 +117,10 @@ export interface PartnersPort {
   create(owner: string, name: string): Promise<{ id: string; name: string }>;
   sessions(owner: string, agentId: string): Promise<WorkSessions>;
   conversations(agentId: string): Promise<Conversations | undefined>;
-  /** Whether the turn of a task has ended (a turn with an unknown outcome has not). */
+  /**
+   * Whether the turn of a task has ended and its answer is recorded in its conversation (a turn with an unknown
+   * outcome has not ended). A result handed over earlier would stand before that answer in the transcript.
+   */
   turnEnded(agentId: string, taskId: string): Promise<boolean>;
   duty(agentId: string): string | undefined;
   /** The partner whose environment the agent runs in: itself, or the one it shares. */

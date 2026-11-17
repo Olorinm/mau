@@ -221,7 +221,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     create: (owner, name) => router.service.create(owner, name),
     sessions,
     conversations: async agentId => (await routerOf(agentId))?.communication,
-    turnEnded: async (agentId, taskId) => ["completed", "failed", "canceled", "rejected"].includes((await router.service.runtime(agentId)).work.inspect(taskId).status),
+    turnEnded: async (agentId, taskId) => {
+      const runtime = await router.service.runtime(agentId), input = runtime.extension?.communication?.input(taskId);
+      // A turn that answers in a conversation has ended when its answer is recorded there.
+      return input ? input.state === "done" : ["completed", "failed", "canceled", "rejected"].includes(runtime.work.inspect(taskId).status);
+    },
     duty: agentId => environments.duty(agentId),
     environmentHolder: agentId => environments.sharedFrom(agentId) ?? agentId,
     kernel: agentId => environments.kernel(agentId),

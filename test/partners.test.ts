@@ -69,6 +69,9 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(f.record(record.id)).toMatchObject({ status: "returned", intent: "relay", from: { name: "helper" }, to: { name: "korea-trip", duty },
     origin: { connectionId: "web", chain: 0 }, grants: { write: true, ownerPrivate: true, connections: [] }, ran: { kernel: "codex", model: "large", effort: null },
     result: { status: "completed", answer: "Draft: five days in Seoul. Missing: the travel dates." }, delivery: { via: "turn" } });
+  // In the sender's conversation the result stands after the answer of the turn that sent the message.
+  expect((await f.events(f.agent.id)).filter(event => event.kind === "message").map(event => [event.role, event.sender.type, event.kind === "message" && event.origin || "channel"])).toEqual([
+    ["user", "person", "channel"], ["assistant", "agent", "channel"], ["user", "agent", "delegation"], ["assistant", "agent", "channel"]]);
   // The owner opens the partner's own chat and finds the message from the other partner and the answer to it.
   const transcript = (await f.events(trip.id)).filter(event => event.kind === "message");
   expect(transcript).toMatchObject([
