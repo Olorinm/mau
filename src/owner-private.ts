@@ -22,7 +22,7 @@ export interface RouterConversations {
 
 export const OWNER_PRIVATE_ONLY = "connected_app_owner_private_only";
 export const ownerPrivateRefusal = (connection: string) => ({ status: "failed", error: OWNER_PRIVATE_ONLY, connection,
-  message: "这个连接使用你的个人身份（例如飞书个人权限），只能在你与 Agent 的私聊中使用，群聊、其他人或委派任务中不可用。",
+  message: "这个连接使用你的个人身份（例如飞书个人权限），只能在你与 Agent 的私聊以及从私聊发起的伙伴工作中使用，群聊和其他人的对话中不可用。",
   instruction: "Do not retry here. Tell the requester this works only in the owner's private conversation with you." });
 
 /**
@@ -34,7 +34,8 @@ export const ownerPrivateRefusal = (connection: string) => ({ status: "failed", 
  *   contains any message that is not the owner's direct input (a group or visitor session).
  * - `schedule`: rules are created by the owner, their target and conversation sessions must be owner conversations
  *   (Router `validateTarget`), and they stay read-only, so owner-created schedules count as the owner's.
- * - `delegation` (delegated work, memory review) and anything unresolvable: refused.
+ * - `delegation` (memory review) and anything unresolvable: refused. A turn a partner's message started is decided
+ *   before this function, from the owner's turn the message was sent in.
  */
 export async function ownerPrivateAdmission(admission: RunAdmission, router: RouterConversations | undefined): Promise<boolean> {
   if (admission.kind === "schedule") return true;

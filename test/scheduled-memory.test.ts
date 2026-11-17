@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ServiceHttp, type WorkSessions } from "@agent-router/server";
+import { ServiceHttp } from "@agent-router/server";
 import { BusinessHost } from "../src/business-tools.js";
 import { PartnerContext, MEMORY_DELIMITER } from "../src/partner-context.js";
 import { NativePartnerTools } from "../src/native-work.js";
-import { ConnectedApps } from "../src/connected-apps.js";
+import { noPartners } from "./fixtures/no-partners.js";
 import { DurableStore } from "../src/store.js";
 import type { ProactiveWork } from "../src/proactive.js";
 
@@ -40,8 +40,7 @@ function fixture() {
   const reopen = () => {
     const store = new DurableStore(database, "scheduled-memory"); cleanup.push(() => store.close());
     const memory = new PartnerContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
-    const partner = new NativePartnerTools(owner, agentId, async () => { throw new Error("unused_sessions"); }, memory,
-      new ConnectedApps(undefined, "."), {} as ProactiveWork, true);
+    const partner = new NativePartnerTools(owner, agentId, noPartners, memory, {} as ProactiveWork, true);
     const host = new BusinessHost(http, undefined, store, scope, undefined, { owner, agentId }, partner);
     return { store, memory, partner, host };
   };
@@ -101,7 +100,7 @@ it("keeps an owner conversation's frozen memory and tool catalog but supplies cu
   await f.host.calls(scheduled.id);
   expect(execute).not.toHaveBeenCalled(); expect(f.results[0].success).toBe(false);
   expect(JSON.stringify(f.results[0])).toContain("business_tool_not_authorized");
-  await expect(f.partner.execute("memory", { action: "add", content: "Another mutation" }, schedule("next"), "direct-write", scheduled.id)).rejects.toThrow("employee_tool_not_authorized");
+  await expect(f.partner.execute("memory", { action: "add", content: "Another mutation" }, schedule("next"), "direct-write", scheduled.id)).rejects.toThrow("partner_tool_not_authorized");
   expect(f.memory.read(owner, agentId).entries).toEqual(["Current preference."]);
 });
 
@@ -141,8 +140,7 @@ it("uses complete per-turn context for text turns and excludes disabled or misma
   expect(f.requests[0].context.scheduledMemory.text).toContain("Relevant knowledge."); expect(f.requests[0].toolOutput).toBeUndefined();
   expect(f.partner.scheduledContext(ownerAdmission)).toBeUndefined();
   expect(f.partner.scheduledContext({ ...schedule("foreign"), owner: "bob" })).toBeUndefined();
-  const disabled = new NativePartnerTools(owner, agentId, async () => ({} as WorkSessions), f.memory,
-    new ConnectedApps(undefined, "."), {} as ProactiveWork, false);
+  const disabled = new NativePartnerTools(owner, agentId, noPartners, f.memory, {} as ProactiveWork, false);
   expect(disabled.scheduledContext(schedule("disabled"))).toBeUndefined();
   await expect(f.host.start({ ...request("foreign"), admission: { ...schedule("foreign"), owner: "bob" } })).rejects.toThrow("business_run_admission_invalid");
 });

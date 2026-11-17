@@ -742,6 +742,11 @@ export class EnvironmentManager {
           .map((agentId) => ({ agentId, operationId: record.operationId, runtimeId: profile.runtimeId, kernel: profile.kernel })) : [];
       });
   }
+  /** The kernel of the environment an Agent runs in: its own, or the one it shares. */
+  kernel(agentId: string) {
+    const record = this.binding(this.sharedFrom(agentId) ?? agentId);
+    return record && this.options.profiles.find((p) => p.id === record.profileId)?.kernel;
+  }
   /** Native work outside Router runs (background subagents) keeps a ready environment awake, whichever partner's it is. */
   touch(agentId: string) {
     const holder = this.sharedFrom(agentId) ?? agentId;
