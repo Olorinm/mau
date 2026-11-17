@@ -49,7 +49,7 @@ const scope = (owner: string, agentId: string) => digest(JSON.stringify([owner, 
 
 /** Two private files, serialized by the product SQLite lock across Mau processes.
  * Callers sharing these files must also share the product store. Never truncate to fit. */
-export class EmployeeContext {
+export class PartnerContext {
   private readonly directory: string;
   private readonly writeApproval: boolean;
   constructor(private readonly store: DurableStore, private readonly assertOwned: (owner: string, agentId: string) => void,
@@ -194,7 +194,7 @@ export class EmployeeContext {
   }
   private files(owner: string, agentId: string) { return (["memory", "user"] as const).map(target => this.load(owner, agentId, target)); }
   private load(owner: string, agentId: string, target: MemoryTarget): FileState {
-    const directory = this.employeeDirectory(owner, agentId), path = join(directory, fileName(target));
+    const directory = this.partnerDirectory(owner, agentId), path = join(directory, fileName(target));
     let bytes: Buffer, descriptor: number | undefined;
     try {
       descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -208,7 +208,7 @@ export class EmployeeContext {
     return { target, file: fileName(target), entries, content, revision: digest(bytes), usage: { used: characters(entries.join(MEMORY_DELIMITER)), limit: MEMORY_LIMITS[target] } };
   }
   private persist(owner: string, agentId: string, previous: FileState, entries: string[]) {
-    const directory = this.employeeDirectory(owner, agentId), path = join(directory, fileName(previous.target));
+    const directory = this.partnerDirectory(owner, agentId), path = join(directory, fileName(previous.target));
     if (this.load(owner, agentId, previous.target).revision !== previous.revision) throw new MemoryError("memory_file_changed");
     const temporary = join(directory, `.${fileName(previous.target)}.${randomUUID()}.tmp`); let descriptor: number | undefined;
     try {
@@ -224,7 +224,7 @@ export class EmployeeContext {
     try { mkdirSync(path, { recursive: true, mode: 0o700 }); const info = lstatSync(path); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("not_private_directory"); chmodSync(path, 0o700); }
     catch { throw new MemoryError("memory_directory_unavailable", {}, 500); }
   }
-  private employeeDirectory(owner: string, agentId: string) { this.ensureDirectory(this.directory); const path = join(this.directory, scope(owner, agentId)); this.ensureDirectory(path); return path; }
+  private partnerDirectory(owner: string, agentId: string) { this.ensureDirectory(this.directory); const path = join(this.directory, scope(owner, agentId)); this.ensureDirectory(path); return path; }
   private snapshotKey(owner: string, agentId: string, sessionKey: string) { return digest(JSON.stringify([owner, agentId, sessionKey])); }
   private getPending(owner: string, agentId: string, id: string) {
     const pending = this.store.get<PendingWrite>("employee_memory_pending", id);

@@ -62,7 +62,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   const reader = useMemo(() => new RunReader(api, claimId), [api, claimId]);
   const terminal = ["completed", "failed", "canceled", "rejected"].includes(task.status);
   const key = ["run", token, agentId, claimId];
-  // Finished runs are read from Router's copy, so history loads without waking the employee.
+  // Finished runs are read from Router's copy, so history loads without waking the partner.
   // They never change again: read every page before publishing (one paint, not one per page)
   // and keep the result, so reopening a conversation does not read it again.
   const query = useQuery({ queryKey: key, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
@@ -84,7 +84,7 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   const label = !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
     : active ? pending ? zh ? "等待你的回应" : "Waiting for your response" : task.cancelRequested ? zh ? "正在停止…" : "Stopping…" : zh ? "正在执行" : "Running"
     : status === "completed" ? zh ? "已完成" : "Completed" : status === "cancelled" ? zh ? "已取消" : "Cancelled" : zh ? "执行未完成" : "Execution failed";
-  // Older runs without Router's copy need the employee awake; expanding the row wakes it.
+  // Older runs without Router's copy need the partner awake; expanding the row wakes it.
   const sleeping = !data && terminal && query.error instanceof ApiError && query.error.code === "environment_not_ready";
   // Until a finished run's process arrives, hold its place with the same collapsed row.
   const placeholder = !data && terminal && (sleeping || query.isPending);

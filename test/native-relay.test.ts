@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { WorkSessions } from "@agent-router/server";
 import { DurableStore } from "../src/store.js";
-import { NativeRelay, type NativeRelayEmployee, type NativeRelayHost } from "../src/native-relay.js";
+import { NativeRelay, type NativeRelayPartner, type NativeRelayHost } from "../src/native-relay.js";
 
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-const employee: NativeRelayEmployee = { agentId: "agent", owner: "alice", operationId: "op", runtimeId: "personal" };
+const partner: NativeRelayPartner = { agentId: "agent", owner: "alice", operationId: "op", runtimeId: "personal" };
 const turn = (threadId: string, id: string, text: string, status = "completed") => ({ type: "notification", method: "turn/completed",
   params: { threadId, turn: { id, status, items: [{ type: "agentMessage", text: "working", phase: "commentary" }, { type: "agentMessage", text, phase: "final_answer" }] } } });
 const status = (threadId: string, type: string) => ({ type: "notification", method: "thread/status/changed", params: { threadId, status: { type } } });
@@ -37,7 +37,7 @@ function fixture(options: { keepAliveMs?: number } = {}) {
   } as unknown as WorkSessions;
   const touch = vi.fn(), record = vi.fn();
   const relay = new NativeRelay(store, {
-    employees: () => [employee], host: () => host, sessions: async () => work, touch, record,
+    partners: () => [partner], host: () => host, sessions: async () => work, touch, record,
     publicSession: (_owner, _agent, hostSessionId) => ({ "h-main": "c-main", "h-group": "c-group" } as Record<string, string>)[hostSessionId],
   }, { clock: () => now, ...options });
   cleanup.push(() => relay.close());

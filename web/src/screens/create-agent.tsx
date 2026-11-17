@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ProfileDialog } from "@olorinm/agent-ui/pages";
-import { Button, EmployeeAvatar } from "@olorinm/agent-ui/app";
+import { Button, PartnerAvatar } from "@olorinm/agent-ui/app";
 import { mauApi } from "../api/client";
 import { ApiError } from "../api/http";
 import type { Session } from "../api/session";
@@ -46,17 +46,17 @@ export function CreateAgentDialog(props: {
         {
           id: "profile",
           label: language === "zh-CN" ? "基本资料" : "Profile",
-          className: "employee-dialog-identity-card",
+          className: "partner-dialog-identity-card",
           content: (
             <>
-              <div className="employee-dialog-profile-hero">
-                <EmployeeAvatar
+              <div className="partner-dialog-profile-hero">
+                <PartnerAvatar
                   seed={name || "new-agent"}
                   fallbackName={name || "Agent"}
                   size={80}
                 />
               </div>
-              <label className="employee-dialog-field employee-dialog-profile-name-row">
+              <label className="partner-dialog-field partner-dialog-profile-name-row">
                 <span>{t("create.name")}</span>
                 <input
                   value={name}
@@ -75,22 +75,22 @@ export function CreateAgentDialog(props: {
         {
           id: "runtime",
           label: t("env.title"),
-          className: "employee-dialog-runtime-card",
+          className: "partner-dialog-runtime-card",
           content: (
-            <section className="employee-dialog-runtime">
-              <h3 className="employee-dialog-runtime-title">
+            <section className="partner-dialog-runtime">
+              <h3 className="partner-dialog-runtime-title">
                 {t("create.profile")}
               </h3>
               {options.isPending ? <p>{t("common.loading")}</p> : null}
               {options.isSuccess && !profiles.length ? (
                 <p>{t("create.noProfiles")}</p>
               ) : null}
-              <div className="employee-dialog-kernel-list">
+              <div className="partner-dialog-kernel-list">
                 {profiles.map((profile) => (
                   <button
                     key={profile.id}
                     type="button"
-                    className="employee-dialog-kernel-option"
+                    className="partner-dialog-kernel-option"
                     aria-pressed={profileId === profile.id}
                     data-active={profileId === profile.id}
                     onClick={() => setChosen(profile.id)}
@@ -106,7 +106,7 @@ export function CreateAgentDialog(props: {
       ]}
       feedback={
         create.error ? (
-          <p className="employee-dialog-submit-error" role="alert">
+          <p className="partner-dialog-submit-error" role="alert">
             {errorMessage(
               t,
               create.error instanceof ApiError

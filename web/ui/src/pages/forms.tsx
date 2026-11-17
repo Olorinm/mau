@@ -45,17 +45,17 @@ export function ProfileDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="employee-dialog"
+        className="partner-dialog"
         aria-label={title}
         aria-describedby={undefined}
       >
         <form onSubmit={onSubmit}>
           <DialogTitle>{title}</DialogTitle>
           {preview ? (
-            <div className="employee-dialog-preview">{preview}</div>
+            <div className="partner-dialog-preview">{preview}</div>
           ) : null}
           <div
-            className="employee-dialog-tabs"
+            className="partner-dialog-tabs"
             role="tablist"
             aria-label={title}
           >
@@ -85,7 +85,7 @@ export function ProfileDialog({
               hidden={current !== tab.id}
               aria-labelledby={id + "-" + tab.id + "-tab"}
               className={
-                "employee-dialog-card employee-dialog-tab-panel " +
+                "partner-dialog-card partner-dialog-tab-panel " +
                 (tab.className ?? "")
               }
             >

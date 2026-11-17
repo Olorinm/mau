@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ServiceHttp, type WorkSessions } from "@agent-router/server";
 import { BusinessHost } from "../src/business-tools.js";
-import { EmployeeContext, MEMORY_DELIMITER } from "../src/employee-context.js";
-import { NativeEmployeeTools } from "../src/native-work.js";
+import { PartnerContext, MEMORY_DELIMITER } from "../src/partner-context.js";
+import { NativePartnerTools } from "../src/native-work.js";
 import { ConnectedApps } from "../src/connected-apps.js";
 import { DurableStore } from "../src/store.js";
 import type { ProactiveWork } from "../src/proactive.js";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close(); vi.restoreAllMocks(); });
-const owner = "alice", agentId = "employee", scope = "employee:binding";
+const owner = "alice", agentId = "partner", scope = "partner:binding";
 const ownerAdmission = { kind: "owner" as const, owner, agentId, reference: "owner-input" };
 const schedule = (reference: string) => ({ kind: "schedule" as const, owner, agentId, reference, toolGrants: {} });
 function fixture() {
@@ -39,11 +39,11 @@ function fixture() {
   }("https://host.fixture", "token");
   const reopen = () => {
     const store = new DurableStore(database, "scheduled-memory"); cleanup.push(() => store.close());
-    const memory = new EmployeeContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
-    const employee = new NativeEmployeeTools(owner, agentId, async () => { throw new Error("unused_sessions"); }, memory,
+    const memory = new PartnerContext(store, (o, a) => { if (o !== owner || a !== agentId) throw new Error("not_owned"); }, { directory });
+    const partner = new NativePartnerTools(owner, agentId, async () => { throw new Error("unused_sessions"); }, memory,
       new ConnectedApps(undefined, "."), {} as ProactiveWork, true);
-    const host = new BusinessHost(http, undefined, store, scope, undefined, { owner, agentId }, employee);
-    return { store, memory, employee, host };
+    const host = new BusinessHost(http, undefined, store, scope, undefined, { owner, agentId }, partner);
+    return { store, memory, partner, host };
   };
   const current = reopen();
   const path = (target: "memory" | "user") => join(directory,
@@ -60,7 +60,7 @@ const view = (body: any) => JSON.parse(body.toolOutput.output).scheduledMemory;
 
 it("puts fresh screened memory in the native scheduled tool output without changing instructions or tools", async () => {
   const f = fixture(); f.memory.mutate(owner, agentId, { action: "add", target: "user", content: "Prefers a concise digest." });
-  const definitions = JSON.stringify(f.employee.definitions), before = readFileSync(f.path("user"));
+  const definitions = JSON.stringify(f.partner.definitions), before = readFileSync(f.path("user"));
   await f.host.connect(); await f.host.start(request("first"));
   const body = f.requests[0], output = JSON.parse(body.toolOutput.output), memory = view(body);
   expect(body.input).toBe(""); expect(body.instructions).toBe("Stable role"); expect(body.tools).toBeUndefined();
@@ -73,14 +73,14 @@ it("puts fresh screened memory in the native scheduled tool output without chang
   expect(body.context.requestContext).toEqual(request("first").context);
   expect(readFileSync(f.path("user"))).toEqual(before);
   expect(f.store.entries("employee_memory_snapshots")).toEqual([]);
-  expect(JSON.stringify(f.employee.definitions)).toBe(definitions);
+  expect(JSON.stringify(f.partner.definitions)).toBe(definitions);
 });
 
 it("reads owner feedback on the next event while reusing the same scheduled session", async () => {
   const f = fixture(); await f.host.connect();
-  await f.employee.execute("employee_memory", { action: "add", target: "user", content: "Prefers daily mail summaries." }, ownerAdmission, "write-1", "owner-run");
+  await f.partner.execute("employee_memory", { action: "add", target: "user", content: "Prefers daily mail summaries." }, ownerAdmission, "write-1", "owner-run");
   await f.host.start(request("first")); const first = f.requests[0];
-  await f.employee.execute("employee_memory", { action: "replace", target: "user", old_text: "Prefers daily mail summaries.", content: "Prefers silence when there is no new actionable mail." }, ownerAdmission, "write-2", "owner-run");
+  await f.partner.execute("employee_memory", { action: "replace", target: "user", old_text: "Prefers daily mail summaries.", content: "Prefers silence when there is no new actionable mail." }, ownerAdmission, "write-2", "owner-run");
   await f.host.start(request("second")); const second = f.requests[1];
   expect(second.sessionId).toBe(first.sessionId); expect(second.instructions).toBe(first.instructions); expect(second.tools).toEqual(first.tools);
   expect(view(second).text).toContain("Prefers silence"); expect(view(second).text).not.toContain("Prefers daily mail summaries.");
@@ -96,13 +96,13 @@ it("keeps an owner conversation's frozen memory and tool catalog but supplies cu
   const scheduled = await f.host.start(request("next", "owner-main")), body = f.requests[1];
   expect(body.instructions).toBe(original.instructions); expect(body.instructions).toContain("Original preference.");
   expect(body.tools).toEqual(original.tools); expect(view(body).text).toContain("Current preference.");
-  const execute = vi.spyOn(f.employee, "execute");
+  const execute = vi.spyOn(f.partner, "execute");
   f.setCalls([{ id: "write-attempt", runId: scheduled.id, kind: "tool", name: "employee_memory", status: "pending",
     deadlineAt: new Date(Date.now() + 60_000).toISOString(), input: { action: "add", content: "Scheduled mutation" } }]);
   await f.host.calls(scheduled.id);
   expect(execute).not.toHaveBeenCalled(); expect(f.results[0].success).toBe(false);
   expect(JSON.stringify(f.results[0])).toContain("business_tool_not_authorized");
-  await expect(f.employee.execute("employee_memory", { action: "add", content: "Another mutation" }, schedule("next"), "direct-write", scheduled.id)).rejects.toThrow("employee_tool_not_authorized");
+  await expect(f.partner.execute("employee_memory", { action: "add", content: "Another mutation" }, schedule("next"), "direct-write", scheduled.id)).rejects.toThrow("employee_tool_not_authorized");
   expect(f.memory.read(owner, agentId).files[0]!.entries).toEqual([]);
 });
 
@@ -111,7 +111,7 @@ it("persists the first view across a lost response and restart without rereading
   f.lose(); await expect(f.host.start(request("lost"))).rejects.toThrow("response_lost"); const original = f.requests[0];
   f.memory.mutate(owner, agentId, { action: "replace", target: "user", old_text: "First view.", content: "Next event view." });
   const nextBytes = readFileSync(f.path("user")); writeFileSync(f.path("user"), Buffer.from([0xff]));
-  const restarted = f.reopen(), read = vi.spyOn(restarted.employee, "scheduledContext"); await restarted.host.connect();
+  const restarted = f.reopen(), read = vi.spyOn(restarted.partner, "scheduledContext"); await restarted.host.connect();
   await restarted.host.start(request("lost")); expect(f.requests[1]).toEqual(original); expect(read).not.toHaveBeenCalled();
   await expect(restarted.host.start({ ...request("lost"), instructions: "Changed role" })).rejects.toThrow("business_run_request_conflict");
   expect(read).not.toHaveBeenCalled();
@@ -135,9 +135,9 @@ it("uses complete per-turn context for text turns and excludes disabled or misma
   const f = fixture(); f.memory.mutate(owner, agentId, { action: "add", content: "Relevant knowledge." }); await f.host.connect();
   const { toolOutput: _tool, ...text } = request("text"); await f.host.start({ ...text, input: "Do scheduled work" });
   expect(f.requests[0].context.scheduledMemory.text).toContain("Relevant knowledge."); expect(f.requests[0].toolOutput).toBeUndefined();
-  expect(f.employee.scheduledContext(ownerAdmission)).toBeUndefined();
-  expect(f.employee.scheduledContext({ ...schedule("foreign"), owner: "bob" })).toBeUndefined();
-  const disabled = new NativeEmployeeTools(owner, agentId, async () => ({} as WorkSessions), f.memory,
+  expect(f.partner.scheduledContext(ownerAdmission)).toBeUndefined();
+  expect(f.partner.scheduledContext({ ...schedule("foreign"), owner: "bob" })).toBeUndefined();
+  const disabled = new NativePartnerTools(owner, agentId, async () => ({} as WorkSessions), f.memory,
     new ConnectedApps(undefined, "."), {} as ProactiveWork, false);
   expect(disabled.scheduledContext(schedule("disabled"))).toBeUndefined();
   await expect(f.host.start({ ...request("foreign"), admission: { ...schedule("foreign"), owner: "bob" } })).rejects.toThrow("business_run_admission_invalid");

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RouterError, type WorkSessions } from "@agent-router/server";
 import type { DurableStore } from "./store.js";
 
-/** One model the employee's kernel offers and its runtime owner allows. */
+/** One model the partner's kernel offers and its runtime owner allows. */
 export interface ModelOption { id: string; label: string; description?: string; efforts: string[]; defaultEffort?: string }
 export interface ModelSettingsView {
   kernel?: string;
@@ -58,7 +58,7 @@ export function readModelOptions(discovered: unknown): Reading {
   return { ...(kernel ? { kernel } : {}), ...(model ? { defaultModel: model } : {}), models, efforts };
 }
 
-/** The owner's model and effort choice for one employee. Router stores it and sends it with every turn; Host enforces the allowed list. */
+/** The owner's model and effort choice for one partner. Router stores it and sends it with every turn; Host enforces the allowed list. */
 export class ModelSettings {
   constructor(private readonly store: DurableStore, private readonly sessions: (owner: string, agentId: string) => Promise<WorkSessions>) {}
 

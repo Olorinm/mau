@@ -259,8 +259,8 @@ export class ProactiveWork {
       if (!rule || !original) continue;
       try {
         this.store.acquireLease(this.lease, this.clock().getTime());
-        // Receipts always belong to the original employee/route, even after a
-        // rule edit. Never re-submit a lost receipt under the new employee.
+        // Receipts always belong to the original partner/route, even after a
+        // rule edit. Never re-submit a lost receipt under the new partner.
         let receipt = await this.port.delivery(original, notice.id);
         if (!receipt) {
           this.store.acquireLease(this.lease, this.clock().getTime());

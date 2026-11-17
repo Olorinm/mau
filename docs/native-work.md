@@ -10,11 +10,11 @@ Use [host-native-work.json](../examples/cloud/host-native-work.json) as the trus
 
 Host preserves server notifications in its native event stream. `nativeAccess.notifications` permits outbound client notifications; it is not an event subscription and is deliberately absent from this profile.
 
-Skill files can be delivered through the existing environment profile `files` list and persisted with the employee's files. Codex discovers and loads them. The skills management API enables/disables only paths returned by a fresh native `skills/list`; arbitrary local file paths cannot become configuration writes. File updates and root selection remain trusted environment setup.
+Skill files can be delivered through the existing environment profile `files` list and persisted with the partner's files. Codex discovers and loads them. The skills management API enables/disables only paths returned by a fresh native `skills/list`; arbitrary local file paths cannot become configuration writes. File updates and root selection remain trusted environment setup.
 
 ## Public product operations
 
-All routes below are under `/_mau/v1`, require the Router owner's bearer identity, and recheck employee ownership. Native reads do not automatically wake sleeping environments; an explicit environment resume is separate. Router's session/event management routes remain available under its public communication API.
+All routes below are under `/_mau/v1`, require the Router owner's bearer identity, and recheck partner ownership. Native reads do not automatically wake sleeping environments; an explicit environment resume is separate. Router's session/event management routes remain available under its public communication API.
 
 | Route | Behavior |
 | --- | --- |
@@ -23,12 +23,12 @@ All routes below are under `/_mau/v1`, require the Router owner's bearer identit
 | `POST /agents/:id/native/skills` | `{path, enabled}` for an already discovered skill. |
 | `GET /agents/:id/native/memory` | Native memory status, if the runtime exposes it. |
 | `GET /agents/:id/model-settings` | The models and efforts the kernel reports and the runtime's `allowedSettings` permit, with the owner's choice. Read from the running kernel; while the environment is not running, the last reading is returned (`source: "saved"`). |
-| `PUT /agents/:id/model-settings` | `{model?, effort?}`, each a listed value or `null` for the runtime's default. Router sends the choice with every following turn of the employee. |
+| `PUT /agents/:id/model-settings` | `{model?, effort?}`, each a listed value or `null` for the runtime's default. Router sends the choice with every following turn of the partner. |
 | `GET /agents/:id/work-sessions/:sessionId/memory` | Read native thread memory through its authenticated Host binding. |
 | `POST /agents/:id/work-sessions/:sessionId/memory` | `{mode: "enabled" | "disabled"}` through the authenticated Host binding. |
 | `GET/POST /agents/:id/memory` | Read both files / execute a bounded memory operation. |
 | `POST /agents/:id/memory/search` | SQLite original-history search with explicit index coverage. |
-| `POST /agents/:id/memory/history/import` | Import one page from this employee’s native history, using `{sessionId,cursor?}`. |
+| `POST /agents/:id/memory/history/import` | Import one page from this partner’s native history, using `{sessionId,cursor?}`. |
 | `GET/POST /proactive` | List/create owner rules. |
 | `GET/PUT /proactive/:id` | Read or replace with `{expectedVersion, rule}`. |
 | `GET /proactive/:id/runs` | Cached run records and distinct notification receipts, without waking the Host. |
@@ -62,7 +62,7 @@ Notifications use Router's stable outbox identity and receipt query. Quiet hours
 
 ## Trusted grants
 
-Router supplies `HostAdmission` through the embedding interface for owner, delegated or scheduled work. Mau consumes it before public Host HTTP submission. Tool names and model text do not establish authorization. Mau validates owner/employee, current rule state, expiry, call budget and connector operation intersection on every call. The stable tool catalog is retained for the native session and inherited by forks, while each child's calls use its own run grants. Revoked grants stop actual execution immediately. Persisted run requests restore grants after lost start responses and preserve the exact context on retries. Persisted call receipts prevent duplicate execution after worker recreation; ambiguous calls remain uncertain.
+Router supplies `HostAdmission` through the embedding interface for owner, delegated or scheduled work. Mau consumes it before public Host HTTP submission. Tool names and model text do not establish authorization. Mau validates owner/partner, current rule state, expiry, call budget and connector operation intersection on every call. The stable tool catalog is retained for the native session and inherited by forks, while each child's calls use its own run grants. Revoked grants stop actual execution immediately. Persisted run requests restore grants after lost start responses and preserve the exact context on retries. Persisted call receipts prevent duplicate execution after worker recreation; ambiguous calls remain uncertain.
 
 ## Trusted read tools
 

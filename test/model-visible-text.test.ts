@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ServiceHttp, type WorkSessions } from "@agent-router/server";
 import { BusinessHost } from "../src/business-tools.js";
-import { EmployeeContext } from "../src/employee-context.js";
-import { NativeEmployeeTools } from "../src/native-work.js";
+import { PartnerContext } from "../src/partner-context.js";
+import { NativePartnerTools } from "../src/native-work.js";
 import { ConnectedApps } from "../src/connected-apps.js";
 import { DurableStore } from "../src/store.js";
 import type { ProactiveWork } from "../src/proactive.js";
@@ -20,8 +20,8 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "mau-model-visible-")); cleanup.push(() => rmSync(root, { recursive: true, force: true }));
   const store = new DurableStore(":memory:", "model-visible"); cleanup.push(() => store.close());
   const directory = join(root, "memories");
-  const memory = new EmployeeContext(store, () => {}, { directory });
-  const tools = new NativeEmployeeTools(owner, agentId, async () => ({} as WorkSessions), memory,
+  const memory = new PartnerContext(store, () => {}, { directory });
+  const tools = new NativePartnerTools(owner, agentId, async () => ({} as WorkSessions), memory,
     new ConnectedApps(undefined, "."), {} as ProactiveWork, true);
   const requests: any[] = [];
   const http = new class extends ServiceHttp {

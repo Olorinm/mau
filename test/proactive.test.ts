@@ -173,7 +173,7 @@ it("records provider notification failure distinctly and does not mint another d
   expect(calls).toBe(1);
 });
 
-it("holds paused delivery after an asynchronous lookup and reconciles notices in their original employee scope", async () => {
+it("holds paused delivery after an asynchronous lookup and reconciles notices in their original partner scope", async () => {
   const f = fixture(), rule = await f.service.save("alice", f.input);
   let paused = false;
   f.port.delivery = async () => { if (!paused) { paused = true; await f.service.state("alice", rule.id, "paused"); } return null; };

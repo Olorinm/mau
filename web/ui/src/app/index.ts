@@ -2,14 +2,14 @@ export { Button, type ButtonProps } from "./button.js";
 export { Avatar, AvatarBadge, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from "./avatar.js";
 export { NameAvatar, NameAvatarFallback, AvvvatarsFallbackContent } from "./name-avatar.js";
 export {
-  EmployeeAvatar,
-  EmployeeAvatarAppearanceProvider,
-  useEmployeeAvatarAppearance,
-  employeeAvatarSeedForMember,
-  employeeAvatarDataUri,
-  useEmployeeAvatarDataUri,
-  type EmployeeAvatarAppearance,
-} from "./employee-avatar.js";
+  PartnerAvatar,
+  PartnerAvatarAppearanceProvider,
+  usePartnerAvatarAppearance,
+  partnerAvatarSeedForMember,
+  partnerAvatarDataUri,
+  usePartnerAvatarDataUri,
+  type PartnerAvatarAppearance,
+} from "./partner-avatar.js";
 export {
   PixelAvatar,
   PixelAvatarGroup,

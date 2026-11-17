@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ConsentDialog,
   DetailHero,
-  EmployeeAvatar,
+  PartnerAvatar,
   InitialAvatar,
   ListRow,
   Modal,
@@ -270,7 +270,7 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
     </SettingsSection> : null}
     <SettingsSection title={zh ? "使用此连接的伙伴" : "Agents using this connection"}>
       {assigned.length ? assigned.map((agent) => <ListRow key={agent.agent.id}
-        icon={<EmployeeAvatar seed={agent.agent.id} fallbackName={agent.agent.name} size={32} />} title={agent.agent.name}
+        icon={<PartnerAvatar seed={agent.agent.id} fallbackName={agent.agent.name} size={32} />} title={agent.agent.name}
         trailing={account.usage === "owner_private" || feishu ? <span>{zh ? "仅私聊" : "Private chat only"}</span> : null} />)
         : <ListRow muted title={agents.isPending ? zh ? "正在读取…" : "Loading…" : zh ? "暂未分配伙伴" : "No Agent assigned"} />}
     </SettingsSection>

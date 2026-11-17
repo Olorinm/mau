@@ -2,16 +2,16 @@ import type { WorkSessions } from "@agent-router/server";
 import { z } from "zod";
 import { DurableStore } from "./store.js";
 
-export interface NativeRelayEmployee { agentId: string; owner: string; operationId: string; runtimeId: string }
-/** Read access to one employee's Host. Implementations must not extend the environment idle window. */
+export interface NativeRelayPartner { agentId: string; owner: string; operationId: string; runtimeId: string }
+/** Read access to one partner's Host. Implementations must not extend the environment idle window. */
 export interface NativeRelayHost {
   nativeEvents(runtimeId: string, after?: number, limit?: number, epoch?: string): Promise<unknown>;
   nativeSessions(input: { runtimeId: string; action: "bindings" }): Promise<unknown>;
   events(runId: string, after: number, limit?: number): Promise<{ events: Array<{ event: Record<string, unknown> }>; cursor: number; hasMore: boolean }>;
 }
 interface NativeRelayPort {
-  employees(): NativeRelayEmployee[];
-  host(employee: NativeRelayEmployee): NativeRelayHost;
+  partners(): NativeRelayPartner[];
+  host(partner: NativeRelayPartner): NativeRelayHost;
   sessions(owner: string, agentId: string): Promise<WorkSessions>;
   /** Public Router session for a Host session, known after its first completed owner turn. */
   publicSession(owner: string, agentId: string, hostSessionId: string): string | undefined;
@@ -51,14 +51,14 @@ export class NativeRelay {
   }
   async close() { this.closed = true; if (this.timer) clearInterval(this.timer); await this.pending; }
   private async run() {
-    const employees = this.port.employees();
-    for (const employee of employees) {
+    const partners = this.port.partners();
+    for (const partner of partners) {
       if (this.closed) return;
       // Sleeping or unreachable environments are retried next tick; stale activity never keeps them awake.
-      try { await this.poll(employee); } catch { this.live.delete(employee.agentId); }
-      this.keepAlive(employee.agentId);
+      try { await this.poll(partner); } catch { this.live.delete(partner.agentId); }
+      this.keepAlive(partner.agentId);
     }
-    for (const id of this.live.keys()) if (!employees.some(e => e.agentId === id)) this.live.delete(id);
+    for (const id of this.live.keys()) if (!partners.some(e => e.agentId === id)) this.live.delete(id);
     await this.drain();
   }
   private state(agentId: string) {
@@ -66,11 +66,11 @@ export class NativeRelay {
     if (!live) { live = { threads: new Map(), active: new Set() }; this.live.set(agentId, live); }
     return live;
   }
-  private async poll(employee: NativeRelayEmployee) {
-    const host = this.port.host(employee), key = employee.agentId;
+  private async poll(partner: NativeRelayPartner) {
+    const host = this.port.host(partner), key = partner.agentId;
     const saved = this.store.get<{ epoch: string; cursor: number }>("native_relay_cursors", key);
     let current;
-    try { current = page.parse(await host.nativeEvents(employee.runtimeId, saved?.cursor ?? 0, 200, saved?.epoch)); }
+    try { current = page.parse(await host.nativeEvents(partner.runtimeId, saved?.cursor ?? 0, 200, saved?.epoch)); }
     catch (error) {
       // A restarted Host has a new log; never replay it. Begin again from its current end.
       if (/native_event_epoch_changed|invalid_native_event_cursor/.test(String(error instanceof Error ? error.message : error))) {
@@ -81,15 +81,15 @@ export class NativeRelay {
     const replaying = !saved || saved.epoch !== current.epoch || Boolean(current.historyTruncated);
     if (replaying) this.live.delete(key);
     for (let pages = 0; ; pages++) {
-      for (const { event } of current.events) await this.observe(employee, event, replaying);
+      for (const { event } of current.events) await this.observe(partner, event, replaying);
       this.store.set("native_relay_cursors", key, { epoch: current.epoch, cursor: current.cursor });
       if (!current.hasMore || pages >= 20 || this.closed) break;
-      current = page.parse(await host.nativeEvents(employee.runtimeId, current.cursor, 200, current.epoch));
+      current = page.parse(await host.nativeEvents(partner.runtimeId, current.cursor, 200, current.epoch));
     }
   }
-  private async observe(employee: NativeRelayEmployee, event: Record<string, unknown>, replaying: boolean) {
+  private async observe(partner: NativeRelayPartner, event: Record<string, unknown>, replaying: boolean) {
     if (event.type !== "notification") return;
-    const params = z.record(z.string(), z.unknown()).catch({}).parse(event.params), live = this.state(employee.agentId);
+    const params = z.record(z.string(), z.unknown()).catch({}).parse(event.params), live = this.state(partner.agentId);
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     if (!threadId) return;
     if (event.method === "thread/status/changed") {
@@ -101,22 +101,22 @@ export class NativeRelay {
     if (event.method !== "turn/completed" || replaying) return;
     const turn = turnSchema.safeParse(params.turn);
     if (!turn.success || this.store.get("native_relay_turns", turn.data.id)) return;
-    const sessionId = await this.ownerSession(employee, threadId);
+    const sessionId = await this.ownerSession(partner, threadId);
     if (!sessionId) return;
     const answer = [...turn.data.items].reverse().find(item => item.type === "agentMessage" && (item.phase === "final_answer" || item.phase === undefined));
     const text = typeof answer?.text === "string" ? answer.text.trim() : "";
-    this.store.set("native_relay_turns", turn.data.id, { agentId: employee.agentId, owner: employee.owner, sessionId, threadId,
+    this.store.set("native_relay_turns", turn.data.id, { agentId: partner.agentId, owner: partner.owner, sessionId, threadId,
       turnId: turn.data.id, text, status: turn.data.status && turn.data.status !== "completed" ? "empty" : "queued", attempts: 0 } satisfies Turn);
   }
   /** Only the native thread of an owner private conversation qualifies; child and delegated threads do not. */
-  private async ownerSession(employee: NativeRelayEmployee, threadId: string) {
-    const live = this.state(employee.agentId), known = live.threads.get(threadId);
+  private async ownerSession(partner: NativeRelayPartner, threadId: string) {
+    const live = this.state(partner.agentId), known = live.threads.get(threadId);
     if (known && (known.sessionId || this.clock() - known.checkedAt < 60_000)) return known.sessionId;
     const response = z.object({ bindings: z.array(z.object({ sessionId: z.string(), nativeSessionId: z.string() }).passthrough()).default([]) })
-      .passthrough().parse(await this.port.host(employee).nativeSessions({ runtimeId: employee.runtimeId, action: "bindings" }));
-    const work = await this.port.sessions(employee.owner, employee.agentId), checkedAt = this.clock();
+      .passthrough().parse(await this.port.host(partner).nativeSessions({ runtimeId: partner.runtimeId, action: "bindings" }));
+    const work = await this.port.sessions(partner.owner, partner.agentId), checkedAt = this.clock();
     for (const binding of response.bindings) {
-      const sessionId = this.port.publicSession(employee.owner, employee.agentId, binding.sessionId);
+      const sessionId = this.port.publicSession(partner.owner, partner.agentId, binding.sessionId);
       let owner = false;
       if (sessionId) try { work.validateTarget(sessionId); owner = true; } catch { /* Not an owner conversation. */ }
       live.threads.set(binding.nativeSessionId, { sessionId: owner ? sessionId! : null, checkedAt });
@@ -129,10 +129,10 @@ export class NativeRelay {
       if (this.closed) return;
       try {
         if (!turn.text) { this.store.set("native_relay_turns", id, { ...turn, status: "empty" }); continue; }
-        const employee = this.port.employees().find(e => e.agentId === turn.agentId);
-        if (!employee) continue;
+        const partner = this.port.partners().find(e => e.agentId === turn.agentId);
+        if (!partner) continue;
         const work = await this.port.sessions(turn.owner, turn.agentId);
-        if (await this.managed(employee, work, turn)) { this.store.set("native_relay_turns", id, { ...turn, status: "managed" }); continue; }
+        if (await this.managed(partner, work, turn)) { this.store.set("native_relay_turns", id, { ...turn, status: "managed" }); continue; }
         work.deliver({ eventId: `wake-${turn.turnId}`, targetSessionId: turn.sessionId, text: turn.text });
         this.port.record?.(turn.owner, turn.agentId, turn.sessionId, `${turn.turnId}:assistant`, turn.text);
         this.store.set("native_relay_turns", id, { ...turn, status: "delivered" });
@@ -143,11 +143,11 @@ export class NativeRelay {
     }
   }
   /** Router already answers turns it started; those appear in its recent Host run events. */
-  private async managed(employee: NativeRelayEmployee, work: WorkSessions, turn: Turn) {
+  private async managed(partner: NativeRelayPartner, work: WorkSessions, turn: Turn) {
     const runs = work.getSession(turn.sessionId).runs.filter(run => run.runId).slice(-5);
     for (const run of runs) {
       const cached = this.store.get<string[]>("native_relay_run_turns", run.runId!);
-      const turns = cached ?? await this.runTurns(this.port.host(employee), run.runId!, turn.threadId);
+      const turns = cached ?? await this.runTurns(this.port.host(partner), run.runId!, turn.threadId);
       if (!cached && run.phase === "finished") this.store.set("native_relay_run_turns", run.runId!, turns);
       if (turns.includes(turn.turnId)) return true;
     }

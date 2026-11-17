@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { ScheduledMemoryContext } from "./employee-context.js";
+import type { ScheduledMemoryContext } from "./partner-context.js";
 import { z } from "zod";
 import { HttpAgentHost, RouterError, type HostPort, type ServiceHttp, type HostTool, type HostCall } from "@agent-router/server";
 import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connectors/feishu-bot-reader";
@@ -28,7 +28,7 @@ type BotReader = Pick<FeishuBotReader, "read">;
 const removedTools = new Set(["business_data"]);
 const sameTool = (definition: Pick<HostTool, "name" | "namespace">, call: HostCall) =>
   definition.name === call.name && (definition.namespace ?? null) === (call.namespace ?? null);
-export interface EmployeeTools {
+export interface PartnerTools {
   definitions: NonNullable<Parameters<HostPort["start"]>[0]["tools"]>;
   context(admission: RunAdmission, input: string, sessionKey?: string): unknown;
   scheduledContext?(admission: RunAdmission): ScheduledMemoryContext | undefined;
@@ -38,8 +38,8 @@ export interface EmployeeTools {
 export class BusinessTools {
   private readonly readers = new Map<string, { owner: string; reader: BotReader }>();
   private admissionValidator?: AdmissionValidator;
-  private employeeTools?: (agentId: string, owner: string) => EmployeeTools;
-  private completed?: (input: CompletedEmployeeTurn) => void;
+  private partnerTools?: (agentId: string, owner: string) => PartnerTools;
+  private completed?: (input: CompletedPartnerTurn) => void;
   private approvals?: ApprovalPort;
   private files?: (agentId: string, binding: string) => Promise<SandboxFiles>;
   constructor(options: z.input<typeof feishuBotReadersSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
@@ -57,8 +57,8 @@ export class BusinessTools {
     }
   }
   setAdmissionValidator(validate: AdmissionValidator) { this.admissionValidator = validate; }
-  setEmployeeTools(provider: (agentId: string, owner: string) => EmployeeTools) { this.employeeTools = provider; }
-  onCompleted(callback: (input: CompletedEmployeeTurn) => void) { this.completed = callback; }
+  setPartnerTools(provider: (agentId: string, owner: string) => PartnerTools) { this.partnerTools = provider; }
+  onCompleted(callback: (input: CompletedPartnerTurn) => void) { this.completed = callback; }
   /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
   setApprovals(port: ApprovalPort) { this.approvals = port; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
@@ -71,11 +71,11 @@ export class BusinessTools {
   host(agentId: string, owner: string, binding: string, http: ServiceHttp): HostPort {
     const entry = this.readers.get(agentId);
     const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
-    const employee = this.employeeTools?.(agentId, owner);
-    if (!bot && !appReader && !employee) return new HttpAgentHost(http);
+    const partner = this.partnerTools?.(agentId, owner);
+    if (!bot && !appReader && !partner) return new HttpAgentHost(http);
     const files = this.files, skills = this.skills;
     const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
-      { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, employee, this.completed,
+      { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
@@ -84,7 +84,7 @@ export class BusinessTools {
     return host;
   }
 }
-export interface CompletedEmployeeTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
+export interface CompletedPartnerTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
 /** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
 interface ConnectedAppHosting {
   connections: string[];
@@ -114,8 +114,8 @@ export class BusinessHost extends HttpAgentHost {
   beforeStart?: () => Promise<unknown>;
   constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
-    private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly employee?: EmployeeTools,
-    private readonly completed?: (input: CompletedEmployeeTurn) => void, private readonly apps?: ConnectedAppHosting) {
+    private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly partner?: PartnerTools,
+    private readonly completed?: (input: CompletedPartnerTurn) => void, private readonly apps?: ConnectedAppHosting) {
     super(http);
     if (apps?.approvals) this.approvals = new ConnectorApprovals(store, scope, apps.approvals, async (record, outcome) => {
       let value: unknown;
@@ -141,17 +141,17 @@ export class BusinessHost extends HttpAgentHost {
         (admission.kind === "owner" && !admission.toolGrants || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
         ...(granted("connectedApps") && this.appReader ? [connectedAppDefinition] : []),
-        ...(admission && admission.kind !== "schedule" ? this.employee?.definitions ?? [] : [])];
+        ...(admission && admission.kind !== "schedule" ? this.partner?.definitions ?? [] : [])];
       const added = this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
       const priorInstructions = this.store.get<string>("business_session_instructions", sessionKey);
-      const snapshot = priorInstructions === undefined && admission ? this.employee?.context(admission, input.input, sessionKey) : undefined;
+      const snapshot = priorInstructions === undefined && admission ? this.partner?.context(admission, input.input, sessionKey) : undefined;
       const memory = snapshot && typeof snapshot === "object" && "text" in snapshot && typeof snapshot.text === "string" ? snapshot.text : "";
       // Frozen native instructions survive writes, restarts and forks. A scheduled
       // turn in an existing conversation retains that conversation's original snapshot.
       const instructions = priorInstructions ?? (memory ? `${request.instructions}\n\n${memory}` : request.instructions);
       // Admission is consumed here; native model input cannot grant itself access.
-      const reminder = admission?.kind === "owner" ? this.employee?.reminders?.(admission, input.sessionId) : undefined;
-      const scheduledMemory = admission?.kind === "schedule" ? this.employee?.scheduledContext?.(admission) : undefined;
+      const reminder = admission?.kind === "owner" ? this.partner?.reminders?.(admission, input.sessionId) : undefined;
+      const scheduledMemory = admission?.kind === "schedule" ? this.partner?.scheduledContext?.(admission) : undefined;
       let toolOutput = request.toolOutput;
       let memoryContext: ScheduledMemoryContext | Omit<ScheduledMemoryContext, "text"> | undefined = scheduledMemory;
       if (scheduledMemory && toolOutput) {
@@ -247,7 +247,7 @@ export class BusinessHost extends HttpAgentHost {
   }
   private ownsCall(call: HostCall) {
     return (removedTools.has(call.name) && !call.namespace) ||
-      [feishuDefinition, connectedAppDefinition, ...(this.employee?.definitions ?? [])].some(tool => sameTool(tool, call));
+      [feishuDefinition, connectedAppDefinition, ...(this.partner?.definitions ?? [])].some(tool => sameTool(tool, call));
   }
   override async calls(id: string): ReturnType<HostPort["calls"]> {
     // Synthetic IDs belong to Mau. A sandbox Host listing one could put its own text on Mau's approval.
@@ -265,7 +265,7 @@ export class BusinessHost extends HttpAgentHost {
             if (removedTools.has(call.name) && !call.namespace) throw new Error("tool_removed");
             const admission = this.admission(grant?.admission);
             if (!grant || !admission || call.runId !== id || !Number.isFinite(Date.parse(call.deadlineAt)) || Date.parse(call.deadlineAt) <= Date.now()) throw new Error("business_tool_not_authorized");
-            const productTool = this.employee?.definitions.some(d => sameTool(d, call));
+            const productTool = this.partner?.definitions.some(d => sameTool(d, call));
             const kind = call.name === connectedAppDefinition.name ? "connectedApps" : "feishu";
             if (productTool ? admission.kind === "schedule" : !(admission.kind === "owner" && !admission.toolGrants) && !admission.toolGrants?.[kind]) throw new Error("business_tool_not_authorized");
             if (!productTool && (kind === "connectedApps" ? !this.appReader : !this.bot)) throw new Error("business_tool_not_authorized");
@@ -283,7 +283,7 @@ export class BusinessHost extends HttpAgentHost {
               this.store.set("business_call_receipts", receiptKey, { hash });
             });
             if (productTool) {
-              result = await this.employee!.execute(call.name, call.input, admission, call.id, id);
+              result = await this.partner!.execute(call.name, call.input, admission, call.id, id);
             } else if (call.name === connectedAppDefinition.name) {
               const parsed = connectedAppInput.safeParse(call.input);
               if (!this.appReader || !parsed.success) throw new Error("business_tool_not_authorized");
@@ -298,7 +298,7 @@ export class BusinessHost extends HttpAgentHost {
           } catch (error) {
             const dependencyErrors = ["work_dependency_capacity_exhausted", "work_dependency_same_session", "work_dependency_run_not_active", "work_dependency_run_not_current", "work_dependency_context_mismatch", "work_dependency_wait_in_progress", "work_dependency_wait_unsupported", "invalid_dependency_wait_context"];
             result = { isError: true, error: error instanceof Error && ["tool_removed", "business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required", "steer_owner_admission_required", ...dependencyErrors].includes(error.message)
-              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.employee?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "feishu_read_unavailable",
+              ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.partner?.definitions.some(d => d.name === call.name) ? "employee_tool_unavailable" : "feishu_read_unavailable",
               ...(error instanceof Error && error.message === "work_dependency_capacity_exhausted" ? { instruction: "The fixed execution capacity is full. Finish this turn and inspect the existing event later; do not create a replacement task." } : {}) };
           }
           // A write awaiting the owner keeps its Host call pending; the approval card resolves it.

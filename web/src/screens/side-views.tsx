@@ -22,7 +22,7 @@ function SideHead({ title, detail, children, onClose }: { title: string; detail?
   );
 }
 
-/** The browser an employee handed over: Cloudflare's live view, operated here; Done or Failed in it ends the handoff. */
+/** The browser a partner handed over: Cloudflare's live view, operated here; Done or Failed in it ends the handoff. */
 export function BrowserSideView({ url, onClose }: { url: string; onClose(): void }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   return (
@@ -69,17 +69,17 @@ export function FileSideView({ api, attachment, onDownload, onClose }: {
   );
 }
 
-/** An employee's documents: the fixed instructions and the two memory files. */
-export type EmployeeDocument = "AGENTS.md" | "MEMORY.md" | "USER.md";
-export const employeeDocuments: readonly EmployeeDocument[] = ["AGENTS.md", "MEMORY.md", "USER.md"];
-export const memoryTarget = (name: EmployeeDocument): MemoryFile["target"] | undefined => name === "MEMORY.md" ? "memory" : name === "USER.md" ? "user" : undefined;
+/** A partner's documents: the fixed instructions and the two memory files. */
+export type PartnerDocument = "AGENTS.md" | "MEMORY.md" | "USER.md";
+export const partnerDocuments: readonly PartnerDocument[] = ["AGENTS.md", "MEMORY.md", "USER.md"];
+export const memoryTarget = (name: PartnerDocument): MemoryFile["target"] | undefined => name === "MEMORY.md" ? "memory" : name === "USER.md" ? "user" : undefined;
 const characters = (text: string) => [...text].length;
 
 /**
- * One of an employee's documents beside the conversation. The instructions are read-only. A memory file is edited as
+ * One of a partner's documents beside the conversation. The instructions are read-only. A memory file is edited as
  * one Markdown document with a divider between its entries, and saved as the changes to those entries.
  */
-export function DocumentSideView({ session, agentId, name, onClose }: { session: Session; agentId: string; name: EmployeeDocument; onClose(): void }) {
+export function DocumentSideView({ session, agentId, name, onClose }: { session: Session; agentId: string; name: PartnerDocument; onClose(): void }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const { toast } = useToast();
   const queries = useQueryClient();

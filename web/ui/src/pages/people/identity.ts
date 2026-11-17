@@ -3,7 +3,7 @@ export type MemberAvatarMode = 'generated' | 'initials' | 'upload';
 /** Display identity only. Account ownership, membership and model selection remain caller-owned. */
 export interface MemberIdentity {
   id: string;
-  employeeDefinitionId?: string;
+  partnerDefinitionId?: string;
   name: string;
   displayName?: string;
   userOverrides?: string[];
@@ -24,8 +24,8 @@ export function memberDisplayName(member: Pick<MemberIdentity,'name'|'displayNam
   if(member.userOverrides?.includes('name')) return member.name;
   return member.displayName?.trim() || member.name;
 }
-export function memberAvatarSeed(member: Pick<MemberIdentity,'id'|'employeeDefinitionId'>): string {
-  return member.employeeDefinitionId?.trim() || member.id.trim() || 'employee';
+export function memberAvatarSeed(member: Pick<MemberIdentity,'id'|'partnerDefinitionId'>): string {
+  return member.partnerDefinitionId?.trim() || member.id.trim() || 'employee';
 }
 export interface GroupIdentity {
   id: string;

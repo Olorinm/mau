@@ -141,13 +141,13 @@
   padding: 0;
 }
 
-.contacts-employee-detail {
+.contacts-partner-detail {
   height: 100%;
   overflow: hidden;
 }
 
 /* Keep the remote identity next to the editable name, including short names. */
-.contacts-employee-title[data-remote="true"] {
+.contacts-partner-title[data-remote="true"] {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -156,7 +156,7 @@
   font-size: var(--fs-xl);
 }
 
-.contacts-employee-title[data-remote="true"] input {
+.contacts-partner-title[data-remote="true"] input {
   field-sizing: content;
   flex: 0 1 auto;
   width: auto;
@@ -165,7 +165,7 @@
   padding-inline: 0;
 }
 
-.contacts-employee-settings-surface {
+.contacts-partner-settings-surface {
   --rooms-bg: var(--c-bg);
   --rooms-panel: var(--c-surface);
   --rooms-panel-soft: var(--c-surface-sunken);
@@ -185,7 +185,7 @@
   color: var(--rooms-text);
 }
 
-.contacts-employee-summary {
+.contacts-partner-summary {
   --contacts-summary-action-top: var(--sp-4);
   --contacts-summary-action-size: var(--sp-8);
   --contacts-summary-action-gap: var(--sp-2);
@@ -209,7 +209,7 @@
   color: var(--c-error);
 }
 
-.contacts-employee-activity-current {
+.contacts-partner-activity-current {
   display: grid;
   grid-template-columns: var(--sp-6) auto;
   align-items: center;
@@ -218,11 +218,11 @@
   min-width: 0;
 }
 
-.contacts-employee-activity-current[data-active="true"] {
+.contacts-partner-activity-current[data-active="true"] {
   color: var(--c-link);
 }
 
-.contacts-employee-activity-current-status {
+.contacts-partner-activity-current-status {
   display: grid;
   place-items: center;
   width: var(--sp-6);
@@ -230,11 +230,11 @@
   color: var(--rooms-muted);
 }
 
-.contacts-employee-activity-current[data-active="true"] .contacts-employee-activity-current-status {
+.contacts-partner-activity-current[data-active="true"] .contacts-partner-activity-current-status {
   color: var(--c-link);
 }
 
-.contacts-employee-activity-current strong {
+.contacts-partner-activity-current strong {
   overflow: hidden;
   color: var(--rooms-text);
   font-size: var(--fs-md);

@@ -22,7 +22,7 @@ const captureStderr = () => {
 const environments = (f: Awaited<ReturnType<typeof mauFixture>>) => (f.mau.environments as any).store as DurableStore;
 const rule = (agentId: string, id: string, extra: Record<string, unknown> = {}) => ({ id, owner: "@alice:example.test", agentId, status: "active", version: 1, ...extra });
 
-it("deletes an employee with its environment, memory, schedules and product records, leaving other employees and the workspace", async () => {
+it("deletes a partner with its environment, memory, schedules and product records, leaving other partners and the workspace", async () => {
   const f = await mauFixture(cleanup);
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
@@ -57,13 +57,13 @@ it("deletes an employee with its environment, memory, schedules and product reco
   expect(after.entries("connector_approvals")).toHaveLength(0);
   expect(after.entries("employee_memory_pending").map((r) => r.id)).toEqual(["p2"]);
   after.close();
-  // A new employee may reuse the name and gets a fresh identity and environment.
+  // A new partner may reuse the name and gets a fresh identity and environment.
   const again = await f.api("/agents", { name: "helper", profileId: "cloud" });
   expect(again.status).toBe(202);
   expect(again.data.agent.id).not.toBe(f.agent.id);
 });
 
-it("keeps the employee when a schedule run is in flight or the cloud refuses to destroy its environment", async () => {
+it("keeps the partner when a schedule run is in flight or the cloud refuses to destroy its environment", async () => {
   const f = await mauFixture(cleanup);
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   await f.settled();
@@ -86,7 +86,7 @@ it("keeps the employee when a schedule run is in flight or the cloud refuses to 
   expect(f.cloud.size).toBe(0);
 });
 
-it("deletes an employee whose environment was already destroyed, even when its provider is no longer configured", async () => {
+it("deletes a partner whose environment was already destroyed, even when its provider is no longer configured", async () => {
   const f = await mauFixture(cleanup);
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   await f.settled();
@@ -106,7 +106,7 @@ it("treats retained and retired environments of a removed provider as gone, but 
     ref: { provider: "retired-provider", id: "released-cluster-sandbox" }, previous: undefined });
   store.set("environments", f.agent.id, { ...current, previous: gone("00000000-0000-4000-8000-000000000001") });
   store.set("retired_environments", "00000000-0000-4000-8000-000000000002", gone("00000000-0000-4000-8000-000000000002"));
-  // The current environment's outcome is unknown: retained records are settled, the employee stays.
+  // The current environment's outcome is unknown: retained records are settled, the partner stays.
   const info = f.provider.info;
   f.provider.info = async () => { throw new Error("cloud_timeout"); };
   captureStderr();
@@ -131,7 +131,7 @@ it("treats retained and retired environments of a removed provider as gone, but 
   expect(g.service.agent(g.agent.id).status).toBe("active");
 });
 
-it("deletes an employee whose sandbox is already missing without rebuilding its channel runtime", async () => {
+it("deletes a partner whose sandbox is already missing without rebuilding its channel runtime", async () => {
   const f = await mauFixture(cleanup);
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");

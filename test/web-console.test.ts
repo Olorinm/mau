@@ -45,10 +45,10 @@ async function browser(f: Fixture, claims: Record<string, unknown> = {}) {
 }
 
 // Conversations are served by Router's owner ledger; without these flags the console has no conversation page.
-/** An employee's figure in the header row of the conversation page. */
+/** A partner's figure in the header row of the conversation page. */
 const agentChip = (page: Page, agentId: string) =>
   page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
-/** The employee profile in the people panel (the former contacts detail); the current employee's figure opens it. */
+/** The partner profile in the people panel (the former contacts detail); the current partner's figure opens it. */
 const profileCard = (page: Page) =>
   page.getByRole("complementary", { name: "伙伴资料" });
 /** The profile's sections are icon tabs: 状态, 消息渠道, 能力 and 配置. */
@@ -60,7 +60,7 @@ const profileState = (page: Page) => profileCard(page).locator(".agent-status-li
 it.skipIf(!built)(
   "opens from the Access session, provisions an agent, controls its environment, connects a channel and signs out",
   async () => {
-    // What the employee's kernel reports and its runtime owner allows callers to select.
+    // What the partner's kernel reports and its runtime owner allows callers to select.
     const host = (url: URL) => url.pathname.endsWith("/runtimes/discover") ? Response.json({ id: "personal", kernel: "codex", model: "large",
       allowedSettings: { model: { values: ["large", "small"] }, effort: { values: ["low", "high"] } },
       native: { models: { data: [
@@ -131,7 +131,7 @@ it.skipIf(!built)(
       "未配置环境",
     );
 
-    // A new employee is created from the "+" of the 伙伴 section in the full list of conversations.
+    // A new partner is created from the "+" of the 伙伴 section in the full list of conversations.
     await page.getByRole("button", { name: "全部对话", exact: true }).click();
     await page
       .getByRole("complementary", { name: "全部对话" })
@@ -147,7 +147,7 @@ it.skipIf(!built)(
       "true",
     );
     await dialog.getByRole("button", { name: "创建" }).click();
-    // The new employee's conversation opens; its figure opens its profile.
+    // The new partner's conversation opens; its figure opens its profile.
     const writer = page.locator(".mau-chip[aria-selected='true']");
     await see(writer).toHaveAttribute("title", "writer");
     expect(await writer.getAttribute("data-chat-key")).toMatch(/^agent:.+/);
@@ -198,8 +198,8 @@ it.skipIf(!built)(
       await profile.getByRole("combobox", { name, exact: true }).click();
       await page.getByRole("option", { name: option, exact: true }).click();
     };
-    const employees = (await (await fetch(f.base + "/_mau/v1/agents", { headers: f.edgeHeaders() })).json()).data as Array<{ agent: { id: string; name: string } }>;
-    const writerId = employees.find((item) => item.agent.name === "writer")!.agent.id;
+    const partners = (await (await fetch(f.base + "/_mau/v1/agents", { headers: f.edgeHeaders() })).json()).data as Array<{ agent: { id: string; name: string } }>;
+    const writerId = partners.find((item) => item.agent.name === "writer")!.agent.id;
     const saved = async () => (await (await fetch(`${f.base}/_mau/v1/agents/${writerId}/model-settings`, { headers: f.edgeHeaders() })).json()).selection;
     await see(profile.getByRole("combobox", { name: "模型", exact: true })).toContainText("默认 · Large");
     await choose("思考强度", "高");
@@ -272,7 +272,7 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
       });
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    // `?agent=` opens the conversation with that partner; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
@@ -294,7 +294,7 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
 );
 
 it.skipIf(!built)(
-  "the profile lists the employee's documents: instructions are read beside the conversation and memory is edited there as one document",
+  "the profile lists the partner's documents: instructions are read beside the conversation and memory is edited there as one document",
   async () => {
     const f = await mauFixture(cleanup, { webRoot });
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
@@ -384,7 +384,7 @@ it.skipIf(!built)(
       });
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    // `?agent=` opens the conversation with that partner; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
@@ -450,7 +450,7 @@ it.skipIf(!built)(
       }),
     );
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    // `?agent=` opens the conversation with that employee; its channels are in the profile card.
+    // `?agent=` opens the conversation with that partner; its channels are in the profile card.
     await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
@@ -482,7 +482,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "composes generic pages with Mau-owned messages and never calls a native kernel or Bridge",
   async () => {
-    // The employee answers through a fixture Host behind Router; the browser only ever talks to Mau and Router.
+    // The partner answers through a fixture Host behind Router; the browser only ever talks to Mau and Router.
     const runs = new Map<string, Record<string, unknown>>();
     const host = (url: URL, init?: RequestInit) => {
       const method = init?.method ?? "GET", path = url.pathname;
@@ -895,7 +895,7 @@ it.skipIf(!built)(
     await see(page.getByLabel("密码")).toHaveCount(0);
     // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
     await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
-    // Returning to the conversation page reads the employees again.
+    // Returning to the conversation page reads the partners again.
     await page.getByRole("button", { name: "App 商店", exact: true }).click();
     await page.getByRole("button", { name: "对话", exact: true }).click();
     await see(page.getByText("登录已过期")).toBeVisible();

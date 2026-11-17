@@ -16,9 +16,9 @@ import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policyS
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
-import { EmployeeContext, MemoryError } from "./employee-context.js";
+import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, type ProactivePort } from "./proactive.js";
-import { NativeEmployeeTools } from "./native-work.js";
+import { NativePartnerTools } from "./native-work.js";
 import { SessionHistory, historyQuery } from "./session-history.js";
 import { checkConnector } from "./connector-precheck.js";
 import { MemoryReviewCoordinator, type RestrictedMemoryReviewer } from "./memory-review.js";
@@ -54,9 +54,9 @@ type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
 interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined }
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
-/** Product records keyed or tagged by a deleted employee: business scopes (`agentId:operation`), JSON keys
+/** Product records keyed or tagged by a deleted partner: business scopes (`agentId:operation`), JSON keys
  * starting with [owner, agentId], and values naming the Agent. Hashed index rows are unreachable once the ID is gone. */
-function forgetEmployeeRecords(store: DurableStore, owner: string, agentId: string) {
+function forgetPartnerRecords(store: DurableStore, owner: string, agentId: string) {
   const prefix = JSON.stringify([owner, agentId]).slice(0, -1);
   store.db.prepare(`DELETE FROM documents WHERE id=? OR substr(id,1,length(?)+1)=?||':' OR substr(id,1,length(?))=?
     OR json_extract(value,'$.agentId')=? OR json_extract(value,'$.admission.agentId')=?`)
@@ -94,8 +94,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
-      // Deleting an employee: stop its schedules and destroy its environments while Router still has the Agent,
-      // then remove Mau's per-employee state after Router has deactivated it.
+      // Deleting a partner: stop its schedules and destroy its environments while Router still has the Agent,
+      // then remove Mau's per-partner state after Router has deactivated it.
       beforeDelete: async agent => {
         proactive.suspendAgent(agent.id);
         await environments.removeAgent(agent.owner, agent.id);
@@ -106,7 +106,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         facts.forget(agent.owner, agent.id);
         history.forget(agent.owner, agent.id);
         proactive.forgetAgent(agent.id);
-        forgetEmployeeRecords(businessStore, agent.owner, agent.id);
+        forgetPartnerRecords(businessStore, agent.owner, agent.id);
         modelSettings.forget(agent.id);
         await dependencies.router?.afterDelete?.(agent);
       },
@@ -144,7 +144,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   };
   const assertOwned = (owner: string, agentId: string) => { router.service.owned(agentId, owner); };
   const modelSettings = new ModelSettings(businessStore, sessions);
-  const facts = new EmployeeContext(businessStore, assertOwned, { directory: join(config.stateDir, "mau", "memories"), writeApproval: options.nativeWork.memory.writeApproval });
+  const facts = new PartnerContext(businessStore, assertOwned, { directory: join(config.stateDir, "mau", "memories"), writeApproval: options.nativeWork.memory.writeApproval });
   const history = new SessionHistory(businessStore, assertOwned);
   const proactiveStore = new DurableStore(join(config.stateDir, "proactive.sqlite"), config.serverName);
   const delivery = (value: { state: string; externalId?: string | null | undefined; error?: string | null | undefined } | null) => value ? {
@@ -195,11 +195,11 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.employeeTools);
   const nativeRelay = new NativeRelay(businessStore, {
-    employees: () => options.nativeWork.employeeTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
+    partners: () => options.nativeWork.employeeTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
       try { return [{ agentId: b.agentId, owner: router.service.agent(b.agentId).owner, operationId: b.operationId, runtimeId: b.runtimeId }]; }
       catch { return []; }
     }) : [],
-    host: employee => new HttpAgentHost(environments.http(employee.agentId, employee.operationId, false, { activity: false })),
+    host: partner => new HttpAgentHost(environments.http(partner.agentId, partner.operationId, false, { activity: false })),
     sessions,
     publicSession: (owner, agentId, hostSessionId) => completedTurns.publicSession(owner, agentId, hostSessionId),
     touch: agentId => environments.touch(agentId),
@@ -211,7 +211,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     return review ? admission.kind === "delegation" && ["submitting", "running"].includes(review.status) && !review.cancellationRequested
       : proactive.allows(admission);
   });
-  business.setEmployeeTools((agentId, owner) => new NativeEmployeeTools(owner, agentId, () => sessions(owner, agentId),
+  business.setPartnerTools((agentId, owner) => new NativePartnerTools(owner, agentId, () => sessions(owner, agentId),
     facts, connectedApps, proactive, options.nativeWork.employeeTools, { history,
       reminders: (admission, hostSessionId) => {
         const sessionId = completedTurns.publicSession(admission.owner, admission.agentId, hostSessionId);

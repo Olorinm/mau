@@ -12,7 +12,7 @@ type FakeTurn = { state: string; runs: Array<{ claimId: string; runId: string | 
 /**
  * Router's owner ledger (agent-router ADR 0005 section 8) for one DM, answered by Playwright: the chat's history and
  * its turns are scripted by the test, while the runs behind them are read through Router's run routes as usual.
- * The employee list still comes from the real Mau fixture.
+ * The partner list still comes from the real Mau fixture.
  */
 async function fakeLedger(page: Page, agentId: string, turnOf: (turnId: string) => FakeTurn | Promise<FakeTurn>) {
   const chatId = "dm:" + agentId, events: any[] = [];
@@ -59,7 +59,7 @@ async function fakeLedger(page: Page, agentId: string, turnOf: (turnId: string) 
       const question = append({ kind: "message", role: "user", text, channel: { kind: "web" } }, owner);
       append({ kind: "turn", turnId, agentId, state, inputEventIds: [question.eventId] }, { type: "system", id: "router", name: "Router" });
     },
-    /** A reply of the employee: inside a turn, or on its own (`turnId` undefined). */
+    /** A reply of the partner: inside a turn, or on its own (`turnId` undefined). */
     reply(turnId: string | undefined, text: string, final = true) {
       append({ kind: "message", role: "assistant", text, ...(turnId ? { turnId, ...(final ? { final: true } : {}) } : {}) }, agent);
     },
@@ -117,7 +117,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   page.setDefaultTimeout(8000);
   const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page, f.base);
-  // The employee is in the header row before any chat exists; a click opens the DM.
+  // The partner is in the header row before any chat exists; a click opens the DM.
   await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…"); await see(composer).toBeVisible();
   await composer.fill("测试执行过程"); await page.getByRole("button", { name: "发送消息", exact: true }).click();

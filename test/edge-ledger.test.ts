@@ -27,7 +27,7 @@ it("refuses to start without an edge identity: there is no other owner login", a
   await expect(mauFixture(cleanup, {}, { edgeIdentity: undefined })).rejects.toThrow("edge_identity_required");
 });
 
-it("creates, configures and deletes employees and serves the edge-only info", async () => {
+it("creates, configures and deletes partners and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();
   expect(await (await fetch(f.base + root + "/info")).json()).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });
@@ -45,7 +45,7 @@ it("creates, configures and deletes employees and serves the edge-only info", as
   // A Matrix connection cannot be added while Matrix is off.
   expect((await f.api(`/agents/${f.agent.id}/connections`, { kind: "matrix" }, "alice", "/_agent-router/v1")).data).toEqual({ error: "invalid_request" });
 
-  // A new employee through Mau, then deletion: no account is deactivated.
+  // A new partner through Mau, then deletion: no account is deactivated.
   const created = await f.api("/agents", { name: "writer", profileId: "cloud" });
   expect(created.status).toBe(202);
   expect(created.data.agent).toMatchObject({ name: "writer" });
@@ -96,7 +96,7 @@ it.skipIf(!built)("runs the console without any Matrix code path", async () => {
   page.setDefaultTimeout(10_000);
   // No login page: the console starts from the Access session, and chats come from the ledger.
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  // The employee is in the header row before any chat exists; a click opens the DM.
+  // The partner is in the header row before any chat exists; a click opens the DM.
   await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
