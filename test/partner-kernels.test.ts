@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DurableStore } from "../src/store.js";
 import { privateFile } from "../src/files.js";
 import { KERNEL_KEPT, OTHER_KERNELS, incomingText } from "../src/partner-text.js";
+import { codexAccount } from "../src/environments.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
 import { partnersFixture, type PartnersFixture, type Turn } from "./fixtures/partners.js";
 
@@ -283,6 +284,35 @@ it("names the model endpoints of a profile that offers other kernels to the prov
   expect((await f.api(f.path + "/resume", {})).status).toBe(202); expect((await f.settled()).state).toBe("ready");
   expect(requests.at(-1)).toEqual({ call: "resume", modelServices: ["openai", "anthropic"] });
 }, 60_000);
+
+it("holds an environment to the ChatGPT account of its Codex sign-in file on create and resume, with an override and an opt-out", async () => {
+  const jwt = (account?: string) => `e30.${Buffer.from(JSON.stringify(account ? { "https://api.openai.com/auth": { chatgpt_account_id: account } } : {})).toString("base64url")}.c2ln`;
+  expect(codexAccount(JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: jwt("account-access"), id_token: jwt("account-id"), account_id: "account-recorded" } }))).toBe("account-access");
+  expect(codexAccount(JSON.stringify({ tokens: { access_token: jwt(), id_token: jwt("account-id"), account_id: "account-recorded" } }))).toBe("account-id");
+  expect(codexAccount(JSON.stringify({ tokens: { access_token: "opaque", account_id: "account-recorded" } }))).toBe("account-recorded");
+  for (const content of ["", "not json", "null", "{}", JSON.stringify({ OPENAI_API_KEY: "fixture-not-a-key" }), JSON.stringify({ auth_mode: "apikey", tokens: { account_id: "account-recorded" } }),
+    JSON.stringify({ tokens: { account_id: "not an id" } }), JSON.stringify({ tokens: { account_id: 7 } })]) expect(codexAccount(content), content).toBeUndefined();
+  const requests: Array<{ call: string; options: unknown }> = [];
+  const run = async (profile: Record<string, unknown>, auth: unknown = { auth_mode: "chatgpt", tokens: { access_token: jwt("account-1"), account_id: "account-1" } }) => {
+    requests.length = 0;
+    const f = await mauFixture(cleanup, { profile });
+    privateFile(join(f.directory, "codex-auth.json"), auth);
+    const { create, resume } = f.provider;
+    f.provider.create = async (input) => { const { modelServices, modelAccounts } = input as Record<string, unknown>; requests.push({ call: "create", options: { modelServices, modelAccounts } }); return create(input); };
+    f.provider.resume = async (id, seconds, options) => { requests.push({ call: "resume", options }); return resume(id, seconds, options); };
+    expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202); expect((await f.settled()).state).toBe("ready");
+    expect((await f.api(f.path + "/pause", {})).status).toBe(202); expect((await f.settled()).state).toBe("paused");
+    expect((await f.api(f.path + "/resume", {})).status).toBe(202); expect((await f.settled()).state).toBe("ready");
+    return structuredClone(requests);
+  };
+  const files = [{ source: "codex-auth.json", destination: "/home/user/.codex/auth.json" }];
+  expect(await run({ files })).toEqual([{ call: "create", options: { modelAccounts: { openai: ["account-1"] } } }, { call: "resume", options: { modelAccounts: { openai: ["account-1"] } } }]);
+  expect(await run({ files, modelAccounts: { openai: ["account-2", "account-3"] } })).toEqual([{ call: "create", options: { modelAccounts: { openai: ["account-2", "account-3"] } } },
+    { call: "resume", options: { modelAccounts: { openai: ["account-2", "account-3"] } } }]);
+  expect(await run({ files, modelAccounts: false })).toEqual([{ call: "create", options: {} }, { call: "resume", options: undefined }]);
+  // A sign-in file with an API key names no account: the requests are what they were.
+  expect(await run({ files }, { OPENAI_API_KEY: "fixture-not-a-key" })).toEqual([{ call: "create", options: {} }, { call: "resume", options: undefined }]);
+}, 120_000);
 
 it("refuses a profile whose kernels do not match its Host configuration or repeat", async () => {
   // The other kernel's runtime is missing from the Host configuration, or works in another directory.

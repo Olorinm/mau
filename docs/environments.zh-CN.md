@@ -54,6 +54,7 @@ mau resume
 - Host 配置里必须有对应 `id` 和 `kernel` 的 runtime，且 `cwd` 与主 runtime 相同，否则创建环境返回 `environment_runtime_profile_mismatch`。示例见 [host-two-kernels.json](../examples/cloud/host-two-kernels.json)，Mau 原样上传该文件。
 - 每项的 `files` 是该内核的私有文件（模型凭证），创建环境时和方案自己的 `files` 一起上传，权限 0600。凭证按内核注入，不按伙伴隔离：沙箱里所有伙伴以同一个用户运行，各内核、各伙伴都能读到其他内核的凭证文件；不能接受时请使用独占环境。凭证不进仓库，也不写进 Host 配置。
 - 方案声明了 `otherKernels` 时，每次创建和恢复环境，Mau 把全部内核需要的模型服务告诉云服务：`codex` 对应 `openai`，`claude` 对应 `anthropic`。网关只放行这些服务里审核过的地址；私有模型网关或其他服务商需要改网关规则。没有 `otherKernels` 的方案不指定，发给云服务的请求与之前完全相同，由网关默认值决定。网关会保留最后一次收到的列表：从方案里去掉 `otherKernels` 后，已有环境仍沿用较宽的列表，需要运营者在网关侧重置。
+- `modelAccounts` 把环境限定在自己的模型账号上。被诱导的 Agent 否则可以带着别人的登录凭证，把数据发到同一家模型服务的另一个账号里；设置后网关拒绝携带其他账号令牌的 ChatGPT 后端请求，也拒绝 `api.openai.com`。不写时，Mau 从方案的 Codex 登录文件（`files` 里目标路径以 `/.codex/auth.json` 结尾的那一项）读出 ChatGPT 账号（访问令牌里的账号，其次是 `tokens.account_id`），每次创建和恢复环境时一并发给云服务。写 `"modelAccounts": { "openai": ["<账号 ID>", …] }` 可自行指定（最多八个），写 `"modelAccounts": false` 则不发送。登录文件使用 API key 或读不出账号时不发送：这类环境需要 `api.openai.com`，限定账号后无法访问。网关在环境下次启动时生效，并保留最后一次收到的账号。已存在的环境在下次恢复时生效；想立即生效，暂停后再恢复。
 - `otherKernels` 不属于环境的身份标识：之后再加内核不会让已有绑定和会话失效，已有伙伴的 runtime 不变。Mau 不改写已存在环境里的文件：需要自己把 runtime 加进沙箱的 `host.json`（同时更新 `ready.json` 的哈希）、放好凭证，让方案的 Host 配置与之逐字节一致，并等 Host 重启；出口放行在环境下一次恢复时生效。
 - 伙伴的内核在创建时选定（`shareWith` 旁的 `kernel`，或[招募](native-work.md#partners)时的 `kernel`），之后不能改；不填就用主内核。方案没有提供的内核返回 `environment_kernel_not_available` 和 `kernels`；Host 里没有或不可用的返回 `environment_kernel_not_ready`。`GET /_mau/v1/options` 列出方案的 `kernels`，Agent 概要里的 `kernel` 是它自己运行的内核。
 

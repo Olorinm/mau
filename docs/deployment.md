@@ -110,6 +110,11 @@ Each request leaves one JSON line: time, method, path without the query, status,
 No header, query or body is kept. Lines are written to the access-record bucket in batches as
 `<date>/<time>-<sequence>.jsonl`, at the latest ten minutes after the request.
 
+The liveness probe (`/health/live`) is not recorded. Records wait in the Durable Object's storage until they are
+written out; at most 50,000 wait, and beyond that the oldest are dropped, so a flood of requests cannot fill the
+storage. A record that cannot be stored is skipped and the request is still answered (`mau_access_record_failed`
+in the Worker's log, at most once a minute). How long the written lines are kept is the bucket's lifecycle rule.
+
 ## Daily backup
 
 With `BACKUP_HOUR_UTC` set, the Durable Object runs Agent Environment's

@@ -140,6 +140,20 @@ must be isolated.
   the provider are the same as before, and the gateway's default applies. The gateway keeps the
   last list it was given, so after `otherKernels` is removed from a profile its existing
   environments keep the wider list until an operator resets it at the gateway.
+- `modelAccounts` holds the environment to its own account at a model service
+  (`modelAccounts` of
+  [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment)). An agent
+  that is talked into it could otherwise send the owner's data to the same model provider under
+  someone else's sign-in; with it the gateway refuses a ChatGPT backend request that carries
+  another account's token, and refuses `api.openai.com`. Omitted, Mau reads the ChatGPT account
+  from the profile's Codex sign-in file (the `files` entry whose destination ends in
+  `/.codex/auth.json`: the account its access token names, else `tokens.account_id`) and sends it
+  with every create and resume. Set `"modelAccounts": { "openai": ["<account id>", …] }` to name
+  the accounts yourself (at most eight), or `"modelAccounts": false` to send none. Nothing is sent
+  when the sign-in file uses an API key or names no account: such an environment needs
+  `api.openai.com`, which a held environment cannot reach. The gateway applies the accounts when
+  the environment next starts and keeps the last ones it was given. An environment that already
+  exists gets them at its next resume: pause and resume it to apply them at once.
 - `otherKernels` is not part of what identifies an existing environment. Offering a kernel later
   does not invalidate bindings or sessions, and the partners that exist keep their runtime. Mau
   does not rewrite the files of an environment that already exists: add the runtime to its

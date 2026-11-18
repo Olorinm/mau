@@ -36,7 +36,7 @@ MAU_WEB_ROOT=web/dist MAU_CONFIG_FILE=/private/mau.json npm start
 
 ## 登录（Cloudflare Access）
 
-控制台没有登录页，也不保存令牌，唯一的登录方式是边缘身份：`mau.json` 配置 `edgeIdentity`（与 Router 的 `edgeIdentity` 同形）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`。没有配置 `edgeIdentity`（`edge_identity_required`）或没有开启 Router 账本（`ledger_read_required`）时 Mau 拒绝启动；Mau 始终以关闭 Matrix 的方式运行 Router，不配置也不访问任何 Matrix 服务器。
+控制台没有登录页，也不保存令牌，唯一的登录方式是边缘身份：`mau.json` 配置 `edgeIdentity`（与 Router 的 `edgeIdentity` 同形）后，Router 对每个 `/_mau/v1`、`/_agent-router/v1` 所有者请求和 SSH 升级校验 `Cf-Access-Jwt-Assertion` JWT，并按配置把邮箱（或服务令牌）映射到所有者；从不信任明文邮箱头或 `CF_Authorization` cookie。服务令牌不等于所有者本人登录：除非它在 `serviceTokens` 里写成 `{ "owner": "...", "access": "owner" }`，否则只能读取（`GET`、`HEAD`，不含 SSH 升级），以及在 Router 的网页接口上发聊天消息、打开私聊、标记已读、申请 socket 票据；其余请求（即 `/_mau/v1` 下的全部写操作）返回 `403 owner_sign_in_required`。`GET /_mau/v1/info` 返回 `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`。没有配置 `edgeIdentity`（`edge_identity_required`）或没有开启 Router 账本（`ledger_read_required`）时 Mau 拒绝启动；Mau 始终以关闭 Matrix 的方式运行 Router，不配置也不访问任何 Matrix 服务器。
 
 - 启动时凭同域 Access cookie 读取 `GET /_mau/v1/account`，由 Cloudflare 附加 JWT。
 - 未开通的账号显示整页“此账号未开通 Mau（邮箱）”和“切换账号”（Access 退出）。

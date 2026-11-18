@@ -4,6 +4,35 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.54] - 2026-11-19
+
+- Pins Agent Kit 0.11.0-alpha.6. Approvals are decided only by a card button; a typed reply is an ordinary message.
+  An Access service token is read-only under `/_mau/v1` and cannot open the SSH tunnel unless it has
+  `"access": "owner"`.
+- Connector approval cards show every argument in full; only file bytes are shown as a size, and invisible
+  characters are made visible. An operation whose summary and arguments exceed 3500 characters is refused with
+  `approval_too_long_to_display` before a card is shown, for run cards and partner approval cards.
+  `card.display.partnerApproval.argumentsShortened` is removed.
+- Scheduled rules an Agent creates, changes or enables through `proactive_work` wait for the owner: nothing is
+  saved until the owner confirms a card in their conversation with the Agent that shows the schedule, the full
+  instruction, the connections it may read and where results go. An existing rule keeps its saved version and state
+  until then. Pausing, and rules saved through the owner API, take effect directly. Unanswered cards expire after
+  three days.
+- Every change of a partner's memory is recorded with its origin (the owner's own turn, a partner's message or
+  results, or a memory review), keeping the last 100 per partner. Owner routes list the changes, mark them seen and
+  undo one; an undo is refused with `memory_undo_conflict` when the memory has changed in that place since. The
+  partner profile lists the changes that were not the owner's since the owner last looked, with their source and an
+  undo.
+- Browser connection: a setting to open new sites directly or always ask, and an always-allowed list with remove
+  (`GET|PUT /_mau/v1/connector-accounts/:id/access`). When set to always ask, a new site shows a card in the owner's
+  conversation (allow for this task / always allow / deny); the call waits and runs once allowed. Turns that cannot
+  ask reach always-allowed sites only.
+- Cloud environments are held to the ChatGPT account of the profile's Codex sign-in file (`modelAccounts`, sent on
+  every create and resume). A profile can name the accounts or set `modelAccounts: false`. The environment gateway
+  must be the one from Agent Kit 0.11.0-alpha.6 or later; an older gateway refuses the field.
+- Cloudflare entry: `/health/live` is not recorded in the access log, a failed access record no longer fails the
+  request, and at most 50,000 records wait in storage (oldest dropped).
+
 ## [0.1.0-alpha.53] - 2026-11-19
 
 - The browser handoff card carries its live-view link in a structured field, the only place the console reads it

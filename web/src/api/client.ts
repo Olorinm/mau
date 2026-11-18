@@ -49,6 +49,17 @@ export interface EnvironmentProfile { id: string; label: string; kernel: string;
 export interface MemoryFile { file: string; entries: string[]; usage: { used: number; limit: number } }
 /** Entries of the memory are separated by this line; the server stores and counts them joined with it. */
 export const memoryDelimiter = "\n§\n";
+/** One entry as a change of the memory left it. */
+export type MemoryChange = { action: "add"; text: string } | { action: "replace"; before: string; after: string } | { action: "remove"; text: string; index: number };
+/**
+ * One change of a partner's memory. `origin` is `owner` for the owner's own turns, edits and undos; `source` names the
+ * partners whose message or results the turn was handling. `unseen`: not the owner's, and newer than the owner last saw.
+ */
+export interface MemoryMutation {
+  id: string; seq: number; at: string; origin: "owner" | "delegation" | "review";
+  source?: { kind: "message" | "result"; partners: Array<{ id: string; name: string }> };
+  changes: MemoryChange[]; undoOf?: string; undoneAt?: string; unseen: boolean;
+}
 export type MemoryOperation = { action: "add"; content: string } | { action: "remove"; old_text: string } | { action: "replace"; old_text: string; content: string };
 export interface ConnectorAccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
@@ -79,6 +90,9 @@ export interface PolicyOperation {
 export interface PolicyGroup { id: string; label: string; labelZh: string; operations: PolicyOperation[] }
 /** Per-operation permissions of one connector account. */
 export interface ConnectorPolicy { groups: PolicyGroup[]; background?: PolicyOperation[] }
+export type WebAccess = "direct" | "ask";
+/** A browser connection's site permissions: whether new sites open directly or ask first, and the sites always allowed. */
+export interface SiteAccess { webAccess: WebAccess; sites: string[] }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -125,6 +139,9 @@ export function mauApi(token: string) {
     connectWithOperations: (id: string, operations: string[]) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/connect", { token, body: { operations }, credentials: "same-origin", timeoutMs: 150_000 }),
     connectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token }),
     updateConnectorPolicy: (id: string, settings: Record<string, PolicySetting>) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token, method: "PUT", body: { settings } }),
+    connectorSiteAccess: (id: string) => request<SiteAccess>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/access", { token }),
+    updateConnectorSiteAccess: (id: string, change: { webAccess: WebAccess } | { remove: string }) =>
+      request<SiteAccess>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/access", { token, method: "PUT", body: change }),
     resetConnectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy/reset", { token, body: {} }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
@@ -140,6 +157,13 @@ export function mauApi(token: string) {
     /** Applies the owner's changes to the memory, in order and all or none. */
     changeAgentMemory: (id: string, operations: MemoryOperation[]) =>
       request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", operations } }),
+    /** The last changes of the partner's memory, newest first. */
+    agentMemoryMutations: (id: string) => request<{ data: MemoryMutation[] }>(mau + agent(id) + "/memory/mutations", { token }).then((r) => r.data),
+    /** The owner has seen the changes up to this one. */
+    seenAgentMemoryMutations: (id: string, through: number) => request<{ seen: number }>(mau + agent(id) + "/memory/mutations/seen", { token, body: { through } }),
+    /** Takes one change back; refused with `memory_undo_conflict` when the memory changed in that place since. */
+    undoAgentMemoryMutation: (id: string, mutationId: string) =>
+      request<unknown>(mau + agent(id) + "/memory/mutations/" + encodeURIComponent(mutationId) + "/undo", { token, body: {} }),
     /** With `shareWith` no environment is created and the partner is usable when the request returns. */
     createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),

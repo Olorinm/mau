@@ -27,9 +27,15 @@ function fixture() {
     async deliver(_rule, input) { notifications.push(input); const receipt = { status: "sent" }; deliveries.set(input.eventId, receipt); return receipt; },
     async delivery(_rule, id) { return deliveries.get(id) ?? null; },
     async cancel(_rule, id) { const work = works.get(id); if (work) works.set(id, { ...work, status: "cancelled" }); },
+    confirmations: {
+      async ask(proposal) { if (!reachable) throw new Error("no_owner_conversation"); cards.set(proposal.id, "pending"); },
+      async answer(proposal) { return cards.get(proposal.id) ?? "expired"; },
+      async withdraw(proposal) { withdrawn.push(proposal.id); cards.delete(proposal.id); },
+    },
   };
+  const cards = new Map<string, "pending" | "confirmed" | "rejected">(), withdrawn: string[] = []; let reachable = true;
   const service = new ProactiveWork(store, port, () => now);
-  return { store, service, port, works, submitted, notifications, deliveries,
+  return { store, service, port, works, submitted, notifications, deliveries, cards, withdrawn, setReachable: (value: boolean) => { reachable = value; },
     setNow: (value: string) => { now = new Date(value); },
     setAnswer: (value: unknown) => { answer = value; },
     setAuthorized: (value: boolean) => { authorized = value; },
@@ -372,4 +378,75 @@ it("delivers notices to the rule's notify channel and maps web and suppressed re
   f.setAnswer(result("2"));
   await f.service.runNow("alice", other.id, "two"); await f.service.tick();
   expect(f.service.notices("alice", other.id)[0]).toMatchObject({ status: "failed", error: "no_conversation_on_connection" });
+});
+
+// What the Agent asks for through its tool (`propose`, `proposeResume`) waits for the owner's card; the owner's own saves do not.
+const agent = "11111111-1111-4111-8111-111111111111";
+it("keeps a rule the Agent creates unsaved until the owner confirms its card, and drops it when the owner rejects", async () => {
+  const f = fixture(), { agentId: _agent, status: _status, ...rule } = f.input;
+  const proposal = await f.service.propose("alice", agent, rule) as any;
+  // Whatever status the Agent sent, nothing is saved; the card shows the rule as it will run.
+  expect(proposal).toMatchObject({ kind: "create", status: "pending", rule: { name: "Check mail", status: "active", connections: ["gmail"], notify: { channel: "web" } } });
+  expect(f.service.list("alice")).toEqual([]); expect(f.cards.get(proposal.id)).toBe("pending");
+  f.setNow("2026-10-29T03:00:00Z"); await f.service.tick();
+  expect(f.service.list("alice")).toEqual([]); expect(f.submitted).toEqual([]);
+  f.cards.set(proposal.id, "confirmed"); await f.service.tick();
+  expect(f.service.list("alice")).toMatchObject([{ name: "Check mail", status: "active", version: 1 }]);
+  expect(f.service.proposals("alice")).toEqual([]);
+  expect(f.store.get<any>("rule_proposals", proposal.id).status).toBe("applied");
+  // Rejected: no rule, and the card is not asked about again.
+  const second = await f.service.propose("alice", agent, { ...rule, name: "Read everything" }) as any;
+  f.cards.set(second.id, "rejected"); await f.service.tick();
+  expect(f.service.list("alice")).toHaveLength(1); expect(f.store.get<any>("rule_proposals", second.id).status).toBe("rejected");
+  // Unanswered for three days: expired.
+  const third = await f.service.propose("alice", agent, { ...rule, name: "Later" }) as any;
+  f.setNow("2026-11-01T03:00:01Z"); await f.service.tick();
+  expect(f.store.get<any>("rule_proposals", third.id).status).toBe("expired"); expect(f.service.list("alice")).toHaveLength(1);
+  // Nowhere to ask the owner: refused at once, nothing left waiting.
+  f.setReachable(false);
+  await expect(f.service.propose("alice", agent, { ...rule, name: "Unasked" })).rejects.toThrow("proactive_owner_confirmation_unavailable");
+  expect(f.service.proposals("alice")).toEqual([]);
+});
+
+it("keeps the saved version of a rule running until the owner confirms the Agent's change", async () => {
+  const f = fixture(), { agentId: _agent, status: _status, ...content } = f.input, rule = await f.service.save("alice", f.input);
+  const change = await f.service.propose("alice", agent, { ...content, goal: "Read all mail and summarize it", connections: ["gmail"] }, rule.id, rule.version) as any;
+  expect(change).toMatchObject({ kind: "update", ruleId: rule.id, baseVersion: 1, rule: { goal: "Read all mail and summarize it" } });
+  expect(f.service.rule("alice", rule.id)).toMatchObject({ version: 1, status: "active", goal: "Find new actionable mail" });
+  // The old version still runs on schedule.
+  f.setNow("2026-10-29T01:05:00Z"); await f.service.tick();
+  expect(f.submitted).toHaveLength(1); expect(f.submitted[0].input).toContain("Find new actionable mail");
+  // A second change to the same rule replaces the first card.
+  const again = await f.service.propose("alice", agent, { ...content, goal: "Summarize unread mail" }, rule.id, rule.version) as any;
+  expect(f.withdrawn).toEqual([change.id]); expect(f.store.get<any>("rule_proposals", change.id).status).toBe("superseded");
+  f.cards.set(again.id, "confirmed"); await f.service.tick();
+  expect(f.service.rule("alice", rule.id)).toMatchObject({ version: 2, status: "active", goal: "Summarize unread mail" });
+  // The same rule sent again changes nothing and asks nothing; with status=paused it pauses at once.
+  await expect(f.service.propose("alice", agent, { ...content, goal: "Summarize unread mail", status: "active" }, rule.id, 2)).resolves.toMatchObject({ version: 2, status: "active" });
+  await expect(f.service.propose("alice", agent, { ...content, goal: "Summarize unread mail" }, rule.id, 2)).resolves.toMatchObject({ version: 2, status: "paused" });
+  expect(f.service.proposals("alice")).toEqual([]);
+  // Enabling it again is the owner's to confirm.
+  const resume = await f.service.proposeResume("alice", rule.id) as any;
+  expect(resume).toMatchObject({ kind: "resume", ruleId: rule.id }); expect(f.service.rule("alice", rule.id).status).toBe("paused");
+  f.cards.set(resume.id, "confirmed"); await f.service.tick();
+  expect(f.service.rule("alice", rule.id)).toMatchObject({ version: 2, status: "active" });
+});
+
+it("lets the owner's own save take effect at once and withdraws what the Agent proposed for the rule", async () => {
+  const f = fixture(), { agentId: _agent, status: _status, ...content } = f.input, rule = await f.service.save("alice", f.input);
+  const change = await f.service.propose("alice", agent, { ...content, goal: "Read all mail" }, rule.id, rule.version) as any;
+  const saved = await f.service.save("alice", { ...f.input, goal: "Owner's own wording" }, rule.id, rule.version);
+  expect(saved).toMatchObject({ version: 2, status: "active", goal: "Owner's own wording" });
+  expect(f.withdrawn).toEqual([change.id]);
+  // A card the owner confirmed for a version that is gone changes nothing.
+  const stale = await f.service.propose("alice", agent, { ...content, goal: "Read all mail" }, rule.id, 2) as any;
+  f.store.set("rules", rule.id, { ...f.service.rule("alice", rule.id), version: 3 });
+  f.cards.set(stale.id, "confirmed"); await f.service.tick();
+  expect(f.store.get<any>("rule_proposals", stale.id)).toMatchObject({ status: "failed", error: "proactive_rule_version_conflict" });
+  expect(f.service.rule("alice", rule.id).goal).toBe("Owner's own wording");
+  // No more than five cards of one Agent wait at a time.
+  for (let n = 0; n < 5; n++) await f.service.propose("alice", agent, { ...content, name: `Rule ${n}` });
+  await expect(f.service.propose("alice", agent, { ...content, name: "Rule 5" })).rejects.toThrow("proactive_owner_confirmation_limit");
+  // A deleted Agent's proposals go with its rules.
+  f.service.forgetAgent(agent); expect(f.service.proposals("alice")).toEqual([]);
 });

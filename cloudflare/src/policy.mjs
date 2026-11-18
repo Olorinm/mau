@@ -3,11 +3,28 @@ export function accessRecord(request, status, startedAt, now = Date.now()) {
   return {
     time: new Date(startedAt).toISOString(),
     method: request.method,
-    path: new URL(request.url).pathname,
+    path: new URL(request.url).pathname.slice(0, 1024),
     status,
     ms: now - startedAt,
     ip: request.headers.get("CF-Connecting-IP") ?? "",
   };
+}
+
+/** The liveness probe needs no sign-in and can arrive at any rate; it is not recorded. */
+export function accessRecorded(request) {
+  return new URL(request.url).pathname !== "/health/live";
+}
+
+/** The most access records that wait in the object's storage. Beyond it the oldest are dropped. */
+export const ACCESS_ROW_CAP = 50_000;
+
+/**
+ * Adds one access record and drops the oldest beyond the cap, so the table stays bounded at any request rate.
+ * `exec` runs one SQL statement with its bindings.
+ */
+export function recordAccess(exec, at, record, cap = ACCESS_ROW_CAP) {
+  exec("INSERT INTO access (at, record) VALUES (?, ?)", at, JSON.stringify(record));
+  exec("DELETE FROM access WHERE id <= (SELECT max(id) FROM access) - ?", cap);
 }
 
 /** Access records are written to the bucket in batches: when many wait, or when the oldest has waited ten minutes. */

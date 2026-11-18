@@ -23,13 +23,15 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   const resolved: any[] = []; let pending: any[] = [], request: any;
   const port: ProactivePort = { validate: async () => {}, authorized: async () => true,
     submit: async () => { throw new Error("not_started"); }, lookup: async () => null, delivery: async () => null,
-    deliver: async () => { throw new Error("not_started"); }, cancel: async () => {} };
+    deliver: async () => { throw new Error("not_started"); }, cancel: async () => {},
+    confirmations: { ask: async proposal => { cards.push(proposal); }, answer: async () => ownerAnswer, withdraw: async () => {} } };
+  const cards: any[] = []; let ownerAnswer: "pending" | "confirmed" = "pending";
   const proactive = new ProactiveWork(store, port);
   const search = vi.fn(() => ({ data: [], coverage: "fixture_history", format: "original_text" }));
   // The partners service is given the admission of the run and the call's id by the server, never by the model.
   const asked: unknown[] = [];
   const delivered: unknown[] = [];
-  const partners = { ...noPartners, turnContext: async (_admission: unknown, roster: boolean) => roster ? { partners: "The owner has no other partners now." } : {},
+  const partners = { ...noPartners, memorySource: (admission: { kind: string }) => admission.kind === "delegation" ? { kind: "message", partners: [{ id: "p-1", name: "trip" }] } : undefined, turnContext: async (_admission: unknown, roster: boolean) => roster ? { partners: "The owner has no other partners now." } : {},
     delivered: (...call: unknown[]) => { delivered.push(call); },
     execute: async (...call: unknown[]) => { asked.push(call); return { you: { name: "helper" }, partners: [] }; } } as unknown as Partners;
   const partner = new NativePartnerTools(owner, agentId, partners, facts, proactive, true, {
@@ -69,10 +71,20 @@ it("enabled partner tools cross the native Host call boundary with the run's own
     schedule: { type: "daily", at: "09:00" }, timeZone: "Asia/Shanghai", connections: [],
   } } }];
   await host.calls("run");
-  expect(proactive.list(owner)).toMatchObject([{ agentId, status: "paused", schedule: { type: "daily", at: "09:00" } }]);
+  // A rule the Agent creates is not saved: the owner is shown a card, and the Agent is told to wait for the answer.
+  expect(proactive.list(owner)).toEqual([]); expect(cards).toMatchObject([{ kind: "create", agentId, rule: { name: "Daily preparation", status: "active" } }]);
+  expect(JSON.parse(resolved[1].contentItems[0].text)).toMatchObject({ status: "awaiting_owner_confirmation", change: "create", name: "Daily preparation",
+    instruction: expect.stringContaining("Do not repeat this call") });
+  await expect(partner.execute("proactive_work", { action: "list" }, admission, "waiting")).resolves.toMatchObject({ rules: [], awaitingOwnerConfirmation: [{ change: "create" }] });
+  ownerAnswer = "confirmed"; await proactive.tick();
+  expect(proactive.list(owner)).toMatchObject([{ agentId, status: "active", schedule: { type: "daily", at: "09:00" } }]);
   expect(resolved).toHaveLength(2); expect(delivered).toHaveLength(1);
   const narrow = { ...admission, kind: "delegation" as const, toolGrants: {} };
   await expect(partner.execute("memory", { action: "add", content: "A durable fact" }, narrow, "memory-write")).resolves.toMatchObject({ done: true });
+  // The change is recorded with whose message the turn was handling; the owner's own turns are the owner's.
+  expect(facts.mutations(owner, agentId)).toMatchObject([
+    { seq: 2, origin: "delegation", source: { kind: "message", partners: [{ id: "p-1", name: "trip" }] }, changes: [{ action: "add", text: "A durable fact" }], unseen: true },
+    { seq: 1, origin: "owner", changes: [{ action: "add", text: "Prefers concise summaries" }], unseen: false }]);
   await expect(partner.execute("memory", { action: "add", content: "A durable fact" }, narrow, "memory-duplicate")).resolves.toMatchObject({ isError: true, error: "memory_duplicate", entries: ["Prefers concise summaries", "A durable fact"] });
   await expect(partner.execute("memory", { action: "add", content: "x".repeat(4001) }, admission, "memory-full")).resolves.toMatchObject({ isError: true, error: "memory_capacity_exceeded", usage: { limit: 4000 } });
   await expect(partner.execute("memory", { action: "add", target: "user", content: "No second file" }, admission, "memory-target")).resolves.toMatchObject({ isError: true, error: "memory_invalid_input" });
@@ -103,7 +115,7 @@ it("enabled partner tools cross the native Host call boundary with the run's own
     { action: "resume", ruleId: proactive.list(owner)[0]!.id }, { action: "pause", ruleId: proactive.list(owner)[0]!.id }])
     await expect(partner.execute("proactive_work", input, narrow, "forbidden-rule")).rejects.toThrow("proactive_owner_admission_required");
   expect(proactive.list(owner)).toHaveLength(1);
-  await expect(partner.execute("proactive_work", { action: "list" }, narrow, "read-rules")).resolves.toMatchObject({ rules: [{ status: "paused" }] });
+  await expect(partner.execute("proactive_work", { action: "list" }, narrow, "read-rules")).resolves.toEqual({ rules: [expect.objectContaining({ status: "active" })] });
   const disabled = new NativePartnerTools(owner, agentId, partners, facts, proactive, false);
   expect(disabled.definitions).toEqual([]); expect(disabled.context(admission, "Input", "disabled-session")).toBeUndefined();
   expect(await disabled.turnContext(admission, "session", ["partners"])).toEqual({}); expect(disabled.authority(admission)).toBeUndefined();

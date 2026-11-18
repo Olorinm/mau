@@ -61,7 +61,7 @@ it("says every refusal of the partners tool, of dismissing and of the memory doc
   // What a message's result may end with, and what the owner's own requests (dismiss, restore, memory) are refused with.
   const others = ["no_answer_after_48_hours", "partner_deleted", "outcome_unknown", "tool_removed", "operation_failed", "agent_not_found", "connected_app_owner_private_only", "owner_approval_unavailable",
     "memory_capacity_exceeded", "memory_duplicate", "memory_no_match", "memory_ambiguous_match", "memory_file_changed", "memory_invalid_content",
-    "memory_unsafe_content", "memory_file_unreadable", "memory_directory_unavailable", "memory_write_failed"];
+    "memory_unsafe_content", "memory_file_unreadable", "memory_directory_unavailable", "memory_write_failed", "memory_undo_conflict", "memory_mutation_already_undone"];
   for (const code of [...refusals, ...others]) for (const t of [zh, en]) {
     expect(errorSentence(t, code), code).toEqual(expect.any(String));
     expect(errorMessage(t, code), code).not.toContain(code);

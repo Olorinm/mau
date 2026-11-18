@@ -12,12 +12,12 @@ import { EnvironmentManager, dutySchema, environmentOptionsSchema, type Environm
 
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
-import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema } from "./connector-accounts.js";
+import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
 import { PartnerContext, MemoryError } from "./partner-context.js";
-import { ProactiveWork, type ProactivePort } from "./proactive.js";
+import { ProactiveWork, confirmationCard, confirmationEvent, type ProactivePort } from "./proactive.js";
 import { NativePartnerTools } from "./native-work.js";
 import { Partners } from "./partners.js";
 import { closeRunApprovals } from "./connector-approvals.js";
@@ -51,9 +51,9 @@ const optionsSchema = z.object({
 }).strict();
 const apiRoot = "/_mau/v1";
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
-interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number }
+interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number; operator?: true }
 type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
-interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined }
+interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined; url?: string | undefined; originalUrl?: string | undefined }
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
 /** Product records keyed or tagged by a deleted partner: business scopes (`agentId:operation`), JSON keys
@@ -85,7 +85,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     { sharedFrom: agentId => environments.sharedFrom(agentId), sharedBy: agentId => environments.sharedBy(agentId) });
   const business = new BusinessTools(options.feishuBotReaders, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
-  if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
+  if (connectorAccounts.configured) { business.setApprovals(connectorAccounts); business.setSites(connectorAccounts); }
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const edgeIdentity = options.edgeIdentity as EdgeIdentityConfig | undefined ?? config.edgeIdentity;
@@ -125,9 +125,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     },
   });
   /** Every owner route and the SSH upgrade: the Access JWT when the request carries one, otherwise the bearer token. */
-  // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests.
-  const authenticateRequest = (req: OwnerRequest): Promise<OwnerPrincipal> =>
-    router.service.authenticateRequest({ headers: req.headers, method: req.method });
+  // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests. Method, path and
+  // headers let it hold a service token to an operator's requests: here that is reading, without the SSH upgrade.
+  const authenticateRequest = (req: OwnerRequest): Promise<OwnerPrincipal> => {
+    const request: OwnerRequest = { headers: req.headers, method: req.method, originalUrl: req.originalUrl ?? req.url };
+    return router.service.authenticateRequest(request);
+  };
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments);
   // Refused before anything of the partner is stopped or paused: other partners still run in its environment.
@@ -201,6 +204,17 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     deliver: async (rule, input) => delivery((await sessions(rule.owner, rule.agentId)).deliver(input))!,
     delivery: async (rule, id) => delivery((await sessions(rule.owner, rule.agentId)).lookupDelivery(id)),
     cancel: async (rule, id) => { await (await sessions(rule.owner, rule.agentId)).cancel(id); },
+    // The card is a request in the owner's conversation with the Agent: it belongs to no run and only the owner answers it.
+    confirmations: {
+      ask: async proposal => { (await sessions(proposal.owner, proposal.agentId)).request({ eventId: confirmationEvent(proposal), kind: "approval",
+        ...confirmationCard(proposal), expiresAt: proposal.expiresAt }); },
+      answer: async proposal => {
+        const request = (await sessions(proposal.owner, proposal.agentId)).lookupRequest(confirmationEvent(proposal));
+        if (!request || request.status === "expired" || request.status === "withdrawn") return "expired";
+        return request.status === "pending" ? "pending" : request.choice === "confirm" ? "confirmed" : "rejected";
+      },
+      withdraw: async proposal => { (await sessions(proposal.owner, proposal.agentId)).withdrawRequest(confirmationEvent(proposal)); },
+    },
   };
   const proactive = new ProactiveWork(proactiveStore, proactivePort);
   const reviews = new MemoryReviewCoordinator(businessStore, {
@@ -312,6 +326,14 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.post("/proactive/:id/cancel", async (req, res) => { z.object({}).strict().parse(req.body); await proactive.cancel(res.locals.owner, String(req.params.id)); res.json({ status: "requested" }); });
   product.get("/agents/:id/memory", (req, res) => res.json(facts.read(res.locals.owner, String(req.params.id))));
   product.post("/agents/:id/memory", (req, res) => res.json(facts.mutate(res.locals.owner, String(req.params.id), req.body, { origin: "owner" })));
+  product.get("/agents/:id/memory/mutations", (req, res) => res.json({ data: facts.mutations(res.locals.owner, String(req.params.id)) }));
+  product.post("/agents/:id/memory/mutations/seen", (req, res) => {
+    const { through } = z.object({ through: z.number().int().min(0) }).strict().parse(req.body);
+    res.json(facts.markSeen(res.locals.owner, String(req.params.id), through));
+  });
+  product.post("/agents/:id/memory/mutations/:mutationId/undo", (req, res) => {
+    z.object({}).strict().parse(req.body); res.json(facts.undo(res.locals.owner, String(req.params.id), String(req.params.mutationId)));
+  });
   product.post("/agents/:id/memory/search", (req, res) => res.json(history.search(res.locals.owner, String(req.params.id), historyQuery.parse(req.body))));
   product.post("/agents/:id/memory/history/import", async (req, res) => {
     const input = z.object({ sessionId: z.string().min(1).max(160), cursor: z.string().max(10000).optional() }).strict().parse(req.body);
@@ -376,6 +398,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     z.object({}).strict().parse(req.body ?? {});
     res.json(await connectorAccounts.resetPolicy(res.locals.owner, String(req.params.id)));
   });
+  // A browser connection's site permissions: open new sites directly or ask first, and the always-allowed sites.
+  product.get("/connector-accounts/:id/access", async (req, res) => res.json(await connectorAccounts.siteAccess(res.locals.owner, String(req.params.id))));
+  product.put("/connector-accounts/:id/access", async (req, res) =>
+    res.json(await connectorAccounts.setSiteAccess(res.locals.owner, String(req.params.id), siteAccessInputSchema.parse(req.body))));
   product.post("/connector-accounts/:id/:action", async (req, res) => {
     const action = z.enum(["check", "connect", "complete", "disconnect"]).parse(req.params.action);
     // Connect may name operations whose missing scopes to add; every other action takes no input.

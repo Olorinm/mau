@@ -35,7 +35,20 @@ interface FileState { file: string; entries: string[]; content: string; revision
 export interface MemorySnapshot { text: string; createdAt: string; revision: string; usage: Usage; blocked: number; overCapacity: boolean; }
 export interface ScheduledMemoryContext extends MemorySnapshot { mode: "read_only"; }
 interface PendingWrite { id: string; owner: string; agentId: string; origin: MemoryOrigin; createdAt: string;
-  status: "pending" | "approved" | "discarded"; beforeRevision: string; afterRevision: string; entries: string[]; operations: Operation[]; replaced: string[]; removed: string[]; }
+  status: "pending" | "approved" | "discarded"; beforeRevision: string; afterRevision: string; entries: string[]; operations: Operation[]; replaced: string[]; removed: string[];
+  /** Absent on proposals staged before changes were recorded; approving one of those is not listed. */
+  changes?: MemoryChange[]; }
+/** One entry as a change left it, enough to take that change back: `index` is where a removed entry stood. */
+export type MemoryChange = { action: "add"; text: string } | { action: "replace"; before: string; after: string } | { action: "remove"; text: string; index: number };
+/** Whose message the turn was handling when it changed the memory: a partner's message, or partners' results handed back. */
+export interface MemorySource { kind: "message" | "result"; partners: Array<{ id: string; name: string }> }
+/**
+ * One change of a partner's memory. `origin` is `owner` when the owner's own message started the turn, when the owner
+ * edited or approved it, and for an undo; `delegation` is a turn that handled a partner's message or results.
+ */
+export interface MemoryMutation { id: string; seq: number; owner: string; agentId: string; at: string; origin: MemoryOrigin; source?: MemorySource;
+  changes: MemoryChange[]; undoOf?: string; undoneAt?: string }
+const MUTATIONS = "memory_mutations", MUTATIONS_SEEN = "memory_mutations_seen", MUTATIONS_KEPT = 100;
 export class MemoryError extends RouterError {
   constructor(code: string, readonly details: Record<string, unknown> = {}, status = 409) { super(code, status); }
 }
@@ -120,10 +133,62 @@ export class PartnerContext {
       this.store.set("employee_memory_snapshots", key, source); return source;
     });
   }
-  mutate(owner: string, agentId: string, raw: unknown, options: { origin?: MemoryOrigin } = {}) {
+  mutate(owner: string, agentId: string, raw: unknown, options: { origin?: MemoryOrigin; source?: MemorySource | undefined } = {}) {
     this.assertOwned(owner, agentId);
     const input = memoryMutationInput.parse(raw), origin = options.origin ?? "owner";
-    return this.store.transaction(() => this.change(owner, agentId, input.action === "batch" ? input.operations : [input], origin));
+    return this.store.transaction(() => this.change(owner, agentId, input.action === "batch" ? input.operations : [input], origin, options.source));
+  }
+  /** The last changes of a partner's memory, newest first. `unseen`: not the owner's, and made after the owner last looked. */
+  mutations(owner: string, agentId: string) {
+    this.assertOwned(owner, agentId);
+    const seen = this.store.get<{ seq: number }>(MUTATIONS_SEEN, agentId)?.seq ?? 0;
+    return this.store.newest<MemoryMutation>(MUTATIONS, [{ members: ["agentId"], value: agentId }], MUTATIONS_KEPT).map(entry => entry.value)
+      .filter(mutation => mutation.owner === owner).map(mutation => ({ ...mutation, unseen: mutation.origin !== "owner" && mutation.seq > seen }));
+  }
+  /** The owner has looked at the changes up to `through`. */
+  markSeen(owner: string, agentId: string, through: number) {
+    this.assertOwned(owner, agentId);
+    return this.store.transaction(() => {
+      const newest = this.store.newest<MemoryMutation>(MUTATIONS, [{ members: ["agentId"], value: agentId }], 1)[0]?.value.seq ?? 0;
+      const seq = Math.max(Math.min(through, newest), this.store.get<{ seq: number }>(MUTATIONS_SEEN, agentId)?.seq ?? 0);
+      this.store.set(MUTATIONS_SEEN, agentId, { owner, agentId, seq }); return { seen: seq };
+    });
+  }
+  /**
+   * Take one change back, by the owner: what it added is removed, what it replaced or removed is put back. Refused
+   * with `memory_undo_conflict` when an entry it left is no longer there as it left it. The undo is a change of its own.
+   */
+  undo(owner: string, agentId: string, id: string) {
+    this.assertOwned(owner, agentId);
+    return this.store.transaction(() => {
+      const mutation = this.store.get<MemoryMutation>(MUTATIONS, id);
+      if (!mutation || mutation.owner !== owner || mutation.agentId !== agentId) throw new MemoryError("memory_mutation_not_found", {}, 404);
+      if (mutation.undoneAt) throw new MemoryError("memory_mutation_already_undone");
+      const file = this.load(owner, agentId), entries = [...file.entries], changes: MemoryChange[] = [];
+      const conflict = () => new MemoryError("memory_undo_conflict", { note: "The memory changed in this place after the change was made." });
+      for (const change of [...mutation.changes].reverse()) {
+        if (change.action === "remove") {
+          if (entries.includes(change.text)) throw conflict();
+          entries.splice(Math.min(change.index, entries.length), 0, change.text); changes.push({ action: "add", text: change.text }); continue;
+        }
+        const left = change.action === "add" ? change.text : change.after, index = entries.indexOf(left);
+        if (index < 0 || change.action === "replace" && entries.includes(change.before)) throw conflict();
+        if (change.action === "add") { entries.splice(index, 1); changes.push({ action: "remove", text: left, index }); }
+        else { entries[index] = change.before; changes.push({ action: "replace", before: left, after: change.before }); }
+      }
+      this.checkCapacity(entries);
+      this.persist(owner, agentId, file, entries);
+      this.store.set(MUTATIONS, id, { ...mutation, undoneAt: new Date().toISOString() });
+      this.record(owner, agentId, "owner", changes, { undoOf: id });
+      return { ...this.receipt(entries, [], []), undone: id };
+    });
+  }
+  private record(owner: string, agentId: string, origin: MemoryOrigin, changes: MemoryChange[], more: { source?: MemorySource | undefined; undoOf?: string } = {}) {
+    const last = this.store.newest<MemoryMutation>(MUTATIONS, [{ members: ["agentId"], value: agentId }], 1)[0]?.value.seq ?? 0;
+    const mutation: MemoryMutation = { id: randomUUID(), seq: last + 1, owner, agentId, at: new Date().toISOString(), origin,
+      ...(more.source ? { source: more.source } : {}), changes, ...(more.undoOf ? { undoOf: more.undoOf } : {}) };
+    this.store.set(MUTATIONS, mutation.id, mutation);
+    this.store.db.prepare(`DELETE FROM documents WHERE collection='${MUTATIONS}' AND json_extract(value,'$.agentId')=? AND json_extract(value,'$.seq')<=?`).run(agentId, mutation.seq - MUTATIONS_KEPT);
   }
   pending(owner: string, agentId: string) {
     this.assertOwned(owner, agentId);
@@ -142,6 +207,8 @@ export class PartnerContext {
         for (const entry of pending.entries) this.validateContent(entry);
         this.checkCapacity(pending.entries);
         this.persist(owner, agentId, file, pending.entries);
+        // Applied by the owner's approval, so it is the owner's change.
+        if (pending.changes) this.record(owner, agentId, "owner", pending.changes);
       }
       this.store.set("employee_memory_pending", id, { ...pending, status: "approved" });
       return { ...this.receipt(pending.entries, pending.replaced, pending.removed), pending_id: id };
@@ -156,30 +223,31 @@ export class PartnerContext {
       return { discarded: true, pending_id: id };
     });
   }
-  private change(owner: string, agentId: string, operations: Operation[], origin: MemoryOrigin) {
-    const file = this.load(owner, agentId), entries = [...file.entries], replaced: string[] = [], removed: string[] = [];
+  private change(owner: string, agentId: string, operations: Operation[], origin: MemoryOrigin, source?: MemorySource) {
+    const file = this.load(owner, agentId), entries = [...file.entries], replaced: string[] = [], removed: string[] = [], changes: MemoryChange[] = [];
     for (const operation of operations) {
       const content = "content" in operation ? this.validateContent(operation.content) : undefined;
       if (operation.action === "add") {
         if (entries.includes(content!)) throw new MemoryError("memory_duplicate", { note: "This exact entry is already saved. Do not repeat the write." });
-        entries.push(content!); continue;
+        entries.push(content!); changes.push({ action: "add", text: content! }); continue;
       }
       const index = this.match(entries, operation.old_text), existing = entries[index]!;
       if (characters(existing) > MEMORY_LIMIT && existing !== operation.old_text) throw new MemoryError("memory_external_drift", { note: "An oversized external entry cannot be replaced using a partial match. Inspect the complete file before repair." });
-      if (operation.action === "remove") { removed.push(existing); entries.splice(index, 1); }
+      if (operation.action === "remove") { removed.push(existing); entries.splice(index, 1); changes.push({ action: "remove", text: existing, index }); }
       else {
         if (entries.includes(content!)) throw new MemoryError("memory_duplicate");
-        replaced.push(existing); entries[index] = content!;
+        replaced.push(existing); entries[index] = content!; changes.push({ action: "replace", before: existing, after: content! });
       }
     }
     this.checkCapacity(entries);
     if (this.writeApproval || (origin === "review" && operations.some(o => o.action !== "add"))) {
       const id = randomUUID(), pending: PendingWrite = { id, owner, agentId, origin, status: "pending", createdAt: new Date().toISOString(),
-        beforeRevision: file.revision, afterRevision: digest(entries.join(MEMORY_DELIMITER)), entries, operations, replaced, removed };
+        beforeRevision: file.revision, afterRevision: digest(entries.join(MEMORY_DELIMITER)), entries, operations, replaced, removed, changes };
       this.store.set("employee_memory_pending", id, pending);
       return { success: true, staged: true, pending_id: id, note: "Owner approval is required. The memory has not changed." };
     }
     this.persist(owner, agentId, file, entries);
+    this.record(owner, agentId, origin, changes, { source });
     return this.receipt(entries, replaced, removed);
   }
   private receipt(entries: string[], replaced: string[], removed: string[]) {

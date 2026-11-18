@@ -52,7 +52,10 @@ The console has no login page and stores no token. Its only login is the edge id
 in `mau.json` (the shape of Router's `edgeIdentity`), Router verifies the `Cf-Access-Jwt-Assertion` JWT on
 every `/_mau/v1` and `/_agent-router/v1` owner request and on the SSH upgrade, and maps its email (or a
 configured service token) to an owner. The plain email header and the `CF_Authorization` cookie are never
-trusted. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
+trusted. A service token is not the owner's sign-in: unless its `serviceTokens` entry is
+`{ "owner": "...", "access": "owner" }`, it only reads (`GET`, `HEAD`; not the SSH upgrade) and, on Router's web
+routes, sends a chat message, opens a DM chat, marks a chat read and requests a socket ticket. Every other request,
+which is every write under `/_mau/v1`, answers `403 owner_sign_in_required`. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
 Mau does not start without `edgeIdentity` (`edge_identity_required`) or without Router's ledger
 (`ledger_read_required`).
 
@@ -133,7 +136,7 @@ console shows that work in the conversations it belongs to.
 - **Approval cards.** When a partner's operation needs the owner's approval, the card appears in the conversation
   the message was sent from, under the asking partner's figure and name. The console words it in the interface
   language from the members of the request: who asks, whose message it handles, the operation, the connection and
-  the arguments (saying so when long arguments are shown shortened). The two choices follow the interface language
+  the arguments, which are always shown whole. The two choices follow the interface language
   too. A card recorded without those members shows the server's text and choices. A card is answered once, and then
   shows whether it was approved, declined, expired, withdrawn or answered elsewhere. A partner that waits for an
   approval says so in the list of conversations.

@@ -18,7 +18,8 @@ Access service token) to an account, and assigns an environment profile with mod
 ```sh
 cloudflared access login https://mau.example
 mau login --url https://mau.example
-# automation: an Access service token mapped by the operator
+# automation: an Access service token mapped by the operator. It can read; commands that change something
+# answer owner_sign_in_required unless the operator gave the token "access": "owner" (see web.md).
 mau login --url https://mau.example --access-client-id-file /private/id --access-client-secret-file /private/secret
 mau options
 mau setup helper --environment cloud-codex

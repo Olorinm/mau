@@ -51,6 +51,57 @@ export type ProactiveRule = Omit<z.output<typeof proactiveRuleInput>, "status" |
   id: string; owner: string; version: number; status: "active" | "paused" | "authorization_required";
   createdAt: string; updatedAt: string; nextAt: string; activeRun?: string;
 };
+/**
+ * A rule the Agent asked to create, change or enable, waiting for the owner's answer to its card. Nothing runs from
+ * it: the rule it names keeps its saved version and state until the owner confirms, and a created rule does not exist
+ * before that. Confirmed, it is saved enabled.
+ */
+export interface RuleProposal {
+  id: string; owner: string; agentId: string; kind: "create" | "update" | "resume";
+  ruleId?: string; baseVersion?: number;
+  /** What the Agent sent for a created or changed rule; saved through `save` when the owner confirms. */
+  input?: unknown;
+  /** The rule as it will run, for the card. */
+  rule: ProactiveRule;
+  /** `confirmed`: the owner agreed and the rule is not saved yet (a run of the old version is still in flight). */
+  status: "pending" | "confirmed" | "applied" | "rejected" | "expired" | "superseded" | "failed";
+  createdAt: string; expiresAt: string; error?: string;
+}
+/** The owner's card for a proposal: a request in the owner's conversation with the Agent that belongs to no run. */
+export interface ProactiveConfirmations {
+  /** Throws when the owner cannot be asked. */
+  ask(proposal: RuleProposal): Promise<void>;
+  answer(proposal: RuleProposal): Promise<"pending" | "confirmed" | "rejected" | "expired">;
+  withdraw(proposal: RuleProposal): Promise<void>;
+}
+export const confirmationEvent = (proposal: Pick<RuleProposal, "id">) => `mau-rule-confirmation-${proposal.id}`;
+const PROPOSALS = "rule_proposals", CONFIRMATION_DAYS = 3, PENDING_CONFIRMATIONS = 5;
+/** The members of a rule that say what it does; everything but its identity, state and timing. */
+const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => item && typeof item === "object" && !Array.isArray(item)
+  ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+const ruleContent = ({ id: _id, owner: _owner, version: _version, status: _status, createdAt: _created, updatedAt: _updated, nextAt: _next, activeRun: _run, ...content }: ProactiveRule) => content;
+/**
+ * The card as text, for a channel and for the transcript: when it runs, the whole instruction, what it may read and
+ * where results go. Router carries at most 8000 characters; a longer instruction is cut here and says so, and the
+ * console shows it whole from `display`.
+ */
+export function confirmationCard(proposal: RuleProposal) {
+  const rule = proposal.rule, instruction = rule.execution.type === "direct" ? rule.execution.message : rule.goal;
+  const shown = instruction.length > 6000 ? `${instruction.slice(0, 6000)}…\n（内容较长，这里只显示前 6000 个字符；完整内容请在网页查看后再确认）` : instruction;
+  const lines = [`名称：${rule.name}`,
+    `时间：${rule.schedule.type === "daily" ? `每天 ${rule.schedule.at}` : `每 ${rule.schedule.minutes} 分钟`}（${rule.timeZone}）`,
+    `${rule.execution.type === "direct" ? "直接发送的消息" : "执行内容"}：${shown}`,
+    `可读取的连接：${rule.connections.join("、") || "无"}${rule.operations ? `（仅限操作：${rule.operations.join("、") || "无"}）` : ""}`,
+    ...(rule.skills.length ? [`技能：${rule.skills.map(skill => skill.name).join("、")}`] : []),
+    ...(rule.precheck ? [`预检查：${rule.precheck.connectionId} ${rule.precheck.tool}`] : []),
+    `结果发送到：${rule.notifications === "none" ? "不通知" : rule.notify.channel === "web" ? "对话" : `连接 ${rule.notify.channel}`}`];
+  return { title: { create: "新建定时任务待确认", update: "修改定时任务待确认", resume: "启用定时任务待确认" }[proposal.kind], text: lines.join("\n"),
+    choices: [{ id: "confirm", label: "确认并启用定时任务" }, { id: "reject", label: "拒绝这个定时任务", style: "danger" as const }],
+    display: { scheduleConfirmation: { kind: proposal.kind, name: rule.name, schedule: rule.schedule, timeZone: rule.timeZone, execution: rule.execution.type,
+      instruction, connections: rule.connections, ...(rule.operations ? { operations: rule.operations } : {}), skills: rule.skills.map(skill => skill.name),
+      ...(rule.precheck ? { precheck: `${rule.precheck.connectionId} ${rule.precheck.tool}` } : {}),
+      notify: rule.notifications === "none" ? null : rule.notify.channel } } };
+}
 export interface WorkSnapshot {
   eventId: string; taskId: string; sessionId: string; status: string; answer: string;
   runId?: string; outcomeUnknown?: boolean; error?: string;
@@ -70,6 +121,8 @@ export interface ProactivePort {
   deliver(rule: ProactiveRule, input: { eventId: string; targetSessionId: string; text: string; connectionId?: string | undefined }): Promise<{ status: string; externalId?: string; error?: string }>;
   delivery(rule: ProactiveRule, eventId: string): Promise<{ status: string; externalId?: string; error?: string } | null>;
   cancel(rule: ProactiveRule, eventId: string): Promise<void>;
+  /** Without it the Agent cannot create, change or enable a rule. */
+  confirmations?: ProactiveConfirmations;
 }
 interface Trigger {
   id: string; rule: ProactiveRule; scheduledAt: string; createdAt: string;
@@ -138,7 +191,21 @@ export class ProactiveWork {
     return this.store.db.prepare("SELECT value FROM documents WHERE collection='notices' AND json_extract(value,'$.ruleId')=? ORDER BY rowid DESC LIMIT 100")
       .all(id).map(row => JSON.parse(row.value as string));
   }
+  /** The owner's own save: it takes effect at once, and what the Agent proposed for the rule before it is withdrawn. */
   async save(owner: string, raw: unknown, id?: string, expectedVersion?: number): Promise<ProactiveRule> {
+    const rule = await this.write(owner, raw, id, expectedVersion);
+    await this.supersede(this.proposals(owner).filter(proposal => proposal.ruleId === rule.id));
+    return rule;
+  }
+  private async write(owner: string, raw: unknown, id?: string, expectedVersion?: number): Promise<ProactiveRule> {
+    const { prior, rule } = await this.prepare(owner, raw, id, expectedVersion);
+    // Check again after asynchronous ownership/authorization reads.
+    if (prior && (this.rule(owner, prior.id).version !== prior.version || this.rule(owner, prior.id).activeRun)) throw new RouterError("proactive_rule_version_conflict", 409);
+    this.store.set("rules", rule.id, rule);
+    return rule;
+  }
+  /** A rule as it would be saved, checked against everything a save checks. */
+  private async prepare(owner: string, raw: unknown, id?: string, expectedVersion?: number, inFlight = false) {
     const prior = id ? this.rule(owner, id) : undefined;
     let candidate = raw;
     if (raw && typeof raw === "object" && "preset" in raw && raw.preset === "heartbeat") {
@@ -152,7 +219,7 @@ export class ProactiveWork {
     if (input.precheck && (!input.connections.includes(input.precheck.connectionId) || input.operations && !input.operations.includes(input.precheck.tool)))
       throw new RouterError("precheck_source_not_granted", 403);
     if (prior && expectedVersion !== prior.version) throw new RouterError("proactive_rule_version_conflict", 409);
-    if (prior?.activeRun) throw new RouterError("proactive_rule_has_active_run", 409);
+    if (prior?.activeRun && !inFlight) throw new RouterError("proactive_rule_has_active_run", 409);
     if (!prior && this.list(owner).length >= 100) throw new RouterError("proactive_rule_limit", 409);
     const now = this.clock(), rule: ProactiveRule = { ...input, schedule: input.schedule, session: input.session ?? { type: "rule" },
       notify: input.notify ?? prior?.notify ?? { channel: "web" },
@@ -160,10 +227,84 @@ export class ProactiveWork {
       createdAt: prior?.createdAt ?? now.toISOString(), updatedAt: now.toISOString(), nextAt: nextOccurrence({ schedule: input.schedule, timeZone: input.timeZone }, now) };
     await this.port.validate(rule);
     if (rule.status === "active" && !await this.port.authorized(rule)) throw new RouterError("proactive_authorization_required", 409);
-    // Check again after asynchronous ownership/authorization reads.
-    if (prior && (this.rule(owner, prior.id).version !== prior.version || this.rule(owner, prior.id).activeRun)) throw new RouterError("proactive_rule_version_conflict", 409);
-    this.store.set("rules", rule.id, rule);
-    return rule;
+    return { prior, rule };
+  }
+  /** What the Agent asked for and the owner has not answered, or has confirmed and is not saved yet. */
+  proposals(owner: string, agentId?: string) {
+    return this.store.entriesByStatus<RuleProposal>(PROPOSALS, ["pending", "confirmed"]).map(entry => entry.value)
+      .filter(proposal => proposal.owner === owner && (!agentId || proposal.agentId === agentId));
+  }
+  /**
+   * The Agent's save. Creating a rule, changing what one does and enabling one each wait for the owner: the owner gets
+   * a card showing the rule as it will run, and only the owner's confirmation saves it, enabled. A rule that exists
+   * keeps its saved version and state until then. Pausing (the same rule with status=paused) takes effect at once.
+   */
+  async propose(owner: string, agentId: string, raw: unknown, id?: string, expectedVersion?: number): Promise<ProactiveRule | RuleProposal> {
+    const input = { ...(raw as object), agentId, status: "active" };
+    const { prior, rule } = await this.prepare(owner, input, id, expectedVersion, true);
+    if (prior && stable(ruleContent(prior)) === stable(ruleContent(rule))) {
+      if ((raw as { status?: string }).status !== "active") return prior.status === "paused" ? prior : this.state(owner, prior.id, "paused");
+      return prior.status === "active" ? prior : this.proposeResume(owner, prior.id);
+    }
+    return this.ask({ owner, agentId, kind: prior ? "update" : "create", ...(prior ? { ruleId: prior.id, baseVersion: prior.version } : {}), input, rule },
+      proposal => prior ? proposal.ruleId === prior.id : proposal.kind === "create" && proposal.rule.name === rule.name);
+  }
+  /** The Agent asks to enable a rule as it is saved. */
+  async proposeResume(owner: string, id: string): Promise<ProactiveRule | RuleProposal> {
+    const rule = this.rule(owner, id);
+    if (rule.status === "active") return rule;
+    if (!await this.port.authorized(rule)) throw new RouterError("proactive_authorization_required", 409);
+    return this.ask({ owner, agentId: rule.agentId, kind: "resume", ruleId: id, baseVersion: rule.version, rule: { ...rule, status: "active" } }, proposal => proposal.ruleId === id);
+  }
+  private async ask(draft: Omit<RuleProposal, "id" | "status" | "createdAt" | "expiresAt">, replaces: (proposal: RuleProposal) => boolean) {
+    if (!this.port.confirmations) throw new RouterError("proactive_owner_confirmation_unavailable", 409);
+    const now = this.clock(), waiting = this.proposals(draft.owner, draft.agentId).filter(proposal => proposal.status === "pending");
+    await this.supersede(waiting.filter(replaces));
+    if (waiting.filter(proposal => !replaces(proposal)).length >= PENDING_CONFIRMATIONS) throw new RouterError("proactive_owner_confirmation_limit", 409);
+    this.store.deleteBefore(PROPOSALS, ["applied", "rejected", "expired", "superseded", "failed"], new Date(now.getTime() - 30 * 86400_000).toISOString());
+    const proposal: RuleProposal = { ...draft, id: randomUUID(), status: "pending", createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + CONFIRMATION_DAYS * 86400_000).toISOString() };
+    // The record comes first: a card without one would be a question nobody reads the answer to.
+    this.store.set(PROPOSALS, proposal.id, proposal);
+    try { await this.port.confirmations.ask(proposal); }
+    catch { this.store.delete(PROPOSALS, proposal.id); throw new RouterError("proactive_owner_confirmation_unavailable", 409); }
+    return proposal;
+  }
+  private moveProposal(id: string, from: RuleProposal["status"], to: RuleProposal["status"], error?: string) {
+    return this.store.transaction(() => {
+      const current = this.store.get<RuleProposal>(PROPOSALS, id);
+      if (current?.status !== from) return undefined;
+      const next = { ...current, status: to, ...(error ? { error } : {}) };
+      this.store.set(PROPOSALS, id, next); return next;
+    });
+  }
+  private async supersede(proposals: RuleProposal[]) {
+    for (const proposal of proposals) if (this.moveProposal(proposal.id, "pending", "superseded")) await this.port.confirmations?.withdraw(proposal).catch(() => undefined);
+  }
+  /** Read the owner's answers and save what was confirmed. A rule with a run in flight is saved once that run ended. */
+  private async settleProposals() {
+    for (const { value } of this.store.entriesByStatus<RuleProposal>(PROPOSALS, ["pending", "confirmed"])) {
+      let proposal: RuleProposal | undefined = value;
+      const overdue = Date.parse(proposal.expiresAt) <= this.clock().getTime();
+      try {
+        if (proposal.status === "pending") {
+          // An unreachable Router is asked again on the next cycle; the deadline still ends the wait.
+          const answer = this.port.confirmations ? await this.port.confirmations.answer(proposal).catch(() => "pending" as const) : "expired";
+          if (answer === "pending" && !overdue) continue;
+          proposal = this.moveProposal(proposal.id, "pending", answer === "pending" ? "expired" : answer);
+          if (proposal?.status !== "confirmed") continue;
+        }
+        if (proposal.kind === "resume") {
+          if (this.rule(proposal.owner, proposal.ruleId!).version !== proposal.baseVersion) throw new RouterError("proactive_rule_version_conflict", 409);
+          await this.state(proposal.owner, proposal.ruleId!, "active");
+        } else await this.write(proposal.owner, proposal.input, proposal.ruleId, proposal.baseVersion);
+        this.moveProposal(proposal.id, "confirmed", "applied");
+      } catch (error) {
+        // The old version's run ends first; anything else Router refused is final, and an unreachable service is retried until the deadline.
+        const final = error instanceof RouterError ? error.message !== "proactive_rule_has_active_run" : overdue;
+        if (final && proposal) this.moveProposal(proposal.id, "confirmed", "failed", error instanceof Error ? error.message : "proactive_confirmation_failed");
+      }
+    }
   }
   async state(owner: string, id: string, status: "active" | "paused") {
     const rule = this.rule(owner, id);
@@ -171,7 +312,9 @@ export class ProactiveWork {
     const current = this.rule(owner, id);
     if (current.version !== rule.version) throw new RouterError("proactive_rule_version_conflict", 409);
     const updated = { ...current, status, updatedAt: this.clock().toISOString() };
-    this.store.set("rules", id, updated); return updated;
+    this.store.set("rules", id, updated);
+    await this.supersede(this.proposals(owner).filter(proposal => proposal.ruleId === id));
+    return updated;
   }
   async runNow(owner: string, id: string, requestId: string) {
     const rule = this.rule(owner, id);
@@ -212,6 +355,7 @@ export class ProactiveWork {
         run("DELETE FROM documents WHERE collection IN ('daily_budgets','cursors') AND substr(id,1,length(?)+1)=?||':'", id, id);
         run("DELETE FROM documents WHERE collection IN ('rules','precheck_checkpoints') AND id=?", id);
       }
+      run(`DELETE FROM documents WHERE collection='${PROPOSALS}' AND json_extract(value,'$.agentId')=?`, agentId);
     });
   }
   allows(admission: RunAdmission) {
@@ -244,6 +388,7 @@ export class ProactiveWork {
   }
   private async cycle() {
     this.store.acquireLease(this.lease, this.clock().getTime());
+    await this.settleProposals();
     for (const { value: rule } of this.store.entries<ProactiveRule>("rules")) {
       if (rule.status === "active" && !rule.activeRun && Date.parse(rule.nextAt) <= this.clock().getTime()) {
         try { this.enqueue(rule, rule.nextAt); } catch (error) { if (!(error instanceof RouterError)) throw error; }

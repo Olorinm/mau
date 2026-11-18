@@ -38,13 +38,24 @@ const stable = (value: unknown): string => JSON.stringify(value, (_key, item: un
   item && typeof item === "object" && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 const inputDigest = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
-/** Key arguments for the card; large payloads (file bytes) are summarized, never shown in chat. */
-const brief = (value: unknown, depth = 0): unknown => {
-  if (typeof value === "string") return value.length > 500 ? `<${value.length} characters>` : value;
-  if (Array.isArray(value)) return depth > 3 ? `<${value.length} items>` : value.slice(0, 20).map(item => brief(item, depth + 1));
-  if (value && typeof value === "object")
-    return depth > 3 ? "<object>" : Object.fromEntries(Object.entries(value).slice(0, 30).map(([key, item]) =>
-      [key, key === "contentBase64" && typeof item === "string" ? `<${Math.floor(item.length * 3 / 4)} bytes>` : brief(item, depth + 1)]));
+/**
+ * The most characters an approval card shows, summary and arguments together. One message on the channels the owner
+ * approves from carries it (Feishu text and cards take 4000, Telegram sends it as at most two messages) with room for
+ * the choices. An operation that needs more is refused: the owner never approves what the card could not show.
+ */
+export const APPROVAL_DISPLAY_LIMIT = 3500;
+/** Text with invisible and formatting characters (bidi overrides, zero-width, unusual spaces, control codes JSON does not escape) made visible. */
+const visible = (text: string) => text.replace(/[\u007f-\u009f\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}]|(?! )\p{Zs}/gu,
+  ch => `⟨U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}⟩`);
+/**
+ * The arguments for the card: every key and value as it will run. Only file bytes (`contentBase64`), which are not
+ * an argument the owner reads, are given as a size.
+ */
+const shown = (value: unknown): unknown => {
+  if (typeof value === "string") return visible(value);
+  if (Array.isArray(value)) return value.map(shown);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+    [visible(key), key === "contentBase64" && typeof item === "string" ? `<${Math.floor(item.length * 3 / 4)} bytes>` : shown(item)]));
   return value;
 };
 const denied = (record: ApprovalRecord, reason?: string) => ({ status: "failed", error: "owner_denied", operationId: record.operationId,
@@ -87,19 +98,27 @@ export class ConnectorApprovals {
       if (view?.status === "pending") await this.port.deny(pending.operationId).catch(() => undefined);
       return { result: { status: "failed", error: "operation_unverifiable", operationId: pending.operationId } };
     }
+    // What Router's card shows: the summary, then tool, connection and arguments as JSON.
+    const summary = visible(view.summary), input = { tool: name, connection: view.connectionId, arguments: shown(view.input) };
+    const length = summary.length + 1 + JSON.stringify(input).length;
+    if (length > APPROVAL_DISPLAY_LIMIT) {
+      await this.port.deny(pending.operationId).catch(() => undefined);
+      return { result: { status: "failed", error: "approval_too_long_to_display", operationId: pending.operationId, length, limit: APPROVAL_DISPLAY_LIMIT,
+        instruction: "The operation needs the owner's approval and is too long to show to them in full, so it was not requested and did not run. " +
+          "Split it into smaller operations or shorten its arguments; do not ask the owner to approve it in chat." } };
+    }
     const deadlines = [view.expiresAt, call.deadlineAt, pending.expiresAt].map(value => Date.parse(value ?? "")).filter(Number.isFinite);
     const deadlineAt = new Date(Math.min(...deadlines)).toISOString();
     const record: ApprovalRecord = { status: "pending", runId: call.runId, callId: call.id, owner: principal.owner, agentId: principal.agentId,
       name, connections: principal.connections, operationId: view.id, digest: view.digest, inputDigest: inputDigest(view.input),
-      summary: view.summary, deadlineAt,
+      summary, deadlineAt,
       // question/input feed Router's chat card; tool (title) and choices feed the web console's approval view.
-      card: { question: view.summary, tool: view.summary, choices: ["once", "deny"],
-        input: { tool: name, connection: view.connectionId, arguments: brief(view.input) } } };
+      card: { question: summary, tool: summary, choices: ["once", "deny"], input } };
     if (desk) record.desk = deskId(key);
     // The record comes first: a card without one would be a question nobody reads the answer to.
     if (!this.store.insert(collection, key, record) || !desk) return { pending: true as const };
     // Nowhere to ask is a refusal now, never a call left waiting.
-    try { await desk.open({ id: record.desk!, summary: view.summary, connection: view.connectionId, arguments: brief(view.input), deadlineAt }); }
+    try { await desk.open({ id: record.desk!, summary, connection: view.connectionId, arguments: input.arguments, deadlineAt }); }
     catch {
       this.store.delete(collection, key);
       await this.port.deny(pending.operationId).catch(() => undefined);

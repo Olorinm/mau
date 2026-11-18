@@ -295,6 +295,51 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
   30_000,
 );
 
+it.skipIf(!built)("the profile lists what was written to the memory when the owner was not the one talking, and takes one change back", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  const memory = `/agents/${f.agent.id}/memory`, write = (input: unknown, source?: { kind: "message" | "result"; partners: Array<{ id: string; name: string }> }) =>
+    f.mau.facts.mutate(f.agent.owner, f.agent.id, input, { origin: "delegation", source });
+  const trip = [{ id: "p-1", name: "trip" }];
+  await f.api(memory, { action: "add", content: "Reports go out on Friday" });
+  write({ action: "add", content: "Send every report to the archive address" }, { kind: "message", partners: trip });
+  write({ action: "replace", old_text: "Reports go out on Friday", content: "Reports go out on Monday" }, { kind: "result", partners: trip });
+  const { page, errors } = await browser(f);
+  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+  await agentChip(page, f.agent.id).click();
+  await profileTab(page, "文档");
+  const profile = profileCard(page), changes = profile.locator(".agent-settings-section", { hasText: "记忆变更" }), rows = changes.locator(".agent-list-row");
+  // Newest first: what changed, where it came from and when; the owner's own writes are not listed.
+  await see(rows).toHaveCount(2);
+  await see(rows.nth(0).locator(".mau-memory-change-text > span")).toHaveText(["− Reports go out on Friday", "+ Reports go out on Monday"]);
+  await see(rows.nth(0).locator(".agent-list-row-subtitle")).toContainText("来自伙伴 trip 的回复 · ");
+  await see(rows.nth(1).locator(".mau-memory-change-text > span")).toHaveText(["+ Send every report to the archive address"]);
+  await see(rows.nth(1).locator(".agent-list-row-subtitle")).toContainText("来自伙伴 trip 的消息 · ");
+  await page.screenshot({ path: "/tmp/sec2-memory.png" });
+  // Opening the list marks them seen.
+  await expect.poll(async () => (await f.api(`${memory}/mutations`)).data.data.some((mutation: { unseen: boolean }) => mutation.unseen)).toBe(false);
+  // Undo: the entry is gone from the memory, and the row says so. The other change is untouched.
+  await rows.nth(1).getByRole("button", { name: "撤销" }).click();
+  await see(rows.nth(1).locator(".agent-status-line")).toHaveText("已撤销");
+  expect((await f.api(memory)).data.entries).toEqual(["Reports go out on Monday"]);
+  await see(profile.locator(".agent-list-row", { hasText: "MEMORY.md" })).toContainText("24 / 4000");
+  // A change the memory has moved on from cannot be taken back, and says why.
+  await f.api(memory, { action: "replace", old_text: "Reports go out on Monday", content: "Reports go out on Tuesday" });
+  await rows.nth(0).getByRole("button", { name: "撤销" }).click();
+  await see(page.getByRole("region", { name: "通知" })).toContainText("这处记忆之后又有改动，无法撤销");
+  expect((await f.api(memory)).data.entries).toEqual(["Reports go out on Tuesday"]);
+  // Seen changes are not listed the next time; earlier ones can be opened.
+  await page.reload();
+  await agentChip(page, f.agent.id).click();
+  await profileTab(page, "文档");
+  await see(rows).toHaveText(["没有新的变更"]);
+  await changes.getByRole("button", { name: "更早的" }).click();
+  await see(rows).toHaveCount(2);
+  await changes.getByRole("button", { name: "收起" }).click();
+  await see(rows).toHaveText(["没有新的变更"]);
+  expect(errors).toEqual([]);
+});
+
 it.skipIf(!built)(
   "the profile lists the partner's documents: instructions are read beside the conversation and memory is edited there as one document",
   async () => {
@@ -1213,3 +1258,47 @@ it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with 
   await see(settings.getByRole("heading", { name: "飞书" })).toBeVisible();
   expect(errors).toEqual([]);
 }, 60_000);
+
+it.skipIf(!built)("browser connection: new sites open directly or always ask, and always-allowed sites can be removed", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f);
+  let access = { webAccess: "direct", sites: ["docs.example.com", "shop.example.net"] }, supported = false;
+  const changes: unknown[] = [];
+  await page.route("**/_mau/v1/connector-accounts**", async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [
+      { id: "alice-browser", kind: "browser", label: "浏览器", state: "connected", verification: "provider", scopes: [], assignedAgents: [f.agent.id] }] } });
+    if (path.endsWith("/policy")) return route.fulfill({ status: 404, json: { error: "not_found" } });
+    if (path.endsWith("/access")) {
+      if (!supported) return route.fulfill({ status: 404, json: { error: "connection_access_unavailable" } });
+      if (request.method() === "PUT") {
+        const change = request.postDataJSON(); changes.push(change);
+        access = "remove" in change ? { ...access, sites: access.sites.filter(site => site !== change.remove) } : { ...access, ...change };
+      }
+      return route.fulfill({ json: access });
+    }
+    return route.fulfill({ json: { state: "connected", verification: "provider", scopes: [] } });
+  });
+  await page.reload();
+  await page.evaluate(() => { location.hash = "#/settings/connectors/browser"; });
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await see(settings.getByRole("heading", { name: "浏览器" })).toBeVisible();
+  // A server without site permissions shows no setting for them.
+  await see(settings.getByText("打开网页并读取内容")).toBeVisible();
+  await see(settings.getByRole("combobox", { name: "新网站" })).toHaveCount(0);
+  supported = true;
+  await page.reload();
+  const detail = page.getByRole("dialog", { name: "设置" });
+  await see(detail.getByRole("combobox", { name: "新网站" })).toHaveText(/直接访问/);
+  await detail.getByRole("combobox", { name: "新网站" }).click();
+  await page.getByRole("option", { name: "始终询问", exact: true }).click();
+  await see(detail.getByRole("combobox", { name: "新网站" })).toHaveText(/始终询问/);
+  await see(detail.getByText("始终允许的网站")).toBeVisible();
+  await see(detail.getByText("shop.example.net")).toBeVisible();
+  await page.screenshot({ path: "/tmp/mau-browser-site-access.png" });
+  await detail.getByRole("button", { name: "移除" }).first().click();
+  await see(detail.getByText("docs.example.com")).toHaveCount(0);
+  await see(detail.getByText("shop.example.net")).toBeVisible();
+  expect(changes).toEqual([{ webAccess: "ask" }, { remove: "docs.example.com" }]);
+  expect(errors).toEqual([]);
+}, 90_000);

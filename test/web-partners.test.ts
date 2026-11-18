@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
 import { newIdempotencyKey } from "../web/src/api/ledger";
+import { alice } from "./fixtures/mau.js";
 import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 import { openPartnerTurn, partnerConversations, tripAnswer, tripMessage, visaQuestion } from "./fixtures/partner-console.js";
 
@@ -191,6 +192,31 @@ it.skipIf(!built)("an input recorded without what to show is its whole text; a l
   expect(errors).toEqual([]);
 }, 90_000);
 
+it.skipIf(!built)("a rule the Agent created waits as a card in its conversation, showing what will run, until the owner confirms it", async () => {
+  const f = await partnersFixture(cleanup, { webRoot }), end = f.hold();
+  await f.say(f.agent.id, "每天早上汇总邮件");
+  const turn = await f.turnOf(f.agent.id);
+  const target = (await f.service.runtime(f.agent.id)).extension!.sessions!.openOwnerConversation().sessionId;
+  await turn.call("proactive_work", { action: "create", rule: { name: "晨间邮件", goal: "汇总未读邮件。\n列出需要回复的。", targetSessionId: target,
+    schedule: { type: "daily", at: "09:00" }, timeZone: "Asia/Shanghai", connections: [] } });
+  end(turn, "已提交，等你确认。");
+  const { page, errors } = await browser(f);
+  await openChat(page, f, f.agent.id);
+  const card = page.locator(".mau-ledger-card[data-card-source='product']");
+  await see(card).toHaveAttribute("data-card-status", "pending");
+  await see(card.locator("strong")).toHaveText("新建定时任务待确认");
+  await see(card.locator("p").first()).toHaveText(["名称：晨间邮件", "时间：每天 09:00（Asia/Shanghai）", "执行内容：汇总未读邮件。\n列出需要回复的。", "可读取的连接：无", "结果发送到：对话"].join("\n"));
+  await see(card.getByRole("button")).toHaveText(["确认并启用定时任务", "拒绝这个定时任务"]);
+  await page.screenshot({ path: "/tmp/sec2-card.png" });
+  expect(f.mau.proactive.list(alice)).toEqual([]);
+  await card.getByRole("button", { name: "确认并启用定时任务" }).click();
+  await see(card).toHaveAttribute("data-card-status", "approved");
+  await see(card.getByRole("button")).toHaveCount(0);
+  await f.mau.proactive.tick();
+  expect(f.mau.proactive.list(alice)).toMatchObject([{ name: "晨间邮件", status: "active" }]);
+  expect(errors).toEqual([]);
+}, 60_000);
+
 it.skipIf(!built)("a partner's request for approval is a card in the sender's conversation that the owner answers once", async () => {
   const f = await partnersFixture(cleanup, { webRoot });
   const scene = await partnerConversations(f);
@@ -237,10 +263,10 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   expect(await first.status()).toBe("approved");
   first.settle();
 
-  // Refused. Arguments too long to show whole say that only the start of each is shown.
-  const second = await request("b", "给酒店发送确认邮件", undefined, { body: "x".repeat(5000) });
+  // Refused. Long arguments are shown whole.
+  const second = await request("b", "给酒店发送确认邮件", undefined, { body: "x".repeat(600) });
   await see(cards).toHaveCount(2);
-  await see(cards.nth(1).locator("p").first()).toContainText('参数（较长，以下每项只显示开头）：{"body":"xxx');
+  await see(cards.nth(1).locator("p").first()).toContainText(`{"body":"${"x".repeat(600)}"}`);
   await cards.nth(1).getByRole("button", { name: "拒绝这次操作" }).click();
   await see(status(1)).toHaveText("已拒绝");
   expect(await second.status()).toBe("denied");

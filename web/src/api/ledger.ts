@@ -36,9 +36,15 @@ export interface MessageDisplay {
   /** The results of a partner's messages, in the sender's conversation. */
   partnerResults?: PartnerResult[];
 }
+/** A rule the Agent asked to create, change or enable, as it will run once the owner confirms. `notify`: a connection id, `web`, or null for none. */
+export interface ScheduleConfirmation {
+  kind: "create" | "update" | "resume"; name: string; schedule: { type: "daily"; at: string } | { type: "interval"; minutes: number }; timeZone: string;
+  execution: "agent" | "direct"; instruction: string; connections: string[]; operations?: string[]; skills: string[]; precheck?: string; notify: string | null;
+}
 export interface CardDisplay {
+  scheduleConfirmation?: ScheduleConfirmation;
   /** `partner` asks to run an operation while it handles a message of `from`; `arguments` is JSON text. */
-  partnerApproval?: { partner: PartnerRef; from: PartnerRef; messageId: string; summary: string; connection: string; arguments: string; argumentsShortened?: true };
+  partnerApproval?: { partner: PartnerRef; from: PartnerRef; messageId: string; summary: string; connection: string; arguments: string };
 }
 export interface Card {
   cardId: string; agentId: string; turnId: string; claimId: string; callId: string;

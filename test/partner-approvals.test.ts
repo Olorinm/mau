@@ -24,6 +24,9 @@ it("puts a partner's approval card in the conversation its message came from, wh
   const authority = f.mau.partners.authority(partnerTurn)!;
   expect(authority).toMatchObject({ write: true, tool: "partners" }); expect(authority).not.toHaveProperty("ownerPrivate");
   expect(f.mau.partners.allows(partnerTurn)).toBe(true);
+  // What the turn writes to its memory is recorded as coming from the sender's message.
+  expect(f.mau.partners.memorySource(partnerTurn)).toEqual({ kind: "message", partners: [{ id: f.agent.id, name: "helper" }] });
+  expect(f.mau.partners.memorySource(admission)).toBeUndefined();
   expect(f.mau.partners.authority({ ...partnerTurn, agentId: f.agent.id })).toBeUndefined();
   expect(f.mau.partners.authority({ ...partnerTurn, reference: "pm-unknown" })).toBeUndefined();
   expect(f.mau.partners.allows({ ...partnerTurn, reference: "pm-unknown" })).toBe(false);
@@ -65,16 +68,16 @@ it("puts a partner's approval card in the conversation its message came from, wh
   const late = await answer((await cards(f.agent.id))[3]!.card.cardId, "0").then(result => result.status, (error: { code?: string }) => error.code);
   expect(["stale", "card_closed", "card_not_pending"]).toContain(late);
   expect(await desk.status("partner-approval-" + "d".repeat(40))).toBe("denied");
-  // Long arguments are never cut off silently: every value is shown shortened and the card says so.
-  const long = { to: "someone@mail.example", subject: "Booking", body: "x".repeat(6000), attachments: Array.from({ length: 9 }, (_, n) => `file-${n}.pdf`) };
+  // Long arguments are shown whole: every value and every item, nothing shortened.
+  const long = { to: "someone@mail.example", subject: "Booking", body: "x".repeat(3000), attachments: Array.from({ length: 30 }, (_, n) => `file-${n}.pdf`) };
   await desk.open({ id: "partner-approval-" + "9".repeat(40), summary: "Send the mail", connection: "trip-mail", arguments: long, deadlineAt: soon() });
-  const shown = (await cards(f.agent.id))[4]!.card.text;
-  expect(shown).toContain("参数（较长，以下每项只显示开头）：");
-  expect(shown).toContain('"to":"someone@mail.example"'); expect(shown).toContain(`"body":"${"x".repeat(80)}…(共 6000 字符)"`);
-  expect(shown).toContain('"file-4.pdf","…(共 9 项)"');
-  // Arguments that cannot be shown even shortened: the card is not opened, so the operation is refused.
+  const whole = (await cards(f.agent.id))[4]!.card;
+  expect(whole.text).toContain(`参数：${JSON.stringify(long)}`);
+  expect(whole.display.partnerApproval).toMatchObject({ arguments: JSON.stringify(long) });
+  expect(whole.display.partnerApproval).not.toHaveProperty("argumentsShortened");
+  // Arguments that cannot be shown whole: the card is not opened, so the operation is refused.
   await expect(desk.open({ id: "partner-approval-" + "8".repeat(40), summary: "Send the mail", connection: "trip-mail",
-    arguments: Object.fromEntries(Array.from({ length: 400 }, (_, n) => [`field-${n}`, "value"])), deadlineAt: soon() })).rejects.toThrow("approval_arguments_too_long_to_show");
+    arguments: { ...long, body: "x".repeat(6000) }, deadlineAt: soon() })).rejects.toThrow("approval_too_long_to_display");
   // Nowhere to ask: a card that could not be shown is an error at once, never a pending card.
   await expect(open("e", new Date(Date.now() - 1000).toISOString())).rejects.toThrow("owner_request_expired");
   expect(await desk.status("partner-approval-" + "e".repeat(40))).toBe("expired");

@@ -107,6 +107,17 @@ instructions with every link removed. The console takes the link it frames from 
 field, which Mau fills from the browser connection, never from the card's text. The live view shows Cloudflare's banner with
 Done and Failed; `handoff_status` reports when the owner pressed one.
 
+A browser connection opens new sites directly by default. The owner can set it to always ask (设置 → 连接器 → 浏览器 →
+网站访问). Then a command that opens a site, or acts on a page of a site, that is neither always allowed nor allowed
+for the conversation is not run: in a turn the owner started, Mau shows a card with the site, the whole command and
+three choices (此任务内允许 / 始终允许 / 拒绝), and the call waits for the answer. 此任务内允许 covers the conversation
+the turn belongs to (later turns in it do not ask again; another conversation does); 始终允许 adds the site to the
+connection's list, which the same settings page shows and removes from. A refusal, an unanswered card and a typed
+line return `browser_site_denied`. Scheduled work and turns that partner messages start cannot ask: they reach
+always-allowed sites only and otherwise get `browser_site_not_allowed_here`. Mau names the conversation to the
+connector itself (`task`, a digest of the session); a `task` in the model's arguments is dropped. Enforcement,
+including navigations a page starts, is the connector's; see Agent Connectors' security model.
+
 ## Product API
 
 The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body; connect names operations, and the scopes come from the connector's own policy view. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
@@ -118,6 +129,8 @@ The following account routes require the authenticated owner's bearer session. N
 | GET | `/_mau/v1/connector-accounts/:id/policy` | The owner's operation settings, grouped (see below) |
 | PUT | `/_mau/v1/connector-accounts/:id/policy` | Body `{ "settings": { "<operation>": "allow" \| "ask" \| "deny" } }` (partial); returns the policy |
 | POST | `/_mau/v1/connector-accounts/:id/policy/reset` | Restores the defaults; returns the policy |
+| GET | `/_mau/v1/connector-accounts/:id/access` | A browser connection's site permissions: `{ webAccess: "direct" \| "ask", sites: [...] }` |
+| PUT | `/_mau/v1/connector-accounts/:id/access` | Body `{ "webAccess": "direct" \| "ask" }` or `{ "remove": "<site>" }`; returns the site permissions |
 | POST | `/_mau/v1/connector-accounts/:id/check` | Current authorization status |
 | POST | `/_mau/v1/connector-accounts/:id/disconnect` | Disconnect result |
 | POST | `/_mau/v1/connector-accounts/:id/complete` | Feishu: finish the device-flow authorization; returns the consent link while it waits |
@@ -166,9 +179,8 @@ was sent in:
   operation's summary, its connection and its arguments, with 批准这次操作 and 拒绝这次操作. That text is what a channel
   shows; the card also carries the same as members (`card.display.partnerApproval`: `partner`, `from`, `messageId`,
   `summary`, `connection`, `arguments`), from which the console words the card in the interface language. Arguments
-  are never cut off silently: when they are too
-  long for the card, every value is shown shortened and the card says so, and when even that does not fit, no card is
-  shown and the call fails as below.
+  are never shortened: an operation whose summary and arguments do not fit the card (3500 characters) is refused
+  with `approval_too_long_to_display` before any card is shown.
 - The partner's tool call waits. Approval runs the operation once with the grant bound to what the card showed, and
   the result goes to the partner. A refusal returns `owner_denied`. No answer before the call's deadline is a refusal
   (`reason: approval_expired`).
