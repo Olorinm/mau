@@ -35,6 +35,10 @@ const policySchema = z.object({
 type PolicyOperation = z.infer<typeof policyOperationSchema>;
 export const policySettingsSchema = z.object({ settings: z.record(policyOperationIdSchema, settingSchema)
   .refine(settings => Object.keys(settings).length <= 200, "too_many_settings") }).strict();
+const siteSchema = z.string().min(1).max(300).regex(/^[a-z0-9.\-:[\]]+$/);
+/** A browser connection's site permissions: whether new sites open directly or ask first, and the sites always allowed. */
+const siteAccessSchema = z.object({ webAccess: z.enum(["direct", "ask"]), sites: z.array(siteSchema).max(500) });
+export const siteAccessInputSchema = z.union([z.object({ webAccess: z.enum(["direct", "ask"]) }).strict(), z.object({ remove: siteSchema }).strict()]);
 export const connectInputSchema = z.object({ operations: z.array(policyOperationIdSchema).min(1).max(20).optional() }).strict();
 const publicOperation = ({ grantScope: _scope, ...operation }: PolicyOperation) => operation;
 const errorCode = (body: unknown) => {
@@ -233,6 +237,28 @@ export class ConnectorAccounts {
   async resetPolicy(owner: string, id: string) {
     await this.owned(owner, id);
     return this.publicPolicy(await this.policyRequest(`/v1/connections/${id}/policy/reset`, { mutation: true }));
+  }
+  private async accessRequest(id: string, body?: unknown) {
+    const raw = await this.request(`/v1/connections/${id}/access`, body !== undefined,
+      { ...(body !== undefined ? { body, method: "PUT" as const } : {}), status: (status, refused) => ({ refused: errorCode(refused), status }) });
+    const refusal = z.object({ refused: z.string(), status: z.number() }).strict().safeParse(raw);
+    if (refusal.success) throw new RouterError(refusal.data.refused, [400, 404].includes(refusal.data.status) ? refusal.data.status : 409);
+    const parsed = siteAccessSchema.safeParse(raw);
+    if (!parsed.success) throw new RouterError("connector_service_unavailable", 502);
+    return parsed.data;
+  }
+  async siteAccess(owner: string, id: string) {
+    await this.owned(owner, id);
+    return this.accessRequest(id);
+  }
+  async setSiteAccess(owner: string, id: string, input: z.infer<typeof siteAccessInputSchema>) {
+    await this.owned(owner, id);
+    return this.accessRequest(id, "remove" in input ? { remove: { site: input.remove } } : input);
+  }
+  /** The owner's answer on a site card: allowed always, or with `task` for that conversation only. */
+  async allowSite(owner: string, id: string, site: string, task?: string) {
+    await this.owned(owner, id);
+    await this.accessRequest(id, { allow: { site: siteSchema.parse(site), ...(task ? { task } : {}) } });
   }
   async action(owner: string, id: string, action: "check" | "connect" | "complete" | "disconnect", input: z.infer<typeof connectInputSchema> = {}) {
     const entry = await this.owned(owner, id);

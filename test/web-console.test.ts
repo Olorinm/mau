@@ -1213,3 +1213,47 @@ it.skipIf(!built)("one 飞书 entry: chat in 消息渠道, personal access with 
   await see(settings.getByRole("heading", { name: "飞书" })).toBeVisible();
   expect(errors).toEqual([]);
 }, 60_000);
+
+it.skipIf(!built)("browser connection: new sites open directly or always ask, and always-allowed sites can be removed", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, errors } = await browser(f);
+  let access = { webAccess: "direct", sites: ["docs.example.com", "shop.example.net"] }, supported = false;
+  const changes: unknown[] = [];
+  await page.route("**/_mau/v1/connector-accounts**", async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path.endsWith("/connector-accounts")) return route.fulfill({ json: { configured: true, data: [
+      { id: "alice-browser", kind: "browser", label: "浏览器", state: "connected", verification: "provider", scopes: [], assignedAgents: [f.agent.id] }] } });
+    if (path.endsWith("/policy")) return route.fulfill({ status: 404, json: { error: "not_found" } });
+    if (path.endsWith("/access")) {
+      if (!supported) return route.fulfill({ status: 404, json: { error: "connection_access_unavailable" } });
+      if (request.method() === "PUT") {
+        const change = request.postDataJSON(); changes.push(change);
+        access = "remove" in change ? { ...access, sites: access.sites.filter(site => site !== change.remove) } : { ...access, ...change };
+      }
+      return route.fulfill({ json: access });
+    }
+    return route.fulfill({ json: { state: "connected", verification: "provider", scopes: [] } });
+  });
+  await page.reload();
+  await page.evaluate(() => { location.hash = "#/settings/connectors/browser"; });
+  const settings = page.getByRole("dialog", { name: "设置" });
+  await see(settings.getByRole("heading", { name: "浏览器" })).toBeVisible();
+  // A server without site permissions shows no setting for them.
+  await see(settings.getByText("打开网页并读取内容")).toBeVisible();
+  await see(settings.getByRole("combobox", { name: "新网站" })).toHaveCount(0);
+  supported = true;
+  await page.reload();
+  const detail = page.getByRole("dialog", { name: "设置" });
+  await see(detail.getByRole("combobox", { name: "新网站" })).toHaveText(/直接访问/);
+  await detail.getByRole("combobox", { name: "新网站" }).click();
+  await page.getByRole("option", { name: "始终询问", exact: true }).click();
+  await see(detail.getByRole("combobox", { name: "新网站" })).toHaveText(/始终询问/);
+  await see(detail.getByText("始终允许的网站")).toBeVisible();
+  await see(detail.getByText("shop.example.net")).toBeVisible();
+  await page.screenshot({ path: "/tmp/mau-browser-site-access.png" });
+  await detail.getByRole("button", { name: "移除" }).first().click();
+  await see(detail.getByText("docs.example.com")).toHaveCount(0);
+  await see(detail.getByText("shop.example.net")).toBeVisible();
+  expect(changes).toEqual([{ webAccess: "ask" }, { remove: "docs.example.com" }]);
+  expect(errors).toEqual([]);
+}, 90_000);

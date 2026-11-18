@@ -12,7 +12,7 @@ import { EnvironmentManager, dutySchema, environmentOptionsSchema, type Environm
 
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
-import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema } from "./connector-accounts.js";
+import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
@@ -85,7 +85,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     { sharedFrom: agentId => environments.sharedFrom(agentId), sharedBy: agentId => environments.sharedBy(agentId) });
   const business = new BusinessTools(options.feishuBotReaders, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
-  if (connectorAccounts.configured) business.setApprovals(connectorAccounts);
+  if (connectorAccounts.configured) { business.setApprovals(connectorAccounts); business.setSites(connectorAccounts); }
   const connectorRuntime = options.connectorAccounts?.runtimeConfigFile ? new ConnectorRuntime(
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const edgeIdentity = options.edgeIdentity as EdgeIdentityConfig | undefined ?? config.edgeIdentity;
@@ -376,6 +376,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     z.object({}).strict().parse(req.body ?? {});
     res.json(await connectorAccounts.resetPolicy(res.locals.owner, String(req.params.id)));
   });
+  // A browser connection's site permissions: open new sites directly or ask first, and the always-allowed sites.
+  product.get("/connector-accounts/:id/access", async (req, res) => res.json(await connectorAccounts.siteAccess(res.locals.owner, String(req.params.id))));
+  product.put("/connector-accounts/:id/access", async (req, res) =>
+    res.json(await connectorAccounts.setSiteAccess(res.locals.owner, String(req.params.id), siteAccessInputSchema.parse(req.body))));
   product.post("/connector-accounts/:id/:action", async (req, res) => {
     const action = z.enum(["check", "connect", "complete", "disconnect"]).parse(req.params.action);
     // Connect may name operations whose missing scopes to add; every other action takes no input.
