@@ -184,7 +184,7 @@ export function ledgerApi(token: string, base = ledgerBase) {
     /** Permanent; `confirm` must equal the chat id (typed confirmation, ADR 0005 16.4). */
     purge: (chatId: string, confirm: string, idempotencyKey: string, cancelActive = false) =>
       request<PurgeResponse>(chat(chatId) + "/purge", { token, body: { idempotencyKey, confirm, ...(cancelActive ? { cancelActive: true } : {}) } }),
-    /** The live card: while a handoff card is pending its text carries the private link, which history never stores. */
+    /** The live card: while a handoff card is pending it carries the private link (`native.params.handoff`), which history never stores. */
     card: (chatId: string, cardId: string, signal?: AbortSignal) => request<Card>(chat(chatId) + "/cards/" + encodeURIComponent(cardId), { token, ...signalOf(signal) }),
     read: (chatId: string, seq: number) => request<{ readSeq: number; unread: number }>(chat(chatId) + "/read", { token, body: { seq } }),
     turn: (chatId: string, turnId: string, signal?: AbortSignal) => request<TurnDetail>(chat(chatId) + "/turns/" + encodeURIComponent(turnId), { token, ...signalOf(signal) }),

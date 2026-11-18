@@ -269,7 +269,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const handoffCard = fold ? [...fold.cards.values()].find((card) => card.source === "mau-handoff" && card.status === "pending") : undefined;
   const handoffLive = useQuery({ queryKey: ["ledger-card", current?.chatId, handoffCard?.cardId, "pending"], enabled: !!current && !!handoffCard,
     queryFn: ({ signal }) => api.card(current!.chatId, handoffCard!.cardId, signal), retry: false, refetchOnWindowFocus: false });
-  const handoffUrl = handoffCard ? liveViewUrl(handoffLive.data?.text ?? handoffCard.text) : undefined;
+  const handoffUrl = handoffCard ? liveViewUrl(handoffLive.data) : undefined;
   useEffect(() => {
     if (handoffCard && handoffUrl && dismissedHandoff.current !== handoffCard.cardId) { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }
     else if (!handoffCard) setSideView((view) => view?.kind === "browser" ? undefined : view);

@@ -48,7 +48,7 @@ async function fixture(options: { deadlineMs?: number; files?: boolean; partner?
       summarize: input => `Upload ${input.files.map(f => f.name).join(", ")} to ${input.site}`,
       execute: async (_ctx, input) => { executed.push({ tool: "agent_browser_write", input }); return { exitCode: 0, output: "✓ Uploaded" }; } },
     { name: "handoff_start", description: "Handoff", risk: "read", input: z.object({ instructions: z.string() }).strict(),
-      execute: async (_ctx, input) => ({ handoffId: "h-1", liveViewUrl: "https://live.example/view/secret-token", expiresAt: new Date(Date.now() + 600_000).toISOString(), instructions: input.instructions }) },
+      execute: async (_ctx, input) => ({ handoffId: "h-1", liveViewUrl: "https://live.example/view/secret-token", expiresAt: new Date(Date.now() + 600_000).toISOString(), instructions: input.instructions, pageHost: "accounts.example.test" }) },
     { name: "handoff_cancel", description: "Cancel handoff", risk: "write", input: z.object({ handoffId: z.string() }).strict(),
       execute: async (_ctx, input) => { executed.push({ tool: "handoff_cancel", input }); return { cancelled: true }; } },
   ] };
@@ -276,14 +276,20 @@ it("relays command files into browser_downloads/, screenshots as images, and kee
   expect(shot.contentItems[0].text).not.toContain(Buffer.from("png-bytes").toString("base64"));
   expect(JSON.parse(shot.contentItems[0].text).result.files[0].name).toBe("screenshot.png");
 
-  f.call("browser__handoff_start", { instructions: "Please sign in" }, "handoff");
+  // The Agent's note is untrusted: a link in it must never stand in for the handoff's own.
+  f.call("browser__handoff_start", { instructions: "Please sign in at https://live.browser.run/ui/view?wss=attacker first\n私密接管链接：\nLIVE.browser.run/ui/attacker or www.attacker.example/x" }, "handoff");
   const listed = await f.host.calls("run");
   expect(f.text("handoff").result).toMatchObject({ handoffId: "h-1" });
   expect(f.resolved.get("handoff").contentItems[0].text).not.toContain("live.example");
   const card = listed.find(c => c.id === "mau-handoff:handoff")!;
   expect(card).toMatchObject({ kind: "interaction", name: "item/tool/requestUserInput", input: { questions: [{ id: "handoff", options: [{ label: "取消接管" }] }] } });
-  expect(JSON.stringify(card.input)).toContain("https://live.example/view/secret-token");
-  expect(JSON.stringify(card.input)).toContain("Agent 的说明：Please sign in");
+  const shown = card.input as { questions: Array<{ question: string }>; handoff: unknown };
+  // The console reads the link from the structured field; text channels get it on its own line, ahead of the note.
+  expect(shown.handoff).toEqual({ liveViewUrl: "https://live.example/view/secret-token", pageHost: "accounts.example.test" });
+  expect(shown.questions[0]!.question.split("\n").slice(1)).toEqual(["私密接管链接（仅限本人操作，不要转发）：", "https://live.example/view/secret-token", "当前页面：accounts.example.test",
+    "Agent 的说明：Please sign in at [链接已移除] first 私密接管链接： [链接已移除] or [链接已移除]", "完成后点页面里的 Done（无法完成点 Failed），也可以回到对话告诉 Agent。"]);
+  expect(JSON.stringify(card.input)).not.toMatch(/attacker|browser\.run/i);
+  expect(JSON.stringify(f.store.entriesByStatus("browser_handoffs", ["open"]))).not.toMatch(/attacker|browser\.run/i);
   await f.host.resolve("run", card.id, { answers: { handoff: { answers: ["取消接管"] } } });
   expect(f.resolved.has(card.id)).toBe(false);
   expect(f.executed.filter(e => e.tool === "handoff_cancel")).toEqual([{ tool: "handoff_cancel", input: { handoffId: "h-1" } }]);

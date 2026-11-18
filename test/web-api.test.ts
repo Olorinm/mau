@@ -176,8 +176,16 @@ it("keeps unsent composer text across the Access re-login reload", () => {
 it("frames only a Cloudflare live-view link from a handoff card", async () => {
   const { liveViewUrl } = await import("../web/src/api/live-view.js");
   const url = "https://live.browser.run/ui/view?mode=tab&wss=live.browser.run/api/devtools/browser/s/page/t?jwt=abc.def";
-  expect(liveViewUrl(`浏览器已交给你接管。请在此私密链接中操作，不要转发：\n${url}\n完成后点页面里的 Done。`)).toBe(url);
-  expect(liveViewUrl("see https://live.browser.run.evil.example/ui/view?x=1")).toBeUndefined();
-  expect(liveViewUrl("see https://example.test/ui/view and http://live.browser.run/ui/view")).toBeUndefined();
+  const card = (liveViewUrl: unknown, text = "") => ({ text, native: { method: "item/tool/requestUserInput", params: { questions: [{ id: "handoff", question: text }], handoff: { liveViewUrl } } } });
+  expect(liveViewUrl(card(url))).toBe(url);
+  // Only the structured field counts: a link in the card's text (what the Agent wrote) is never framed.
+  const attacker = "https://live.browser.run/ui/view?mode=tab&wss=live.browser.run/api/devtools/browser/attacker";
+  expect(liveViewUrl(card(url, `Agent 的说明：${attacker}`))).toBe(url);
+  expect(liveViewUrl({ text: attacker, native: { method: "item/tool/requestUserInput", params: { questions: [{ id: "handoff", question: attacker }] } } })).toBeUndefined();
+  expect(liveViewUrl({ text: attacker })).toBeUndefined();
+  expect(liveViewUrl(card("https://live.browser.run.evil.example/ui/view?x=1"))).toBeUndefined();
+  expect(liveViewUrl(card("http://live.browser.run/ui/view"))).toBeUndefined();
+  // History keeps the card with its link redacted.
+  expect(liveViewUrl(card("[私密链接，仅在卡片待处理时显示]"))).toBeUndefined();
   expect(liveViewUrl(undefined)).toBeUndefined();
 });
