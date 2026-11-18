@@ -176,8 +176,8 @@ it("shows the whole operation on the card, invisible characters included, or ref
   // Too long to show whole: refused at once with a reason the agent can act on, denied upstream, and no card.
   f.call("browser__click", { site: "https://shop.example", ref: "x".repeat(4000) }, "call-2");
   expect((await f.host.calls("run")).filter(c => c.kind === "interaction")).toEqual([]);
-  expect(f.text("call-2")).toMatchObject({ status: "failed", error: "approval_too_long_to_display", limit: 3500, instruction: expect.stringContaining("too long to show") });
-  expect((await f.service.operation(f.text("call-2").operationId))!.status).toBe("denied");
+  // The connector service refuses a summary it could not show before it creates an operation.
+  expect(f.text("call-2")).toMatchObject({ status: "failed", error: "approval_too_long_to_display", detail: { limit: 3500, instruction: expect.stringContaining("too long to show") } });
   expect(f.executed).toEqual([]);
 });
 

@@ -263,10 +263,10 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   expect(await first.status()).toBe("approved");
   first.settle();
 
-  // Refused. Arguments too long to show whole say that only the start of each is shown.
-  const second = await request("b", "给酒店发送确认邮件", undefined, { body: "x".repeat(5000) });
+  // Refused. Long arguments are shown whole.
+  const second = await request("b", "给酒店发送确认邮件", undefined, { body: "x".repeat(600) });
   await see(cards).toHaveCount(2);
-  await see(cards.nth(1).locator("p").first()).toContainText('参数（较长，以下每项只显示开头）：{"body":"xxx');
+  await see(cards.nth(1).locator("p").first()).toContainText(`{"body":"${"x".repeat(600)}"}`);
   await cards.nth(1).getByRole("button", { name: "拒绝这次操作" }).click();
   await see(status(1)).toHaveText("已拒绝");
   expect(await second.status()).toBe("denied");
