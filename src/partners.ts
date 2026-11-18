@@ -5,7 +5,7 @@ import type { ServiceExtension, WorkEventResult, WorkSessions } from "@agent-rou
 import type { DurableStore } from "./store.js";
 import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
-import type { ApprovalDesk } from "./connector-approvals.js";
+import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import { dutySchema } from "./environments.js";
 import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
@@ -153,21 +153,14 @@ export class PartnerError extends Error {
   constructor(code: string, readonly details: Record<string, unknown> = {}) { super(code); }
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-/** Long values of an operation's arguments shortened so that every one of them is still shown, and marked as shortened. */
-const briefly = (value: unknown): unknown => typeof value === "string" ? (value.length > 80 ? `${value.slice(0, 80)}…(共 ${value.length} 字符)` : value)
-  : Array.isArray(value) ? [...value.slice(0, 5).map(briefly), ...(value.length > 5 ? [`…(共 ${value.length} 项)`] : [])]
-  : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, briefly(item)])) : value;
 /**
- * The arguments of an operation as the owner reads them on its approval card. They are never cut off without saying
- * so: arguments too long for the card are shown with every value shortened, and when even that does not fit, the
- * card is not shown and the operation is refused.
+ * The arguments of an operation as the owner reads them on its approval card: all of them, never shortened. When they
+ * do not fit the card, the card is not shown and the operation is refused.
  */
-function shownArguments(value: unknown): { json: string; brief: boolean } {
-  const full = JSON.stringify(value);
-  if (full.length <= 4000) return { json: full, brief: false };
-  const brief = JSON.stringify(briefly(value));
-  if (brief.length > 4000) throw new Error("approval_arguments_too_long_to_show");
-  return { json: brief, brief: true };
+function shownArguments(value: unknown): string {
+  const json = JSON.stringify(value);
+  if (json.length > APPROVAL_DISPLAY_LIMIT) throw new Error("approval_too_long_to_display");
+  return json;
 }
 const iso = (time = Date.now()) => new Date(time).toISOString();
 const expectsReply = (message: PartnerMessage) => message.intent !== "inform";
@@ -892,10 +885,10 @@ export class Partners {
         const shown = shownArguments(card.arguments);
         sessions.request({ eventId: card.id, kind: "approval", title: `伙伴「${message.to.name}」请求批准`,
           text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`, `连接：${card.connection}`,
-            `${shown.brief ? "参数（较长，以下每项只显示开头）" : "参数"}：${shown.json}`].join("\n"),
+            `参数：${shown}`].join("\n"),
           choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
           display: { partnerApproval: { partner: { id: message.to.agentId, name: message.to.name }, from: { id: message.from.agentId, name: message.from.name },
-            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown.json, ...(shown.brief ? { argumentsShortened: true } : {}) } },
+            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown } },
           ...(sessions.deliveryConnections().includes(connection) ? { connectionId: connection } : {}) });
       },
       status: async id => {

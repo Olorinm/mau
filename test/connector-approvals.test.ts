@@ -163,6 +163,24 @@ it("presents a connector write as Router's approval card and executes it once wi
   expect(replay.status).toBe(409);
 });
 
+it("shows the whole operation on the card, invisible characters included, or refuses it before any card exists", async () => {
+  const f = await fixture(); await f.start();
+  // Long values, long lists and deep objects are shown as they will run; nothing is replaced by a count.
+  const ref = `buy ${"长".repeat(1500)} now\u202Egnp.exe\u200B\u00A0`;
+  f.call("browser__click", { site: "https://shop.example", ref });
+  const card = (await f.host.calls("run")).find(c => c.kind === "interaction")!.input as any;
+  expect(card.input.arguments).toEqual({ site: "https://shop.example", ref: `buy ${"长".repeat(1500)} now⟨U+202E⟩gnp.exe⟨U+200B⟩⟨U+00A0⟩` });
+  expect(JSON.stringify(card)).not.toMatch(/[\u202E\u200B\u00A0]|characters>|items>|<object>/);
+  await f.host.resolve("run", "mau-approval:call-1", { choice: "deny" });
+  await vi.waitFor(async () => { await f.host.calls("run"); expect(f.text().error).toBe("owner_denied"); });
+  // Too long to show whole: refused at once with a reason the agent can act on, denied upstream, and no card.
+  f.call("browser__click", { site: "https://shop.example", ref: "x".repeat(4000) }, "call-2");
+  expect((await f.host.calls("run")).filter(c => c.kind === "interaction")).toEqual([]);
+  expect(f.text("call-2")).toMatchObject({ status: "failed", error: "approval_too_long_to_display", limit: 3500, instruction: expect.stringContaining("too long to show") });
+  expect((await f.service.operation(f.text("call-2").operationId))!.status).toBe("denied");
+  expect(f.executed).toEqual([]);
+});
+
 it("denies upstream and returns owner_denied when the owner refuses", async () => {
   const f = await fixture(); await f.start();
   f.call("browser__click", { site: "https://shop.example", ref: "buy" });

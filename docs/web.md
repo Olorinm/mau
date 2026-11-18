@@ -136,7 +136,7 @@ console shows that work in the conversations it belongs to.
 - **Approval cards.** When a partner's operation needs the owner's approval, the card appears in the conversation
   the message was sent from, under the asking partner's figure and name. The console words it in the interface
   language from the members of the request: who asks, whose message it handles, the operation, the connection and
-  the arguments (saying so when long arguments are shown shortened). The two choices follow the interface language
+  the arguments, which are always shown whole. The two choices follow the interface language
   too. A card recorded without those members shows the server's text and choices. A card is answered once, and then
   shows whether it was approved, declined, expired, withdrawn or answered elsewhere. A partner that waits for an
   approval says so in the list of conversations.
