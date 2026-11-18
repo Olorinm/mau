@@ -81,7 +81,7 @@ one on every call, from `cloudflared` or from private files, never from position
 ```sh
 cloudflared access login https://mau.example
 mau login --url https://mau.example
-# automation: an Access service token mapped by the operator
+# automation: an Access service token mapped by the operator (read-only unless given "access": "owner")
 mau login --url https://mau.example \
   --access-client-id-file /private/id --access-client-secret-file /private/secret
 mau options

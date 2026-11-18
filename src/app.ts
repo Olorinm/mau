@@ -51,9 +51,9 @@ const optionsSchema = z.object({
 }).strict();
 const apiRoot = "/_mau/v1";
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
-interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number }
+interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number; operator?: true }
 type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
-interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined }
+interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined; url?: string | undefined; originalUrl?: string | undefined }
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
 /** Product records keyed or tagged by a deleted partner: business scopes (`agentId:operation`), JSON keys
@@ -125,9 +125,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     },
   });
   /** Every owner route and the SSH upgrade: the Access JWT when the request carries one, otherwise the bearer token. */
-  // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests.
-  const authenticateRequest = (req: OwnerRequest): Promise<OwnerPrincipal> =>
-    router.service.authenticateRequest({ headers: req.headers, method: req.method });
+  // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests. Method, path and
+  // headers let it hold a service token to an operator's requests: here that is reading, without the SSH upgrade.
+  const authenticateRequest = (req: OwnerRequest): Promise<OwnerPrincipal> => {
+    const request: OwnerRequest = { headers: req.headers, method: req.method, originalUrl: req.originalUrl ?? req.url };
+    return router.service.authenticateRequest(request);
+  };
   environments = new EnvironmentManager(router.connections, router.service, options.environments,
     base, join(config.stateDir, "mau"), dependencies.environments);
   // Refused before anything of the partner is stopped or paused: other partners still run in its environment.

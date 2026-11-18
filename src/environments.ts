@@ -53,6 +53,11 @@ export const environmentOptionsSchema = z
             lifetimeSeconds: z.number().int().min(600).max(86400).default(3600),
             onTimeout: z.enum(["kill", "pause"]).default("kill"),
             idlePauseSeconds: z.number().int().min(600).max(2_592_000).optional(),
+            /**
+             * The model accounts the provider holds the environment to, per model service. Omitted: the ChatGPT account
+             * of the Codex sign-in file among `files`, when there is one. `false`: none.
+             */
+            modelAccounts: z.union([z.literal(false), z.object({ openai: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)).min(1).max(8) }).strict()]).optional(),
             files,
           })
           .strict(),
@@ -128,11 +133,39 @@ const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, 
  * default decides; so does one with a kernel that is not known here.
  */
 const admitted = (p: Profile) => {
-  const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined;
-  return services ? { modelServices: services } : undefined;
+  const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
+  return services || accounts ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}) } : undefined;
 };
 /** The private files of a profile: its own, then those of its other kernels. */
 const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
+/**
+ * The ChatGPT account of a Codex sign-in file (`auth.json`): the one its access token names, which is what the
+ * provider compares, else the ID token's, else the recorded one. None for a file that signs in with an API key.
+ */
+export function codexAccount(content: string): string | undefined {
+  try {
+    const auth = JSON.parse(content) as { auth_mode?: unknown; tokens?: { access_token?: unknown; id_token?: unknown; account_id?: unknown } };
+    if (auth.auth_mode !== undefined && auth.auth_mode !== "chatgpt") return undefined;
+    const claim = (token: unknown) => {
+      try { return (JSON.parse(Buffer.from(String(token).split(".")[1] ?? "", "base64url").toString()) as Record<string, { chatgpt_account_id?: unknown } | undefined>)["https://api.openai.com/auth"]?.chatgpt_account_id; }
+      catch { return undefined; }
+    };
+    const account = [claim(auth.tokens?.access_token), claim(auth.tokens?.id_token), auth.tokens?.account_id].find((value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value));
+    return account as string | undefined;
+  } catch { return undefined; }
+}
+/**
+ * The model accounts the provider is to hold a profile's environments to, sent with every create and resume so an
+ * environment created before this was known gets it at its next start. A guest that is talked into it could
+ * otherwise send the owner's data to the same model provider under someone else's sign-in.
+ */
+const modelAccounts = (p: Profile) => {
+  if (p.modelAccounts !== undefined) return p.modelAccounts || undefined;
+  const accounts = privateFiles(p).filter((file) => file.destination.endsWith("/.codex/auth.json")).flatMap((file) => {
+    try { return [codexAccount(readFileSync(file.source, "utf8"))]; } catch { return []; }
+  }).filter((account) => account !== undefined);
+  return accounts.length ? { openai: [...new Set(accounts)] } : undefined;
+};
 // One failed renewal request is not evidence the environment stopped. Three 30-second
 // attempts stay well inside the shortest 600-second lifetime.
 const renewalAttempts = 3;
