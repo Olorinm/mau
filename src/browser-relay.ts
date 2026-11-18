@@ -78,10 +78,17 @@ export function agentCatalog(result: unknown, connections: string[]) {
         "File paths are relative to your working directory (max 10 MB in total); Mau reads them from your workspace and the owner approves the files and site.",
       inputSchema: { type: "object", properties: { args: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 100,
         description: "agent-browser arguments: upload <file input> <path...>" } }, required: ["args"], additionalProperties: false } };
-    if (found?.tool === "agent_browser_read") return { ...tool, description: `${String(tool.description ?? "")}${FILES_NOTE}` };
+    if (found?.tool === "agent_browser_read") return { ...tool, description: `${String(tool.description ?? "")}${FILES_NOTE}`, inputSchema: withoutTask(tool.inputSchema) };
     if (found?.tool === "handoff_start") return { ...tool, description: `${String(tool.description ?? "")} The owner receives the live view privately; you receive only the handoff ID and expiry.` };
     return tool;
   }) };
+}
+/** `task` is Mau's to set (the conversation whose site permissions apply), so the model is not offered it. */
+function withoutTask(schema: unknown) {
+  const parsed = z.object({ properties: z.record(z.string(), z.unknown()) }).passthrough().safeParse(schema);
+  if (!parsed.success) return schema;
+  const { task: _task, ...properties } = parsed.data.properties;
+  return { ...parsed.data, properties };
 }
 const lines = (text: string) => text.split("\n").filter(Boolean);
 async function check(files: SandboxFiles, argv: string[], error: string) {

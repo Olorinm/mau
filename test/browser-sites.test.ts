@@ -9,6 +9,7 @@ import { ConnectorAccounts } from "../src/connector-accounts.js";
 import { DurableStore } from "../src/store.js";
 import { privateFile } from "../src/files.js";
 import type { ConnectedAppReader } from "../src/connected-apps.js";
+import { agentCatalog } from "../src/browser-relay.js";
 
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.unstubAllGlobals(); });
@@ -182,4 +183,10 @@ it("reads and changes a browser connection's site permissions only for its owner
   await expect(accounts.allowSite("@mallory:example.test", "browser", "shop.example")).rejects.toBeInstanceOf(RouterError);
   await expect(accounts.allowSite(owner, "browser", "refused.example")).rejects.toMatchObject({ message: "browser_site_invalid", status: 400 });
   expect(requests.length).toBe(6);
+});
+
+it("the model's catalog does not offer the task field, which only Mau sets", () => {
+  const inputSchema = { type: "object", properties: { args: { type: "array" }, task: { type: "string" } }, required: ["args"], additionalProperties: false };
+  const catalog = agentCatalog({ status: "completed", tools: [{ name: "browser__agent_browser_read", description: "Run agent-browser.", inputSchema }] }, ["browser"]) as { tools: Array<{ inputSchema: unknown }> };
+  expect(catalog.tools[0]!.inputSchema).toEqual({ type: "object", properties: { args: { type: "array" } }, required: ["args"], additionalProperties: false });
 });
