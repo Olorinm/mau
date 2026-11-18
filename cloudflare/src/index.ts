@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { accessBatchDue, accessBatchKey, accessRecord, backupDueFor } from "./policy.mjs";
+import { accessBatchDue, accessBatchKey, accessRecord, accessRecorded, backupDueFor, recordAccess } from "./policy.mjs";
 
 interface Env {
   MAU: DurableObjectNamespace<Mau>;
@@ -43,6 +43,7 @@ export default {
  */
 export class Mau extends DurableObject<Env> {
   private reconciling?: Promise<void>;
+  private accessFailureLoggedAt = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -62,7 +63,12 @@ export class Mau extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const startedAt = Date.now();
     const response = await this.forward(request);
-    this.ctx.storage.sql.exec("INSERT INTO access (at, record) VALUES (?, ?)", startedAt, JSON.stringify(accessRecord(request, response.status, startedAt)));
+    // The record is kept when it can be. A full or failing store must not turn an answered request into an error.
+    if (accessRecorded(request)) try {
+      recordAccess((query: string, ...bindings: unknown[]) => this.ctx.storage.sql.exec(query, ...bindings), startedAt, accessRecord(request, response.status, startedAt));
+    } catch (error) {
+      if (startedAt - this.accessFailureLoggedAt >= MINUTE) { this.accessFailureLoggedAt = startedAt; log("mau_access_record_failed", { error: String(error) }, true); }
+    }
     return response;
   }
 
