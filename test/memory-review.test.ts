@@ -209,3 +209,11 @@ it("refuses a foreign execution receipt without completing or replaying its revi
   expect(f.service.list(scope)[0]).toMatchObject({ status: "uncertain", reason: "memory_review_receipt_scope_mismatch" });
   await f.service.tick(); expect(f.reviewer.submit).toHaveBeenCalledTimes(1);
 });
+
+it("writes nothing when a cycle finds no review to do", async () => {
+  const f = fixture();
+  const changes = () => Number(f.store.db.prepare("SELECT total_changes() AS n").get()!.n);
+  const before = changes();
+  await f.service.tick(); await f.service.tick();
+  expect(changes()).toBe(before);
+});

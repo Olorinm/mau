@@ -64,10 +64,15 @@ export class DurableStore {
     try { const result = work(); this.db.exec("COMMIT"); return result; }
     catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
+  /**
+   * Take or keep the 30-second coordination lease. A lease this owner already holds is written again only in its
+   * second half, so a coordinator may ask every second without writing every second.
+   */
   acquireLease(owner: string, now = Date.now()): void {
     this.transaction(() => {
       const lease = this.get<{ owner: string; expires: number }>("meta", "lease");
       if (lease && lease.owner !== owner && lease.expires > now) throw new Error("environment_coordinator_already_running");
+      if (lease?.owner === owner && lease.expires - now > 15_000) return;
       this.set("meta", "lease", { owner, expires: now + 30_000 });
     });
   }

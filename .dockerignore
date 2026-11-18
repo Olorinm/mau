@@ -7,6 +7,8 @@
 !.packages/*.tar
 !src/
 !src/**
+!cloudflare/container/
+!cloudflare/container/**
 !web/
 !web/**
 web/node_modules
@@ -17,4 +19,5 @@ web/ui/.local
 
 !LICENSE
 !NOTICE
+!THIRD_PARTY_NOTICES
 !components.json

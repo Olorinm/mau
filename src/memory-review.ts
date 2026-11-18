@@ -241,12 +241,14 @@ export class MemoryReviewCoordinator {
         .finally(() => signal.removeEventListener("abort", abort));
     });
   }
+  private unfinished() { return this.store.entriesByStatus<MemoryReviewJob>("memory_reviews", ["queued", "submitting", "running", "uncertain"]); }
   private async cycle(): Promise<void> {
-    if (!this.claimLease()) return;
+    // Most cycles find nothing to do: look first, and take the lease only when there is work.
+    if (!this.unfinished().length || !this.claimLease()) return;
     const heartbeat = setInterval(() => { if (this.ownsLease()) this.store.set("memory_review_meta", "lease", { owner: this.leaseId, expires: Date.now() + 30_000 }); }, 5000);
     heartbeat.unref();
     try {
-      for (const row of this.store.entriesByStatus<MemoryReviewJob>("memory_reviews", ["queued", "submitting", "running", "uncertain"])) {
+      for (const row of this.unfinished()) {
         if (this.closed || !this.ownsLease()) break;
         const job = this.current(row.value);
         try { await this.advance(job); }

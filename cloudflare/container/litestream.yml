@@ -1,0 +1,15 @@
+# Every SQLite database below /state, including one created while Mau runs, is replicated to the
+# state bucket under db/<path below /state>. Credentials come from LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY.
+dbs:
+  - dir: /state
+    pattern: "*.sqlite"
+    recursive: true
+    watch: true
+    meta-dir: /var/lib/litestream
+    replica:
+      type: s3
+      bucket: ${STATE_BUCKET}
+      path: db
+      endpoint: ${R2_ENDPOINT}
+      region: auto

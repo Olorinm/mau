@@ -4,6 +4,28 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.52] - 2026-11-18
+
+- Mau deploys on Cloudflare as one Worker with one container. [`cloudflare/`](cloudflare) holds the Worker, its
+  Durable Object and the container's start script; [deployment](docs/deployment.md) describes it. The Durable
+  Object keeps the container running, forwards requests and WebSockets, restarts the container for a new image,
+  instance size or `CONFIG_REVISION`, and stops it while `RUN` is not `"true"`.
+- The container's disk is empty at every start. Its start script reads configuration from one R2 bucket into
+  `/config`, restores `/state` from another and keeps copying it back: SQLite databases with Litestream as they
+  change, other files with rclone every 30 seconds. A stop that is asked for loses nothing committed; a start
+  refuses to run on a failed restore or on a state bucket that lost its databases.
+- `start.sh seed` copies an existing state directory to an empty state bucket, to move an installation in.
+- The Durable Object keeps an access record of each request (time, method, path, status, duration, client
+  address) in an R2 bucket, and can run Agent Environment's encrypted backup in the container once a day.
+- The image starts through `cloudflare/container/start.sh` and sets `MAU_STATE=/state`,
+  `AGENT_SERVICE_STATE=/state/router` and `MAU_CONFIG_FILE=/config/mau.json`; it adds Litestream, rclone,
+  python3 and age. The Dockerfile now builds from a checkout: `.dockerignore` no longer leaves out files it copies.
+- An idle Mau no longer writes its databases every second: a coordination lease its holder already has is
+  written again only in its second half, and background memory review takes its lease only when there is work.
+- CI checks the Worker, builds the image and runs it through a first start, a stop and restore, a kill, a lost
+  replicator, a lost bucket and a seed (`cloudflare/test/container.sh`).
+- Agent Kit 0.11.0-alpha.4.
+
 ## [0.1.0-alpha.51] - 2026-11-18
 
 - An environment can offer more than one kernel. A profile's `otherKernels` lists kernels beside
