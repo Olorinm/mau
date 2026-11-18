@@ -4,12 +4,16 @@ import type { PartnerTools } from "./business-tools.js";
 import type { RunAdmission } from "./run-admission.js";
 import { PartnerContext, MemoryError, memoryInput, memoryToolSchema } from "./partner-context.js";
 import { historyQuery, type SessionHistory } from "./session-history.js";
-import { ProactiveWork, proactiveRuleInput } from "./proactive.js";
+import { ProactiveWork, proactiveRuleInput, type ProactiveRule, type RuleProposal } from "./proactive.js";
 import { partnersInput, type Partners } from "./partners.js";
 import { PARTNERS_DESCRIPTION } from "./partner-text.js";
 
 const proactiveInput = z.object({ action: z.enum(["list", "create", "update", "runs", "pause", "resume", "run"]), ruleId: z.uuid().optional(),
   expectedVersion: z.number().int().positive().optional(), rule: proactiveRuleInput.omit({ agentId: true }).optional() }).strict();
+const awaitingOwner = (proposal: RuleProposal) => ({ status: "awaiting_owner_confirmation", confirmationId: proposal.id, change: proposal.kind,
+  ...(proposal.ruleId ? { ruleId: proposal.ruleId } : {}), name: proposal.rule.name, expiresAt: proposal.expiresAt,
+  instruction: proposal.status === "confirmed" ? "The owner confirmed. The rule is saved, enabled, as soon as its run in flight ends. Do not repeat the call."
+    : `Nothing is saved or changed yet${proposal.kind === "create" ? "" : ": the rule keeps its saved version and state"}. The owner was shown a confirmation card in their private conversation with you, with the schedule, the full instruction, the connections and the destination. The rule is saved, enabled, only when the owner confirms that card. Do not repeat this call, do not call resume and do not ask for confirmation in chat; tell the owner to answer the card.` });
 const required = (value: string | undefined, name: string) => { if (!value) throw new Error(`${name}_required`); return value; };
 
 /** Product tools compose native operations; no model argument may choose owner, Host or runtime. */
@@ -54,7 +58,8 @@ export class NativePartnerTools implements PartnerTools {
       try {
         const input = memoryInput.parse(raw);
         if (input.action === "read") return this.facts.read(this.owner, this.agentId);
-        return this.facts.mutate(this.owner, this.agentId, input, { origin: review ? "review" : admission.kind });
+        return this.facts.mutate(this.owner, this.agentId, input, { origin: review ? "review" : admission.kind,
+          source: review ? undefined : this.partners.memorySource(admission) });
       } catch (error) {
         if (error instanceof MemoryError) {
           let live: unknown; try { live = this.facts.read(this.owner, this.agentId).entries; } catch { /* Preserve the original fail-closed error. */ }
@@ -71,20 +76,25 @@ export class NativePartnerTools implements PartnerTools {
     if (name !== "proactive_work") throw new Error("partner_tool_unknown");
     const input = proactiveInput.parse(raw);
     if (admission.kind !== "owner" && !["list", "runs"].includes(input.action)) throw new Error("proactive_owner_admission_required");
-    if (input.action === "list") return { rules: this.proactive.list(this.owner).filter(r => r.agentId === this.agentId) };
+    if (input.action === "list") {
+      const waiting = this.proactive.proposals(this.owner, this.agentId).map(awaitingOwner);
+      return { rules: this.proactive.list(this.owner).filter(r => r.agentId === this.agentId), ...(waiting.length ? { awaitingOwnerConfirmation: waiting } : {}) };
+    }
+    // Creating a rule, changing what one does and enabling one take effect only when the owner confirms the card.
+    const proposed = (result: ProactiveRule | RuleProposal) => "kind" in result ? awaitingOwner(result) : result;
     if (input.action === "create") {
       if (!input.rule) throw new Error("rule_required");
-      return this.proactive.save(this.owner, { ...input.rule, agentId: this.agentId });
+      return proposed(await this.proactive.propose(this.owner, this.agentId, input.rule));
     }
     const id = required(input.ruleId, "rule_id"), rule = this.proactive.rule(this.owner, id);
     if (rule.agentId !== this.agentId) throw new Error("partner_tool_not_authorized");
     if (input.action === "update") {
       if (!input.rule || !input.expectedVersion) throw new Error("rule_and_version_required");
-      return this.proactive.save(this.owner, { ...input.rule, agentId: this.agentId }, id, input.expectedVersion);
+      return proposed(await this.proactive.propose(this.owner, this.agentId, input.rule, id, input.expectedVersion));
     }
     if (input.action === "runs") return { runs: this.proactive.runs(this.owner, id) };
     if (input.action === "run") return this.proactive.runNow(this.owner, id,
       `mau-tool-${createHash("sha256").update(JSON.stringify([this.owner, this.agentId, admission.reference, callId])).digest("hex")}`);
-    return this.proactive.state(this.owner, id, input.action === "pause" ? "paused" : "active");
+    return input.action === "pause" ? this.proactive.state(this.owner, id, "paused") : proposed(await this.proactive.proposeResume(this.owner, id));
   }
 }

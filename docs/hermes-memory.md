@@ -32,6 +32,8 @@ The content scanner detects specified injection/credential/control-character pat
 
 `replace` and `remove` name an entry by `old_text`, and `{"action":"batch","operations":[...]}` applies up to 30 operations or none.
 
+Every change is recorded with its origin, the last 100 per partner: `owner` (a turn the owner's own message started, the owner's edit, approval or undo), `delegation` (a turn that handled a partner's message or handed partners' results back, with those partners as `source`) or `review`. `GET /agents/:id/memory/mutations` lists them newest first, each with `changes` (`add`, `replace` with `before`/`after`, `remove`) and `unseen` (not the owner's and newer than the owner last saw); `POST /agents/:id/memory/mutations/seen` takes `{through: seq}`. `POST /agents/:id/memory/mutations/:mutationId/undo` with `{}` takes one change back as an owner change: what it added is removed, what it replaced or removed is put back; it answers 409 `memory_undo_conflict` when an entry it left is no longer there as it left it.
+
 `GET /agents/:id/memory/pending` lists pending changes. `POST /agents/:id/memory/pending/:pendingId/approve` and `/discard` accept `{}`. All routes require ownership of the partner.
 
 ## Original history search

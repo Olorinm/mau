@@ -533,6 +533,19 @@ body {
 .mau-profile-value {
   color: var(--c-text-secondary);
 }
+/* A change of the memory: what was added (+) and what was taken out (−), a few lines until the row is opened. */
+.mau-memory-change-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mau-memory-change-text[data-expanded="true"] { display: block; }
+.mau-memory-change-text { font-weight: var(--fw-normal); }
+.mau-memory-change-text > span { display: block; }
+.mau-memory-change-text > [data-action="remove"] { color: var(--c-text-secondary); }
 /* Another partner named on the profile: its figure and name. */
 .mau-profile-partner {
   gap: 6px;

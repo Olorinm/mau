@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
 import { newIdempotencyKey } from "../web/src/api/ledger";
+import { alice } from "./fixtures/mau.js";
 import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 import { openPartnerTurn, partnerConversations, tripAnswer, tripMessage, visaQuestion } from "./fixtures/partner-console.js";
 
@@ -190,6 +191,31 @@ it.skipIf(!built)("an input recorded without what to show is its whole text; a l
   await see(stream).toContainText("都收到了。");
   expect(errors).toEqual([]);
 }, 90_000);
+
+it.skipIf(!built)("a rule the Agent created waits as a card in its conversation, showing what will run, until the owner confirms it", async () => {
+  const f = await partnersFixture(cleanup, { webRoot }), end = f.hold();
+  await f.say(f.agent.id, "每天早上汇总邮件");
+  const turn = await f.turnOf(f.agent.id);
+  const target = (await f.service.runtime(f.agent.id)).extension!.sessions!.openOwnerConversation().sessionId;
+  await turn.call("proactive_work", { action: "create", rule: { name: "晨间邮件", goal: "汇总未读邮件。\n列出需要回复的。", targetSessionId: target,
+    schedule: { type: "daily", at: "09:00" }, timeZone: "Asia/Shanghai", connections: [] } });
+  end(turn, "已提交，等你确认。");
+  const { page, errors } = await browser(f);
+  await openChat(page, f, f.agent.id);
+  const card = page.locator(".mau-ledger-card[data-card-source='product']");
+  await see(card).toHaveAttribute("data-card-status", "pending");
+  await see(card.locator("strong")).toHaveText("新建定时任务待确认");
+  await see(card.locator("p").first()).toHaveText(["名称：晨间邮件", "时间：每天 09:00（Asia/Shanghai）", "执行内容：汇总未读邮件。\n列出需要回复的。", "可读取的连接：无", "结果发送到：对话"].join("\n"));
+  await see(card.getByRole("button")).toHaveText(["确认并启用定时任务", "拒绝这个定时任务"]);
+  await page.screenshot({ path: "/tmp/sec2-card.png" });
+  expect(f.mau.proactive.list(alice)).toEqual([]);
+  await card.getByRole("button", { name: "确认并启用定时任务" }).click();
+  await see(card).toHaveAttribute("data-card-status", "approved");
+  await see(card.getByRole("button")).toHaveCount(0);
+  await f.mau.proactive.tick();
+  expect(f.mau.proactive.list(alice)).toMatchObject([{ name: "晨间邮件", status: "active" }]);
+  expect(errors).toEqual([]);
+}, 60_000);
 
 it.skipIf(!built)("a partner's request for approval is a card in the sender's conversation that the owner answers once", async () => {
   const f = await partnersFixture(cleanup, { webRoot });

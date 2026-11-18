@@ -49,6 +49,17 @@ export interface EnvironmentProfile { id: string; label: string; kernel: string;
 export interface MemoryFile { file: string; entries: string[]; usage: { used: number; limit: number } }
 /** Entries of the memory are separated by this line; the server stores and counts them joined with it. */
 export const memoryDelimiter = "\n§\n";
+/** One entry as a change of the memory left it. */
+export type MemoryChange = { action: "add"; text: string } | { action: "replace"; before: string; after: string } | { action: "remove"; text: string; index: number };
+/**
+ * One change of a partner's memory. `origin` is `owner` for the owner's own turns, edits and undos; `source` names the
+ * partners whose message or results the turn was handling. `unseen`: not the owner's, and newer than the owner last saw.
+ */
+export interface MemoryMutation {
+  id: string; seq: number; at: string; origin: "owner" | "delegation" | "review";
+  source?: { kind: "message" | "result"; partners: Array<{ id: string; name: string }> };
+  changes: MemoryChange[]; undoOf?: string; undoneAt?: string; unseen: boolean;
+}
 export type MemoryOperation = { action: "add"; content: string } | { action: "remove"; old_text: string } | { action: "replace"; old_text: string; content: string };
 export interface ConnectorAccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
@@ -140,6 +151,13 @@ export function mauApi(token: string) {
     /** Applies the owner's changes to the memory, in order and all or none. */
     changeAgentMemory: (id: string, operations: MemoryOperation[]) =>
       request<unknown>(mau + agent(id) + "/memory", { token, body: { action: "batch", operations } }),
+    /** The last changes of the partner's memory, newest first. */
+    agentMemoryMutations: (id: string) => request<{ data: MemoryMutation[] }>(mau + agent(id) + "/memory/mutations", { token }).then((r) => r.data),
+    /** The owner has seen the changes up to this one. */
+    seenAgentMemoryMutations: (id: string, through: number) => request<{ seen: number }>(mau + agent(id) + "/memory/mutations/seen", { token, body: { through } }),
+    /** Takes one change back; refused with `memory_undo_conflict` when the memory changed in that place since. */
+    undoAgentMemoryMutation: (id: string, mutationId: string) =>
+      request<unknown>(mau + agent(id) + "/memory/mutations/" + encodeURIComponent(mutationId) + "/undo", { token, body: {} }),
     /** With `shareWith` no environment is created and the partner is usable when the request returns. */
     createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
       request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
