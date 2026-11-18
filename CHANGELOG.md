@@ -4,6 +4,14 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.53] - 2026-11-19
+
+- The browser handoff card carries its live-view link in a structured field, the only place the console reads it
+  from. The card text shows the link on its own line ahead of the Agent's note, names the host of the page handed
+  over, and removes every link from the Agent's note.
+- Pins Agent Kit 0.11.0-alpha.5: Feishu group chats admit the owner and listed senders only; Google Workspace CLI
+  commands are classified by their method's HTTP verb, so `--dry-run` no longer makes a write a read.
+
 ## [0.1.0-alpha.52] - 2026-11-18
 
 - Mau deploys on Cloudflare as one Worker with one container. [`cloudflare/`](cloudflare) holds the Worker, its
