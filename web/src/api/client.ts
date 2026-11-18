@@ -90,6 +90,9 @@ export interface PolicyOperation {
 export interface PolicyGroup { id: string; label: string; labelZh: string; operations: PolicyOperation[] }
 /** Per-operation permissions of one connector account. */
 export interface ConnectorPolicy { groups: PolicyGroup[]; background?: PolicyOperation[] }
+export type WebAccess = "direct" | "ask";
+/** A browser connection's site permissions: whether new sites open directly or ask first, and the sites always allowed. */
+export interface SiteAccess { webAccess: WebAccess; sites: string[] }
 export type EnvironmentAction = "pause" | "resume" | "destroy" | "reconcile";
 
 export interface ConnectionJob {
@@ -136,6 +139,9 @@ export function mauApi(token: string) {
     connectWithOperations: (id: string, operations: string[]) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/connect", { token, body: { operations }, credentials: "same-origin", timeoutMs: 150_000 }),
     connectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token }),
     updateConnectorPolicy: (id: string, settings: Record<string, PolicySetting>) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy", { token, method: "PUT", body: { settings } }),
+    connectorSiteAccess: (id: string) => request<SiteAccess>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/access", { token }),
+    updateConnectorSiteAccess: (id: string, change: { webAccess: WebAccess } | { remove: string }) =>
+      request<SiteAccess>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/access", { token, method: "PUT", body: change }),
     resetConnectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy/reset", { token, body: {} }),
     options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),

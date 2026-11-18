@@ -29,6 +29,26 @@ const handoffResult = z.object({ handoffId: z.string().min(1).max(200).regex(/^[
 export const LINK_REMOVED = "[链接已移除]";
 export const handoffNote = (text: string) => text
   .replace(/(?:[a-z][a-z0-9+.-]*:\/\/|\/\/|www\.|live\.browser\.run)[^\s<>"'）)\]]*/gi, LINK_REMOVED).replace(/\s+/g, " ").trim();
+/**
+ * The connector refused a command because the owner has new sites ask first and this site is neither always allowed
+ * nor allowed for the task. `site` and `command` are the connector's, shown to the owner as given.
+ */
+export const siteRequired = z.object({ status: z.literal("failed"), error: z.literal("browser_site_permission_required"),
+  detail: z.object({ site: z.string().min(1).max(300).regex(/^[a-z0-9.\-:[\]]+$/), command: z.string().min(1).max(1200) }).passthrough() }).passthrough();
+export const SITE_CHOICES = { task: "此任务内允许", always: "始终允许", deny: "拒绝" } as const;
+/** The owner's card for a site: its host, then the whole command as literal text, and the three choices. */
+export function siteCardInput(site: string, command: string) {
+  const fence = "`".repeat(Math.max(3, ...Array.from(command.matchAll(/`+/g), run => run[0].length + 1)));
+  return { questions: [{ id: "网站访问", question: `${site}\n${fence}\n${command}\n${fence}`, options: Object.values(SITE_CHOICES).map(label => ({ label })) }] };
+}
+export const siteAnswer = (result: unknown) =>
+  z.object({ answers: z.object({ 网站访问: z.object({ answers: z.array(z.string()).min(1) }) }) }).safeParse(result).data?.answers.网站访问.answers[0];
+export const siteDenied = (site: string, reason?: string) => ({ status: "failed", error: "browser_site_denied", site, ...(reason ? { reason } : {}),
+  instruction: "The owner did not allow this site. Do not retry it, reach it another way or ask for permission in chat." });
+/** Work that cannot ask the owner reaches always-allowed sites only. */
+export const siteUnavailableHere = (site: string) => ({ status: "failed", error: "browser_site_not_allowed_here", site,
+  message: "这个网站不在「始终允许」的列表里，而定时任务、伙伴消息这类任务无法向你询问，所以这里不能访问。",
+  instruction: "The owner has new sites ask first and cannot be asked in this task. Do not retry here; tell the owner the site needs their permission in their own conversation, or that they can add it to the always-allowed sites there." });
 /** What the model passes to the browser tools: agent-browser arguments and, from the shell command, its directory. */
 const commandInput = z.object({ args: z.array(z.string()).min(1).max(100), cwd: z.string().max(4096).optional() }).strict();
 type BrowserTool = "agent_browser_read" | "agent_browser_write" | "handoff_start" | "handoff_cancel";
@@ -58,10 +78,17 @@ export function agentCatalog(result: unknown, connections: string[]) {
         "File paths are relative to your working directory (max 10 MB in total); Mau reads them from your workspace and the owner approves the files and site.",
       inputSchema: { type: "object", properties: { args: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 100,
         description: "agent-browser arguments: upload <file input> <path...>" } }, required: ["args"], additionalProperties: false } };
-    if (found?.tool === "agent_browser_read") return { ...tool, description: `${String(tool.description ?? "")}${FILES_NOTE}` };
+    if (found?.tool === "agent_browser_read") return { ...tool, description: `${String(tool.description ?? "")}${FILES_NOTE}`, inputSchema: withoutTask(tool.inputSchema) };
     if (found?.tool === "handoff_start") return { ...tool, description: `${String(tool.description ?? "")} The owner receives the live view privately; you receive only the handoff ID and expiry.` };
     return tool;
   }) };
+}
+/** `task` is Mau's to set (the conversation whose site permissions apply), so the model is not offered it. */
+function withoutTask(schema: unknown) {
+  const parsed = z.object({ properties: z.record(z.string(), z.unknown()) }).passthrough().safeParse(schema);
+  if (!parsed.success) return schema;
+  const { task: _task, ...properties } = parsed.data.properties;
+  return { ...parsed.data, properties };
 }
 const lines = (text: string) => text.split("\n").filter(Boolean);
 async function check(files: SandboxFiles, argv: string[], error: string) {
@@ -125,7 +152,9 @@ export async function prepareBrowser(tool: BrowserTool, args: Record<string, unk
   const parsed = commandInput.safeParse(args);
   if (!parsed.success) {
     if (tool === "agent_browser_write") throw new RelayError("browser_upload_path_required");
-    return args;
+    // `task` names the conversation whose site permissions apply; only Mau sets it.
+    const { task: _task, ...rest } = args;
+    return rest;
   }
   if (tool === "agent_browser_read") return { args: parsed.data.args };
   if (!files) throw new RelayError("browser_workspace_unavailable");

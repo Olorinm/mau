@@ -8,7 +8,8 @@ import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-conne
 import { DurableStore } from "./store.js";
 import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
 import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalDesk, type ApprovalPort } from "./connector-approvals.js";
-import { IMAGE_ITEMS, RelayError, agentCatalog, browserTool, finishBrowser, handoffCardInput, prepareBrowser, scrub, type Handoff, type SandboxFiles } from "./browser-relay.js";
+import { IMAGE_ITEMS, RelayError, SITE_CHOICES, agentCatalog, browserTool, finishBrowser, handoffCardInput, prepareBrowser, scrub, siteAnswer, siteCardInput, siteDenied,
+  siteRequired, siteUnavailableHere, type Handoff, type SandboxFiles } from "./browser-relay.js";
 import { validAdmission, type RunAdmission, type AdmissionValidator } from "./run-admission.js";
 import { ownerPrivateRefusal, OWNER_PRIVATE_ONLY, type OwnerPrivatePolicy } from "./owner-private.js";
 
@@ -63,6 +64,7 @@ export class BusinessTools {
   private completed?: (input: CompletedPartnerTurn) => void;
   private approvals?: ApprovalPort;
   private files?: (agentId: string, binding: string) => Promise<SandboxFiles>;
+  private sites?: SitePort;
   constructor(options: z.input<typeof feishuBotReadersSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
     for (const entry of feishuBotReadersSchema.parse(options)) {
       const { agentId, owner } = entry;
@@ -83,6 +85,8 @@ export class BusinessTools {
   /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
   setApprovals(port: ApprovalPort) { this.approvals = port; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
+  /** Only a component holding the authority key can record the owner's answer on a site card; without it no turn can ask. */
+  setSites(port: SitePort) { this.sites = port; }
   private ownerPrivate?: OwnerPrivatePolicy;
   /** Owner-identity connections are admitted only in the owner's private conversation. */
   setOwnerPrivate(policy: OwnerPrivatePolicy) { this.ownerPrivate = policy; }
@@ -102,6 +106,7 @@ export class BusinessTools {
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
       appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
+        ...(this.sites ? { sites: this.sites } : {}),
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
         ...(guides ? { guides } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
@@ -110,11 +115,25 @@ export class BusinessTools {
   }
 }
 export interface CompletedPartnerTurn { admission: RunAdmission; runId: string; sessionId: string; sessionKey: string; input: string; inputRole?: "user" | "tool"; answer: string; }
+/** Records a site the owner allowed for a browser connection: always, or with `task` for that conversation only. */
+export interface SitePort { allowSite(owner: string, connection: string, site: string, task?: string): Promise<void>; }
+/**
+ * A browser command waiting for the owner's answer about a site. `open` has its card up; `decided` holds the answer;
+ * `running` means the permission is being recorded and the command run again, which is never done twice; `closed`
+ * is done.
+ */
+interface SiteRequest {
+  status: "open" | "decided" | "running" | "closed"; choice?: "task" | "always" | "deny";
+  runId: string; callId: string; deadlineAt: string; owner: string; agentId: string; connections: string[];
+  connection: string; site: string; command: string; task: string;
+  name: string; arguments: Record<string, unknown>; scope?: { connections: string[]; operations?: string[] | undefined }; write: boolean;
+}
 /** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
 interface ConnectedAppHosting {
   connections: string[];
   browser: string[];
   approvals?: ApprovalPort;
+  sites?: SitePort;
   files?: () => Promise<SandboxFiles>;
   ownerPrivate?: OwnerPrivatePolicy;
   /** The connector guides for the tools a catalog lists, when the Agent's kernel has none installed. */
@@ -124,6 +143,7 @@ const WAITING = Symbol("approval_waiting");
 class Removed extends Error {}
 const delivered = (admission: RunAdmission | undefined, toolOutput: unknown) => Boolean(toolOutput) || (admission !== undefined && admission.kind !== "owner");
 const HANDOFF_PREFIX = "mau-handoff:";
+const SITE_PREFIX = "mau-site:";
 const handoffCancel = "取消接管";
 // A structured single-choice question both Router's chat cards and the web console render with buttons.
 const handoffMethod = "item/tool/requestUserInput";
@@ -139,6 +159,7 @@ const approvalRequired = z.object({ status: z.literal("approval_required"), oper
   expiresAt: z.string().optional() }).passthrough();
 export class BusinessHost extends HttpAgentHost {
   private readonly pending = new Map<string, Promise<void>>();
+  private readonly siteWork = new Map<string, Promise<void>>();
   private readonly approvals?: ConnectorApprovals;
   beforeStart?: () => Promise<unknown>;
   constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
@@ -293,7 +314,7 @@ export class BusinessHost extends HttpAgentHost {
   }
   override async calls(id: string): ReturnType<HostPort["calls"]> {
     // Synthetic IDs belong to Mau. A sandbox Host listing one could put its own text on Mau's approval.
-    const calls = (await super.calls(id)).filter(call => !call.id.startsWith(APPROVAL_PREFIX) && !call.id.startsWith(HANDOFF_PREFIX));
+    const calls = (await super.calls(id)).filter(call => ![APPROVAL_PREFIX, HANDOFF_PREFIX, SITE_PREFIX].some(prefix => call.id.startsWith(prefix)));
     for (const call of calls) {
       if (!this.ownsCall(call) || call.kind !== "tool" || call.status !== "pending") continue;
       const pendingKey = `${id}:${call.id}`;
@@ -354,7 +375,7 @@ export class BusinessHost extends HttpAgentHost {
       }
       await operation;
     }
-    const cards = [...await this.approvals?.synthetic(id, calls, this.desk(id)) ?? [], ...this.handoffCards(id)];
+    const cards = [...await this.approvals?.synthetic(id, calls, this.desk(id)) ?? [], ...this.handoffCards(id), ...await this.siteCards(id, calls)];
     return [...calls.filter(call => !this.ownsCall(call) || call.kind !== "tool"), ...cards];
   }
   /** Synthetic IDs are answered here and never forwarded to Host. */
@@ -364,6 +385,7 @@ export class BusinessHost extends HttpAgentHost {
       return this.approvals.decide(id, callId, result);
     }
     if (callId.startsWith(HANDOFF_PREFIX)) return this.answerHandoff(id, callId.slice(HANDOFF_PREFIX.length), result);
+    if (callId.startsWith(SITE_PREFIX)) return this.answerSite(id, callId.slice(SITE_PREFIX.length), result);
     return super.resolve(id, callId, result);
   }
   /** Where the owner is asked for a run that handles a partner's message: the conversation that message came from. */
@@ -372,7 +394,10 @@ export class BusinessHost extends HttpAgentHost {
     return admission && this.partner?.authority?.(admission)?.approvals;
   }
   /** Test and shutdown hook: wait for decided approvals of a run to reach Host. */
-  async settled(runId: string) { await this.approvals?.waitFor(runId); }
+  async settled(runId: string) {
+    await Promise.all([...this.siteWork].filter(([key]) => key.startsWith(`${this.scope}:${runId}:`)).map(([, work]) => work));
+    await this.approvals?.waitFor(runId);
+  }
   private async deliver(runId: string, callId: string, result: unknown, tolerateClosed = false) {
     const images = result && typeof result === "object" && Array.isArray((result as Record<string, unknown>)[IMAGE_ITEMS])
       ? (result as Record<string, unknown>)[IMAGE_ITEMS] as string[] : [];
@@ -419,28 +444,123 @@ export class BusinessHost extends HttpAgentHost {
     const refused = blocked.find(id => input.name?.startsWith(`${id.replaceAll("-", "_")}__`));
     if (refused) return ownerPrivateRefusal(refused);
     const found = input.name ? browserTool(input.name, browser) : undefined;
+    // Site permissions given "for this task" belong to the conversation of an owner's own turn. Other turns cannot
+    // ask the owner about a site and carry no task, so they reach always-allowed sites only.
+    const session = found && admission.kind === "owner" && !partnerTurn && apps?.sites
+      ? this.store.get<{ sessionKey: string }>("business_turn_inputs", `${this.scope}:${call.runId}`)?.sessionKey : undefined;
+    const task = session === undefined ? undefined : createHash("sha256").update(session).digest("hex");
+    const commands = found?.tool === "agent_browser_read" || found?.tool === "agent_browser_write";
     let args = input.arguments ?? {};
     if (found) {
       // An upload names the current site for the owner's approval; it is read from the browser, not from the model.
       const currentUrl = async () => {
-        const page = await read({ action: "call", name: browserToolName(found.connection, "agent_browser_read"), arguments: { args: ["get", "url"] } });
+        const page = await read({ action: "call", name: browserToolName(found.connection, "agent_browser_read"), arguments: { args: ["get", "url"], ...(task ? { task } : {}) } });
         const output = z.object({ status: z.literal("completed"), result: z.object({ output: z.string() }) }).safeParse(page);
         return output.success ? output.data.result.output.trim() : undefined;
       };
       try { args = await prepareBrowser(found.tool, args, apps?.files, currentUrl); }
       catch (error) { if (error instanceof RelayError) return { status: "failed", error: error.message }; throw error; }
+      if (commands && task) args = { ...args, task };
     }
     const outcome = await read({ ...input, arguments: args });
+    const site = found?.tool === "agent_browser_read" ? siteRequired.safeParse(outcome) : undefined;
+    if (site?.success) {
+      if (!task) return siteUnavailableHere(site.data.detail.site);
+      // The record comes first: a card without one would be a question nobody reads the answer to.
+      this.store.insert("browser_site_requests", `${this.scope}:${call.runId}:${call.id}`, { status: "open", runId: call.runId, callId: call.id, deadlineAt: call.deadlineAt,
+        owner: admission.owner, agentId: admission.agentId, connections, connection: found!.connection, site: site.data.detail.site, command: site.data.detail.command, task,
+        name: input.name!, arguments: args, ...(scope ? { scope } : {}), write } satisfies SiteRequest);
+      return WAITING;
+    }
+    return this.appResult(call, input.name ?? "", outcome, { owner: admission.owner, agentId: admission.agentId, connections }, write, partnerTurn?.approvals);
+  }
+  /** What a connected-app call comes to: a refusal where the owner cannot be asked, a wait for their approval, or its result. */
+  private async appResult(call: Pick<HostCall, "runId" | "id" | "deadlineAt">, name: string, outcome: unknown, principal: { owner: string; agentId: string; connections: string[] },
+    write: boolean, desk?: ApprovalDesk) {
     // The owner set this operation to ask, and this turn has no way to ask.
     const refusal = z.object({ status: z.literal("failed"), error: z.literal("connector_operation_requires_approval") }).passthrough().safeParse(outcome);
     if (refusal.success) return approvalUnavailableHere(refusal.data);
     const approval = approvalRequired.safeParse(outcome);
     if (approval.success) {
       if (!write || !this.approvals) return { status: "failed", error: "owner_approval_unavailable" };
-      const requested = await this.approvals.request(call, input.name!, { owner: admission.owner, agentId: admission.agentId, connections }, approval.data, partnerTurn?.approvals);
+      const requested = await this.approvals.request(call as HostCall, name, principal, approval.data, desk);
       return "result" in requested ? requested.result : WAITING;
     }
-    return this.finishApp(call, input.name ?? "", outcome);
+    return this.finishApp(call, name, outcome);
+  }
+  /**
+   * Site cards of this run. A card is withdrawn when its call is gone or past its deadline. After a restart an answer
+   * not yet acted on is taken up again, and a command that may already have run is reported as such, not repeated.
+   */
+  private async siteCards(runId: string, hostCalls: HostCall[]): Promise<HostCall[]> {
+    const prefix = `${this.scope}:${runId}:`, cards: HostCall[] = [];
+    for (const { id, value } of this.store.entriesByStatus<SiteRequest>("browser_site_requests", ["open", "decided", "running"])) {
+      if (!id.startsWith(prefix)) continue;
+      if (value.status !== "open") { void this.settleSite(id).catch(() => undefined); continue; }
+      const live = hostCalls.some(call => call.id === value.callId && call.status === "pending");
+      if (!live || Date.parse(value.deadlineAt) <= Date.now()) {
+        if (this.decideSite(id, "deny")) await this.settleSite(id, "expired").catch(() => undefined);
+        continue;
+      }
+      cards.push({ id: SITE_PREFIX + value.callId, runId, kind: "interaction", name: handoffMethod, status: "pending", deadlineAt: value.deadlineAt,
+        input: siteCardInput(value.site, value.command) });
+    }
+    return cards;
+  }
+  private decideSite(id: string, choice: NonNullable<SiteRequest["choice"]>) {
+    return this.store.transaction(() => {
+      const current = this.store.get<SiteRequest>("browser_site_requests", id);
+      if (current?.status !== "open") return false;
+      this.store.set("browser_site_requests", id, { ...current, status: "decided", choice }); return true;
+    });
+  }
+  /** The owner's choice on a site card. Anything but the two allowing choices, a typed line included, is a refusal. */
+  private async answerSite(runId: string, callId: string, result: unknown) {
+    const id = `${this.scope}:${runId}:${callId}`, record = this.store.get<SiteRequest>("browser_site_requests", id);
+    if (!record || record.status !== "open") return;
+    const answer = siteAnswer(result), choice = answer === SITE_CHOICES.task ? "task" : answer === SITE_CHOICES.always ? "always" : "deny";
+    // A permission is recorded only for a command that still waits for it.
+    const live = Date.parse(record.deadlineAt) > Date.now() && (await super.calls(runId)).some(call => call.id === callId && call.status === "pending");
+    if (!this.decideSite(id, live ? choice : "deny")) return;
+    // Recording the permission and running the command again happen outside Router's input handling.
+    void this.settleSite(id, live ? undefined : "expired").catch(() => undefined);
+    // Router routes the owner's next chat line to an open card; hand that text to the Agent instead of dropping it.
+    if (answer && !Object.values(SITE_CHOICES).includes(answer as never)) await super.steer(runId, answer).catch(() => undefined);
+  }
+  private settleSite(id: string, reason?: string): Promise<void> {
+    let work = this.siteWork.get(id);
+    if (!work) {
+      work = this.settleSiteOnce(id, reason).finally(() => this.siteWork.delete(id));
+      this.siteWork.set(id, work);
+    }
+    return work;
+  }
+  private async settleSiteOnce(id: string, reason?: string) {
+    const record = this.store.transaction(() => {
+      const current = this.store.get<SiteRequest>("browser_site_requests", id);
+      if (current?.status === "decided") this.store.set("browser_site_requests", id, { ...current, status: "running" });
+      return current;
+    });
+    if (record?.status !== "decided" && record?.status !== "running") return;
+    let value: unknown;
+    try {
+      if (record.status === "running") value = { isError: true, status: "uncertain", error: "business_call_outcome_unknown" };
+      else if (record.choice === "deny" || !this.apps?.sites || !this.appReader) value = siteDenied(record.site, reason);
+      else {
+        await this.apps.sites.allowSite(record.owner, record.connection, record.site, record.choice === "task" ? record.task : undefined);
+        const outcome = await this.appReader({ action: "call", name: record.name, arguments: record.arguments }, record.scope, record.write ? { write: true } : undefined);
+        // The permission was recorded, so a second refusal for the site is not asked about again.
+        value = siteRequired.safeParse(outcome).success ? siteDenied(record.site, "permission_not_recorded")
+          : await this.appResult({ runId: record.runId, id: record.callId, deadlineAt: record.deadlineAt }, record.name, outcome, record, record.write);
+      }
+    } catch { value = { status: "failed", error: "connected_app_unavailable" }; }
+    // The operation itself is set to ask: its approval card answers the call from here on.
+    if (value !== WAITING) {
+      const receiptKey = `${this.scope}:${record.runId}:${record.callId}`, receipt = this.store.get<{ hash: string }>("business_call_receipts", receiptKey);
+      if (receipt) this.store.set("business_call_receipts", receiptKey, { hash: receipt.hash, result: value });
+      await this.deliver(record.runId, record.callId, value, true);
+    }
+    this.store.set("browser_site_requests", id, { ...record, status: "closed" });
   }
   private async finishApp(call: Pick<HostCall, "runId" | "id">, name: string, outcome: unknown) {
     const found = browserTool(name, this.apps?.browser ?? []);

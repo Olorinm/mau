@@ -18,7 +18,7 @@ import {
   TextButton,
   useToast,
 } from "@olorinm/agent-ui/app";
-import { mauApi, type AgentSummary, type ConnectorAccount, type ConnectorPolicy, type PolicyOperation, type PolicySetting } from "../api/client";
+import { mauApi, type AgentSummary, type ConnectorAccount, type ConnectorPolicy, type PolicyOperation, type PolicySetting, type SiteAccess, type WebAccess } from "../api/client";
 import { ApiError, safeExternalUrl } from "../api/http";
 import type { Session } from "../api/session";
 import { errorMessage, failureMessage, useI18n } from "../i18n";
@@ -276,6 +276,7 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
         trailing={account.usage === "owner_private" || feishu ? <span>{zh ? "仅私聊" : "Private chat only"}</span> : null} />)
         : <ListRow muted title={agents.isPending ? zh ? "正在读取…" : "Loading…" : zh ? "暂未分配伙伴" : "No partner assigned"} />}
     </SettingsSection>
+    {account.kind === "browser" ? <SiteAccessSections session={session} account={account} /> : null}
     <PolicySections session={session} account={account} product={product} />
     <Modal open={confirmDisconnect} onOpenChange={setConfirmDisconnect} closeLabel={zh ? "关闭" : "Close"}
       title={zh ? `断开${name}？` : `Disconnect ${name}?`}
@@ -284,6 +285,42 @@ function AccountDetail({ session, account, product }: { session: Session; accoun
         onConfirm={() => disconnect.mutate()} onCancel={() => setConfirmDisconnect(false)} />} />
     {consent ? <ConnectConsent session={session} account={account} product={product} {...(feishuAgent ? { agentId: feishuAgent.agent.id } : {})}
       onClose={() => setConsent(false)} /> : null}
+  </>;
+}
+
+/** A browser connection: 直接访问 · 始终询问 for new sites, and the always-allowed sites with a way to remove each. */
+function SiteAccessSections({ session, account }: { session: Session; account: ConnectorAccount }) {
+  const { language, t } = useI18n(), zh = language === "zh-CN";
+  const { toast } = useToast();
+  const client = useQueryClient();
+  const api = mauApi(session.token);
+  const key = ["connector-site-access", account.id];
+  const access = useQuery({ queryKey: key, queryFn: () => api.connectorSiteAccess(account.id), retry: false });
+  const update = useMutation({
+    mutationFn: (change: { webAccess: WebAccess } | { remove: string }) => api.updateConnectorSiteAccess(account.id, change),
+    onMutate: (change) => {
+      const before = client.getQueryData<SiteAccess>(key);
+      if (before) client.setQueryData<SiteAccess>(key, "remove" in change ? { ...before, sites: before.sites.filter((site) => site !== change.remove) } : { ...before, ...change });
+      return before;
+    },
+    onSuccess: (next) => client.setQueryData(key, next),
+    onError: (error, _change, before) => {
+      if (before) client.setQueryData(key, before);
+      toast({ kind: "error", title: errorMessage(t, error instanceof ApiError ? error.code : "request_failed") });
+    },
+  });
+  // A server without site permissions opens every site directly; there is nothing to set.
+  if (!access.data) return null;
+  const title = zh ? "新网站" : "New sites";
+  const modes = [{ value: "direct" as const, label: zh ? "直接访问" : "Open directly" }, { value: "ask" as const, label: zh ? "始终询问" : "Always ask" }];
+  return <>
+    <SettingsSection title={zh ? "网站访问" : "Site access"}>
+      <ListRow title={title} trailing={<SelectMenu label={title} value={access.data.webAccess} options={modes} onChange={(webAccess) => update.mutate({ webAccess })} />} />
+    </SettingsSection>
+    {access.data.sites.length ? <SettingsSection title={zh ? "始终允许的网站" : "Always allowed sites"}>
+      {access.data.sites.map((site) => <ListRow key={site} title={site}
+        trailing={<TextButton tone="danger" disabled={update.isPending} onClick={() => update.mutate({ remove: site })}>{zh ? "移除" : "Remove"}</TextButton>} />)}
+    </SettingsSection> : null}
   </>;
 }
 
