@@ -20,7 +20,15 @@ const base64 = z.string().max(Math.ceil(MAX_RELAY_BYTES / 3) * 4 + 4).regex(/^[A
 const fileResult = z.object({ name: z.string().max(1024), mediaType: z.string().max(200), size: z.number().int().min(0), contentBase64: base64 }).passthrough();
 const commandResult = z.object({ files: z.array(fileResult).max(10).optional() }).passthrough();
 const handoffResult = z.object({ handoffId: z.string().min(1).max(200).regex(/^[A-Za-z0-9_.:-]+$/), liveViewUrl: z.url().max(16_384),
-  expiresAt: z.iso.datetime({ offset: true }), instructions: z.string().max(500).optional() }).passthrough();
+  expiresAt: z.iso.datetime({ offset: true }), instructions: z.string().max(500).optional(),
+  pageHost: z.string().min(1).max(300).regex(/^[A-Za-z0-9.\-:[\]]+$/).optional() }).passthrough();
+/**
+ * The Agent's note on a handoff card is untrusted text next to a link that controls the browser: it keeps no link of
+ * its own (a scheme, `//host`, `www.` or the live-view host) and stays on one line.
+ */
+export const LINK_REMOVED = "[链接已移除]";
+export const handoffNote = (text: string) => text
+  .replace(/(?:[a-z][a-z0-9+.-]*:\/\/|\/\/|www\.|live\.browser\.run)[^\s<>"'）)\]]*/gi, LINK_REMOVED).replace(/\s+/g, " ").trim();
 /** What the model passes to the browser tools: agent-browser arguments and, from the shell command, its directory. */
 const commandInput = z.object({ args: z.array(z.string()).min(1).max(100), cwd: z.string().max(4096).optional() }).strict();
 type BrowserTool = "agent_browser_read" | "agent_browser_write" | "handoff_start" | "handoff_cancel";
@@ -157,7 +165,19 @@ async function saveFile(files: SandboxFiles, result: z.infer<typeof fileResult>)
   await files.writeFile(posix.join(real, file), bytes);
   return { path: posix.join(real, file), name: safeName(result.name), mediaType: result.mediaType, size: bytes.length };
 }
-export interface Handoff { connection: string; handoffId: string; liveViewUrl: string; expiresAt: string; instructions?: string; runId: string; callId: string; status: "open" | "closed"; }
+export interface Handoff { connection: string; handoffId: string; liveViewUrl: string; expiresAt: string; instructions?: string; pageHost?: string; runId: string; callId: string; status: "open" | "closed"; }
+/**
+ * The owner's card for an open handoff. `handoff` is the structured part a console reads the link from; the question
+ * is for text channels, with the link on its own labelled line ahead of the Agent's note.
+ */
+export function handoffCardInput(handoff: Pick<Handoff, "liveViewUrl" | "expiresAt" | "instructions" | "pageHost">, cancel: string) {
+  const note = handoffNote(handoff.instructions ?? "");
+  const question = [`浏览器已交给你接管（${handoff.expiresAt} 前有效）。`, "私密接管链接（仅限本人操作，不要转发）：", handoff.liveViewUrl,
+    ...(handoff.pageHost ? [`当前页面：${handoff.pageHost}`] : []), ...(note ? [`Agent 的说明：${note}`] : []),
+    "完成后点页面里的 Done（无法完成点 Failed），也可以回到对话告诉 Agent。"].join("\n");
+  return { questions: [{ id: "handoff", question, options: [{ label: cancel }] }],
+    handoff: { liveViewUrl: handoff.liveViewUrl, ...(handoff.pageHost ? { pageHost: handoff.pageHost } : {}) } };
+}
 /** Translate a browser result for the model. Returns the model-facing value and, for screenshots, image items. */
 export async function finishBrowser(tool: BrowserTool, outcome: unknown, files: (() => Promise<SandboxFiles>) | undefined,
   openHandoff: (handoff: Omit<Handoff, "runId" | "callId" | "status" | "connection">) => void): Promise<unknown> {
@@ -179,8 +199,9 @@ export async function finishBrowser(tool: BrowserTool, outcome: unknown, files: 
   if (tool === "handoff_start") {
     const result = handoffResult.safeParse(envelope.data.result);
     if (!result.success) return { status: "failed", error: "browser_result_invalid" };
+    const note = handoffNote(result.data.instructions ?? "");
     openHandoff({ handoffId: result.data.handoffId, liveViewUrl: result.data.liveViewUrl, expiresAt: result.data.expiresAt,
-      ...(result.data.instructions ? { instructions: result.data.instructions } : {}) });
+      ...(note ? { instructions: note } : {}), ...(result.data.pageHost ? { pageHost: result.data.pageHost } : {}) });
     return { ...envelope.data, result: { handoffId: result.data.handoffId, expiresAt: result.data.expiresAt,
       instruction: "The owner received a private live view and can take over the browser. Wait for them, then check the page state again." } };
   }

@@ -102,7 +102,9 @@ it executable. An image assembled by replacing layers must do the same with
 `find node_modules -path '*/agent-browser/bin/agent-browser-*' ! -name agent-browser-linux-x64 ! -name '*.js' -delete`
 and `chmod 0755` on the kept binary; otherwise the connector copies the binary into its private directory at first use.
 
-Browser handoffs show the Agent's instructions on Mau's private card and, in the live view, Cloudflare's banner with
+Browser handoffs show on Mau's private card the live-view link, the host of the page the tab shows, and the Agent's
+instructions with every link removed. The console takes the link it frames from the card's structured `handoff`
+field, which Mau fills from the browser connection, never from the card's text. The live view shows Cloudflare's banner with
 Done and Failed; `handoff_status` reports when the owner pressed one.
 
 ## Product API
