@@ -59,7 +59,7 @@ function requestText(t: Translate, card: Card): string[] {
   return [t("card.partnerApproval.title", { partner: approval.partner.name }), [
     t("card.partnerApproval.operation", { from: approval.from.name, summary: approval.summary }),
     t("card.partnerApproval.connection", { connection: approval.connection }),
-    t(approval.argumentsShortened ? "card.partnerApproval.argumentsShortened" : "card.partnerApproval.arguments", { arguments: approval.arguments }),
+    t("card.partnerApproval.arguments", { arguments: approval.arguments }),
   ].join("\n")];
 }
 

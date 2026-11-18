@@ -166,9 +166,8 @@ was sent in:
   operation's summary, its connection and its arguments, with 批准这次操作 and 拒绝这次操作. That text is what a channel
   shows; the card also carries the same as members (`card.display.partnerApproval`: `partner`, `from`, `messageId`,
   `summary`, `connection`, `arguments`), from which the console words the card in the interface language. Arguments
-  are never cut off silently: when they are too
-  long for the card, every value is shown shortened and the card says so, and when even that does not fit, no card is
-  shown and the call fails as below.
+  are never shortened: an operation whose summary and arguments do not fit the card (3500 characters) is refused
+  with `approval_too_long_to_display` before any card is shown.
 - The partner's tool call waits. Approval runs the operation once with the grant bound to what the card showed, and
   the result goes to the partner. A refusal returns `owner_denied`. No answer before the call's deadline is a refusal
   (`reason: approval_expired`).
