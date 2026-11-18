@@ -1,0 +1,52 @@
+{
+  // Copy to a private location, replace the placeholders and deploy with:
+  //   npx wrangler deploy --config /private/mau.wrangler.jsonc
+  // `main`, `dockerfile` and `build_context` are relative to the copy; point them at this checkout.
+  "name": "mau",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "mau.example.test", "custom_domain": true }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  },
+  "containers": [
+    {
+      "class_name": "Mau",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "mau": { "dockerfile": "../Dockerfile", "build_context": ".." }
+      },
+      "ssh": { "enabled": false }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "MAU", "class_name": "Mau" }
+    ]
+  },
+  "exports": {
+    "Mau": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "r2_buckets": [
+    { "binding": "ACCESS_LOGS", "bucket_name": "your-access-log-bucket" }
+  ],
+  "vars": {
+    // "true" runs Mau; any other value stops it and keeps it stopped.
+    "RUN": "true",
+    // Change to any other text after changing the configuration bucket: the container restarts and reads it.
+    "CONFIG_REVISION": "1",
+    "LOCATION_HINT": "apac",
+    // UTC hour from which the daily encrypted backup is made. Remove to make none.
+    "BACKUP_HOUR_UTC": "19",
+    "R2_ENDPOINT": "https://YOUR-ACCOUNT-ID.r2.cloudflarestorage.com",
+    "CONFIG_BUCKET": "your-configuration-bucket",
+    "STATE_BUCKET": "your-state-bucket"
+  }
+  // Secrets, set with `wrangler secret put`: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+  // (an R2 API token with Object Read & Write on the configuration and state buckets only).
+}

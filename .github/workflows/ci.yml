@@ -5,9 +5,9 @@ on:
   pull_request:
 permissions:
   contents: read
-# Two jobs run side by side on separate runners: `test` (typechecks, console build, server and
-# console tests with browser acceptance, then the web/ui package's own tests) and `packages` (CLI and
-# archive verification). The preparation steps are shared through YAML anchors so both use the same
+# Three jobs run side by side on separate runners: `test` (typechecks, console build, server and
+# console tests with browser acceptance, then the web/ui package's own tests), `packages` (CLI and
+# archive verification) and `deployment` (the Cloudflare Worker, the image and a run of its container). The preparation steps are shared through YAML anchors so both use the same
 # pinned toolchain.
 jobs:
   test:
@@ -76,3 +76,18 @@ jobs:
       - run: npm run verify:cli
       - name: Verify independent archives and native session continuation
         run: npm run verify:packages
+  deployment:
+    # Outside the Playwright image: this job builds and runs Mau's own image with the runner's Docker.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - *checkout
+      - *setup-node
+      - *pin-npm
+      - *bootstrap
+      - run: npm --prefix cloudflare ci
+      - run: npm --prefix cloudflare run check
+      - run: npm --prefix cloudflare test
+      - run: docker build --build-arg SOURCE_REVISION="$GITHUB_SHA" -t mau:ci .
+      - name: Run the container against local buckets
+        run: cloudflare/test/container.sh mau:ci

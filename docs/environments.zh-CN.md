@@ -10,7 +10,7 @@ Mau 负责产品开通、环境绑定、Host 初始化、续期、暂停恢复�
 
 将 [mau.json](../examples/mau.json) 与 [Host 配置](../examples/cloud/host-profile.json) 复制到仓库外，准备私有 providers.json 和密钥文件，调整相对路径。环境方案指定允许的 Router 账号、云模板、内核和 Host 配置。个人登录状态通过私有文件注入，不进入共享镜像。
 
-设置 Router 服务配置（`MATRIX_SERVER_NAME` 仅作为账号命名空间，`AGENT_SERVICE_URL`）、`MAU_CONFIG_FILE` 和 `MAU_STATE` 后运行 `mau-server`；可选 `MAU_WEB_ROOT` 同域提供 [Web 控制台](web.zh-CN.md)。完整变量与代理要求见[英文说明](environments.md)。Mau 进程内组合 Router，且不使用 Matrix；同一状态目录和渠道只能有一个进程。
+Mau 部署在 Cloudflare 上：一个 Worker 加一个容器，配置和状态放在 R2，见[部署说明](deployment.md)（英文）。`mau-server` 读取 Router 服务配置（`MATRIX_SERVER_NAME` 仅作为账号命名空间，`AGENT_SERVICE_URL`）、`MAU_CONFIG_FILE` 和 `MAU_STATE`；可选 `MAU_WEB_ROOT` 同域提供 [Web 控制台](web.zh-CN.md)。Mau 进程内组合 Router，且不使用 Matrix；同一状态目录和渠道只能有一个进程。
 
 ```sh
 cloudflared access login https://mau.example
@@ -24,7 +24,7 @@ mau pause
 mau resume
 ```
 
-`MAU_STATE/router/` 保存通信状态，`MAU_STATE/mau/` 保存环境日志和 Host token。需要同时备份，并单独持久保存原生会话与工作区。暂停、销毁会先停止投递 worker，存在活动或未知结果的任务时拒绝操作；恢复复用原环境和会话绑定。
+`MAU_STATE/router/` 保存通信状态，`MAU_STATE/mau/` 保存环境日志和 Host token，由部署负责复制和备份；原生会话与工作区在执行环境里，需单独持久保存。暂停、销毁会先停止投递 worker，存在活动或未知结果的任务时拒绝操作；恢复复用原环境和会话绑定。
 
 中断或结果不确定的操作使用 `mau reconcile` 核对，不盲目重新购买环境。`--no-wait` 返回持久化进度；退出 CLI 不取消开通。续期连续三次失败后进入待处理状态；明确检测到环境已停止时立即处理。手动生命周期操作会等待已开始的续期完成，云端到期行为取决于方案。
 

@@ -15,27 +15,17 @@ channel authorization and delivery. Host owns native execution and sessions.
 5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
 6. Optional `connectionsFile` points to Router's private JSON containing `mailServices`. All channel connection logic stays in Router.
 
-```sh
-MATRIX_SERVER_NAME=agents.example   # the owner-ID namespace (`@alice:agents.example`); no Matrix server is used
-AGENT_SERVICE_URL=https://mau.example/_agent-router/v1
-MAU_CONFIG_FILE=/private/mau.json
-MAU_STATE=/data/mau
-MAU_WEB_ROOT=/app/web   # optional: serve the web console from the same origin
-HOST=0.0.0.0
-PORT=8790
-```
-
-Start `mau-server`. Route `/_mau/v1` and `/_agent-router/v1` to it. With `MAU_WEB_ROOT`, also route the remaining
-paths to it for the [web console](web.md). Only explicitly trusted proxy addresses belong in
-`AGENT_TRUST_PROXY`. Router external identity options are also available through
-`loadServiceConfig`. [Dockerfile](../Dockerfile) provides a generic image; run
-bootstrap first, mount private config read-only and writable state separately.
+Mau is deployed on Cloudflare as a Worker with one container; [deployment](deployment.md) describes the
+image, where configuration and state live, and how a release reaches production. `mau-server` reads
+`MATRIX_SERVER_NAME` (the owner-ID namespace, such as `agents.example` in `@alice:agents.example`; no Matrix
+server is used), `AGENT_SERVICE_URL`, `MAU_CONFIG_FILE`, `MAU_STATE`, optional `MAU_WEB_ROOT` for the
+[web console](web.md), and Router's options through `loadServiceConfig`. Only explicitly trusted proxy
+addresses belong in `AGENT_TRUST_PROXY`.
 
 `MAU_STATE/router/` contains identities, channels and delivery records.
-`MAU_STATE/mau/` contains the environment journal and per-Agent Host tokens.
-Back up both plus native runtime/workspace data. One coordinator holds a renewable
-journal lease. No production addresses, environment IDs, credentials or topology
-belong in this repository.
+`MAU_STATE/mau/` contains the environment journal and per-Agent Host tokens. One coordinator holds a
+renewable journal lease: run only one process on a state directory. No production addresses, environment
+IDs, credentials or topology belong in this repository.
 
 ## Lifecycle
 
