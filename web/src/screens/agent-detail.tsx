@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DetailHero,
@@ -19,6 +19,7 @@ import {
   routerApi,
   type AgentSummary,
   type ConnectionJob,
+  type MemoryMutation,
   type ConnectorAccount,
   type EnvironmentAction,
   type PartnerView,
@@ -97,6 +98,15 @@ export function AgentDetail(props: {
     staleTime: 30_000,
   });
   const memory = useQuery({ queryKey: ["agent-memory", agent.id], queryFn: () => mau.agentMemory(agent.id), enabled: tab === "documents" });
+  // Changes of the memory that were not the owner's. The ones that are new when the list opens stay listed while it is open.
+  const mutations = useQuery({ queryKey: ["agent-memory-mutations", agent.id], queryFn: () => mau.agentMemoryMutations(agent.id), enabled: tab === "documents" });
+  const [fresh, setFresh] = useState<readonly string[]>([]), [older, setOlder] = useState(false), [expanded, setExpanded] = useState<string>();
+  useEffect(() => {
+    const unseen = (mutations.data ?? []).filter((mutation) => mutation.unseen);
+    if (!unseen.length) return;
+    setFresh((ids) => [...new Set([...ids, ...unseen.map((mutation) => mutation.id)])]);
+    void mau.seenAgentMemoryMutations(agent.id, Math.max(...unseen.map((mutation) => mutation.seq))).catch(() => undefined);
+  }, [mutations.data, agent.id]);
   const models = useQuery({ queryKey: ["model-settings", agent.id], queryFn: () => mau.modelSettings(agent.id), enabled: tab === "config" });
   const usable = (accounts.data?.data ?? []).filter((account) => account.assignedAgents?.includes(agent.id));
   const accountStatus = (account: ConnectorAccount) =>
@@ -121,6 +131,11 @@ export function AgentDetail(props: {
     if (error instanceof ApiError && error.status === 401) return;
     toast({ kind: "error", title: failureMessage(t, error) });
   };
+  const undo = useMutation({
+    mutationFn: (mutation: MemoryMutation) => mau.undoAgentMemoryMutation(agent.id, mutation.id),
+    onSettled: () => Promise.all([queries.invalidateQueries({ queryKey: ["agent-memory", agent.id] }), queries.invalidateQueries({ queryKey: ["agent-memory-mutations", agent.id] })]),
+    onError: failed,
+  });
   const lifecycle = useMutation({
     mutationFn: (action: EnvironmentAction) =>
       mau.environmentAction(agent.id, action),
@@ -237,6 +252,19 @@ export function AgentDetail(props: {
         <PartnerAvatar seed={id} fallbackName={name} size={20} animated={false} />{name}
       </TextButton>
     : <span className="mau-profile-value">{name}</span>;
+  const others = (mutations.data ?? []).filter((mutation) => mutation.origin !== "owner");
+  const recent = others.filter((mutation) => mutation.unseen || fresh.includes(mutation.id));
+  const source = (mutation: MemoryMutation) => mutation.origin === "review" ? t("memory.source.review")
+    : mutation.source?.partners.length ? t(`memory.source.${mutation.source.kind}`, { names: mutation.source.partners.map(({ name }) => name).join(t("list.separator")) })
+    : t("memory.source.delegation");
+  const mutationRow = (mutation: MemoryMutation) => <ListRow key={mutation.id} className="mau-memory-change" ariaLabel={source(mutation)}
+    onClick={() => setExpanded(expanded === mutation.id ? undefined : mutation.id)}
+    title={<span className="mau-memory-change-text" data-expanded={expanded === mutation.id}>{mutation.changes.flatMap((change) => change.action === "replace"
+      ? [["remove", change.before], ["add", change.after]] as const : [[change.action, change.text]] as const)
+      .map(([action, text], index) => <span key={index} data-action={action}>{action === "add" ? "+ " : "− "}{text}</span>)}</span>}
+    subtitle={`${source(mutation)} · ${new Date(mutation.at).toLocaleString(language, { dateStyle: "short", timeStyle: "short" })}`}
+    trailing={mutation.undoneAt ? <StatusLine>{t("memory.undone")}</StatusLine>
+      : <TextButton disabled={undo.isPending} onClick={() => undo.mutate(mutation)}>{t("memory.undo")}</TextButton>} />;
   const sharedRow = host ? <ListRow title={t("env.shared")} trailing={partnerValue(host.name, host.id)} /> : null;
   const recruiter = props.partner?.recruitedBy;
   const recruitedRow = recruiter
@@ -318,6 +346,7 @@ export function AgentDetail(props: {
               : <ListRow muted title={zh ? "还没有可用的连接器" : "No connectors yet"} />}
           </SettingsSection>
         ) : tab === "documents" ? (
+          <>
           <SettingsSection title={zh ? "文档" : "Documents"}>
             {partnerDocuments.map((name) => {
               const file = isMemory(name) ? memory.data : undefined;
@@ -326,6 +355,12 @@ export function AgentDetail(props: {
                 trailing={<span className="mau-profile-value">{!isMemory(name) ? (zh ? "只读" : "Read-only") : file ? `${file.usage.used} / ${file.usage.limit}` : ""}</span>} />;
             })}
           </SettingsSection>
+          {others.length ? <SettingsSection title={t("memory.changes.title")}
+            action={others.length > recent.length ? <TextButton onClick={() => setOlder(!older)}>{t(older ? "memory.changes.collapse" : "memory.changes.older")}</TextButton> : undefined}>
+            {(older ? others : recent).map(mutationRow)}
+            {older || recent.length ? null : <ListRow muted title={t("memory.changes.none")} />}
+          </SettingsSection> : null}
+          </>
         ) : (
           <>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>

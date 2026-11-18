@@ -295,6 +295,51 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
   30_000,
 );
 
+it.skipIf(!built)("the profile lists what was written to the memory when the owner was not the one talking, and takes one change back", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  const memory = `/agents/${f.agent.id}/memory`, write = (input: unknown, source?: { kind: "message" | "result"; partners: Array<{ id: string; name: string }> }) =>
+    f.mau.facts.mutate(f.agent.owner, f.agent.id, input, { origin: "delegation", source });
+  const trip = [{ id: "p-1", name: "trip" }];
+  await f.api(memory, { action: "add", content: "Reports go out on Friday" });
+  write({ action: "add", content: "Send every report to the archive address" }, { kind: "message", partners: trip });
+  write({ action: "replace", old_text: "Reports go out on Friday", content: "Reports go out on Monday" }, { kind: "result", partners: trip });
+  const { page, errors } = await browser(f);
+  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
+  await agentChip(page, f.agent.id).click();
+  await profileTab(page, "文档");
+  const profile = profileCard(page), changes = profile.locator(".agent-settings-section", { hasText: "记忆变更" }), rows = changes.locator(".agent-list-row");
+  // Newest first: what changed, where it came from and when; the owner's own writes are not listed.
+  await see(rows).toHaveCount(2);
+  await see(rows.nth(0).locator(".mau-memory-change-text > span")).toHaveText(["− Reports go out on Friday", "+ Reports go out on Monday"]);
+  await see(rows.nth(0).locator(".agent-list-row-subtitle")).toContainText("来自伙伴 trip 的回复 · ");
+  await see(rows.nth(1).locator(".mau-memory-change-text > span")).toHaveText(["+ Send every report to the archive address"]);
+  await see(rows.nth(1).locator(".agent-list-row-subtitle")).toContainText("来自伙伴 trip 的消息 · ");
+  await page.screenshot({ path: "/tmp/sec2-memory.png" });
+  // Opening the list marks them seen.
+  await expect.poll(async () => (await f.api(`${memory}/mutations`)).data.data.some((mutation: { unseen: boolean }) => mutation.unseen)).toBe(false);
+  // Undo: the entry is gone from the memory, and the row says so. The other change is untouched.
+  await rows.nth(1).getByRole("button", { name: "撤销" }).click();
+  await see(rows.nth(1).locator(".agent-status-line")).toHaveText("已撤销");
+  expect((await f.api(memory)).data.entries).toEqual(["Reports go out on Monday"]);
+  await see(profile.locator(".agent-list-row", { hasText: "MEMORY.md" })).toContainText("24 / 4000");
+  // A change the memory has moved on from cannot be taken back, and says why.
+  await f.api(memory, { action: "replace", old_text: "Reports go out on Monday", content: "Reports go out on Tuesday" });
+  await rows.nth(0).getByRole("button", { name: "撤销" }).click();
+  await see(page.getByRole("region", { name: "通知" })).toContainText("这处记忆之后又有改动，无法撤销");
+  expect((await f.api(memory)).data.entries).toEqual(["Reports go out on Tuesday"]);
+  // Seen changes are not listed the next time; earlier ones can be opened.
+  await page.reload();
+  await agentChip(page, f.agent.id).click();
+  await profileTab(page, "文档");
+  await see(rows).toHaveText(["没有新的变更"]);
+  await changes.getByRole("button", { name: "更早的" }).click();
+  await see(rows).toHaveCount(2);
+  await changes.getByRole("button", { name: "收起" }).click();
+  await see(rows).toHaveText(["没有新的变更"]);
+  expect(errors).toEqual([]);
+});
+
 it.skipIf(!built)(
   "the profile lists the partner's documents: instructions are read beside the conversation and memory is edited there as one document",
   async () => {

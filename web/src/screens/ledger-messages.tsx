@@ -54,6 +54,21 @@ const requestStatusKeys = { approved: "card.approved", rejected: "card.rejected"
  * interface's language; the operation's arguments are shown as they are written. Any other is the server's text.
  */
 function requestText(t: Translate, card: Card): string[] {
+  const schedule = card.display?.scheduleConfirmation;
+  if (schedule) {
+    const list = (items: readonly string[]) => items.join(t("list.separator")) || t("card.schedule.none");
+    return [t(`card.schedule.title.${schedule.kind}`), [
+      t("card.schedule.name", { name: schedule.name }),
+      schedule.schedule.type === "daily" ? t("card.schedule.daily", { at: schedule.schedule.at, timeZone: schedule.timeZone })
+        : t("card.schedule.interval", { minutes: String(schedule.schedule.minutes), timeZone: schedule.timeZone }),
+      t(schedule.execution === "direct" ? "card.schedule.message" : "card.schedule.instruction", { text: schedule.instruction }),
+      schedule.operations ? t("card.schedule.operations", { connections: list(schedule.connections), operations: list(schedule.operations) })
+        : t("card.schedule.connections", { connections: list(schedule.connections) }),
+      ...(schedule.skills.length ? [t("card.schedule.skills", { skills: list(schedule.skills) })] : []),
+      ...(schedule.precheck ? [t("card.schedule.precheck", { precheck: schedule.precheck })] : []),
+      schedule.notify === null ? t("card.schedule.notify.none") : schedule.notify === "web" ? t("card.schedule.notify.web") : t("card.schedule.notify.connection", { connection: schedule.notify }),
+    ].join("\n")];
+  }
   const approval = card.display?.partnerApproval;
   if (!approval) return card.text.split("\n\n");
   return [t("card.partnerApproval.title", { partner: approval.partner.name }), [
@@ -81,7 +96,8 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
   const request = card.source === "product", [heading, ...rest] = request ? requestText(t, card) : [];
   const closed = request ? requestStatusKeys[card.status as keyof typeof requestStatusKeys] : undefined;
   // A partner's request is answered by approving or rejecting, in that order.
-  const labels = card.display?.partnerApproval ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")] : [];
+  const labels = card.display?.partnerApproval ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")]
+    : card.display?.scheduleConfirmation ? [t("card.schedule.confirm"), t("card.schedule.reject")] : [];
   return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status} data-card-source={card.source}>
     {request ? <div className="mau-card-text">{rest.length ? <strong>{heading}</strong> : null}<p>{rest.length ? rest.join("\n\n") : heading}</p></div>
       : <ChatMarkdown markdown={live.data?.text ?? card.text} />}

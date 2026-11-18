@@ -6,6 +6,7 @@ import type { DurableStore } from "./store.js";
 import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
+import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
 import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
@@ -205,6 +206,14 @@ export class Partners {
     if (message) return message.owner === admission.owner && message.to.agentId === admission.agentId ? { kind: "message", message } : undefined;
     const batch = admission.reference.startsWith("pr-") ? this.store.get<ReturnBatch>(RETURNS, admission.reference) : undefined;
     return batch && batch.owner === admission.owner && batch.agentId === admission.agentId ? { kind: "return", batch } : undefined;
+  }
+  /** Whose message a partner turn is handling, for the record of what it writes to its memory. */
+  memorySource(admission: RunAdmission): MemorySource | undefined {
+    const turn = this.turn(admission), party = ({ agentId, name }: Party) => ({ id: agentId, name });
+    if (turn?.kind === "message") return { kind: "message", partners: [party(turn.message.from)] };
+    if (turn?.kind !== "return") return undefined;
+    const senders = new Map(turn.batch.messageIds.flatMap(id => { const to = this.store.get<PartnerMessage>(MESSAGES, id)?.to; return to ? [[to.agentId, party(to)] as const] : []; }));
+    return { kind: "result", partners: [...senders.values()] };
   }
   /** Whether a partner turn's admission still stands. `undefined`: the admission is not a partner turn's. */
   allows(admission: RunAdmission): boolean | undefined {

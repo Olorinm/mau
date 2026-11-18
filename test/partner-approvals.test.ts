@@ -24,6 +24,9 @@ it("puts a partner's approval card in the conversation its message came from, wh
   const authority = f.mau.partners.authority(partnerTurn)!;
   expect(authority).toMatchObject({ write: true, tool: "partners" }); expect(authority).not.toHaveProperty("ownerPrivate");
   expect(f.mau.partners.allows(partnerTurn)).toBe(true);
+  // What the turn writes to its memory is recorded as coming from the sender's message.
+  expect(f.mau.partners.memorySource(partnerTurn)).toEqual({ kind: "message", partners: [{ id: f.agent.id, name: "helper" }] });
+  expect(f.mau.partners.memorySource(admission)).toBeUndefined();
   expect(f.mau.partners.authority({ ...partnerTurn, agentId: f.agent.id })).toBeUndefined();
   expect(f.mau.partners.authority({ ...partnerTurn, reference: "pm-unknown" })).toBeUndefined();
   expect(f.mau.partners.allows({ ...partnerTurn, reference: "pm-unknown" })).toBe(false);
