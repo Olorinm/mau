@@ -93,7 +93,7 @@ Prerequisites, the API token permissions and what a human still does: [docs/depl
 Install the client on any machine (it has no server dependencies), then sign in to your deployment:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.56/olorinm-mau-cli-0.1.0-alpha.56.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.57/olorinm-mau-cli-0.1.0-alpha.57.tgz
 mau login https://mau.example.com
 ```
 

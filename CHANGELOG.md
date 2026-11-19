@@ -4,6 +4,34 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.57] - 2026-11-19
+
+- Pins Agent Kit 0.11.0-alpha.9.
+- Partners on the owner's own computer. `mau partner create NAME --external` (or the third choice when creating a
+  partner in the console) makes a partner that is an agent already installed on a computer of the owner. It prints a
+  pairing code and the `agent-host link` command to run there; the computer's Host then connects to the service by
+  itself and reconnects after either side restarts. Mau sends such a partner messages, shows its replies and passes
+  its approvals to the owner, and nothing else: its kernel, model, permissions, files and memory are the computer's
+  own, and it gets no tools, skills, memory, connections, schedules or environment from Mau (those routes answer
+  `409 not_available_for_external_partner`). See `docs/external-agents.md`.
+- `mau device list`, `mau device show NAME`, `mau device pair NAME` and `mau device remove NAME --yes`
+  (`GET /_mau/v1/devices`, `GET`, `DELETE /_mau/v1/agents/:id/device`, `POST /_mau/v1/agents/:id/device/pair`): the
+  paired computer of a partner, a new pairing code, and ending the pairing. A partner summary carries `kind`, and for
+  a partner on a computer `ownership`, `connection` (`pairing`, `online`, `offline`) and `device`.
+- A message to a partner whose computer is off or not yet paired is kept and delivered when it connects.
+  `mau chat send` returns at once with `"state": "queued"` and `"waitingFor": "pairing" | "offline"`, and the console
+  shows the same in the conversation.
+- Other partners reach a partner on a computer with the `partners` tool (relay, ask, inform, wait); its answer returns
+  to the conversation the message was sent from. An inform reaches it together with the next relay or ask.
+- When the kernel of a partner asks for approval in a turn that another partner's message started, the request also
+  appears as a card in the conversation that message was sent from; the owner's choice there is passed on, and the
+  card is withdrawn when the request is answered elsewhere or expires. `wait` and the roster say that the message
+  waits for the owner's approval.
+- `mau deploy` lets the two host link paths through Cloudflare Access (`/_agent-router/v1/host-links/enroll` and
+  `/_agent-router/v1/host-links/socket`; a pairing code or the device credential authenticates them), and
+  `mau doctor` checks them. A deployment whose Access applications were created by hand needs the two Bypass
+  applications added.
+
 ## [0.1.0-alpha.56] - 2026-11-19
 
 - Pins Agent Kit 0.11.0-alpha.8.

@@ -89,7 +89,7 @@ node dist/cli.js doctor        # 缺什么、坏了什么，每一项都给出�
 在任意一台机器上安装客户端（它不带任何服务端依赖），然后登录你的部署：
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.56/olorinm-mau-cli-0.1.0-alpha.56.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.57/olorinm-mau-cli-0.1.0-alpha.57.tgz
 mau login https://mau.example.com
 ```
 
