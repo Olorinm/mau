@@ -91,7 +91,7 @@ it("an operator's service token reads a partner's connections and cannot change 
     return { status: response.status, data: await response.json() };
   };
   expect(await call("GET", "ops.access")).toEqual({ status: 200, data: { connections: [] } });
-  expect(await call("PUT", "ops.access", { connections: ["alice-gmail"] })).toEqual({ status: 403, data: { error: "owner_sign_in_required" } });
+  expect(await call("PUT", "ops.access", { connections: ["alice-gmail"] })).toEqual({ status: 403, data: { error: "owner_sign_in_required", scope: "manage" } });
   expect(await call("GET", "ops.access")).toEqual({ status: 200, data: { connections: [] } });
   expect(await call("PUT", "full.access", { connections: ["alice-gmail"] })).toEqual({ status: 200, data: { connections: ["alice-gmail"] } });
 });

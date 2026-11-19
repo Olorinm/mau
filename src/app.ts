@@ -9,7 +9,8 @@ import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
 import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
 import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
-import { apiInput, apiReference, apiRoot } from "./api-reference.js";
+import { AccessTokens } from "./access-tokens.js";
+import { apiInput, apiReference, apiRoot, requestScope } from "./api-reference.js";
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
@@ -50,7 +51,7 @@ const optionsSchema = z.object({
   edgeIdentity: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
-interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number; operator?: true }
+interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number; operator?: true; granted?: true }
 type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
 interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined; url?: string | undefined; originalUrl?: string | undefined }
 
@@ -71,7 +72,7 @@ export function startFailure(error: unknown) {
   return `mau_start_failed: ${error.message} (${error.name}${frame ? ", " + frame : ""})`;
 }
 export function createMau(config: ServiceConfig, optionsFile: string, dependencies: {
-  router?: Omit<ServiceDependencies, "configure">;
+  router?: Omit<ServiceDependencies, "configure" | "authorizeOperator">;
   environments?: () => Promise<Environments>;
   reviewer?: RestrictedMemoryReviewer;
 } = {}, serving: { webRoot?: string } = {}) {
@@ -92,10 +93,14 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // Owners sign in through the edge identity. Only a process that supplies its own owner login starts without one:
   // local mode (`src/local-login.ts`). The console's chat source is Router's ledger, which Router always serves.
   if (!edgeIdentity && !dependencies.router?.authenticate) throw new Error("edge_identity_required");
+  const tokens = new AccessTokens(businessStore);
   const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), ...(edgeIdentity ? { edgeIdentity } : {}) };
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
+      // A service token without owner access does more than its default only with an access token of its owner
+      // (`Mau-Token`) whose scopes cover the request. Router asks before its CSRF guard, which still applies.
+      authorizeOperator: (principal, request) => tokens.authorize(principal, request),
       // Deleting a partner: stop its schedules and destroy its environments while Router still has the Agent,
       // then remove Mau's per-partner state after Router has deactivated it. A partner in a shared environment
       // leaves that environment untouched.
@@ -301,11 +306,22 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.locals.principal = principal; res.locals.owner = principal.ownerId;
     next();
   });
-  product.get("/account", (_req, res) => {
-    const { ownerId, personId, via, email, expiresAt } = res.locals.principal as OwnerPrincipal;
+  product.get("/account", (req, res) => {
+    const principal = res.locals.principal as OwnerPrincipal, { ownerId, personId, via, email, expiresAt } = principal;
+    // Shown only: what the access token sent with a service token's request would let it do.
+    const token = tokens.describe(principal, req);
     res.json({ owner: ownerId, ...(personId ? { person: { id: personId, name: router.service.persons.person(personId)?.displayName ?? ownerId } } : {}),
-      via: via ?? "bearer", ...(email ? { email } : {}), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}) });
+      via: via ?? "bearer", ...(email ? { email } : {}), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}), ...(token ? { token } : {}) });
   });
+  // Access tokens are the owner's alone: a service token without owner access is refused here whatever it was
+  // granted, so no token and no scope of a route can create or revoke one.
+  const tokenOwner = (res: express.Response) => {
+    if ((res.locals.principal as OwnerPrincipal).operator) throw new RouterError("owner_sign_in_required", 403);
+    return res.locals.owner as string;
+  };
+  product.get("/tokens", (_req, res) => res.json({ data: tokens.list(tokenOwner(res)) }));
+  product.post("/tokens", (req, res) => res.status(201).json(tokens.create(tokenOwner(res), req.body)));
+  product.delete("/tokens/:id", (req, res) => { tokens.revoke(tokenOwner(res), String(req.params.id)); res.status(204).end(); });
   product.get("/reference", (_req, res) => res.json(apiReference()));
   product.get("/proactive", (_req, res) => res.json({ data: proactive.list(res.locals.owner) }));
   product.post("/proactive", async (req, res) => res.status(201).json(await proactive.save(res.locals.owner, req.body)));
@@ -500,7 +516,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.use((_req, res) => res.status(404).json({ error: "not_found" }));
   app.use(apiRoot, product);
   app.use(router.app);
-  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    // What a refused service token would need: the scope of the route, unless it is the owner's alone or not a route.
+    const scope = error instanceof RouterError && error.message === "owner_sign_in_required" ? requestScope(req) : undefined;
     // Body parser rejections (malformed JSON, oversized bodies) are client errors.
     const parser = error instanceof Error && "type" in error && "status" in error &&
       typeof error.status === "number" && error.status >= 400 && error.status < 500 ? error.status : undefined;
@@ -513,6 +531,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ...(error instanceof RouterError && error.nativeError !== undefined ? { nativeError: error.nativeError } : {}),
         // Members beside `error`, for example the partners sharing an environment that was asked to be destroyed.
         ...(error instanceof RouterError && error.fields ? error.fields : {}),
+        ...(scope && scope !== "owner" ? { scope } : {}),
         // Router's identity errors carry display fields (e.g. `email` for owner_not_configured).
         ...(error instanceof RouterError && "details" in error && error.details && typeof error.details === "object" ? error.details : {}),
         ...(error instanceof MemoryError ? { details: error.details } : {}) });

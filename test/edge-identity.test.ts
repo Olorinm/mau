@@ -57,13 +57,15 @@ it("holds an Access service token to reading: no write under /_mau/v1 and no SSH
   expect((await call("GET", `/_mau/v1/agents/${f.agent.id}/environment`, operator)).status).toBe(200);
   expect((await call("GET", "/_mau/v1/connector-accounts", operator)).data.error).not.toBe("owner_sign_in_required");
   expect((await call("POST", "/_agent-router/v1/web/socket-tickets", operator, {})).status).toBe(200);
-  const refused = { status: 403, data: { error: "owner_sign_in_required" } }, agent = `/_mau/v1/agents/${f.agent.id}`;
-  const writes: Array<[string, string, unknown]> = [["POST", "/_mau/v1/agents", { name: "other" }], ["DELETE", agent, undefined], ["POST", agent + "/environment", { profileId: "cloud" }],
-    ["POST", agent + "/environment/destroy", {}], ["POST", agent + "/memory", {}], ["PUT", agent + "/model-settings", {}], ["PUT", agent + "/instructions", {}],
-    ["POST", "/_mau/v1/proactive", {}], ["PUT", "/_mau/v1/connector-accounts/account/policy", {}], ["POST", "/_mau/v1/connector-accounts", {}],
+  const agent = `/_mau/v1/agents/${f.agent.id}`;
+  // The last member is the scope the answer names: what an access token would need, for a route of Mau's that has one.
+  const writes: Array<[string, string, unknown, string?]> = [["POST", "/_mau/v1/agents", { name: "other" }, "manage"], ["DELETE", agent, undefined, "manage"], ["POST", agent + "/environment", { profileId: "cloud" }, "manage"],
+    ["POST", agent + "/environment/destroy", {}, "manage"], ["POST", agent + "/memory", {}, "manage"], ["PUT", agent + "/model-settings", {}, "manage"], ["PUT", agent + "/instructions", {}],
+    ["POST", "/_mau/v1/proactive", {}, "manage"], ["PUT", "/_mau/v1/connector-accounts/account/policy", {}, "manage"], ["POST", "/_mau/v1/connector-accounts", {}],
     ["POST", "/_agent-router/v1/web/identities/pairing-codes", {}], ["POST", "/_agent-router/v1/web/chats/chat/cards/card/answer", {}], ["POST", "/_agent-router/v1/web/chats/chat/purge", {}],
     ["DELETE", `/_agent-router/v1/agents/${f.agent.id}`, undefined]];
-  for (const [method, path, body] of writes) expect(await call(method, path, operator, body), `${method} ${path}`).toEqual(refused);
+  for (const [method, path, body, scope] of writes) expect(await call(method, path, operator, body), `${method} ${path}`)
+    .toEqual({ status: 403, data: { error: "owner_sign_in_required", ...(scope ? { scope } : {}) } });
   // The same requests from the owner and from a token with owner access get past the sign-in check.
   for (const headers of [human, full]) for (const [method, path, body] of writes.slice(-8, -1))
     expect((await call(method, path, headers, body)).data?.error, `${method} ${path}`).not.toBe("owner_sign_in_required");

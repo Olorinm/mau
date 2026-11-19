@@ -6,7 +6,7 @@ export const accountCommands: Command[] = [
     run: ({ args, options, signal }) => Client.login(args[0]!, options, signal) },
   { path: ["logout"], summary: "Forget the remembered service.",
     run: async () => { Client.logout(); return { loggedOut: true }; } },
-  { path: ["whoami"], summary: "The signed-in owner.",
+  { path: ["whoami"], summary: "The signed-in owner and, for a service token with a Mau access token, what that token allows.",
     run: ({ client }) => client().get(mau + "/account") },
   { path: ["profiles"], summary: "The environment profiles you can create partners with.",
     run: ({ client }) => client().get(mau + "/options") },

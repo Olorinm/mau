@@ -64,14 +64,14 @@ try {
   // PATH holds only node, so `cloudflared access token` is unavailable and credentials must come from files or env.
   await mkdir(join(temporary, "no-cloudflared")); await symlink(process.execPath, join(temporary, "no-cloudflared", "node"));
   const environment = { ...process.env, MAU_CONFIG_DIR: join(temporary, "config"), PATH: join(temporary, "no-cloudflared") };
-  for (const name of ["CF_ACCESS_TOKEN", "CF_ACCESS_TOKEN_FILE", "CF_ACCESS_CLIENT_ID", "CF_ACCESS_CLIENT_ID_FILE", "CF_ACCESS_CLIENT_SECRET", "CF_ACCESS_CLIENT_SECRET_FILE"]) delete environment[name];
+  for (const name of ["CF_ACCESS_TOKEN", "CF_ACCESS_TOKEN_FILE", "CF_ACCESS_CLIENT_ID", "CF_ACCESS_CLIENT_ID_FILE", "CF_ACCESS_CLIENT_SECRET", "CF_ACCESS_CLIENT_SECRET_FILE", "MAU_TOKEN", "MAU_TOKEN_FILE"]) delete environment[name];
   const run = (env, ...args) => promisify(execFile)(binary, args, { env: { ...environment, ...env } });
   const cli = async (env, ...args) => JSON.parse((await run(env, ...args)).stdout);
   assert.deepEqual(await cli({}, "--version"), { product: "mau", version });
   const help = (await run({}, "--help")).stdout;
   for (const line of ["mau local [--dir DIR]", "mau login URL", "mau partner create NAME", "mau chat send NAME TEXT", "mau connector assign ID NAME", "mau api [METHOD] [PATH]"]) assert.ok(help.includes(line), line);
   assert.match((await run({}, "channel", "--help")).stdout, /--app-id: feishu: authorize an app that already exists/);
-  assert.deepEqual(await failure(run({}, "agents")), { error: "unknown_command", commands: ["local", "login", "logout", "whoami", "profiles", "partner", "env", "ssh", "chat", "card", "memory", "channel", "connector", "api", "deploy", "doctor"] });
+  assert.deepEqual(await failure(run({}, "agents")), { error: "unknown_command", commands: ["local", "login", "logout", "whoami", "profiles", "token", "partner", "env", "ssh", "chat", "card", "memory", "channel", "connector", "api", "deploy", "doctor"] });
   // The installed client has no server: running Mau on this machine needs the source checkout, and says so.
   assert.equal((await failure(run({}, "local"))).error, "local_requires_source_checkout");
   assert.deepEqual(await failure(run({}, "whoami")), { error: "login_required" });
