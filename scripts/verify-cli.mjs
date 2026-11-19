@@ -19,6 +19,11 @@ const failed = { id: "recovery", kind: "feishu", state: "failed", error: "feishu
 const server = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   assert.equal(req.headers.authorization, undefined);
+  // Signing in first asks how the service signs owners in, and sends no credential with that question.
+  if (req.url === "/_mau/v1/info") {
+    for (const header of ["cf-access-client-id", "cf-access-client-secret", "cf-access-token"]) assert.equal(req.headers[header], undefined);
+    res.end(JSON.stringify({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" })); return;
+  }
   assert.equal(req.headers.origin, "http://" + req.headers.host);
   const service = req.headers["cf-access-client-id"] === "edge.access" && req.headers["cf-access-client-secret"] === "edge-secret";
   const token = req.headers["cf-access-token"] === "edge-token";
@@ -46,8 +51,9 @@ const failure = async (run) => {
 try {
   const [archive] = JSON.parse(execFileSync(process.execPath,
     [fileURLToPath(new URL("scripts/pack-cli.mjs", root)), "--pack-destination", temporary], { encoding: "utf8" }));
-  const modules = (await readdir(new URL("src/cli/", root))).map(file => "dist/cli/" + file.replace(/\.ts$/, ".js"));
-  assert.ok(modules.includes("dist/cli/client.js") && modules.length >= 9);
+  const modules = (await Promise.all(["cli", "deploy"].map(async directory =>
+    (await readdir(new URL(`src/${directory}/`, root))).map(file => `dist/${directory}/` + file.replace(/\.ts$/, ".js"))))).flat();
+  assert.ok(modules.includes("dist/cli/client.js") && modules.includes("dist/cli/local.js") && modules.includes("dist/deploy/doctor.js"));
   assert.deepEqual(archive.files.map(f => f.path).sort(),
     ["LICENSE", "NOTICE", "README.md", "dist/cli.js", "dist/files.js", "dist/ssh-client.js", "dist/ssh-transport.js", "package.json", ...modules].sort());
   // A fresh cache and unreachable registry prove no server/private peer is fetched.
@@ -63,9 +69,11 @@ try {
   const cli = async (env, ...args) => JSON.parse((await run(env, ...args)).stdout);
   assert.deepEqual(await cli({}, "--version"), { product: "mau", version });
   const help = (await run({}, "--help")).stdout;
-  for (const line of ["mau login URL", "mau partner create NAME", "mau chat send NAME TEXT", "mau connector assign ID NAME", "mau api [METHOD] [PATH]"]) assert.ok(help.includes(line), line);
+  for (const line of ["mau local [--dir DIR]", "mau login URL", "mau partner create NAME", "mau chat send NAME TEXT", "mau connector assign ID NAME", "mau api [METHOD] [PATH]"]) assert.ok(help.includes(line), line);
   assert.match((await run({}, "channel", "--help")).stdout, /--app-id: feishu: authorize an app that already exists/);
-  assert.deepEqual(await failure(run({}, "agents")), { error: "unknown_command", commands: ["login", "logout", "whoami", "profiles", "partner", "env", "ssh", "chat", "card", "memory", "channel", "connector", "api"] });
+  assert.deepEqual(await failure(run({}, "agents")), { error: "unknown_command", commands: ["local", "login", "logout", "whoami", "profiles", "partner", "env", "ssh", "chat", "card", "memory", "channel", "connector", "api", "deploy", "doctor"] });
+  // The installed client has no server: running Mau on this machine needs the source checkout, and says so.
+  assert.equal((await failure(run({}, "local"))).error, "local_requires_source_checkout");
   assert.deepEqual(await failure(run({}, "whoami")), { error: "login_required" });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -95,7 +103,7 @@ try {
   assert.deepEqual(await cli(access, "logout"), { loggedOut: true });
   assert.deepEqual(await failure(run(access, "whoami")), { error: "login_required" });
   assert.ok(requests.includes("POST /_agent-router/v1/agents/helper/connections"));
-  console.log("PASS: independent CLI install with its command modules, help, Access login with service token files and an Access token.");
+  console.log("PASS: independent CLI install with its command and deployment modules, help, Access login with service token files and an Access token.");
   console.log("PASS: existing app recovery, job polling, recovery instructions and the JSON error contract.");
 } finally {
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));

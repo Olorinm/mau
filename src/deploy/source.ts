@@ -14,7 +14,12 @@ export class DeployError extends Error {
 export interface Pin { repository: string; version: string; revision: string; integrity: Record<string, string> }
 const COMPONENTS = ["host", "router", "connectors", "environment"] as const;
 
-export const CLONE = "git clone https://github.com/Olorinm/mau && cd mau && node scripts/bootstrap.mjs && npm run build && node dist/cli.js deploy";
+/** What `mau deploy` and `mau local` need of the checkout they run from. */
+const CHECKOUT = {
+  deploy: ["Dockerfile", "components.json", "cloudflare/src/index.ts", "cloudflare/wrangler.example.jsonc", "examples/mau.json"],
+  local: ["components.json", "examples/mau.json", "examples/cloud/host-profile.json", "dist/main.js"],
+};
+const clone = (command: keyof typeof CHECKOUT) => `git clone https://github.com/Olorinm/mau && cd mau && node scripts/bootstrap.mjs && npm run build && node dist/cli.js ${command}`;
 
 /** The `age` release the environment gateway installs into a sandbox to encrypt its backups (linux/amd64). */
 export const AGE = {
@@ -32,11 +37,16 @@ export class Source {
   archive(component: (typeof COMPONENTS)[number]) { return this.path(".packages", `agent-${component}.tgz`); }
   get wranglerBinary() { return this.path("cloudflare", "node_modules", ".bin", "wrangler"); }
 
-  /** A deployment builds the image and the Worker from source; an installed client archive has neither. */
-  assertCheckout() {
-    for (const file of ["Dockerfile", "components.json", "cloudflare/src/index.ts", "cloudflare/wrangler.example.jsonc", "examples/mau.json"])
-      if (!existsSync(this.path(file))) throw new DeployError("deploy_requires_source_checkout", `${file} is not beside this program`, CLONE);
+  /**
+   * A deployment builds the image and the Worker from source, and `mau local` runs the server from it; an installed
+   * client archive has neither.
+   */
+  assertCheckout(command: keyof typeof CHECKOUT = "deploy") {
+    for (const file of CHECKOUT[command])
+      if (!existsSync(this.path(file))) throw new DeployError(`${command}_requires_source_checkout`, `${file} is not beside this program`, clone(command));
   }
+  /** `examples/start-host.sh` of the pinned environment package, as `npm ci` installed it. */
+  get startHost() { return this.path("node_modules", "@olorinm", "agent-environment", "cloudflare", "examples", "start-host.sh"); }
   pin(): Pin { return JSON.parse(readFileSync(this.path("components.json"), "utf8")) as Pin; }
   /** The components whose archive is absent or is not the pinned bytes. */
   staleArchives(pin: Pin) {
@@ -47,7 +57,7 @@ export class Source {
   async revision(): Promise<string> {
     const git = (args: string[]) => this.runtime.effects.run("git", ["-C", this.root, ...args]);
     const head = await git(["rev-parse", "HEAD"]);
-    if (head.code !== 0 || !/^[0-9a-f]{40}$/.test(head.stdout.trim())) throw new DeployError("deploy_requires_source_checkout", "this directory is not a git checkout", CLONE);
+    if (head.code !== 0 || !/^[0-9a-f]{40}$/.test(head.stdout.trim())) throw new DeployError("deploy_requires_source_checkout", "this directory is not a git checkout", clone("deploy"));
     return head.stdout.trim() + ((await git(["status", "--porcelain"])).stdout.trim() ? "-dirty" : "");
   }
 

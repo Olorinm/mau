@@ -10,11 +10,13 @@ import { arity, CliError, fail, usage, type Command, type OptionValues } from ".
 import { connectorCommands } from "./cli/connector.js";
 import { deployCommands } from "./cli/deploy.js";
 import { environmentCommands } from "./cli/environment.js";
+import { localCommands } from "./cli/local.js";
 import { memoryCommands } from "./cli/memory.js";
 import { partnerCommands } from "./cli/partner.js";
 
 /** Every command. Help and dispatch read this table and nothing else. */
 const commands: Command[] = [
+  ...localCommands,
   ...accountCommands,
   ...partnerCommands,
   ...environmentCommands,
@@ -37,7 +39,7 @@ function help(noun?: string): string {
     ...(noun ? [] : ["  mau help | mau --help | mau NOUN --help | mau --version", ""]),
     "Output: one JSON document on stdout. Progress, links and QR codes go to stderr. On failure the exit code is 1 and",
     'the last stderr line is one JSON object: {"error":"<code>", ...}. Nothing is asked interactively.',
-    "Every command also takes the Cloudflare Access credential options:",
+    "Every command also takes the Cloudflare Access credential options (a service started by `mau local` needs none):",
     ...Object.entries(accessOptions).map(([name, option]) => `  --${name} ${option.value}: ${option.help}`),
     ...(noun ? [] : ["Options of one group of commands: mau NOUN --help (" + nouns.join(", ") + ")."]), "",
   ].join("\n");

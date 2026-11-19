@@ -31,7 +31,7 @@ export const deployCommands: Command[] = [
       return report;
     } },
   { path: ["doctor"], summary: "Check this machine, the deployment NAME and, signed in, the running service. Every failed check says how to fix it. Exit code 1 when a check fails.",
-    options: { ...name, url: { type: "string", value: "URL", help: "Also check the running service at URL (default: the deployment's)." } },
+    options: { ...name, url: { type: "string", value: "URL", help: "Also check the running service at URL (default: the deployment's). With the URL of the service `mau local` runs: check what local mode needs, and no deployment." } },
     run: async ({ options }) => {
       const { doctor } = await import("../deploy/index.js");
       const { exitCode, report } = await doctor(given(options, { name: "name", dir: "dir", url: "url" }));

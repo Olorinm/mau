@@ -57,7 +57,7 @@ it("names each thing that is broken and the command that repairs it", async () =
   // With the key pair refused on a bucket, the objects cannot be compared; with nothing in front of the service, there is no sign-in to check with.
   expect(named(report.checks, "configuration-objects")).toMatchObject({ ok: null, detail: "needs a working R2 key pair" });
   expect(named(report.checks, "account")).toMatchObject({ ok: true });
-  expect(named(report.checks, "partner:helper")).toMatchObject({ ok: false, detail: "environment needs action: environment_operation_unconfirmed", fix: "mau reconcile" });
+  expect(named(report.checks, "partner:helper")).toMatchObject({ ok: false, detail: "environment needs action: environment_operation_unconfirmed", fix: "mau env reconcile helper" });
 
   f.cloud.buckets.set("mau-attachments", new Map());
   const again = await doctor({}, f.runtime);

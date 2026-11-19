@@ -1,15 +1,10 @@
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-import { privateFile } from "../files.js";
 import { CliError, fail, type OptionValues, type Option } from "./command.js";
+import { isLoopback, localHeaders, readSession, removeSession, writeSession, type LocalSession } from "./session.js";
 
 export const mau = "/_mau/v1", router = "/_agent-router/v1";
-const sessionFile = () => join(process.env.MAU_CONFIG_DIR ?? join(homedir(), ".config", "mau"), "session.json");
-/** The service the CLI is signed in to. No credential is stored: Cloudflare Access credentials are read on every run. */
-interface Session { url: string; owner: string }
 
 /** Options every command takes: where the Cloudflare Access credentials come from. */
 export const accessOptions: Record<string, Option> = {
@@ -40,7 +35,7 @@ export function serviceUrl(raw: string): string {
   let url: URL;
   try { url = new URL(raw); } catch { return fail("invalid_service_url"); }
   if (url.username || url.password || url.hash || url.search || url.pathname !== "/" ||
-      !(url.protocol === "https:" || url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+      !(url.protocol === "https:" || url.protocol === "http:" && isLoopback(url)))
     return fail("invalid_service_url");
   return url.origin;
 }
@@ -69,25 +64,31 @@ export interface Partner { id: string; name: string }
 
 export class Client {
   private resolved?: Record<string, string>;
-  private constructor(readonly url: string, private readonly options: OptionValues, private readonly signal: AbortSignal) {}
+  private constructor(readonly url: string, private readonly options: OptionValues, private readonly signal: AbortSignal, private readonly local?: LocalSession) {}
 
   /** Sign in: the service accepts the Access credentials, and the URL is saved for the following commands. */
   static async login(raw: string, options: OptionValues, signal: AbortSignal) {
-    const client = new Client(serviceUrl(raw), options, signal), account = await client.get(mau + "/account");
+    const client = new Client(serviceUrl(raw), options, signal);
+    // A service in local mode has no Access in front of it: `mau local` starts it and signs the CLI in.
+    if (new URL(client.url).protocol === "http:" && await fetch(client.url + mau + "/info", { redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) })
+      .then(async response => (await response.json() as { login?: unknown })?.login === "local", () => false))
+      return fail("local_service_signs_in_with_mau_local", { fix: "mau local" });
+    const account = await client.get(mau + "/account");
     if (typeof account?.owner !== "string") return fail("invalid_account_response");
-    privateFile(sessionFile(), { url: client.url, owner: account.owner } satisfies Session);
+    writeSession({ url: client.url, owner: account.owner });
     return { owner: account.owner as string, url: client.url };
   }
-  static logout() { rmSync(sessionFile(), { force: true }); }
+  static logout() { removeSession(); }
   static session(options: OptionValues, signal: AbortSignal) {
-    let session: Session;
-    try { session = JSON.parse(readFileSync(sessionFile(), "utf8")); } catch { return fail("login_required"); }
-    if (typeof session?.url !== "string") return fail("login_required");
-    return new Client(serviceUrl(session.url), options, signal);
+    const session = readSession() ?? fail("login_required");
+    return new Client(serviceUrl(session.url), options, signal, "login" in session ? session : undefined);
   }
 
-  /** The headers that authenticate the owner, read once per run. */
-  headers() { return this.resolved ??= accessHeaders(this.url, this.options); }
+  /** The headers that authenticate the owner: the local token, read on every call, or the Access credentials, read once per run. */
+  headers() {
+    if (this.local) return localHeaders(this.local) ?? fail("local_token_unreadable", { tokenFile: this.local.tokenFile, fix: "mau local" });
+    return this.resolved ??= accessHeaders(this.url, this.options);
+  }
 
   /** One request. An answer that is not JSON, or no answer, is a failure; an HTTP error status is returned. */
   async call(method: Method, path: string, body?: unknown, timeoutMs = 30_000): Promise<Reply> {
@@ -102,7 +103,9 @@ export class Client {
       });
     } catch (error) {
       if (this.signal.aborted) return fail("interrupted");
-      return fail(error instanceof Error && error.name === "TimeoutError" ? "request_timed_out" : "service_unreachable", { method, path });
+      if (error instanceof Error && error.name === "TimeoutError") return fail("request_timed_out", { method, path });
+      // A local service runs only while `mau local` does.
+      return fail("service_unreachable", { method, path, ...(this.local ? { fix: "mau local" } : {}) });
     }
     if (response.status === 204) return { status: 204, data: null, headers: response.headers };
     const data: unknown = await response.json().catch(() => fail("invalid_response", { httpStatus: response.status, method, path }));
