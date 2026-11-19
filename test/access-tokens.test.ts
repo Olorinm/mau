@@ -445,7 +445,8 @@ it("mau token creates, lists and revokes, and a service token's commands carry t
   const token = readFileSync(out, "utf8");
   expect(token).toMatch(/^mau_[0-9a-f]{16}_[A-Za-z0-9_-]{43}\n$/);
   expect(statSync(out).mode & 0o777).toBe(0o600);
-  expect(made.stdout + made.stderr).not.toContain(token.trim().split("_")[2]);
+  // The secret may itself contain "_": take all of it, not its first piece.
+  expect(made.stdout + made.stderr).not.toContain(token.trim().split("_").slice(2).join("_"));
   // An existing file is never written over, and no token is created for it.
   expect((await owner("token", "create", "second", "--scope", "chat", "--out", out)).error).toEqual({ error: "file_exists", file: out });
   expect(readFileSync(out, "utf8")).toBe(token);
