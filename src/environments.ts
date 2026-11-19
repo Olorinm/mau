@@ -58,6 +58,12 @@ export const environmentOptionsSchema = z
              * of the Codex sign-in file among `files`, when there is one. `false`: none.
              */
             modelAccounts: z.union([z.literal(false), z.object({ openai: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)).min(1).max(8) }).strict()]).optional(),
+            /**
+             * Variables every environment of the profile is created with, for example the proxy its network needs.
+             * Not for secrets: a provider may show them. An environment keeps the ones it was created with.
+             */
+            env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,255}$/), z.string().max(8192).regex(/^[^\0]*$/))
+              .refine((value) => Object.keys(value).length <= 64).optional(),
             files,
           })
           .strict(),
@@ -136,6 +142,9 @@ const admitted = (p: Profile) => {
   const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
   return services || accounts ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}) } : undefined;
 };
+/** What the provider is asked to create for one operation of a profile. */
+const creation = (p: Profile, operationId: string) => ({ template: p.template, timeoutSeconds: p.lifetimeSeconds, onTimeout: p.onTimeout,
+  metadata: { "mau-operation": operationId }, ...(p.env ? { env: p.env } : {}), ...admitted(p) });
 /** The private files of a profile: its own, then those of its other kernels. */
 const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
 /**
@@ -460,13 +469,7 @@ export class EnvironmentManager {
       return this.view(winner);
     }
     this.launch(record, async () => {
-      record.ref = await provider.create({
-        template: profile.template,
-        timeoutSeconds: profile.lifetimeSeconds,
-        onTimeout: profile.onTimeout,
-        metadata: { "mau-operation": record.operationId },
-        ...admitted(profile),
-      });
+      record.ref = await provider.create(creation(profile, record.operationId));
       this.save(record); // durable ID precedes bootstrap or further network work
       await this.bootstrap(owner, record, provider, profile);
     });
@@ -534,8 +537,7 @@ export class EnvironmentManager {
     this.save(record);
     this.launch(record, async () => {
       const provider = await this.provider(record);
-      record.ref = await provider.create({ template: profile.template, timeoutSeconds: profile.lifetimeSeconds,
-        onTimeout: profile.onTimeout, metadata: { "mau-operation": record.operationId }, ...admitted(profile) });
+      record.ref = await provider.create(creation(profile, record.operationId));
       this.save(record);
       await this.bootstrap(owner, record, provider, profile);
     });
