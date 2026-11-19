@@ -67,8 +67,10 @@ async function followTurn(client: Client, chatId: string, seq: number, turnOf: (
       // The turn's state is read before its last events: read those again so the answer is among them.
       if (!active.has(turn.state)) events.push(...await eventsAfter(client, chatId, events.at(-1)?.seq ?? seq));
       const mine = events.filter(event => event.turnId === turnId), cards = pendingCards(mine);
+      // Reported: every card that appeared since, also one that belongs to no turn (a schedule to confirm). Only the
+      // turn's own cards make it wait.
       const outcome = { turnId, state: turn.state as string,
-        replies: mine.filter(event => event.kind === "message" && event.role === "assistant").map(message), pendingCards: cards };
+        replies: mine.filter(event => event.kind === "message" && event.role === "assistant").map(message), pendingCards: pendingCards(events) };
       if (!active.has(turn.state)) {
         if (turn.state === "completed") return outcome;
         const error = events.findLast(event => event.kind === "turn" && event.turnId === turnId)?.error;
@@ -105,6 +107,19 @@ export const chatCommands: Command[] = [
       if (!queued || options["no-wait"]) return { ...result, state: queued ? "queued" : "not_queued", replies: [], pendingCards: [] };
       return { ...result, ...await followTurn(client(), chat.chatId, sent.event.seq,
         events => events.find(event => event.kind === "turn" && event.inputEventIds?.includes(sent.event.eventId))?.turnId) };
+    } },
+  { path: ["chat", "stop"], args: "NAME", summary: "Stop the partner's running turn in your direct chat. Prints the turns it asked to stop; none when nothing was running.",
+    run: async ({ args, client }) => {
+      const chat = await openDirect(client(), await client().partner(args[0]!));
+      if (!chat.activeTurns) return { chatId: chat.chatId, stopped: [] };
+      const turnIds = (events: any[]) => [...new Set(events.filter(event => event.kind === "turn").map(event => event.turnId as string))];
+      const stopped: unknown[] = [];
+      for (const turnId of turnIds(await eventsBack(client(), chat.chatId, found => turnIds(found).length >= chat.activeTurns)).reverse()) {
+        if (stopped.length >= chat.activeTurns) break;
+        const turn = await client().get(`${chatPath(chat.chatId)}/turns/${encodeURIComponent(turnId)}`);
+        if (active.has(turn.state)) stopped.push({ turnId, ...await client().post(`${chatPath(chat.chatId)}/turns/${encodeURIComponent(turnId)}/cancel`, {}) });
+      }
+      return { chatId: chat.chatId, stopped };
     } },
   { path: ["chat", "new"], args: "NAME", summary: "Start a new conversation with the partner; the chat keeps its history. Refused (session_busy) while a turn runs.",
     run: async ({ args, client }) => {

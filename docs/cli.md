@@ -104,8 +104,8 @@ partner's `replies` and `pendingCards`. `state` is `completed`, or `waiting` whe
 answer with `mau card answer NAME CARD_ID ANSWER`, where ANSWER is one of the card's `choices` (its `choiceId` or
 its `label`), or free text when the card has `freeText`. `card answer` then waits for the partner's turn in the
 same way. A turn that fails, is cancelled or has an unknown outcome is a failure (`turn_failed`, `turn_canceled`,
-`turn_unknown`). `--no-wait` returns at once with `state` `queued`; read the chat with `chat show` later. `mau chat new NAME` starts a new
-conversation in the same chat. Text that begins with `-` goes after `--`: `mau chat send helper -- "-1"`.
+`turn_unknown`). `--no-wait` returns at once with `state` `queued`; read the chat with `chat show` later. `mau chat stop NAME` stops a
+running turn. `mau chat new NAME` starts a new conversation in the same chat. Text that begins with `-` goes after `--`: `mau chat send helper -- "-1"`.
 
 ## Memory
 

@@ -167,8 +167,8 @@ export async function doctor(input: DoctorInput, runtime: Runtime = systemRuntim
       : unknown("no Access credential", `${signIn} (or CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET of a service token)`);
     const signedIn = await check("account", async () => {
       if (!headers) return signedOut;
-      // A local service runs only while `mau local` does.
-      const account = await get(`${service}/_mau/v1/account`, headers).catch((error: unknown) => { if (local) throw new DeployError("service_unreachable", `${service} does not answer`, signIn); throw error; });
+      // A service that does not answer is a failed check. A local one runs only while `mau local` does.
+      const account = await get(`${service}/_mau/v1/account`, headers).catch(() => { throw new DeployError("service_unreachable", `${service} does not answer`, local ? signIn : "Check the URL and that the service is running."); });
       if (account.status !== 200) return bad(`${service}/_mau/v1/account answered ${account.status}${account.body?.error ? ` ${account.body.error}` : ""}`, signIn);
       const expected = local ? local.owner : record ? ownerId(record.hostname) : undefined;
       return !expected || account.body.owner === expected ? good(`signed in as ${account.body.owner} (${account.body.via})`) : bad(`signed in as ${account.body.owner}, the owner is ${expected}`, local ? signIn : `Sign in with ${record!.ownerEmail}.`);

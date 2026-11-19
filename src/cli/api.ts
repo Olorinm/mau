@@ -16,6 +16,7 @@ export const apiCommands: Command[] = [
       let body: unknown;
       try { body = data !== undefined ? JSON.parse(data) : file !== undefined ? JSON.parse(readFileSync(file, "utf8")) : undefined; }
       catch { fail("invalid_json_body"); }
-      return client().request(method as Method, path!, body, 300_000);
+      // A route that takes a body and needs nothing in it takes the empty object.
+      return client().request(method as Method, path!, body ?? (method === "GET" || method === "DELETE" ? undefined : {}), 300_000);
     } },
 ];
