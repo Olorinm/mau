@@ -29,6 +29,7 @@ import type { Session } from "../api/session";
 import { errorMessage, failureMessage, useI18n } from "../i18n";
 import { availableActions, canDestroy, stateTone } from "../status";
 import { ConnectChannelDialog } from "./connect-channel";
+import { DeviceSection } from "./device";
 import { AppMark, productFor, productIdFor } from "../settings/app-marks";
 import { openSettings } from "../settings/route";
 import { partnerDocuments, isMemory, type PartnerDocument } from "./side-views";
@@ -79,6 +80,8 @@ export function AgentDetail(props: {
   const confirm = useConfirm();
   const queries = useQueryClient();
   const { agent, environment, duty, kernel, connections } = props.summary;
+  // A partner on the owner's computer has a device in place of an environment, and no connectors, documents or model of Mau's.
+  const external = props.summary.kind === "external";
   const named = (ids: readonly string[]) => props.partners.flatMap(({ agent: { id, name } }) => ids.includes(id) ? [{ id, name }] : []);
   // In a shared environment the partner only reads its state; `host` is the partner that has it and operates it.
   const host = environment?.sharedFrom ? named([environment.sharedFrom])[0] ?? { id: environment.sharedFrom, name: "…" } : undefined;
@@ -94,12 +97,12 @@ export function AgentDetail(props: {
   const accounts = useQuery({
     queryKey: ["connector-accounts", props.session.owner],
     queryFn: mau.connectorAccounts,
-    enabled: tab === "abilities",
+    enabled: tab === "abilities" && !external,
     staleTime: 30_000,
   });
-  const memory = useQuery({ queryKey: ["agent-memory", agent.id], queryFn: () => mau.agentMemory(agent.id), enabled: tab === "documents" });
+  const memory = useQuery({ queryKey: ["agent-memory", agent.id], queryFn: () => mau.agentMemory(agent.id), enabled: tab === "documents" && !external });
   // Changes of the memory that were not the owner's. The ones that are new when the list opens stay listed while it is open.
-  const mutations = useQuery({ queryKey: ["agent-memory-mutations", agent.id], queryFn: () => mau.agentMemoryMutations(agent.id), enabled: tab === "documents" });
+  const mutations = useQuery({ queryKey: ["agent-memory-mutations", agent.id], queryFn: () => mau.agentMemoryMutations(agent.id), enabled: tab === "documents" && !external });
   const [fresh, setFresh] = useState<readonly string[]>([]), [older, setOlder] = useState(false), [expanded, setExpanded] = useState<string>();
   useEffect(() => {
     const unseen = (mutations.data ?? []).filter((mutation) => mutation.unseen);
@@ -107,7 +110,7 @@ export function AgentDetail(props: {
     setFresh((ids) => [...new Set([...ids, ...unseen.map((mutation) => mutation.id)])]);
     void mau.seenAgentMemoryMutations(agent.id, Math.max(...unseen.map((mutation) => mutation.seq))).catch(() => undefined);
   }, [mutations.data, agent.id]);
-  const models = useQuery({ queryKey: ["model-settings", agent.id], queryFn: () => mau.modelSettings(agent.id), enabled: tab === "config" });
+  const models = useQuery({ queryKey: ["model-settings", agent.id], queryFn: () => mau.modelSettings(agent.id), enabled: tab === "config" && !external });
   const usable = (accounts.data?.data ?? []).filter((account) => account.assignedAgents?.includes(agent.id));
   const accountStatus = (account: ConnectorAccount) =>
     account.state === "connected" ? <StatusLine tone="success">{zh ? "可用" : "Available"}</StatusLine>
@@ -280,13 +283,13 @@ export function AgentDetail(props: {
           options={[
             { value: "status", label: zh ? "状态" : "Status", icon: icon("ops") },
             { value: "channels", label: t("channels.title"), icon: icon("chat") },
-            { value: "abilities", label: zh ? "能力" : "Capabilities", icon: icon("extensions") },
-            { value: "documents", label: zh ? "文档" : "Documents", icon: icon("copy") },
+            ...(external ? [] : [{ value: "abilities" as const, label: zh ? "能力" : "Capabilities", icon: icon("extensions") },
+              { value: "documents" as const, label: zh ? "文档" : "Documents", icon: icon("copy") }]),
             { value: "config", label: zh ? "配置" : "Configuration", icon: icon("settings"), divided: true },
           ]} />
         {tab === "status" ? (
           <>
-            <SettingsSection title={t("env.title")}>
+            {external ? <DeviceSection session={props.session} summary={props.summary} onChanged={refresh} onFailed={failed} /> : <SettingsSection title={t("env.title")}>
               <ListRow
                 title={t("env.state")}
                 {...(state === "sleeping" ? { subtitle: t("env.sleepingHint") } : state === "paused" ? { subtitle: t("env.pausedHint") } : {})}
@@ -301,7 +304,7 @@ export function AgentDetail(props: {
               {state === "unconfigured" ? profiles.map((p) => (
                 <ListRow key={p.id} tone="action" disabled={busy} title={`${t("env.configure")} · ${p.label}`} onClick={() => configure.mutate(p.id)} />
               )) : null}
-            </SettingsSection>
+            </SettingsSection>}
             {sharers.length ? (
               <SettingsSection title={t("env.sharedBy")}>
                 {sharers.map(({ id, name }) => (
@@ -365,8 +368,8 @@ export function AgentDetail(props: {
           <>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
               <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{kernel ?? "—"}</span>} />
-              {modelRows()}
-              {sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
+              {external ? null : modelRows()}
+              {external ? null : sharedRow ?? <ListRow title={t("env.profile")} trailing={<span className="mau-profile-value">{profile?.label ?? "—"}</span>} />}
             </SettingsSection>
             <SettingsSection>
               {dismissed

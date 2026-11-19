@@ -99,6 +99,9 @@ Local mode replaces the two things a deployment gets from Cloudflare, and both r
 - Nothing wakes or pauses an environment by a provider lifetime; Mau itself still pauses one that has been idle
   for ten minutes and resumes it for the next message.
 
+- **Only this machine can pair.** [An agent on your computer](external-agents.md) connects to the service itself,
+  and the service listens on `127.0.0.1` only: the agent has to be on the machine `mau local` runs on.
+
 It is not for production and not for more than one person.
 
 ## Next: deploy

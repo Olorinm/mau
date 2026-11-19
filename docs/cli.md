@@ -96,6 +96,7 @@ scope that would allow it. `"access": "owner"` in the edge identity remains the 
 mau profiles                                              # the environment profiles you can use
 mau partner create helper --profile codex --duty "Keeps my calendar"
 mau partner create scout --share helper                   # runs in helper's environment
+mau partner create laptop --external                      # an agent on your computer; prints its pairing code
 mau partner list
 mau partner model helper --set model=MODEL_ID --set effort=high
 mau env pause helper
@@ -117,6 +118,21 @@ shared is refused (`environment_shared_by_partners`) until the sharing partners 
 --yes` removes the environment and keeps the partner; `mau env create NAME --profile ID` gives a partner without an
 environment a new one. `mau env replace NAME --profile ID` and `mau env rollback NAME` are described in
 [environment replacement](environment-replacement.md).
+
+## Devices
+
+A partner created with `--external` is an agent on your own computer. It has a device instead of an environment:
+
+```sh
+mau device list                  # each such partner: pairing, online or offline, and its computer
+mau device show laptop
+mau device pair laptop           # a new pairing code and the command to run on the computer
+mau device remove laptop --yes   # end the pairing; the partner stays
+```
+
+`partner create --external` and `device pair` are the only commands that print a pairing code. The `env`, `ssh`,
+`memory`, `partner model` and connector commands answer `not_available_for_external_partner` for such a partner.
+See [Connect an agent on your computer](external-agents.md).
 
 When the environment profile enables SSH, `mau ssh NAME` opens an interactive shell and `mau ssh NAME -- COMMAND`
 executes a command and preserves its exit status. The service checks account ownership and tunnels native

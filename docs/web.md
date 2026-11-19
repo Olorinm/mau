@@ -99,6 +99,12 @@ without `send` conversations are read-only.
   and has no pause, resume, reconcile or destroy; its checks, documents and settings are its own. The profile of
   the partner that has the environment lists the partners sharing it; destroying that environment or deleting that
   partner is refused, naming them, until they are deleted.
+- Where the service has Agent Kit's host links, the third choice for a new partner is "My computer": the partner
+  is an agent already installed on the owner's computer. The dialog then shows, once, the pairing code and the
+  command to run there. Its profile has "Device" in place of the environment (state, name, platform, kernel, last
+  online, pair again, unpair), no capabilities or documents, and neither a model nor an environment to destroy
+  under configuration; in the list its state is waiting to pair, online or offline. See
+  [Connect an agent on your computer](external-agents.md).
 - "New group" creates a Router group room with a title and up to 20 of the owner's Agents. In a group only
   the Agents the owner @-mentions (or everyone, with `@all`/`@所有人`) start work; a message without a
   mention is only recorded. The member panel renames the group and adds or removes Agents.

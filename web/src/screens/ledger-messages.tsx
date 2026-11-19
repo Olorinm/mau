@@ -212,7 +212,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const queries = useQueryClient();
   const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: () => mauApi(session.token).agents(),
     // Provisioning and lifecycle changes are durable server operations; poll faster only while one runs.
-    refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000 : 10_000 });
+    refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000
+      // A computer that is pairing shows up within seconds.
+      : query.state.data?.some((item) => item.connection === "pairing" && !item.dismissed) ? 3000 : 10_000 });
   // The partners as they work together: who recruited whom, and what waits at each. Read more often while something waits.
   const partnerViews = useQuery({ queryKey: ["partners", session.owner], queryFn: () => mauApi(session.token).partners(), retry: false,
     refetchInterval: (query) => query.state.data?.some((item) => item.waiting.messages || item.waiting.approvals) ? 3000 : 10_000 });
@@ -374,14 +376,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const { type, id } = last.sender;
     return type === "person" || type === "external" || type === "agent" && chat.agentIds.includes(id) ? last.preview : undefined;
   };
-  const partnerEntry = ({ agent, environment, dismissed }: NonNullable<typeof agents.data>[number]): Entry => {
+  const partnerEntry = ({ agent, environment, dismissed, kind, connection }: NonNullable<typeof agents.data>[number]): Entry => {
     const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured", waiting = dismissed ? undefined : views.get(agent.id)?.waiting;
-    const working = !!chat?.activeTurns || !!waiting?.messages;
+    // A partner on the owner's computer is online or offline; a computer that is off is not working, whatever waits for it.
+    const device = kind === "external" ? connection ?? "pairing" : undefined, away = device !== undefined && device !== "online";
+    const working = !away && (!!chat?.activeTurns || !!waiting?.messages);
     // The figure's eyes carry the state: aside while a reply runs (the owner's or another partner's message), closed
     // when the environment cannot take messages or the partner is dismissed.
-    const figure = dismissed ? "offline" : working ? "working" : unavailable.includes(state) ? "offline" : "idle";
+    const figure = dismissed || away ? "offline" : working ? "working" : !device && unavailable.includes(state) ? "offline" : "idle";
     return { key: "agent:" + agent.id, title: agent.name,
-      status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
+      status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(device ? `device.${device}` : `state.${state}`),
       preview: preview(chat), time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
       ...(waiting?.approvals ? { note: t("partners.waitingApproval") } : {}),
       avatar: (size) => <PartnerAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
