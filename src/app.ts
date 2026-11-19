@@ -77,12 +77,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   router?: Omit<ServiceDependencies, "configure" | "authorizeOperator">;
   environments?: () => Promise<Environments>;
   reviewer?: RestrictedMemoryReviewer;
-  /**
-   * The platform's host links: the computers of the owner that pair with a code and connect to the service
-   * themselves. This is the one place they are connected. A service started without them has no partners on the
-   * owner's computers, and refuses to create one (`external_partners_unavailable`).
-   */
-  externalHosts?: ExternalHosts;
+  /** Host links for a service whose Router has none of its own; see `hostLinks` in `createMau`. */
+  hostLinks?: ExternalHosts;
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
@@ -114,7 +110,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       // leaves that environment untouched.
       beforeDelete: async agent => {
         proactive.suspendAgent(agent.id);
-        await externals.unpair(agent.owner, agent.id);
         await environments.removeAgent(agent.owner, agent.id);
         await dependencies.router?.beforeDelete?.(agent);
       },
@@ -124,24 +119,28 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         partners.forget(agent.owner, agent.id);
         history.forget(agent.owner, agent.id);
         proactive.forgetAgent(agent.id);
-        await externals.forget(agent.id);
         forgetPartnerRecords(businessStore, agent.owner, agent.id);
         modelSettings.forget(agent.id);
         await dependencies.router?.afterDelete?.(agent);
       },
     },
     connections: options.connectionsFile ? resolve(base, options.connectionsFile) : {},
-    // A partner on the owner's computer is bound to its paired computer; every other partner to its environment.
     hosts: {
-      assertReady: (id, binding) => externals.has(id) ? externals.assertReady(id, binding) : environments.assertReady(id, binding),
-      wake: (id, binding) => externals.has(id) ? externals.wake(id, binding) : environments.wake(id, binding),
-      host: (id, binding) => externals.has(id) ? externals.host(id, binding)
-        : business.host(id, router.service.agent(id).owner, binding, environments.http(id, binding)),
-      http: (id, binding) => externals.has(id) ? externals.http(id, binding) : environments.http(id, binding),
+      assertReady: (id, binding) => environments.assertReady(id, binding),
+      wake: (id, binding) => environments.wake(id, binding),
+      host: (id, binding) => business.host(id, router.service.agent(id).owner, binding, environments.http(id, binding)),
+      http: (id, binding) => environments.http(id, binding),
     },
   });
+  /**
+   * The one place Agent Kit's host links are connected: the computers of the owner that pair with a code and connect
+   * to the service themselves. The pinned Agent Kit has none, so a service has them only when it is given some; with
+   * a release that has them this is `router.hostLinks`. Without them no partner on the owner's computer can be
+   * created (`external_partners_unavailable`).
+   */
+  const hostLinks: ExternalHosts | undefined = dependencies.hostLinks;
   const hostOf = (owner: string, agentId: string) => router.connections.configuration(router.service.owned(agentId, owner))?.host;
-  const externals = new ExternalPartners(businessStore, dependencies.externalHosts, {
+  const externals = new ExternalPartners(businessStore, hostLinks, {
     serviceUrl: new URL(config.publicUrl).origin,
     binding: hostOf,
     bind: async (owner, agentId, host) => {
@@ -149,11 +148,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       if (host) await router.connections.replaceHost(owner, agentId, { ...host, instanceName: "channel-host", instructions: "" });
       else await router.connections.edit(owner, agentId, config => { delete config.host; }, undefined, true);
     },
-    admits: admission => admitted(admission),
-    sender: admission => partners.memorySource(admission)?.partners[0]?.name,
-    notes: async admission => (await partners.turnContext(admission, false)).partnerNotes,
-    observe: (agentId, run) => partners.observe(agentId, run),
-    completed: admission => partners.turnCompleted(admission),
   });
   /** Every owner route and the SSH upgrade: the Access JWT when the request carries one, otherwise the bearer token. */
   // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests. Method, path and
@@ -300,14 +294,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     connections: (owner, agentId) => connectedApps.connections(agentId, owner),
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
   });
-  const admitted = (admission: import("./run-admission.js").RunAdmission) => {
+  business.setAdmissionValidator(admission => {
     const partner = partners.allows(admission);
     if (partner !== undefined) return partner;
     const review = reviewOrigin(admission);
     return review ? admission.kind === "delegation" && ["submitting", "running"].includes(review.status) && !review.cancellationRequested
       : proactive.allows(admission);
-  };
-  business.setAdmissionValidator(admitted);
+  });
   business.setPartnerTools((agentId, owner) => new NativePartnerTools(owner, agentId, partners,
     facts, proactive, options.nativeWork.partnerTools, { history,
       reminders: (admission, hostSessionId) => {
@@ -487,7 +480,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       const ownership = externals.creatable(input.ownership);
       const agent = await router.service.create(owner, input.name);
       externals.register(owner, agent.id, ownership, input.duty, !environments.summary(owner, agent.id) && !hostOf(owner, agent.id));
-      res.status(201).json({ ...summary(owner, agent.id), pairing: await externals.pair(owner, agent.id) }); return;
+      res.status(201).json({ ...summary(owner, agent.id), pairing: externals.pair(owner, agent.id) }); return;
     }
     // Asked again for a name that exists, Router answers with that partner: one on the owner's computer gets no environment.
     if (router.service.agents(owner).some(agent => agent.name === input.name && externals.has(agent.id))) throw new RouterError("not_available_for_external_partner", 409);
@@ -520,10 +513,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const owner = res.locals.owner as string;
     res.json(externals.view(owner, router.service.owned(String(req.params.id), owner).id));
   });
-  product.post("/agents/:id/device/pair", async (req, res) => {
+  product.post("/agents/:id/device/pair", (req, res) => {
     apiInput.empty.parse(req.body);
     const owner = res.locals.owner as string;
-    res.json(await externals.pair(owner, router.service.owned(String(req.params.id), owner).id));
+    res.json(externals.pair(owner, router.service.owned(String(req.params.id), owner).id));
   });
   product.delete("/agents/:id/device", async (req, res) => {
     const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;

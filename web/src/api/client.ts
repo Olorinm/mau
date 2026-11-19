@@ -36,7 +36,7 @@ export interface AgentSummary {
 }
 export type DeviceConnection = "pairing" | "online" | "offline";
 /** The computer paired with a partner that runs on it. */
-export interface DeviceView { id: string; name: string; platform: string; kernel: string; online: boolean; pairedAt: string; lastSeenAt: string | null }
+export interface DeviceView { id: string; name: string; platform: string; kernel: string; online: boolean; pairedAt: string; lastOnlineAt: string | null }
 /** A pairing code and the command that uses it on the computer; the server shows a code only when it makes one. */
 export interface Pairing { code: string; expiresAt: string; command: string }
 /** A partner as it works with the others: who recruited it and what waits at it. */

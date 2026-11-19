@@ -26,7 +26,7 @@ The answer has the partner and, once, its pairing:
   "ownership": "owner",
   "connection": "pairing",
   "device": null,
-  "pairing": { "code": "…", "expiresAt": "…", "command": "npx @olorinm/agent-host link https://mau.example.com --code …" }
+  "pairing": { "code": "…", "expiresAt": "…", "command": "agent-host link --config host.json --url https://mau.example.com --code …" }
 }
 ```
 
@@ -51,33 +51,37 @@ is replaced by the next one. One partner has one computer. Dismissing or deletin
 | --- | --- |
 | `POST /_mau/v1/agents` with `{ "name", "kind": "external", "duty"? }` | Create the partner; `201` with its summary and `pairing`. `ownership` may be given as `"owner"`; `"other"` is refused (`external_ownership_not_supported`). |
 | `GET /_mau/v1/devices` | `{ "data": [{ "partner": { "id", "name" }, "ownership", "connection", "device" }] }` |
-| `GET /_mau/v1/agents/:id/device` | `{ "ownership", "connection": "pairing" \| "online" \| "offline", "device": { "id", "name", "platform", "kernel", "online", "pairedAt", "lastSeenAt" } \| null }` |
+| `GET /_mau/v1/agents/:id/device` | `{ "ownership", "connection": "pairing" \| "online" \| "offline", "device": { "id", "name", "platform", "kernel", "online", "pairedAt", "lastOnlineAt" } \| null }` |
 | `POST /_mau/v1/agents/:id/device/pair` | `{ "code", "expiresAt", "command" }` |
 | `DELETE /_mau/v1/agents/:id/device` | `204` |
 
 ## What it can and cannot do
 
 - **Messages.** You write to it in the console, the CLI or a chat channel connected to it, like to any partner.
-  While its computer is offline your messages wait and are handled when it is back.
-- **Other partners.** A partner in an environment can send it a message with the `partners` tool (relay, ask,
-  inform) and gets its reply back in the conversation it sent from. A relay or an ask to an offline computer waits,
-  for at most 48 hours. The sender is told that this partner is on your computer, with its own files and tools, and
-  cannot see the sender's environment, so everything must be in the message. It cannot be recruited, and it does
-  not message other partners itself.
+  It takes text only: an attachment is answered with a line saying so. While its computer is offline your messages
+  wait and are handled when it is back.
+- **Other partners.** A partner in an environment can send it a message with the `partners` tool and gets its reply
+  back in the conversation it sent from. A relay or an ask to an offline computer waits, for at most 48 hours. An
+  inform wakes nobody: it is added to the next relay or ask a partner sends it (your own messages do not carry
+  it). The sender is told that this partner is on your computer, with its own files and tools, and cannot see the
+  sender's environment, so everything must be in the message. It cannot be recruited, and it does not message
+  other partners itself.
 - **Approvals.** When its kernel asks before doing something (running a command, for example), the question
   appears as a card in your conversation with it.
-- **What reaches it.** Each turn carries the message and one sentence saying who it is from (you, another partner,
-  or a chat channel), and notes other partners left for it. A partner's message says that it is not from you and
-  authorizes nothing new. No instructions and no tools of Mau are sent.
+- **What reaches it.** Text. Your message arrives as you wrote it. A partner's message arrives marked as delivered
+  by the system, naming the partner that wrote it, saying that its answer goes back to that partner, and that it is
+  not from you and authorizes nothing new. No instructions and no tools of Mau or of Router are sent: the
+  computer's Host refuses a turn that carries any.
 - **Not for it.** Mau's memory document and its change record, conversation search, background memory review,
   connectors, skills, model settings, environments, SSH and scheduled rules. Those routes answer
   `not_available_for_external_partner` (HTTP 409), and the console does not show them.
 
 ## Security boundary
 
-- The service can send the partner text and attachments, stop a run, and answer the questions its kernel asks you.
-  It cannot read or write files on the computer, start native sessions there or call the kernel's native methods:
-  Mau does not pass those abilities of a Host on for such a partner.
+- The service can send the partner text, stop a run, and answer the questions its kernel asks you. Agent Kit
+  enforces this on the computer: a turn that arrives over the link with instructions, tools or attachments is
+  refused there, whatever the service sent. Turns of such a partner do not pass through Mau's own Host layer, which
+  is where partners in an environment get Mau's tools, memory and skills.
 - What the agent may do on the computer (which directories, which commands, what needs your approval) is decided
   by the Host's configuration on that computer and by the kernel's own permissions. Mau neither sees nor changes
   them. Give the Host the least it needs.
@@ -94,6 +98,10 @@ the pairing code or the link's own credential: `POST /_agent-router/v1/host-link
 `/_agent-router/v1/host-links/socket`. `mau deploy` gives each an Access application with a Bypass policy, and
 `mau doctor` reports `host-links` when one of them is behind the login. See
 [Deployment](deployment.md#deploy-your-own).
+
+Agent Kit locks out an address after repeated failed enrollments. The address is the client's only when Router
+trusts the proxy in front of it: a deployment made by `mau deploy` sets `AGENT_TRUST_PROXY` in `mau.env` and its
+Worker passes the client address on. Without that setting every computer shares the proxy's address.
 
 A service started with `mau local` listens on `127.0.0.1` only, so the only computer that can pair is the one it
 runs on.

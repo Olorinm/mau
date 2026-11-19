@@ -71,7 +71,7 @@ it("serves a local Mau to the bearer of the token only: product routes, Router's
   };
   expect((await call("/_mau/v1/info")).data).toEqual({ login: "local" });
   expect(await call("/_mau/v1/account", bearer)).toMatchObject({ status: 200, data: { owner: "@owner:localhost", via: "bearer" } });
-  expect((await call("/_mau/v1/options", bearer)).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }] });
+  expect((await call("/_mau/v1/options", bearer)).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }], external: false });
   expect((await call("/_agent-router/v1/web/me", bearer)).data).toMatchObject({ ownerId: "@owner:localhost", auth: { via: "bearer" } });
   // Nothing a browser sends on its own signs in: no cookie, no Access header, no token in the address.
   for (const headers of [{}, { authorization: "Bearer " + token + "x" }, { cookie: `CF_Authorization=${token}; mau=${token}` }, { "cf-access-jwt-assertion": token },
@@ -187,7 +187,7 @@ it("mau local runs the service, signs the CLI in, stops on a signal and goes on 
   // Every other command works at once, with the token read from its file and never stored in the session.
   expect(JSON.parse(readFileSync(join(c.root, "config", "session.json"), "utf8"))).toEqual({ url, owner: "@owner:localhost", login: "local", tokenFile: join(dir, "token") });
   expect((await c.run(["whoami"])).json).toMatchObject({ owner: "@owner:localhost", via: "bearer" });
-  expect((await c.run(["profiles"])).json).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }] });
+  expect((await c.run(["profiles"])).json).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }], external: false });
   expect((await c.run(["partner", "list"])).json).toEqual({ data: [] });
   expect((await c.run(["api", "GET", "/_agent-router/v1/web/me"])).json.ownerId).toBe("@owner:localhost");
   expect((await c.run(["login", url])).error).toEqual({ error: "local_service_signs_in_with_mau_local", fix: "mau local" });

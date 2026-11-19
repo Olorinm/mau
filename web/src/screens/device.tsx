@@ -44,7 +44,7 @@ export function DeviceSection(props: { session: Session; summary: AgentSummary; 
       <ListRow title={t("device.name")} trailing={value(device.name)} />
       <ListRow title={t("device.platform")} trailing={value(device.platform)} />
       <ListRow title={t("create.kernel")} trailing={value(kernel ?? device.kernel)} />
-      <ListRow title={t("device.lastSeen")} trailing={value(device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString(language, { dateStyle: "short", timeStyle: "short" }) : "—")} />
+      <ListRow title={t("device.lastSeen")} trailing={value(device.lastOnlineAt ? new Date(device.lastOnlineAt).toLocaleString(language, { dateStyle: "short", timeStyle: "short" }) : "—")} />
     </> : null}
     {pairing ? <PairingRows pairing={pairing} /> : null}
     <ListRow tone="action" disabled={pair.isPending} title={t(device ? "device.pairAgain" : "device.pair")} onClick={() => pair.mutate()} />

@@ -8,7 +8,7 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { EXTERNAL_PARTNERS, GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
@@ -110,7 +110,7 @@ export interface PartnerMessage {
     readBy?: string };
   /** Since when the outcome of the recipient's turn has been unknown. */
   unknownSince?: string;
-  /** An inform: the turn whose context carries it. */
+  /** An inform: the turn whose context carries it, or the message it is sent with to an agent on the owner's computer. */
   offeredTo?: string;
 }
 interface ReturnBatch {
@@ -344,9 +344,12 @@ export class Partners {
     const approvals = this.store.entriesByStatus<{ agentId: string; desk?: unknown }>("connector_approvals", ["pending"]).map(entry => entry.value).filter(record => record.desk);
     return Promise.all(this.summary(owner, includeDismissed).map(async partner => {
       const settings = await this.port.sessions(owner, partner.id).then(work => work.defaultSettings(), () => ({} as Record<string, unknown>));
+      // Router runs the turns of an agent on the owner's computer without Mau's Host, so its open runs are read from Router.
+      const busy = partner.external && partner.status === "idle" && await this.port.sessions(owner, partner.id)
+        .then(work => work.list().some(session => session.runs.some(run => run.phase !== "finished")), () => false);
       const holder = this.port.environmentHolder(partner.id), recruit = this.store.get<{ by: Party; at: string }>(RECRUITS, JSON.stringify([owner, partner.name]));
       const dismissal = this.dismissed(partner.id);
-      return { ...partner, kernel: this.port.kernel(partner.id) ?? null,
+      return { ...partner, ...(busy ? { status: "working" } : {}), kernel: this.port.kernel(partner.id) ?? null,
         model: typeof settings.model === "string" ? settings.model : null, effort: typeof settings.effort === "string" ? settings.effort : null,
         lastActivityAt: this.store.get<{ at: string }>(ACTIVITY, partner.id)?.at ?? null,
         waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length, approvals: approvals.filter(record => record.agentId === partner.id).length },
@@ -515,18 +518,18 @@ export class Partners {
     if (!this.partners(owner).some(agent => agent.id === agentId)) throw new PartnerError("partner_not_found");
     this.store.delete(DISMISSALS, agentId);
   }
-  private checkText(text: string, external = false) {
+  private checkText(text: string, external: () => boolean = () => false) {
     if (!text.trim()) throw new PartnerError("partner_message_empty", { instruction: "Write the message: the partner sees nothing else of this conversation." });
     if (Buffer.byteLength(text) > MESSAGE_BYTES) throw new PartnerError("partner_message_too_large", { limitBytes: MESSAGE_BYTES,
-      instruction: external ? "Shorten the message, or send it in parts: this partner is on the owner's own computer and cannot read files of your environment."
+      instruction: external() ? "Shorten the message, or send it in parts: this partner is on the owner's own computer and cannot read files of your environment."
         : "Shorten the message, or put long material in a file in the shared environment and name the file." });
   }
   private async message(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     if (!input.intent || input.text === undefined || !input.to) throw new PartnerError("partners_invalid_input", { instruction: "action=message needs to, text and intent." });
-    const to = this.recipient(admission, input.to);
-    this.checkText(input.text, this.external(admission.owner, to.agentId));
+    const { text, to } = input;
+    this.checkText(text, () => this.external(admission.owner, this.recipient(admission, to).agentId));
     const origin = await this.origin(admission, turn);
-    return this.send(admission, turn, origin, callId, to, input.intent, input.text);
+    return this.send(admission, turn, origin, callId, this.recipient(admission, to), input.intent, text);
   }
   private async send(admission: RunAdmission, turn: Turn, origin: Origin, callId: string, to: Party, intent: Intent, text: string) {
     const owner = admission.owner, from = this.self(admission);
@@ -564,8 +567,8 @@ export class Partners {
   }
   private receipt(message: PartnerMessage) {
     const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent };
-    if (message.intent === "inform") return { ...base, expectsReply: false, next: NEXT.informed(message.to.name) };
     const presence = this.port.presence(message.owner, message.to.agentId);
+    if (message.intent === "inform") return { ...base, expectsReply: false, next: presence?.external ? NEXT.informedExternal(message.to.name) : NEXT.informed(message.to.name) };
     return { ...base, expectsReply: true, next: presence?.external ? NEXT.sentExternal(message.to.name, presence.state === "ready") : NEXT.sent(message.to.name) };
   }
   private async wait(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
@@ -679,7 +682,8 @@ export class Partners {
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
-    await work.submit({ eventId: message.id, sessionId, input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message) : incomingText(message),
+    await work.submit({ eventId: message.id, sessionId,
+      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
@@ -688,6 +692,18 @@ export class Partners {
         toolGrants: { feishu: grants.feishu, connectedApps: { connections: grants.connections, ...(grants.operations ? { operations: grants.operations } : {}) } },
         ...(grants.expiresAt ? { expiresAt: grants.expiresAt } : {}), ...(grants.maxToolCalls ? { maxToolCalls: grants.maxToolCalls } : {}) } });
     this.transition(message.id, ["sending"], current => ({ ...current, status: "running", sentTo }));
+  }
+  /**
+   * The informs a message takes along to an agent on the owner's computer: those left before it that no message still
+   * on its way carries. They are marked before the message is submitted, so that the same message always carries the same.
+   */
+  private carried(message: PartnerMessage) {
+    const notes = this.outstanding(message.owner, ["queued"]).filter(note => note.to.agentId === message.to.agentId && note.createdAt <= message.createdAt);
+    const free = (note: PartnerMessage) => !note.offeredTo || !["sending", "running"].includes(this.store.get<PartnerMessage>(MESSAGES, note.offeredTo)?.status ?? "");
+    const taken = notes.filter(note => note.offeredTo === message.id);
+    for (const note of notes.filter(free).slice(0, CARRIED_NOTES - taken.length))
+      taken.push(this.transition(note.id, ["queued"], current => ({ ...current, offeredTo: message.id })) ?? note);
+    return taken.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
   private settle(message: PartnerMessage, result: { status: NonNullable<PartnerMessage["result"]>["status"]; answer: string; error?: string }, at = Date.now()) {
     return this.transition(message.id, ["sending", "running"], current => ({ ...current, status: "settled", delivery: { attempts: 0, nextAttemptAt: iso(at) },
@@ -804,6 +820,9 @@ export class Partners {
     const message = event.eventId.startsWith("pm-") ? this.store.get<PartnerMessage>(MESSAGES, event.eventId) : undefined;
     if (message) {
       this.settle(message, { status, answer: event.answer, ...(event.error ? { error: event.error } : status === "unknown" ? { error: "outcome_unknown" } : {}) }, at);
+      // A completed turn has read the informs its message carried.
+      if (status === "completed") for (const note of this.outstanding(message.owner, ["queued"]))
+        if (note.offeredTo === message.id) this.transition(note.id, ["queued"], current => ({ ...current, status: "seen" }));
       // Repeated after a crash: the cards the run left open are closed whichever reading settled the message.
       if (event.runId) await this.port.closeApprovals(message.to.agentId, event.runId, id => this.desk(message).withdraw(id)).catch(() => undefined);
       return;

@@ -9,7 +9,7 @@ import { RouterError as WorkError } from "@agent-router/server";
 import { createMau } from "../../src/app.js";
 import { privateFile } from "../../src/files.js";
 import type { EnvironmentProvider } from "../../src/environments.js";
-import type { ExternalHosts } from "../../src/external-partners.js";
+import type { MemoryHostLinks } from "./host-links.js";
 import { accessIssuer } from "./access.js";
 
 export const alice = "@alice:example.test",
@@ -17,8 +17,8 @@ export const alice = "@alice:example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
 export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string;
-  /** Host links for partners that are agents on the owner's computers (`memoryExternalHosts`). */
-  externalHosts?: ExternalHosts; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
+  /** Host links for partners that are agents on the owner's computers. */
+  hostLinks?: MemoryHostLinks; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
   hostCapabilities?: { runIdempotency?: boolean };
   /** Members added to the runtime description Host returns, for example `capabilities`. */
   runtime?: Record<string, unknown>;
@@ -172,13 +172,14 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
         ...routerConfig,
       },
       optionsFile,
-      { ...(serving.externalHosts ? { externalHosts: serving.externalHosts } : {}), environments: async () => ({ provider: (id: string) => {
+      { ...(serving.hostLinks ? { hostLinks: serving.hostLinks.hosts } : {}), environments: async () => ({ provider: (id: string) => {
         if (id !== "cloud") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
         return provider;
       } }),
         router: {
         edgeIdentityCerts: access.certsUrl,
         ...routerDependencies,
+        ...(serving.hostLinks ? { afterDelete: async (agent: { id: string }) => serving.hostLinks!.hosts.remove(agent.id) } : {}),
         authenticate: async (token) => {
           if (token === "alice") return alice;
           if (token === "bob") return bob;
@@ -187,6 +188,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
       } },
       serving.webRoot ? { webRoot: serving.webRoot } : {},
     );
+    if (serving.hostLinks) serving.hostLinks.attach(mau.router.connections.hosts!);
     const server = mau.app.listen(0, "127.0.0.1");
     mau.attach(server);
     await new Promise<void>((r) => server.once("listening", r));

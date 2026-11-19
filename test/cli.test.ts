@@ -8,7 +8,7 @@ import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
 import { privateFile } from "../src/files.js";
 import { aliceToken, builtCli, edgeProxy } from "./fixtures/edge.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
-import { memoryExternalHosts } from "./fixtures/external-hosts.js";
+import { memoryHostLinks } from "./fixtures/host-links.js";
 import { partnersFixture } from "./fixtures/partners.js";
 
 const cleanup: Array<() => unknown> = [];
@@ -26,8 +26,8 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   privateFile(join(directory, "authority.json"), authority.privateJwk);
   const connectors = await listen((_req, res) => res.setHeader("Content-Type", "application/json").end(JSON.stringify({ connections: [
     { id: "alice-gmail", kind: "google", owner: alice, label: "Gmail", account: { status: "connected", verification: "oauth" } }] })));
-  const links = memoryExternalHosts();
-  const f = await partnersFixture(cleanup, { externalHosts: links.hosts, mau: {
+  const links = memoryHostLinks();
+  const f = await partnersFixture(cleanup, { hostLinks: links, mau: {
     connectorAccounts: { url: connectors, issuer: "fixture", audience: "fixture-connectors", authorityKeyFile: join(directory, "authority.json"), consentOrigins: ["https://accounts.example.test"] },
     connectedApps: { url: connectors, issuer: "fixture", audience: "fixture-connectors", callerKeyFile: join(directory, "authority.json") } } });
   // The Host is given the owner's text followed by its channel context; the scripted partner answers the text.
@@ -66,7 +66,7 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   const paired = links.enroll((await ok("device", "pair", "laptop")).code);
   await f.until(async () => (await ok("partner", "show", "laptop")).host, "paired");
   expect(await ok("device", "list")).toEqual({ data: [{ partner: { id: laptop.agent.id, name: "laptop" }, ownership: "owner", connection: "online",
-    device: { id: paired.id, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: paired.createdAt, lastSeenAt: expect.any(String) } }] });
+    device: { id: paired.id, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: paired.createdAt, lastOnlineAt: expect.any(String) } }] });
   expect((await mau("device", "show", "scout")).error).toMatchObject({ error: "partner_not_external" });
   expect((await mau("env", "show", "laptop")).error).toMatchObject({ error: "not_available_for_external_partner" });
   expect((await mau("device", "remove", "laptop")).error).toMatchObject({ error: "confirm_with_yes" });

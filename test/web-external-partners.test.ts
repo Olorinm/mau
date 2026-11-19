@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
-import { memoryExternalHosts } from "./fixtures/external-hosts.js";
+import { memoryHostLinks } from "./fixtures/host-links.js";
 import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 
 // Browser acceptance, in the built console, of a partner that is an agent on the owner's computer: creating it,
@@ -29,7 +29,7 @@ const tab = (page: Page, name: string) => profile(page).getByRole("group", { nam
 const roster = (page: Page) => page.getByRole("complementary", { name: "全部对话" });
 
 it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing code once, then its device in place of an environment", async () => {
-  const links = memoryExternalHosts(), f = await partnersFixture(cleanup, { webRoot, externalHosts: links.hosts });
+  const links = memoryHostLinks(), f = await partnersFixture(cleanup, { webRoot, hostLinks: links });
   const { page, errors } = await browser(f);
   const posted: unknown[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
@@ -49,7 +49,7 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   // The code and the command are shown once, with the partner already made.
   const pairing = page.getByRole("dialog", { name: "laptop" });
   await see(pairing.locator(".mau-pairing-code-value")).toHaveText("PAIR-0001");
-  await see(pairing.locator(".mau-pairing-command")).toHaveText(/^npx @olorinm\/agent-host link http:\/\/127\.0\.0\.1 --code PAIR-0001$/);
+  await see(pairing.locator(".mau-pairing-command")).toHaveText("agent-host link --config host.json --url http://127.0.0.1 --code PAIR-0001");
   await see(pairing.locator(".agent-status-line")).toHaveText("等待配对");
   expect(posted).toEqual([{ name: "laptop", kind: "external", duty: "在我的笔记本上整理文件" }]);
   await pairing.getByRole("button", { name: "完成" }).click();
