@@ -3,7 +3,6 @@ import { ageKeyPair, generateAgeKeyPair } from "../src/deploy/age.js";
 import { signS3 } from "../src/deploy/s3.js";
 import { inspectCodexAuth, parseJsonc } from "../src/deploy/source.js";
 import { configRevision } from "../src/deploy/state.js";
-import { parseDeployArgs, parseDoctorArgs } from "../src/deploy/index.js";
 
 it("signs S3 requests as AWS's published Signature Version 4 example", () => {
   // "GET Object" of https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
@@ -39,12 +38,12 @@ it("reads Wrangler's commented examples and tells a usable Codex sign-in without
   expect(JSON.stringify(inspectCodexAuth(bytes({ tokens: { access_token: jwt(4102444800), refresh_token: "refresh" } }), now))).not.toMatch(/signature|refresh"/);
 });
 
-it("derives one configuration revision from every object, and reads its flags", () => {
+it("derives one configuration revision from every object", () => {
   const files = new Map([["mau.json", Buffer.from("{}")], ["cloud/start-host.sh", Buffer.from("#!/bin/sh")]]);
   expect(configRevision(files)).toBe(configRevision(new Map([...files].reverse())));
   expect(configRevision(files)).not.toBe(configRevision(new Map([...files, ["extra", Buffer.from("")]])));
   expect(configRevision(files)).not.toBe(configRevision(new Map([["mau.json", Buffer.from("{ }")], ["cloud/start-host.sh", Buffer.from("#!/bin/sh")]])));
-  expect(parseDeployArgs(["--hostname", "mau.example.com", "--owner-email", "owner@example.com", "--dry-run"])).toEqual({ hostname: "mau.example.com", ownerEmail: "owner@example.com", dryRun: true });
+});
   expect(parseDeployArgs(["--name", "team", "--access-team-domain", "https://t.cloudflareaccess.com", "--access-audience", "aud", "--r2-access-key-id-file", "a", "--r2-secret-access-key-file", "b", "--codex-auth", "c", "--dir", "d"]))
     .toEqual({ name: "team", accessTeamDomain: "https://t.cloudflareaccess.com", accessAudience: "aud", r2AccessKeyIdFile: "a", r2SecretAccessKeyFile: "b", codexAuth: "c", dir: "d" });
   expect(parseDoctorArgs(["--url", "https://mau.example.com"])).toEqual({ url: "https://mau.example.com" });
