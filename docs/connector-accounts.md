@@ -2,7 +2,7 @@
 
 Mau's **Connectors** page (设置 → 连接器) composes the public Agent Connectors account-management API. It supports listing the current owner's configured accounts, starting provider consent, checking authorization, and disconnecting. The existing business read tools and communication channel controls remain available independently.
 
-Optional per-Agent assignments also expose a stable `connected_apps` read tool through Host's native tool protocol. The page shows assigned Agents before consent. Assignment alone does not authorize a provider account; provider consent and matching owner/Agent/connection assignment are both required. Writes and proactive execution are not enabled by this integration. An OAuth check is not proof that every product API works.
+Per-partner assignments ([which partners can use a connection](#which-partners-can-use-a-connection)) also expose a stable `connected_apps` read tool through Host's native tool protocol. The page shows assigned Agents before consent. Assignment alone does not authorize a provider account; provider consent and matching owner/Agent/connection assignment are both required. Writes and proactive execution are not enabled by this integration. An OAuth check is not proof that every product API works.
 
 ## Operator configuration
 
@@ -24,12 +24,7 @@ Add the following optional block to Mau's private options file (all values are e
     "url": "http://127.0.0.1:18100",
     "issuer": "https://router.example.test",
     "audience": "agent-connectors",
-    "callerKeyFile": "private/connectors-caller.jwk.json",
-    "assignments": [{
-      "agentId": "00000000-0000-4000-8000-000000000001",
-      "owner": "@alice:router.example.test",
-      "connections": ["alice-gmail"]
-    }]
+    "callerKeyFile": "private/connectors-caller.jwk.json"
   }
 }
 ```
@@ -39,7 +34,7 @@ Add the following optional block to Mau's private options file (all values are e
 - `consentOrigins` must contain the exact HTTPS origins used by the configured providers. Approve these from provider configuration, not from an arbitrary model-supplied URL. Mau returns a consent link from a connect action, and in the inventory only while that account's consent is pending (so a reloaded page shows the same Feishu QR); a link outside these origins is left out.
 - Configure each connection's `owner` as the exact authenticated Router account ID. Mau filters the service-wide inventory and checks ownership again before every management action. Coordinate ownership/configuration changes between services; do not reassign connection IDs while an operation is in flight.
 - With `runtimeConfigFile`, the service must listen on `127.0.0.1` at the configured port. Set its `oauthRedirectUrl` to the public Mau origin plus `/oauth/callback`. Mau binds the single-use provider state to an HttpOnly, SameSite=Lax browser cookie, accepts the callback through the public component API, then redirects to its Connectors page. Never log callback queries. `/mcp` and management routes remain loopback-only. A separately hosted service must supply its own browser binding and return flow.
-- The browser sends its owner bearer token when starting consent. It saves only the scoped browser-binding cookie and its existing Mau session; OAuth credentials remain in the connector service.
+- The browser starts consent with the owner's Access sign-in, like every other console request; it sends no bearer token. It saves only the scoped browser-binding cookie and its existing Mau session; OAuth credentials remain in the connector service.
 - Start with explicit read-only provider scopes for the first live check. Do not inherit a provider's broad defaults without reviewing them. Existing Muse, ChatGPT or Codex authorizations are not transferable to Mau.
 
 Without this block the API reports `configured: false`; the UI shows setup is required and has no fake consent button. No KMS, provider application or account authorization is provisioned by adding the frontend.
@@ -118,9 +113,37 @@ always-allowed sites only and otherwise get `browser_site_not_allowed_here`. Mau
 connector itself (`task`, a digest of the session); a `task` in the model's arguments is dropped. Enforcement,
 including navigations a page starts, is the connector's; see Agent Connectors' security model.
 
+## Which partners can use a connection
+
+The owner decides which of their connections each partner can use. The assignment is state, not configuration:
+it is stored with Mau's other product records, changed through the API, and removed when the partner is deleted.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/_mau/v1/agents/:id/connectors` | `{ "connections": [...] }`: what the partner can use. `inheritedFrom: { id, name }` when it has no assignment of its own and uses those of the partner whose environment it runs in |
+| PUT | `/_mau/v1/agents/:id/connectors` | Body `{ "connections": [...] }` replaces the partner's own assignment; an empty list removes it. Returns the same as GET |
+
+Every id must be a connection of the signed-in owner; anything else is `400 connector_not_found`. Another owner's
+partner is `404`. An Access service token without owner access can read and cannot change the assignment
+(`403 owner_sign_in_required`). The CLI commands are `mau connector assign ID NAME` and `mau connector unassign ID NAME`.
+
+A change needs no restart. When a partner sees it:
+
+- A conversation that already has the `connected_apps` tool reads the assignment on every call: the next
+  `action=tools` lists the added connection's operations, and a call to a removed connection answers
+  `connected_app_not_granted`.
+- The `connected_apps` tool itself is part of the tool catalog a conversation is given at its first turn and keeps
+  from then on. A partner that had no connection when its conversation began gets the tool in its next new
+  conversation (新对话 in the console, `mau chat new NAME`). Removing a partner's last connection leaves the tool in
+  conversations that have it; its calls answer `connected_app_not_granted`.
+- The connector guides and commands in the partner's environment (below) are brought up to date before a run
+  starts, at most once every ten minutes for an environment.
+- A schedule may only name connections its partner is assigned when the rule is saved, and runs only while they
+  still are.
+
 ## Product API
 
-The following account routes require the authenticated owner's bearer session. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body; connect names operations, and the scopes come from the connector's own policy view. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
+The following account routes require the signed-in owner. No route accepts an owner, service endpoint, scope, tool name, grant, or signing key in its request body; connect names operations, and the scopes come from the connector's own policy view. The separate GET `/oauth/callback` accepts only provider state bound to the initiating browser and a code or cancellation; it returns a fixed local redirect and no credentials.
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -219,7 +242,7 @@ Feishu is split by direction, on **one** Feishu app (like Feishu aily or Coze):
    The CLI refreshes tokens itself. The hand-over runs automatically right after the chat channel connects.
 
 The hand-over requires the owner's Agent, a connection owned by that owner, and an assignment of that connection to
-that Agent (`connectedApps.assignments`). The secret goes only to the connector service and never to the browser.
+that Agent (see [which partners can use a connection](#which-partners-can-use-a-connection)). The secret goes only to the connector service and never to the browser.
 
 ### Rule 1: personal access only in the owner's private conversation
 
@@ -258,8 +281,8 @@ Requires Agent Connectors 0.1.0-alpha.9 and Router 0.7.0-alpha.12 or later (the 
    `directory` is inside the encrypted `secretFiles` bundle, e.g.
    `{ "id": "<owner>-feishu", "kind": "feishu", "owner": "@owner:server", "settings": { "directory": "feishu/<owner>" } }`.
    No app files are needed; Mau hands them over.
-2. Mau options: add the connection to the Agent's `connectedApps.assignments[].connections` (as for Gmail) and add
-   `https://accounts.feishu.cn` (`https://accounts.larksuite.com` for Lark) to `connectorAccounts.consentOrigins`.
+2. Assign the connection to the partner (`mau connector assign <owner>-feishu NAME`, as for Gmail), and in Mau's
+   options add `https://accounts.feishu.cn` (`https://accounts.larksuite.com` for Lark) to `connectorAccounts.consentOrigins`.
    Then open 设置 → 连接器 → 飞书 → 授权个人权限 once.
 
 ## Connector catalog

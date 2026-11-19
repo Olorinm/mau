@@ -8,8 +8,8 @@ resolve outstanding work, and close SSH sessions.
 Use the locally built CLI:
 
 ```sh
-mau pause
-mau environment-replace TARGET_PROFILE
+mau env pause helper
+mau env replace helper --profile TARGET_PROFILE
 ```
 
 The equivalent API is `POST /_mau/v1/agents/:id/environment/replace` with
@@ -28,7 +28,7 @@ its own to replace (`environment_shared_from_partner`); see
 The old environment is left paused; provider retention limits can still expire it.
 Keep independent file exports. Rollback verifies that the old environment still
 exists and is paused before changing any binding. To roll back, pause the replacement and use
-`mau environment-rollback`, or POST `/environment/rollback` with its current
+`mau env rollback NAME`, or POST `/environment/rollback` with its current
 `expectedOperationId`. Rollback restores the prior environment binding and starts
 a fresh native session; it does not restore native conversation history. It leaves
 the retired replacement allocated and paused for explicit operator cleanup.

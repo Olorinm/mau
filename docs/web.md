@@ -64,10 +64,9 @@ Mau does not start without `edgeIdentity` (`edge_identity_required`) or without 
 - An expired Access session (an API redirect, a `401`, or a socket re-ticket that fails) shows a banner.
   "Sign in again" keeps unsent composer text in `sessionStorage` and reloads the page.
 - "Sign out" goes to the Access logout.
-- Bearer callers (the CLI, automation) keep working unless Router's `bearer` is `"deny"`.
 - Cloudflare adds the JWT to cross-site requests too, so Router accepts an unsafe (non-GET) edge request only with
   an `Origin` of the console (`edgeIdentity.origins`, default the public URL's origin, or the request's own host)
-  and a JSON-like body type. Non-browser callers behind Access send a bearer token or an explicit `Origin`.
+  and a JSON-like body type. Non-browser callers behind Access (the CLI) send an explicit `Origin`.
 
 ## Conversations
 

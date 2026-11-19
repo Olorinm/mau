@@ -80,24 +80,24 @@ one on every call, from `cloudflared` or from private files, never from position
 
 ```sh
 cloudflared access login https://mau.example
-mau login --url https://mau.example
+mau login https://mau.example
 # automation: an Access service token mapped by the operator (read-only unless given "access": "owner")
-mau login --url https://mau.example \
+mau login https://mau.example \
   --access-client-id-file /private/id --access-client-secret-file /private/secret
-mau options
-mau setup helper --environment cloud-codex
-mau channel-connect feishu
-mau check
-mau status
-mau pause
-mau resume
+mau profiles
+mau partner create helper --profile cloud-codex
+mau channel connect helper feishu
+mau chat send helper "Hello"
+mau partner show helper
+mau env pause helper
+mau env resume helper
 ```
 
-See [CLI usage](docs/cli.md) for the other Access credential sources.
-Use `agents` and `use NAME` to switch Agents. `--no-wait` returns durable progress;
-closing the CLI does not cancel provisioning. `reconcile` resolves an interrupted
-operation without allocating a replacement; `destroy` explicitly removes an
-environment. Channel pairing/authorization remains implemented by Router.
+See [CLI usage](docs/cli.md) for every command, the other Access credential sources and the output contract
+for agents that drive the CLI. Commands name the partner they act on. `--no-wait` returns durable progress;
+closing the CLI does not cancel provisioning. `mau env reconcile NAME` resolves an interrupted
+operation without allocating a replacement; `mau env destroy NAME --yes` explicitly removes an
+environment. Channel pairing/authorization remains implemented by Router. `mau api` lists every HTTP route.
 
 See [environment setup](docs/environments.md) · [中文部署说明](docs/environments.zh-CN.md).
 Examples contain placeholders only.

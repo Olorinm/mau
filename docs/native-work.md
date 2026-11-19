@@ -16,7 +16,7 @@ Skill files can be delivered through the existing environment profile `files` li
 
 ## Public product operations
 
-All routes below are under `/_mau/v1`, require the Router owner's bearer identity, and recheck partner ownership. Native reads do not automatically wake sleeping environments; an explicit environment resume is separate. Router's session/event management routes remain available under its public communication API.
+All routes below are under `/_mau/v1`, require the signed-in owner, and recheck partner ownership. Native reads do not automatically wake sleeping environments; an explicit environment resume is separate. Router's session/event management routes remain available under its public communication API.
 
 | Route | Behavior |
 | --- | --- |

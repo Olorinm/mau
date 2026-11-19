@@ -39,7 +39,7 @@ changing cloud state. Resume retains the environment and native session binding.
 Missing environments are never silently replaced. Provider-retained snapshots
 may require separate cleanup.
 
-Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau delete NAME --yes`) first
+Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau partner delete NAME --yes`) first
 pauses its schedules and destroys its current, retained previous and retired
 environments (a partner in a [shared environment](#partners-sharing-an-environment)
 has none of its own and leaves that environment in place); records already confirmed `deleted` are not contacted again, so an
@@ -58,7 +58,7 @@ Optional `idlePauseSeconds` (600 to 2592000) pauses a ready environment after no
 Host requests for that long from any partner running in it, using the same guarded pause. The state is `sleeping`.
 Router keeps receiving messages; when deliverable work waits, it asks Mau to wake
 the environment, and the first reply waits for resume. Active or unresolved runs
-count as activity. An explicit `mau pause` is never woken by messages.
+count as activity. An explicit `mau env pause NAME` is never woken by messages.
 
 Provider, template, kernel, runtime ID, Host directory and port identify an
 existing binding and must not change. Labels, owners, instructions, lifetime, idle,
@@ -70,21 +70,21 @@ Host token per environment. Cloud management credentials stay in Mau. Private ga
 must preserve application Authorization and required sandbox routing headers.
 
 ```sh
-mau setup helper --environment cloud-codex
-mau check
-mau status
-mau pause
-mau resume
-mau reconcile
-mau destroy
+mau partner create helper --profile cloud-codex
+mau partner check helper
+mau partner show helper
+mau env pause helper
+mau env resume helper
+mau env reconcile helper
+mau env destroy helper --yes
 ```
 
 Environment bootstrap binds the Host and keeps the Agent's channel connections. The owner's built-in chat
 is the console's conversation, served by Router's ledger; it needs no channel connection.
 
-`environment-create PROFILE` binds a selected unbound Agent. `agents` and `use NAME`
-select existing identities. `--no-wait` returns progress; closing the terminal does
-not cancel provisioning. `check` verifies configuration and HTTP/runtime access,
+`mau env create NAME --profile PROFILE` binds an unbound Agent; `mau partner list` shows the
+existing identities. `--no-wait` returns progress; closing the terminal does
+not cancel provisioning. `mau partner check NAME` verifies configuration and HTTP/runtime access,
 not real model authentication. Router's former product commands and provisioning
 routes are deleted, with no compatibility aliases or automatic state migration.
 
@@ -224,7 +224,8 @@ Rules:
   `partners: [{ id, name }]`, before anything is stopped. Delete the sharing partners first.
 - Deleting a sharing partner removes its own identity, memory, history, schedules and product
   records, and leaves the environment and the other partners untouched.
-- Without an assignment of its own in `connectedApps.assignments`, a sharing partner uses the
+- Without a connector assignment of its own (`PUT /_mau/v1/agents/:id/connectors`,
+  `mau connector assign`), a sharing partner uses the
   connections assigned to the partner whose environment it runs in, under its own Agent ID.
   Connections that act as the owner's personal identity keep their rule: they work only in the
   owner's private conversation with the partner making the call, and the application behind such a
