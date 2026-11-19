@@ -103,7 +103,7 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   expect((await mau("connector", "unassign", "alice-gmail", "mate")).error).toEqual({ error: "connector_inherited", id: "alice-gmail", inheritedFrom: { id: f.agent.id, name: "helper" } });
   expect(await ok("connector", "unassign", "alice-gmail", "helper")).toEqual({ connections: [] });
   expect((await mau("connector", "assign", "missing", "helper")).error).toEqual({ error: "connector_account_not_found", id: "missing" });
-  expect((await mau("connector", "disconnect", "alice-gmail")).error).toEqual({ error: "confirm_with_yes" });
+  expect((await mau("connector", "disconnect", "alice-gmail")).error).toMatchObject({ error: "confirm_with_yes", option: "--yes" });
 
   // The API reference and a direct call.
   const reference = await ok("api");
@@ -121,7 +121,7 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   const refused = await mau("partner", "delete", "helper", "--yes");
   expect(refused).toMatchObject({ code: 1, stdout: "", error: { error: "environment_shared_by_partners", httpStatus: 409, partners: [{ id: mate.agent.id, name: "mate" }] } });
   expect(refused.stderr.trimEnd().split("\n")).toHaveLength(1);
-  expect((await mau("partner", "delete", "mate")).error).toEqual({ error: "confirm_with_yes" });
+  expect((await mau("partner", "delete", "mate")).error).toMatchObject({ error: "confirm_with_yes", option: "--yes" });
   expect((await mau("partner", "list", "--token-file", "x")).error).toMatchObject({ error: "invalid_arguments", usage: expect.stringContaining("mau partner list") });
   expect((await mau("partner", "show")).error).toMatchObject({ error: "invalid_arguments", usage: expect.stringContaining("mau partner show NAME") });
   expect((await mau("partner")).error).toMatchObject({ error: "unknown_command", usage: expect.arrayContaining([expect.stringContaining("mau partner list")]) });
@@ -179,7 +179,7 @@ it("removes a channel connection and edits its access lists through Router's con
   expect((await s.mau("channel", "access", "helper", "feishu", "--peers", "", "--groups", "g4")).json).toEqual({ groupIds: ["g4"], peerAddresses: [] });
   expect(s.bodies(`PUT ${connection}/access`)).toEqual([{ groupIds: ["g2", "g3"], peerAddresses: ["p1", "p2"] }, { groupIds: ["g4"], peerAddresses: [] }]);
   // Disconnecting needs --yes and reports the server's error as it is.
-  expect((await s.mau("channel", "disconnect", "helper", "feishu")).error).toEqual({ error: "confirm_with_yes" });
+  expect((await s.mau("channel", "disconnect", "helper", "feishu")).error).toMatchObject({ error: "confirm_with_yes", option: "--yes" });
   expect(s.requests.some(request => request.call.startsWith("DELETE"))).toBe(false);
   expect((await s.mau("channel", "disconnect", "helper", "feishu", "--yes")).json).toEqual({ agent: { id: "a1", name: "helper" }, connections: [{ id: "web", kind: "web" }] });
   expect(await s.mau("channel", "disconnect", "helper", "gone", "--yes")).toMatchObject({ code: 1, stdout: "", error: { error: "connection_not_found", httpStatus: 404 } });
@@ -191,7 +191,8 @@ it("removes a channel connection and edits its access lists through Router's con
   const code = join(temporary(), "code"); writeFileSync(code, "123456\n");
   expect((await s.mau("channel", "pair", "helper", "j2", "--code-file", code)).json).toEqual({ paired: true });
   expect(s.bodies("POST /_agent-router/v1/agents/a1/connection-jobs/j2/pairing")).toEqual([{ code: "123456" }]);
-  expect((await s.mau("channel", "pair", "helper", "j2")).error).toEqual({ error: "code_file_required" });
+  expect((await s.mau("channel", "pair", "helper", "j2")).error).toEqual({ error: "option_required", option: "--code-file", usage: "mau channel pair NAME JOB_ID --code-file FILE" });
+  expect((await s.mau("env", "create", "helper")).error).toMatchObject({ error: "option_required", option: "--profile" });
   expect((await s.mau("channel", "connect", "helper", "telegram")).error).toEqual({ error: "bot_token_file_required" });
 }, 60_000);
 

@@ -49,7 +49,7 @@ export const connectorCommands: Command[] = [
   { path: ["connector", "check"], args: "ID", summary: "The connection's authorization state now.",
     run: ({ args, client }) => client().post(accountPath(args[0]!) + "/check", {}, 150_000) },
   { path: ["connector", "disconnect"], args: "ID", options: yes, summary: "Remove the connection's authorization; connecting again needs your consent.",
-    run: ({ args, options, client }) => options.yes ? client().post(accountPath(args[0]!) + "/disconnect", {}, 150_000) : fail("confirm_with_yes") },
+    run: ({ args, client }) => client().post(accountPath(args[0]!) + "/disconnect", {}, 150_000) },
   { path: ["connector", "assign"], args: "ID NAME", summary: "Let the partner use the connection. A partner that used another partner's connections gets a list of its own.",
     run: ({ args, client }) => assign(client(), args[0]!, args[1]!, connections => [...new Set([...connections, args[0]!])]) },
   { path: ["connector", "unassign"], args: "ID NAME", summary: "Stop the partner from using the connection.",

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { router, type Client, type Partner } from "./client.js";
-import { CliError, fail, noWait, text, type Command } from "./command.js";
+import { CliError, fail, text, type Command } from "./command.js";
 
 // Router's owner ledger (`/_agent-router/v1/web`): chats, their events, turns and cards.
 const web = router + "/web";
@@ -125,7 +125,7 @@ export const chatCommands: Command[] = [
       }
       return { data };
     } },
-  { path: ["card", "answer"], args: "NAME CARD_ID ANSWER", options: noWait,
+  { path: ["card", "answer"], args: "NAME CARD_ID ANSWER", options: waitOption,
     summary: "Answer a card of the partner. ANSWER is one of the card's choices (its choiceId or its label), or free text when the card takes it. Then waits for the partner's turn like `chat send`.",
     run: async ({ args, options, client }) => {
       const partner = await client().partner(args[0]!), cardId = args[1]!, answer = args[2]!;

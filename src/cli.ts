@@ -64,6 +64,9 @@ async function main(argv: string[]): Promise<void> {
       options: Object.fromEntries(Object.entries({ ...accessOptions, ...command.options }).map(([name, option]) =>
         [name, { type: option.type, ...(option.multiple ? { multiple: true } : {}) }])) }) as typeof parsed;
   } catch (error) { return fail("invalid_arguments", { message: error instanceof Error ? error.message : String(error), usage: usage(command) }); }
+  // `--yes` confirms what cannot be undone; any other required option names what the command acts with.
+  for (const [name, option] of Object.entries(command.options ?? {}))
+    if (option.required && parsed.values[name] === undefined) fail(name === "yes" ? "confirm_with_yes" : "option_required", { option: "--" + name, usage: usage(command) });
   const count = arity(command);
   if (parsed.positionals.length < count.min || parsed.positionals.length > count.max) fail("invalid_arguments", { usage: usage(command) });
   let client: Client | undefined;

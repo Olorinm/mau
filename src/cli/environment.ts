@@ -2,7 +2,7 @@ import { runSsh } from "../ssh-client.js";
 import { agentPath, mau, type Client } from "./client.js";
 import { fail, noWait, text, yes, type Command, type Invocation, type Option } from "./command.js";
 
-const profile: Record<string, Option> = { profile: { type: "string", value: "ID", help: "An environment profile from `mau profiles`." } };
+const profile: Record<string, Option> = { profile: { type: "string", value: "ID", required: true, help: "An environment profile from `mau profiles`." } };
 const environmentPath = (id: string) => agentPath(mau, id) + "/environment";
 
 /** Wait until the environment is no longer busy (at most 15 minutes), unless `--no-wait`. One that needs action is a failure. */
@@ -19,7 +19,6 @@ export async function settled(client: Client, id: string, status: any, options: 
 const action = (name: "pause" | "resume" | "reconcile" | "destroy", summary: string): Command => ({
   path: ["env", name], args: "NAME", options: { ...(name === "destroy" ? yes : {}), ...noWait }, summary,
   run: async ({ args, options, client }) => {
-    if (name === "destroy" && !options.yes) fail("confirm_with_yes");
     const partner = await client().partner(args[0]!);
     return settled(client(), partner.id, await client().post(`${environmentPath(partner.id)}/${name}`), options);
   },
@@ -30,7 +29,7 @@ export const environmentCommands: Command[] = [
     run: async ({ args, client }) => client().get(environmentPath((await client().partner(args[0]!)).id)) },
   { path: ["env", "create"], args: "NAME", options: { ...profile, ...noWait }, summary: "Create an environment for a partner that has none.",
     run: async ({ args, options, client }) => {
-      const profileId = text(options.profile) ?? fail("profile_required"), partner = await client().partner(args[0]!);
+      const profileId = text(options.profile), partner = await client().partner(args[0]!);
       return settled(client(), partner.id, await client().post(environmentPath(partner.id), { profileId }), options);
     } },
   action("pause", "Pause the partner's environment; messages do not wake it."),
@@ -39,7 +38,7 @@ export const environmentCommands: Command[] = [
   action("destroy", "Destroy the partner's environment; the partner itself stays."),
   { path: ["env", "replace"], args: "NAME", options: { ...profile, ...noWait }, summary: "Move the partner to a new environment of another profile.",
     run: async ({ args, options, client }) => {
-      const profileId = text(options.profile) ?? fail("profile_required"), partner = await client().partner(args[0]!);
+      const profileId = text(options.profile), partner = await client().partner(args[0]!);
       const current = await client().get(environmentPath(partner.id));
       return settled(client(), partner.id, await client().post(environmentPath(partner.id) + "/replace", { profileId, expectedOperationId: current.operationId }), options);
     } },

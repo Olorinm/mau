@@ -28,8 +28,7 @@ export const partnerCommands: Command[] = [
       return client().get(agentPath(mau, created.agent.id));
     } },
   { path: ["partner", "delete"], args: "NAME", options: yes, summary: "Permanently delete a partner with its environment, memory, schedules and channel connections.",
-    run: async ({ args, options, client }) => {
-      if (!options.yes) fail("confirm_with_yes");
+    run: async ({ args, client }) => {
       const partner = await client().partner(args[0]!);
       await client().delete(agentPath(mau, partner.id), 300_000);
       return { deleted: partner.name };

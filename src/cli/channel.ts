@@ -83,10 +83,7 @@ export const channelCommands: Command[] = [
       return isJob(started) ? follow(client(), partner.name, partner.id, started, invocation) : started;
     } },
   { path: ["channel", "disconnect"], args: "NAME CONNECTION_ID", options: yes, summary: "Remove one channel connection of the partner.",
-    run: async ({ args, options, client }) => {
-      if (!options.yes) fail("confirm_with_yes");
-      return client().delete(connectionPath((await client().partner(args[0]!)).id, args[1]!), 120_000);
-    } },
+    run: async ({ args, client }) => client().delete(connectionPath((await client().partner(args[0]!)).id, args[1]!), 120_000) },
   { path: ["channel", "access"], args: "NAME CONNECTION_ID", summary: "Who else may talk to the partner through a connection: the groups and the people. Without options: show; an option replaces its list.",
     options: {
       groups: { type: "string", value: "ID,ID", help: "Replace the allowed groups; an empty value allows none." },
@@ -105,9 +102,9 @@ export const channelCommands: Command[] = [
       return follow(client(), partner.name, partner.id, await client().get(jobPath(partner.id, args[1]!)), invocation);
     } },
   { path: ["channel", "pair"], args: "NAME JOB_ID", summary: "Give a connection job the pairing code its channel showed you.",
-    options: { "code-file": { type: "string", value: "FILE", help: "The file with the pairing code." } },
+    options: { "code-file": { type: "string", value: "FILE", required: true, help: "The file with the pairing code." } },
     run: async ({ args, options, client }) => {
-      const code = secretFile(text(options["code-file"]), "code_file_required");
+      const code = secretFile(text(options["code-file"]), "option_required");
       await client().post(jobPath((await client().partner(args[0]!)).id, args[1]!) + "/pairing", { code });
       return { paired: true };
     } },

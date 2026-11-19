@@ -10,6 +10,8 @@ export interface Option {
   type: "string" | "boolean";
   /** The option can be given more than once. */
   multiple?: true;
+  /** The command is refused without it. */
+  required?: true;
   /** What the value is, as usage shows it: `--profile ID`. */
   value?: string;
   help: string;
@@ -38,7 +40,7 @@ export interface Command {
 }
 
 export const noWait: Record<string, Option> = { "no-wait": { type: "boolean", help: "Return at once instead of waiting for the operation to finish." } };
-export const yes: Record<string, Option> = { yes: { type: "boolean", help: "Confirm: this cannot be undone." } };
+export const yes: Record<string, Option> = { yes: { type: "boolean", required: true, help: "Confirm: this cannot be undone." } };
 export const text = (value: OptionValues[string]) => typeof value === "string" ? value : undefined;
 export const list = (value: OptionValues[string]) => Array.isArray(value) ? value : [];
 /** `a,b` as a list; an empty value is the empty list. */
@@ -58,7 +60,9 @@ export function arity(command: Command): { min: number; max: number } {
   return { min: words.filter(word => !word.startsWith("[") && !word.includes("...")).length, max: words.some(word => word.includes("...")) ? Infinity : words.length };
 }
 export function usage(command: Command): string {
-  const options = Object.entries(command.options ?? {}).map(([name, option]) =>
-    `[--${name}${option.type === "string" ? " " + (option.value ?? "VALUE") : ""}]${option.multiple ? "..." : ""}`);
+  const options = Object.entries(command.options ?? {}).map(([name, option]) => {
+    const shown = `--${name}${option.type === "string" ? " " + (option.value ?? "VALUE") : ""}`;
+    return (option.required ? shown : `[${shown}]`) + (option.multiple ? "..." : "");
+  });
   return ["mau", ...command.path, ...(command.args ? [command.args] : []), ...options].join(" ");
 }
