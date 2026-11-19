@@ -282,6 +282,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ? modelSettings.kernelDefaultModel(holder, kernel) : modelSettings.defaultModel(holder));
     },
     connections: (owner, agentId) => connectedApps.connections(agentId, owner),
+    answerCard: async (owner, agentId, cardId, answer) => {
+      router.service.owned(agentId, owner);
+      const control = (await router.service.runtime(agentId)).extension?.control;
+      if (!control) throw new RouterError("host_sessions_unavailable", 409);
+      return control.answer(cardId, answer);
+    },
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
   });
   business.setAdmissionValidator(admission => {

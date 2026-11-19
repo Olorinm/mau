@@ -44,7 +44,7 @@ export interface ScheduleConfirmation {
 export interface CardDisplay {
   scheduleConfirmation?: ScheduleConfirmation;
   /** `partner` asks to run an operation while it handles a message of `from`; `arguments` is JSON text. */
-  partnerApproval?: { partner: PartnerRef; from: PartnerRef; messageId: string; summary: string; connection: string; arguments: string };
+  partnerApproval?: { partner: PartnerRef; from: PartnerRef; messageId: string; summary: string; connection?: string; arguments?: string };
 }
 export interface Card {
   cardId: string; agentId: string; turnId: string; claimId: string; callId: string;

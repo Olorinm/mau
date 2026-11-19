@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { EXTERNAL_PARTNERS, NEXT, contextText, externalIncomingText } from "../src/partner-text.js";
+import { EXTERNAL_PARTNERS, NEXT, OWNER_APPROVAL, contextText, externalIncomingText } from "../src/partner-text.js";
+import { ledgerApi, newIdempotencyKey } from "../web/src/api/ledger";
 import { HOST_LINK_ENROLL_PATH, HOST_LINK_SOCKET_PATH } from "@agent-router/server";
 import { pairCommand } from "../src/external-partners.js";
 import { HOST_LINK_PATHS } from "../src/deploy/host-links.js";
@@ -255,6 +256,86 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   await f.until(() => f.record(said.later.messageId).status === "seen", "second inform read");
 }, 60_000);
 
+/** helper asks the laptop to do something its kernel asks the owner about; the helper's turn waits and reports what it was told. */
+async function askedForApproval(f: PartnersFixture, deadlineMs?: number) {
+  const { id, computer } = await paired(f);
+  computer.respond(async turn => (await turn.approve("rm -rf build", deadlineMs)).decision === "accept" ? "Removed build." : "Left build alone.");
+  const said: Record<string, any> = {};
+  f.respond(async (turn: Turn) => {
+    if (turn.text.includes("[Partner results")) return `Passing on: ${turn.text.split("-----")[2]?.trim()}`;
+    said.sent = await turn.call("partners", { action: "message", to: "laptop-agent", intent: "relay", text: "Remove the build directory." });
+    said.wait = await turn.call("partners", { action: "wait", messageIds: [said.sent.messageId], timeoutSeconds: 30 });
+    said.roster = await turn.call("partners", { action: "roster" });
+    return "Waiting for your approval.";
+  });
+  await f.say(f.agent.id, "Clean the laptop's build");
+  await f.until(() => said.roster, "the sender was told");
+  const cards = async (agentId: string) => (await f.events(agentId)).flatMap(event => event.kind === "card" ? [event.card] : []);
+  const own = (await f.until(async () => (await cards(id))[0], "the laptop's own card"));
+  const copy = await f.until(async () => (await cards(f.agent.id)).find(card => card.display?.partnerApproval), "the card where the message came from");
+  const answer = (agentId: string, cardId: string, choiceId: string) => f.web().answerCard(f.chat(agentId), cardId, { idempotencyKey: newIdempotencyKey(), choiceId });
+  const card = async (agentId: string, cardId: string) => (await cards(agentId)).find(item => item.cardId === cardId)!;
+  return { id, computer, said, own, copy, answer, card, record: () => f.store(store => store.entries<any>("partner_cards").map(entry => entry.value)) };
+}
+
+it("asks the owner where the message came from when the computer's kernel wants approval, and passes the answer on", async () => {
+  const f = await fixture();
+  const { id, said, own, copy, answer, card, record } = await askedForApproval(f);
+  // The partner's own card says whose message started the turn; its copy names the partner and shows the same request and choices.
+  const pending = (await f.service.runtime(id)).extension!.sessions!.lookup(said.sent.messageId)!.pendingCards!;
+  expect(pending).toMatchObject([{ cardId: own.cardId, chatId: f.chat(id), kind: "approval", origin: { kind: "delegation", reference: said.sent.messageId, sender: { kind: "agent", id: f.agent.id, name: "helper" } } }]);
+  expect(own.text).toContain("rm -rf build");
+  expect(own.text.split("\n")[0]).toContain("helper");
+  expect(copy).toMatchObject({ status: "pending", source: "product", choices: own.choices.map(({ choiceId, label }: any) => ({ choiceId, label })),
+    display: { partnerApproval: { partner: { id, name: "laptop-agent" }, from: { id: f.agent.id, name: "helper" }, messageId: said.sent.messageId, summary: own.text } } });
+  expect(copy.display!.partnerApproval).not.toHaveProperty("connection");
+  expect(copy.text.endsWith(`处理「helper」转来的消息时需要执行：${own.text}`)).toBe(true);
+  // The sender is told at once that its message waits for the owner, not left waiting or told it failed.
+  expect(said.wait).toMatchObject({ results: [], pending: [{ messageId: said.sent.messageId, to: "laptop-agent", waitingFor: "owner_approval" }], ownerApprovalNote: OWNER_APPROVAL });
+  expect(said.roster.waitingForReplies).toMatchObject([{ messageId: said.sent.messageId, state: "waiting for the owner's approval" }]);
+  expect(said.roster.ownerApprovalNote).toBe(OWNER_APPROVAL);
+  expect(said.roster.partners).toMatchObject([{ name: "laptop-agent", waiting: { messages: 1, approvals: 1 } }]);
+  expect(record()).toMatchObject([{ status: "open", agentId: id, messageId: said.sent.messageId, cardId: own.cardId }]);
+  // Somebody else's token or a line of text does not answer it: only the owner's choice on the card does.
+  await expect(ledgerApi("bob", f.base + "/_agent-router/v1/web").answerCard(f.chat(f.agent.id), copy.cardId, { idempotencyKey: newIdempotencyKey(), choiceId: "0" })).rejects.toThrow();
+  expect((await card(f.agent.id, copy.cardId)).status).toBe("pending");
+
+  await answer(f.agent.id, copy.cardId, own.choices[0]!.choiceId);
+  // The computer's turn goes on, and its reply returns to the conversation the message was sent from.
+  expect(await f.until(async () => (await f.answers(f.agent.id)).find(text => text.startsWith("Passing on")), "reply")).toContain("Removed build.");
+  expect((await card(id, own.cardId)).status).not.toBe("pending");
+  expect(record()).toMatchObject([{ status: "closed" }]);
+  expect(await partnerView(f, id)).toMatchObject({ waiting: { messages: 0, approvals: 0 } });
+}, 60_000);
+
+it("passes a refusal on, and takes the copy away when the request ends or is answered in the partner's own conversation", async () => {
+  // Refused where the message came from.
+  let f = await fixture();
+  let asked = await askedForApproval(f);
+  await asked.answer(f.agent.id, asked.copy.cardId, asked.own.choices.at(-1)!.choiceId);
+  expect(await f.until(async () => (await f.answers(f.agent.id)).find(text => text.startsWith("Passing on")), "reply")).toContain("Left build alone.");
+  expect(asked.record()).toMatchObject([{ status: "closed" }]);
+  for (const close of cleanup.splice(0).reverse()) await close();
+
+  // Answered in the partner's own conversation: the copy is withdrawn, and an answer on it no longer counts.
+  f = await fixture();
+  asked = await askedForApproval(f);
+  await asked.answer(asked.id, asked.own.cardId, asked.own.choices[0]!.choiceId);
+  expect(await f.until(async () => (await f.answers(f.agent.id)).find(text => text.startsWith("Passing on")), "reply")).toContain("Removed build.");
+  await f.until(async () => (await asked.card(f.agent.id, asked.copy.cardId)).status !== "pending", "copy withdrawn");
+  expect(asked.record()).toMatchObject([{ status: "closed" }]);
+  for (const close of cleanup.splice(0).reverse()) await close();
+
+  // The kernel stops waiting: its card expires, and so does the copy.
+  f = await fixture();
+  asked = await askedForApproval(f, 3000);
+  await f.until(async () => (await asked.card(f.agent.id, asked.copy.cardId)).status !== "pending", "copy closed with the request");
+  await f.until(() => asked.record()[0]?.status === "closed", "record closed");
+  // Nothing was answered for the owner.
+  expect(asked.computer.turns).toHaveLength(1);
+  expect(await f.answers(asked.id)).toEqual([]);
+}, 120_000);
+
 it("refuses a message to a partner with no paired computer and a recruit of a dismissed one", async () => {
   const f = await fixture();
   const { id } = await paired(f);
@@ -332,6 +413,9 @@ it("pins what a model is told about a partner on the owner's computer, and where
   expect(NEXT.sentExternal("laptop-agent", false)).toContain("That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner. ");
   expect(contextText({ you: "desk", waiting: [], notes: [], roster: [{ name: "laptop-agent", duty: null, status: "offline", external: true }, { name: "trip", duty: null, status: "idle" }] }).partners)
     .toContain("- laptop-agent [offline, on the owner's own computer]: no duty recorded\n- trip [idle]: no duty recorded");
+  expect(OWNER_APPROVAL).toBe("A message that waits for the owner's approval has not failed and is not stuck: the partner handling it asked the owner before going on, " +
+    "and the owner was shown the request, in this conversation when it could be shown here. It continues when the owner answers. " +
+    "Tell the owner in one line that it waits for their answer, and end this turn; do not send the message again and do not approve anything yourself.");
   // The deploy step and doctor name Router's two paths without importing Router; they are the same.
   expect(HOST_LINK_PATHS).toEqual({ enroll: HOST_LINK_ENROLL_PATH, socket: HOST_LINK_SOCKET_PATH });
 });

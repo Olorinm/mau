@@ -71,6 +71,14 @@ export const EXTERNAL_PARTNERS = "A partner listed with external: true is an age
   "An inform reaches it only together with the next relay or ask a partner sends it; when it has to know something now, send that as an ask or a relay. " +
   "It is connected by the owner: it cannot be recruited, and it does not message other partners.";
 
+/**
+ * What a roster or a wait says when a message of the caller waits for the owner's approval, and nowhere else: like
+ * `OTHER_KERNELS`, it is not part of the guide.
+ */
+export const OWNER_APPROVAL = "A message that waits for the owner's approval has not failed and is not stuck: the partner handling it asked the owner before going on, " +
+  "and the owner was shown the request, in this conversation when it could be shown here. It continues when the owner answers. " +
+  "Tell the owner in one line that it waits for their answer, and end this turn; do not send the message again and do not approve anything yourself.";
+
 /** What a recruit, message, wait or dismiss call says happens next. */
 export const NEXT = {
   sent: (to: string) => `"${to}" handles this in its own conversation with the owner. Its reply arrives in this conversation as a new turn after this turn has ended. ` +

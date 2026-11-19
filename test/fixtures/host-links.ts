@@ -4,7 +4,10 @@
 import { HOST_LINK_ENROLL_PATH, HOST_LINK_SOCKET_PATH } from "@agent-router/server";
 
 /** One turn as the computer's Host received it: the body of its `POST /v1/runs`. */
-export interface LinkTurn { runId: string; body: any }
+export interface LinkTurn { runId: string; body: any;
+  /** The kernel asks before running a command, and waits for the answer: Router's result of the call. */
+  approve(command: string, deadlineMs?: number): Promise<any> }
+interface Call { id: string; runId: string; kind: string; name: string; input: unknown; status: string; deadlineAt: string }
 type Script = (turn: LinkTurn) => Promise<string> | string;
 interface Run { id: string; sessionId: string; runtimeId: string; status: string; answer: string; requestKey?: string; outcome?: unknown }
 
@@ -16,10 +19,10 @@ export async function linkComputer(base: string, code: string, cleanup: Array<()
     body: JSON.stringify({ code, deviceName: device.name ?? "laptop", platform: device.platform ?? "darwin", runtime }) });
   if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? `enroll_${response.status}`);
   const { linkId, credential } = await response.json() as { linkId: string; credential: string };
-  const runs = new Map<string, Run>(), turns: LinkTurn[] = [], refused: string[] = [];
+  const runs = new Map<string, Run>(), turns: LinkTurn[] = [], refused: string[] = [], calls: Call[] = [], answers = new Map<string, (result: unknown) => void>();
   let script: Script = turn => `answer to ${turn.body.input}`, socket: WebSocket | undefined;
   const answer = (method: string, path: string, body: any): { status: number; body: unknown } => {
-    const url = new URL(path, "http://host.local"), [, , area, id, action] = url.pathname.split("/");
+    const url = new URL(path, "http://host.local"), [, , area, id, action, callId] = url.pathname.split("/");
     if (path === "/v1/health") return { status: 200, body: { ok: true, protocolVersion: 1, capabilities: { runIdempotency: true } } };
     if (path === "/v1/runtimes") return { status: 200, body: { runtimes: [{ id: runtime.id }] } };
     // Like Agent Kit's Host on a link: runs only, and a run of text only.
@@ -32,7 +35,11 @@ export async function linkComputer(base: string, code: string, cleanup: Array<()
       if (!run) {
         const started: Run = run = { id: `run-${runs.size + 1}`, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "", ...(body.requestKey ? { requestKey: body.requestKey } : {}) };
         runs.set(started.id, started);
-        const turn = { runId: started.id, body };
+        const turn: LinkTurn = { runId: started.id, body, approve: (command, deadlineMs = 120_000) => new Promise(resolve => {
+          const call = { id: `${started.id}-call-${calls.length + 1}`, runId: started.id, kind: "interaction", name: "item/commandExecution/requestApproval", input: { command },
+            status: "pending", deadlineAt: new Date(Date.now() + deadlineMs).toISOString() };
+          answers.set(call.id, resolve); calls.push(call);
+        }) };
         turns.push(turn);
         void Promise.resolve().then(() => script(turn)).then(text => { if (started.status === "running") Object.assign(started, { status: "completed", answer: text }); },
           () => { if (started.status === "running") Object.assign(started, { status: "failed", outcome: { status: "failed", error: "failed" } }); });
@@ -44,7 +51,13 @@ export async function linkComputer(base: string, code: string, cleanup: Array<()
     if (!run) return { status: 404, body: { error: "run_not_found" } };
     if (!action) return { status: 200, body: view(run) };
     if (action === "events") return { status: 200, body: { events: [], cursor: Number(url.searchParams.get("after")), hasMore: false, historyTruncated: false, liveGap: false } };
-    if (action === "calls") return { status: 200, body: { calls: [] } };
+    if (action === "calls" && !callId) return { status: 200, body: { calls: calls.filter(call => call.runId === run.id) } };
+    if (action === "calls") {
+      const call = calls.find(item => item.id === callId);
+      if (call?.status !== "pending") return { status: 409, body: { error: "call_not_pending" } };
+      call.status = "completed"; answers.get(call.id)!(body.result);
+      return { status: 200, body: { ok: true } };
+    }
     if (action === "cancel") { if (run.status === "running") run.status = "cancelled"; return { status: 200, body: { cancellationRequested: true } }; }
     return { status: 404, body: { error: "route_not_found" } };
   };

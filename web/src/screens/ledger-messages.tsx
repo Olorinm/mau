@@ -73,8 +73,8 @@ function requestText(t: Translate, card: Card): string[] {
   if (!approval) return card.text.split("\n\n");
   return [t("card.partnerApproval.title", { partner: approval.partner.name }), [
     t("card.partnerApproval.operation", { from: approval.from.name, summary: approval.summary }),
-    t("card.partnerApproval.connection", { connection: approval.connection }),
-    t("card.partnerApproval.arguments", { arguments: approval.arguments }),
+    // A connector operation names its connection and arguments; what a partner's kernel asks is its text alone.
+    ...(approval.connection !== undefined ? [t("card.partnerApproval.connection", { connection: approval.connection }), t("card.partnerApproval.arguments", { arguments: approval.arguments ?? "" })] : []),
   ].join("\n")];
 }
 
@@ -96,7 +96,7 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
   const request = card.source === "product", [heading, ...rest] = request ? requestText(t, card) : [];
   const closed = request ? requestStatusKeys[card.status as keyof typeof requestStatusKeys] : undefined;
   // A partner's request is answered by approving or rejecting, in that order.
-  const labels = card.display?.partnerApproval ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")]
+  const labels = card.display?.partnerApproval?.connection !== undefined ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")]
     : card.display?.scheduleConfirmation ? [t("card.schedule.confirm"), t("card.schedule.reject")] : [];
   return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status} data-card-source={card.source}>
     {request ? <div className="mau-card-text">{rest.length ? <strong>{heading}</strong> : null}<p>{rest.length ? rest.join("\n\n") : heading}</p></div>

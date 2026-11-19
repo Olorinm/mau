@@ -1,17 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
-import type { ServiceExtension, WorkEventResult, WorkSessions } from "@agent-router/server";
+import type { OwnerRequestResult, ServiceExtension, WorkEventResult, WorkPendingCard, WorkSessions } from "@agent-router/server";
 import type { DurableStore } from "./store.js";
 import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { CARRIED_NOTES, EXTERNAL_PARTNERS, GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, GUIDE, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
-  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
+  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards";
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
 /** A turn started by a result may message again; this many generations may follow one owner message. */
@@ -122,6 +122,12 @@ interface ReturnBatch {
   /** Since when the outcome of the hand-over's turn has been unknown. */
   unknownSince?: string;
 }
+/**
+ * A card the turn that handles a message put in its partner's own conversation with the owner: the partner's kernel
+ * asks before it goes on. `desk` is the copy of an approval in the conversation the message was sent from, where the
+ * owner is; other cards, and an approval too long to show there, are answered in the partner's conversation only.
+ */
+interface PartnerCard { status: "open" | "closed"; owner: string; agentId: string; messageId: string; cardId: string; desk?: string; choices: string[]; createdAt: string }
 type Turn = { kind: "owner" } | { kind: "message"; message: PartnerMessage } | { kind: "return"; batch: ReturnBatch };
 type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input" | "isOwnerInput">;
 
@@ -156,6 +162,8 @@ export interface PartnersPort {
   /** The model a partner's runtime uses when none is selected, as far as it was read. */
   defaultModel(agentId: string): string | undefined;
   connections(owner: string, agentId: string): string[];
+  /** Answer a card of the partner's own conversation with what the owner chose where the card was copied to. */
+  answerCard(owner: string, agentId: string, cardId: string, answer: { key: string; by: string | null; surface: "web" | "channel"; choiceId: string }): Promise<unknown>;
   /** Withdraw the owner cards a finished run left open. */
   closeApprovals(agentId: string, runId: string, withdraw: (requestId: string) => Promise<void>): Promise<void>;
 }
@@ -342,6 +350,7 @@ export class Partners {
   async list(owner: string, includeDismissed = true) {
     const waiting = this.outstanding(owner, ["sending", "running"]);
     const approvals = this.store.entriesByStatus<{ agentId: string; desk?: unknown }>("connector_approvals", ["pending"]).map(entry => entry.value).filter(record => record.desk);
+    const cards = this.openCards(owner);
     return Promise.all(this.summary(owner, includeDismissed).map(async partner => {
       const settings = await this.port.sessions(owner, partner.id).then(work => work.defaultSettings(), () => ({} as Record<string, unknown>));
       // Router runs the turns of an agent on the owner's computer without Mau's Host, so its open runs are read from Router.
@@ -352,7 +361,8 @@ export class Partners {
       return { ...partner, ...(busy ? { status: "working" } : {}), kernel: this.port.kernel(partner.id) ?? null,
         model: typeof settings.model === "string" ? settings.model : null, effort: typeof settings.effort === "string" ? settings.effort : null,
         lastActivityAt: this.store.get<{ at: string }>(ACTIVITY, partner.id)?.at ?? null,
-        waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length, approvals: approvals.filter(record => record.agentId === partner.id).length },
+        waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length,
+          approvals: approvals.filter(record => record.agentId === partner.id).length + cards.filter(card => card.agentId === partner.id).length },
         ...(holder !== partner.id ? { sharesEnvironmentOf: holder } : {}),
         ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
@@ -361,6 +371,7 @@ export class Partners {
     const self = this.self(admission), owner = admission.owner;
     const names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
     const mine = this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self.agentId);
+    const asked = new Set(this.openCards(owner).map(card => card.messageId));
     let options: ModelSettingsView | undefined;
     try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
     const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
@@ -384,7 +395,9 @@ export class Partners {
         model: partner.model ?? "default", effort: partner.effort ?? "default",
         ...(sharesEnvironmentOf ? { sharesEnvironmentOf: names.get(sharesEnvironmentOf) ?? "another partner" } : {}) })),
       waitingForReplies: mine.map(message => ({ messageId: message.id, to: message.to.name, intent: message.intent, sentAt: message.createdAt,
-        state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you" : "not answered yet" })),
+        state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you"
+          : asked.has(message.id) ? "waiting for the owner's approval" : "not answered yet" })),
+      ...(asked.size ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
       recruit: {
         kernels: kernel ? [kernel, ...others] : others,
         ...choices(options),
@@ -582,10 +595,13 @@ export class Partners {
     });
     const deadline = Date.now() + (input.timeoutSeconds ?? 30) * 1000;
     let messages = read();
-    while (messages.some(message => ["sending", "running"].includes(message.status)) && Date.now() < deadline && !this.closed) {
+    // A turn that asks the owner does not end within a wait: the call returns as soon as one does.
+    const asked = () => new Set(this.openCards(owner).map(card => card.messageId));
+    while (messages.some(message => ["sending", "running"].includes(message.status)) && !messages.some(message => asked().has(message.id)) && Date.now() < deadline && !this.closed) {
       await sleep(Math.min(250, Math.max(1, deadline - Date.now())));
       messages = read();
     }
+    const approval = asked();
     // A result the sending turn reads here is not handed over a second time, once this call's answer has reached that
     // turn (`delivered`). A result of an earlier turn's message is only read: it is on its way as a turn of its own.
     const own = (message: PartnerMessage) => message.status === "settled" && message.origin.taskId === task;
@@ -594,7 +610,9 @@ export class Partners {
     const waiting = messages.filter(message => ["sending", "running"].includes(message.status));
     const results = messages.filter(message => message.result).map(message => ({ ...resultView(message),
       ...(message.status === "returning" || message.status === "settled" && !own(message) ? { alsoArriving: "This result also reaches you as a turn of its own." } : {}) }));
-    return { results, pending: waiting.map(message => ({ messageId: message.id, to: message.to.name, sentAt: message.createdAt })),
+    return { results, pending: waiting.map(message => ({ messageId: message.id, to: message.to.name, sentAt: message.createdAt,
+        ...(approval.has(message.id) ? { waitingFor: "owner_approval" } : {}) })),
+      ...(waiting.some(message => approval.has(message.id)) ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
       next: [results.length ? NEXT.results : "", waiting.length ? NEXT.stillWaiting : "", !results.length && !waiting.length ? NEXT.nothingWaiting : ""].filter(Boolean).join(" ") };
   }
   /** The answer of a partners call has reached the Host: what that call's wait returned to the sending turn counts as read. */
@@ -710,7 +728,7 @@ export class Partners {
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver(), () => this.cleanUp()]) {
+    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
@@ -725,6 +743,54 @@ export class Partners {
     const before = iso(now - KEPT_MS);
     this.store.deleteBefore(MESSAGES, FINAL_MESSAGES, before);
     this.store.deleteBefore(RETURNS, FINAL_RETURNS, before);
+    this.store.deleteBefore(CARDS, ["closed"], before);
+  }
+  private openCards(owner: string) {
+    return this.store.entriesByStatus<PartnerCard>(CARDS, ["open"]).map(entry => entry.value).filter(card => card.owner === owner);
+  }
+  /**
+   * What the kernel of a partner asks the owner in a turn that handles a message stands as a card in that partner's
+   * own conversation, where the owner seldom is. An approval is copied to the conversation the message was sent from,
+   * through the same desk a connector write is asked at; the owner's choice there answers the partner's card, and the
+   * copy is withdrawn when that card is answered elsewhere, expires or its turn ends.
+   */
+  private async passCards() {
+    const pending = new Map<string, WorkPendingCard>(), key = (agentId: string, cardId: string) => `${agentId}:${cardId}`;
+    for (const { value: message } of this.store.entriesByStatus<PartnerMessage>(MESSAGES, ["running"])) {
+      let cards: WorkPendingCard[];
+      try { cards = (await this.port.sessions(message.owner, message.to.agentId)).lookup(message.id)?.pendingCards ?? []; }
+      catch (error) { report("partner_cards_unread", error); continue; }
+      for (const card of cards) {
+        const id = key(message.to.agentId, card.cardId);
+        pending.set(id, card);
+        if (this.store.get<PartnerCard>(CARDS, id)) continue;
+        // The owner approves what the card shows in full; a connector write that waits is already at the desk.
+        const shown = card.kind === "approval" && card.choices.length > 0 && card.text.length <= APPROVAL_DISPLAY_LIMIT;
+        const record: PartnerCard = { status: "open", owner: message.owner, agentId: message.to.agentId, messageId: message.id, cardId: card.cardId, createdAt: iso(),
+          choices: card.choices.map(choice => choice.choiceId), ...(shown ? { desk: `partner-card-${digest(id).slice(0, 40)}` } : {}) };
+        if (!this.store.insert(CARDS, id, record) || !record.desk) continue;
+        try {
+          await this.desk(message).open({ id: record.desk, summary: card.text, choices: card.choices.map(choice => ({ id: choice.choiceId, label: choice.label })),
+            deadlineAt: card.deadlineAt ?? iso(Date.parse(message.createdAt) + UNANSWERED_MS) });
+        } catch (error) {
+          // Nowhere to ask there: the card stays in the partner's own conversation.
+          report("partner_card_not_shown", error);
+          const { desk: _desk, ...kept } = record; this.store.set(CARDS, id, kept);
+        }
+      }
+    }
+    for (const { id, value: card } of this.store.entriesByStatus<PartnerCard>(CARDS, ["open"])) {
+      const message = this.store.get<PartnerMessage>(MESSAGES, card.messageId), close = () => this.store.set(CARDS, id, { ...card, status: "closed" });
+      const desk = message && card.desk ? this.desk(message) : undefined;
+      if (!pending.has(id)) { await desk?.withdraw(card.desk!).catch(() => undefined); close(); continue; }
+      if (!desk) continue;
+      const request = await desk.request(card.desk!).catch(() => undefined);
+      if (!request || request.status === "pending") continue;
+      // Only a choice of the card itself is passed on; anything else leaves the partner's own card as it is.
+      if (request.status === "answered" && request.choice !== undefined && card.choices.includes(request.choice))
+        await this.port.answerCard(card.owner, card.agentId, card.cardId, { key: card.desk!, by: request.answeredBy ?? null, surface: request.surface ?? "web", choiceId: request.choice });
+      close();
+    }
   }
   /** Messages recorded but not yet in their recipient's work queue: the call that sent them was interrupted. */
   private async resume() {
@@ -928,20 +994,20 @@ export class Partners {
         toolGrants: { feishu: authorization.feishu, connectedApps: { connections: authorization.connections, ...(authorization.operations ? { operations: authorization.operations } : {}) } } } });
   }
   /** Where the owner is asked for a turn that handles a message: the conversation the message was sent from. */
-  private desk(message: PartnerMessage): ApprovalDesk {
+  private desk(message: PartnerMessage): ApprovalDesk & { request(id: string): Promise<OwnerRequestResult | undefined> } {
     const work = () => this.port.sessions(message.owner, message.from.agentId);
     return {
       open: async card => {
         const sessions = await work(), connection = message.origin.connectionId;
         // The text is what a channel shows and what stands in the transcript. `display` carries the same as members, for a
         // console to show in its own words and language.
-        const shown = shownArguments(card.arguments);
+        const operation = card.connection === undefined ? undefined : { connection: card.connection, arguments: shownArguments(card.arguments) };
         sessions.request({ eventId: card.id, kind: "approval", title: `伙伴「${message.to.name}」请求批准`,
-          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`, `连接：${card.connection}`,
-            `参数：${shown}`].join("\n"),
-          choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
+          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`,
+            ...(operation ? [`连接：${operation.connection}`, `参数：${operation.arguments}`] : [])].join("\n"),
+          choices: card.choices ?? [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
           display: { partnerApproval: { partner: { id: message.to.agentId, name: message.to.name }, from: { id: message.from.agentId, name: message.from.name },
-            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown } },
+            messageId: message.id, summary: card.summary, ...operation } },
           ...(sessions.deliveryConnections().includes(connection) ? { connectionId: connection } : {}) });
       },
       status: async id => {
@@ -951,6 +1017,7 @@ export class Partners {
         return request.status === "answered" && request.choice === "allow" ? "approved" : "denied";
       },
       withdraw: async id => { (await work()).withdrawRequest(id); },
+      request: async id => (await work()).lookupRequest(id) ?? undefined,
     };
   }
 }

@@ -16,7 +16,11 @@ export interface ApprovalPort {
  * another conversation, which belongs to no run. `open` throws when there is nowhere to ask.
  */
 export interface ApprovalDesk {
-  open(card: { id: string; summary: string; connection: string; arguments: unknown; deadlineAt: string }): Promise<void>;
+  /**
+   * `connection` and `arguments` belong to a connector operation; a card that passes on what a partner's kernel asks
+   * has only its text. `choices` are the answers offered when they are not the desk's own approve and deny.
+   */
+  open(card: { id: string; summary: string; deadlineAt: string; connection?: string; arguments?: unknown; choices?: Array<{ id: string; label: string }> }): Promise<void>;
   status(id: string): Promise<"pending" | "approved" | "denied" | "expired">;
   withdraw(id: string): Promise<void>;
 }
