@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile, chmod } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -12,10 +12,11 @@ const destination = resolve(values["pack-destination"]);
 await mkdir(destination, { recursive: true });
 const temporary = await mkdtemp(join(tmpdir(), "mau-cli-pack-"));
 try {
-  await mkdir(join(temporary, "dist"));
-  // The client uses Node built-ins only. Never copy server code, peer dependencies,
-  // private Environment archives, source maps or local operator configuration.
-  for (const file of ["cli.js", "files.js", "ssh-client.js", "ssh-transport.js"])
+  await mkdir(join(temporary, "dist", "cli"), { recursive: true });
+  // The client uses Node built-ins only: its entry, its command modules (dist/cli) and what they import. Never copy
+  // server code, peer dependencies, private Environment archives, source maps or local operator configuration.
+  const modules = (await readdir(new URL("dist/cli/", root))).filter(file => file.endsWith(".js")).map(file => "cli/" + file);
+  for (const file of ["cli.js", "files.js", "ssh-client.js", "ssh-transport.js", ...modules])
     await copyFile(new URL("dist/" + file, root), join(temporary, "dist", file));
   await chmod(join(temporary, "dist/cli.js"), 0o755);
   for (const file of ["LICENSE", "NOTICE"])

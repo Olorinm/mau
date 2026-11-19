@@ -1,267 +1,82 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import { setTimeout as delay } from "node:timers/promises";
-import { privateFile } from "./files.js";
-import { runSsh } from "./ssh-client.js";
+import { accountCommands } from "./cli/account.js";
+import { apiCommands } from "./cli/api.js";
+import { channelCommands } from "./cli/channel.js";
+import { chatCommands } from "./cli/chat.js";
+import { accessOptions, Client } from "./cli/client.js";
+import { arity, CliError, fail, usage, type Command, type OptionValues } from "./cli/command.js";
+import { connectorCommands } from "./cli/connector.js";
+import { environmentCommands } from "./cli/environment.js";
+import { memoryCommands } from "./cli/memory.js";
+import { partnerCommands } from "./cli/partner.js";
 
-const help = `Mau — your agent product
+/** Every command. Help and dispatch read this table and nothing else. */
+const commands: Command[] = [
+  ...accountCommands,
+  ...partnerCommands,
+  ...environmentCommands,
+  ...chatCommands,
+  ...memoryCommands,
+  ...channelCommands,
+  ...connectorCommands,
+  ...apiCommands,
+];
 
-  mau login --url URL                     (Cloudflare Access)
-  mau login --url URL --token-file FILE   (an account bearer token)
-  mau options
-  mau setup NAME --environment PROFILE
-  mau agents | use NAME | status | check
-  mau delete NAME --yes   (permanently deletes the partner, its environment and memory)
-  mau environment-create PROFILE
-  mau environment-replace PROFILE | environment-rollback
-  mau pause | resume | destroy | reconcile
-  mau ssh NAME [-- COMMAND...]
-  mau channel-connect feishu|weixin|telegram|grove-mail
-  mau channel-jobs | channel-job ID | channel-pair ID --pairing-code-file FILE
+const nouns = [...new Set(commands.map(command => command.path[0]))];
+function help(noun?: string): string {
+  const shown = noun ? commands.filter(command => command.path[0] === noun) : commands;
+  const entry = (command: Command) => [`  ${usage(command)}`, `      ${command.summary}`,
+    ...(noun ? Object.entries(command.options ?? {}).map(([name, option]) => `      --${name}: ${option.help}`) : [])];
+  return [
+    "Mau: command-line client for a Mau service. A partner is always named by its NAME.", "",
+    ...shown.flatMap(entry), "",
+    ...(noun ? [] : ["  mau help | mau --help | mau NOUN --help | mau --version", ""]),
+    "Output: one JSON document on stdout. Progress, links and QR codes go to stderr. On failure the exit code is 1 and",
+    'the last stderr line is one JSON object: {"error":"<code>", ...}. Nothing is asked interactively.',
+    "Every command also takes the Cloudflare Access credential options:",
+    ...Object.entries(accessOptions).map(([name, option]) => `  --${name} ${option.value}: ${option.help}`),
+    ...(noun ? [] : ["Options of one group of commands: mau NOUN --help (" + nouns.join(", ") + ")."]), "",
+  ].join("\n");
+}
 
-Options: --no-wait, --allow-http (loopback development only),
-  --bot-token-file FILE, --domain feishu|lark,
-  --app-id cli_... (authorize an existing Feishu/Lark app),
-  --mail-service ID, --inbox ID, --owner-email EMAIL, --api-key-file FILE
-Access login: run cloudflared access login URL first, or use an Access service token:
-  --access-client-id-file FILE --access-client-secret-file FILE (or CF_ACCESS_CLIENT_ID[_FILE],
-  CF_ACCESS_CLIENT_SECRET[_FILE]); --access-token-file FILE or CF_ACCESS_TOKEN[_FILE] pass a token.
-  Access credentials are read on every call and never saved.
-Credentials and selection are saved in ~/.config/mau/session.json.
-Router owns accounts and connections; Mau owns environment operations.
-`;
-const options = {
-  help: { type: "boolean" }, version: { type: "boolean" }, url: { type: "string" },
-  "token-file": { type: "string" },
-  environment: { type: "string" }, "no-wait": { type: "boolean" }, "allow-http": { type: "boolean" },
-  "app-id": { type: "string" }, "bot-token-file": { type: "string" }, domain: { type: "string" }, yes: { type: "boolean" },
-  "mail-service": { type: "string" }, inbox: { type: "string" }, "owner-email": { type: "string" },
-  "api-key-file": { type: "string" }, "pairing-code-file": { type: "string" },
-  "access-client-id-file": { type: "string" }, "access-client-secret-file": { type: "string" },
-  "access-token-file": { type: "string" },
-} as const;
-const stateFile = join(process.env.MAU_CONFIG_DIR ?? join(homedir(), ".config", "mau"), "session.json");
-/** `login: "edge"`: no token is stored; Cloudflare Access credentials are resolved for every run. */
-interface Session { url: string; token: string; owner: string; agentId?: string; login?: "edge" }
 const controller = new AbortController();
 process.once("SIGINT", () => controller.abort());
 process.once("SIGTERM", () => controller.abort());
-const fail = (code: string): never => { throw new Error(code); };
-const output = (value: unknown) => process.stdout.write(JSON.stringify(value, null, 2) + "\n");
-function secret(path: string | undefined): string {
-  if (!path) return fail("credential_file_required");
-  const value = readFileSync(path, "utf8").trim();
-  if (!value || value.length > 16384) return fail("invalid_credential_file");
-  return value;
+
+async function main(argv: string[]): Promise<void> {
+  const [first, second] = argv;
+  if (first === "--version") { process.stdout.write(JSON.stringify({ product: "mau", version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version }, null, 2) + "\n"); return; }
+  if (first === undefined || first === "--help" || first === "help") {
+    const noun = first === "help" ? second : undefined;
+    if (noun !== undefined && !nouns.includes(noun)) fail("unknown_command", { commands: nouns });
+    process.stdout.write(help(noun)); return;
+  }
+  const group = commands.filter(command => command.path[0] === first);
+  if (!group.length) fail("unknown_command", { commands: nouns });
+  if (argv.includes("--help") && !argv.slice(0, argv.indexOf("--help")).includes("--")) { process.stdout.write(help(first)); return; }
+  const command = group.find(item => item.path.length === 1) ?? group.find(item => item.path[1] === second)
+    ?? fail("unknown_command", { usage: group.map(usage) });
+  let parsed: { values: OptionValues; positionals: string[] };
+  try {
+    parsed = parseArgs({ args: argv.slice(command.path.length), allowPositionals: true, strict: true,
+      options: Object.fromEntries(Object.entries({ ...accessOptions, ...command.options }).map(([name, option]) =>
+        [name, { type: option.type, ...(option.multiple ? { multiple: true } : {}) }])) }) as typeof parsed;
+  } catch (error) { return fail("invalid_arguments", { message: error instanceof Error ? error.message : String(error), usage: usage(command) }); }
+  const count = arity(command);
+  if (parsed.positionals.length < count.min || parsed.positionals.length > count.max) fail("invalid_arguments", { usage: usage(command) });
+  let client: Client | undefined;
+  const result = await command.run({ args: parsed.positionals, options: parsed.values, signal: controller.signal,
+    client: () => client ??= Client.session(parsed.values, controller.signal),
+    note: line => process.stderr.write(line + "\n") });
+  if (result !== undefined) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 }
-function endpoint(raw: string, allowHTTP: boolean): string {
-  const u = new URL(raw);
-  if (u.username || u.password || u.hash || u.search || u.pathname !== "/" ||
-      !(u.protocol === "https:" || allowHTTP && u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)))
-    return fail("invalid_service_url");
-  return u.origin;
-}
-type Auth = string | Record<string, string> | undefined;
-const authHeaders = (auth: Auth): Record<string, string> => typeof auth === "string" ? (auth ? { Authorization: `Bearer ${auth}` } : {}) : auth ?? {};
-/** One non-empty line from a file, or from an environment variable (`NAME_FILE` names a file). */
-function configured(file: string | undefined, name: string): string | undefined {
-  const path = file ?? process.env[name + "_FILE"];
-  const value = path ? readFileSync(path, "utf8").trim() : process.env[name]?.trim();
-  if (value === undefined || value === "") return undefined;
-  if (value.length > 16384 || /[\r\n\0]/.test(value)) return fail("invalid_credential_file");
-  return value;
-}
-/**
- * Cloudflare Access credentials (agent-router ADR 0005 18.3): an Access service token (client id and secret), an Access
- * token, or `cloudflared access token -app=URL` after `cloudflared access login URL`. `Origin` is the service's own
- * origin: Router accepts unsafe edge requests only with an allowed Origin (its CSRF guard).
- */
-function accessHeaders(url: string, values: { "access-client-id-file"?: string | undefined; "access-client-secret-file"?: string | undefined;
-  "access-token-file"?: string | undefined }): Record<string, string> {
-  const id = configured(values["access-client-id-file"], "CF_ACCESS_CLIENT_ID"), secret = configured(values["access-client-secret-file"], "CF_ACCESS_CLIENT_SECRET");
-  if (!id !== !secret) return fail("access_service_token_requires_client_id_and_secret");
-  if (id && secret) return { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret, Origin: url };
-  let token = configured(values["access-token-file"], "CF_ACCESS_TOKEN");
-  if (!token) {
-    try { token = execFileSync("cloudflared", ["access", "token", "-app=" + url], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30_000 }).trim(); }
-    catch { token = undefined; }
-  }
-  if (!token || /\s/.test(token)) return fail("access_credentials_required");
-  return { "cf-access-token": token, Origin: url };
-}
-async function request(base: string, path: string, auth: Auth, body?: unknown, method?: "DELETE"): Promise<any> {
-  const res = await fetch(base + path, {
-    method: method ?? (body === undefined ? "GET" : "POST"), redirect: "error", credentials: "omit",
-    headers: { Accept: "application/json", ...authHeaders(auth),
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
-  });
-  if (res.status === 204) return null;
-  const data = await res.json();
-  if (!res.ok) return fail(typeof data.error === "string" && /^[a-z0-9_]+$/.test(data.error) ? data.error : "request_failed");
-  return data;
-}
-async function main() {
-  const { values, positionals } = parseArgs({ options, allowPositionals: true });
-  const [command, ...args] = positionals;
-  if (values.version) { output({ product: "mau", version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version }); return; }
-  if (values.help || !command) { process.stdout.write(help); return; }
-  const arity: Record<string, [number, number]> = { login: [0, 0], options: [0, 0], setup: [1, 1], agents: [0, 0],
-    use: [1, 1], delete: [1, 1], status: [0, 0], check: [0, 0], "environment-create": [1, 1], pause: [0, 0], resume: [0, 0],
-    destroy: [0, 0], reconcile: [0, 0], ssh: [1, Infinity], "channel-connect": [1, 1], "channel-jobs": [0, 0], "channel-job": [1, 1], "channel-pair": [1, 1] };
-  arity["environment-replace"] = [1, 1]; arity["environment-rollback"] = [0, 0];
-  const count = arity[command];
-  if (!count || args.length < count[0] || args.length > count[1]) fail("invalid_command_arguments");
-  if (values.environment && command !== "setup") fail("environment_option_requires_setup");
-  if (values["app-id"] !== undefined) {
-    if (command !== "channel-connect" || args[0] !== "feishu") fail("app_id_requires_feishu_channel_connect");
-    if (!/^cli_[a-zA-Z0-9_]{1,128}$/.test(values["app-id"])) fail("invalid_feishu_app_id");
-  }
-  const allowHTTP = values["allow-http"] ?? false;
-  const accessOptions = ["access-client-id-file", "access-client-secret-file", "access-token-file"] as const;
-  if (command === "login") {
-    if (!values.url) fail("url_required");
-    const url = endpoint(values.url!, allowHTTP);
-    if (!values["token-file"]) {
-      const account = await request(url, "/_mau/v1/account", accessHeaders(url, values));
-      if (typeof account.owner !== "string") fail("invalid_account_response");
-      privateFile(stateFile, { url, token: "", owner: account.owner, login: "edge" });
-      output({ owner: account.owner, url, login: "edge" }); return;
-    }
-    if (accessOptions.some((name) => values[name])) fail("choose_one_login_method");
-    const token = secret(values["token-file"]);
-    const account = await request(url, "/_mau/v1/account", token);
-    if (typeof account.owner !== "string") fail("invalid_account_response");
-    privateFile(stateFile, { url, token, owner: account.owner });
-    output({ owner: account.owner, url }); return;
-  }
-  let session: Session;
-  try { session = JSON.parse(readFileSync(stateFile, "utf8")); } catch { return fail("login_required"); }
-  const url = endpoint(session.url, allowHTTP);
-  if (values.url && endpoint(values.url, allowHTTP) !== url) fail("login_to_selected_service_first");
-  if (session.login !== "edge" && accessOptions.some((name) => values[name])) fail("access_credentials_require_edge_login");
-  let resolved: Record<string, string> | undefined;
-  const auth = (): Auth => session.login === "edge" ? resolved ??= accessHeaders(url, values) : session.token;
-  const product = (path: string, body?: unknown) => request(url, "/_mau/v1" + path, auth(), body);
-  const routing = (path: string, body?: unknown) => request(url, "/_agent-router/v1" + path, auth(), body);
-  const select = (id: string) => { session.agentId = id; privateFile(stateFile, session); };
-  const pollEnvironment = async (id: string, status: any) => {
-    const deadline = Date.now() + 15 * 60_000;
-    while (status.busy && !values["no-wait"]) {
-      if (Date.now() > deadline) fail("environment_pending_check_status");
-      await delay(1000, undefined, { signal: controller.signal });
-      status = await product(`/agents/${encodeURIComponent(id)}/environment`);
-    }
-    if (status.error || status.state === "needs_action") {
-      output(status); fail("environment_needs_action");
-    }
-    return status;
-  };
-  if (command === "options") { output(await product("/options")); return; }
-  if (command === "agents") { output(await product("/agents")); return; }
-  if (command === "ssh") {
-    const list = await product("/agents");
-    const agent = list.data.find((a: any) => a.agent.name === args[0]);
-    if (!agent) fail("agent_not_found");
-    process.exitCode = await runSsh(url, authHeaders(auth()), agent.agent.id,
-      publicKey => product(`/agents/${encodeURIComponent(agent.agent.id)}/ssh`, { publicKey }), args.slice(1), controller.signal);
-    return;
-  }
-  if (command === "use") {
-    const list = await product("/agents");
-    const selected = list.data.find((a: any) => a.agent.name === args[0]);
-    if (!selected) fail("agent_not_found");
-    select(selected.agent.id); output(selected); return;
-  }
-  if (command === "delete") {
-    if (!values.yes) fail("confirm_with_yes");
-    const list = await product("/agents");
-    const target = list.data.find((a: any) => a.agent.name === args[0]);
-    if (!target) fail("agent_not_found");
-    await request(url, `/_mau/v1/agents/${encodeURIComponent(target.agent.id)}`, auth(), undefined, "DELETE");
-    if (session.agentId === target.agent.id) { delete session.agentId; privateFile(stateFile, session); }
-    output({ deleted: target.agent.name }); return;
-  }
-  if (command === "setup") {
-    if (!values.environment) fail("environment_profile_required");
-    const result = await product("/agents", { name: args[0], profileId: values.environment });
-    select(result.agent.id);
-    await pollEnvironment(result.agent.id, result.environment);
-    output(await product(`/agents/${encodeURIComponent(result.agent.id)}`)); return;
-  }
-  if (!session.agentId) fail("select_an_agent_first");
-  const path = `/agents/${encodeURIComponent(session.agentId!)}`;
-  if (command === "status") { output(await product(path)); return; }
-  if (command === "check") { output(await routing(path + "/check", {})); return; }
-  if (["environment-replace", "environment-rollback"].includes(command)) {
-    const current = await product(path + "/environment");
-    const status = await product(path + "/environment/" + (command === "environment-replace" ? "replace" : "rollback"), {
-      expectedOperationId: current.operationId, ...(command === "environment-replace" ? { profileId: args[0] } : {}),
-    });
-    output(await pollEnvironment(session.agentId!, status)); return;
-  }
-  if (["environment-create", "pause", "resume", "destroy", "reconcile"].includes(command)) {
-    const target = command === "environment-create" ? "" : "/" + command;
-    const status = await product(path + "/environment" + target, command === "environment-create" ? { profileId: args[0] } : {});
-    output(await pollEnvironment(session.agentId!, status)); return;
-  }
-  const pollConnection = async (job: any) => {
-    let shown = "";
-    if (job?.id) process.stderr.write(`Connection job: ${JSON.stringify(job.id)} — inspect with channel-jobs or channel-job ID\n`);
-    while (job?.state) {
-      if (job.url && shown !== job.url) {
-        const u = new URL(job.url);
-        if (u.protocol !== "https:" || /[\x00-\x1f\x7f-\x9f]/.test(job.url)) fail("invalid_consent_url");
-        process.stderr.write(job.url + "\n");
-        if (typeof job.qr === "string") process.stderr.write(job.qr.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "") + "\n");
-        shown = job.url;
-      }
-      if (job.state === "failed") {
-        output(job);
-        if (job.recovery) {
-          const recovery = job.recovery;
-          let command = "mau channel-connect feishu";
-          if (typeof recovery.appId === "string" && /^cli_[a-zA-Z0-9_]{1,128}$/.test(recovery.appId)) command += " --app-id " + recovery.appId;
-          else if (recovery.action === "authorize_existing_app") command += " --app-id APP_ID";
-          if (recovery.domain === "lark") command += " --domain lark";
-          process.stderr.write("Recover the selected Agent with: " + command + "\n");
-        }
-        fail(typeof job.error === "string" && /^[a-z][a-z0-9_]{0,100}$/.test(job.error) ? job.error : "connection_setup_failed");
-      }
-      if (job.state === "ready" || job.state === "pairing" || values["no-wait"]) return job;
-      if (!["starting", "waiting", "application", "telegram_pairing", "binding"].includes(job.state)) fail("invalid_connection_job");
-      if (!(Date.parse(job.expiresAt) > Date.now())) {
-        output(job); process.stderr.write("Inspect channel-jobs for the final result and recovery instructions.\n");
-        fail("connection_job_expired");
-      }
-      await delay(2000, undefined, { signal: controller.signal });
-      job = await routing(path + "/connection-jobs/" + encodeURIComponent(job.id));
-    }
-    return job;
-  };
-  if (command === "channel-jobs") { output(await routing(path + "/connection-jobs")); return; }
-  if (command === "channel-job") { output(await pollConnection(await routing(path + "/connection-jobs/" + encodeURIComponent(args[0]!)))); return; }
-  if (command === "channel-pair") {
-    output(await routing(path + "/connection-jobs/" + encodeURIComponent(args[0]!) + "/pairing", { code: secret(values["pairing-code-file"]) })); return;
-  }
-  if (command === "channel-connect") {
-    const kind = args[0];
-    let body: Record<string, unknown> = { kind };
-    if (kind === "feishu") body = { kind, domain: values.domain ?? "feishu", ...(values["app-id"] ? { appId: values["app-id"] } : {}) };
-    else if (kind === "telegram") body.token = secret(values["bot-token-file"]);
-    else if (kind === "grove-mail") body = { kind, serviceId: values["mail-service"], inboxId: values.inbox,
-      ownerEmail: values["owner-email"], apiKey: secret(values["api-key-file"]) };
-    else if (kind !== "weixin") fail("unknown_channel");
-    output(await pollConnection(await routing(path + "/connections", body))); return;
-  }
-}
-main().catch(error => {
-  process.stderr.write(controller.signal.aborted ? "interrupted\n" :
-    error instanceof Error && /^[a-z0-9_]+$/.test(error.message) ? error.message + "\n" : "operation_failed\n");
+
+main(process.argv.slice(2)).catch((error: unknown) => {
+  const failure = controller.signal.aborted ? { error: "interrupted" }
+    : error instanceof CliError ? { error: error.code, ...error.fields }
+    : { error: "operation_failed", message: error instanceof Error ? error.message : String(error) };
+  process.stderr.write(JSON.stringify(failure) + "\n");
   process.exitCode = 1;
 });
