@@ -3,33 +3,49 @@
     "configFile": "providers.json",
     "profiles": [
       {
-        "id": "cloud-codex",
-        "label": "Personal cloud Agent",
+        "id": "codex",
+        "label": "Codex",
         "owners": [
-          "@alice:agents.example"
+          "@owner:mau.example.com"
         ],
         "provider": "cloudflare",
-        "template": "agent-host-tools",
+        "template": "node24",
         "kernel": "codex",
         "runtimeId": "personal",
         "hostConfigFile": "cloud/host-profile.json",
         "directory": "/home/user/.agent-host-service",
         "port": 37420,
-        "lifetimeSeconds": 3600,
-        "onTimeout": "kill",
+        "lifetimeSeconds": 1800,
+        "onTimeout": "pause",
+        "idlePauseSeconds": 600,
         "files": [
           {
-            "source": "/private/alice/codex-auth.json",
+            "source": "cloud/agent-host.tgz",
+            "destination": "/opt/agent-environment/agent-host.tgz"
+          },
+          {
+            "source": "cloud/agent-host.sha256",
+            "destination": "/opt/agent-environment/agent-host.sha256"
+          },
+          {
+            "source": "cloud/codex-auth.json",
             "destination": "/home/user/.codex/auth.json"
+          },
+          {
+            "source": "cloud/start-host.sh",
+            "destination": "/opt/agent-environment/start.sh"
           }
         ]
       }
     ]
   },
+  "nativeWork": {
+    "partnerTools": true
+  },
   "edgeIdentity": {
     "provider": "cloudflare-access",
     "teamDomain": "https://example-team.cloudflareaccess.com",
     "audiences": ["ACCESS_APPLICATION_AUDIENCE_TAG"],
-    "owners": { "alice@example.com": "@alice:agents.example" }
+    "owners": { "owner@example.com": "@owner:mau.example.com" }
   }
 }

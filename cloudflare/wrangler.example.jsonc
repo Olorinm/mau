@@ -1,5 +1,6 @@
 {
-  // Copy to a private location, replace the placeholders and deploy with:
+  // `mau deploy` generates a deployment's configuration from this file (docs/deployment.md). By hand: copy it to
+  // a private location, replace the placeholders and run
   //   npx wrangler deploy --config /private/mau.wrangler.jsonc
   // `main`, `dockerfile` and `build_context` are relative to the copy; point them at this checkout.
   "name": "mau",
@@ -19,7 +20,7 @@
       "class_name": "Mau",
       "scheduling_policy": "durable_object",
       "images": {
-        "mau": { "dockerfile": "../Dockerfile", "build_context": ".." }
+        "mau": { "dockerfile": "../Dockerfile", "build_context": "..", "build_vars": { "SOURCE_REVISION": "unknown" } }
       },
       "ssh": { "enabled": false }
     }
@@ -40,6 +41,8 @@
     "RUN": "true",
     // Change to any other text after changing the configuration bucket: the container restarts and reads it.
     "CONFIG_REVISION": "1",
+    // The commit this deployment was built from. Nothing in the Worker reads it; `mau doctor` compares it with the checkout.
+    "SOURCE_REVISION": "unknown",
     "LOCATION_HINT": "apac",
     // UTC hour from which the daily encrypted backup is made. Remove to make none.
     "BACKUP_HOUR_UTC": "19",
