@@ -9,13 +9,16 @@ import { RouterError as WorkError } from "@agent-router/server";
 import { createMau } from "../../src/app.js";
 import { privateFile } from "../../src/files.js";
 import type { EnvironmentProvider } from "../../src/environments.js";
+import type { ExternalHosts } from "../../src/external-partners.js";
 import { accessIssuer } from "./access.js";
 
 export const alice = "@alice:example.test",
   aliceEmail = "alice@example.test",
   bob = "@bob:example.test",
   root = "/_mau/v1";
-export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
+export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRoot?: string;
+  /** Host links for partners that are agents on the owner's computers (`memoryExternalHosts`). */
+  externalHosts?: ExternalHosts; host?: (url: URL, init?: RequestInit) => Response | Promise<Response>;
   hostCapabilities?: { runIdempotency?: boolean };
   /** Members added to the runtime description Host returns, for example `capabilities`. */
   runtime?: Record<string, unknown>;
@@ -169,7 +172,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
         ...routerConfig,
       },
       optionsFile,
-      { environments: async () => ({ provider: (id: string) => {
+      { ...(serving.externalHosts ? { externalHosts: serving.externalHosts } : {}), environments: async () => ({ provider: (id: string) => {
         if (id !== "cloud") throw Object.assign(new Error("Provider is not configured."), { code: "unknown_provider" });
         return provider;
       } }),
@@ -182,7 +185,7 @@ export async function mauFixture(cleanup: Array<() => unknown>, serving: { webRo
           throw new WorkError("account_session_invalid", 401);
         },
       } },
-      serving,
+      serving.webRoot ? { webRoot: serving.webRoot } : {},
     );
     const server = mau.app.listen(0, "127.0.0.1");
     mau.attach(server);

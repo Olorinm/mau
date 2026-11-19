@@ -40,7 +40,9 @@ it("deploys everything from two flags, and a second run changes nothing", async 
     buckets: ["mau-access-logs", "mau-attachments", "mau-config", "mau-environment-backups", "mau-state"],
     objects: ["cloud/agent-host.sha256", "cloud/agent-host.tgz", "cloud/codex-auth.json", "cloud/host-profile.json", "cloud/start-host.sh", "gateway-key", "mau.env", "mau.json",
       "providers.json", "r2-access-key-id", "r2-secret-access-key"].map((key) => `mau-config/${key}`).concat("mau-environment-backups/artifacts/age-v1.3.2-linux-amd64").sort(),
-    tokens: ["mau-container-r2"], policies: ["mau liveness", "mau owner"], applications: ["mau.example.com", "mau.example.com/health/live"],
+    tokens: ["mau-container-r2"], policies: ["mau host link enroll", "mau host link socket", "mau liveness", "mau owner"],
+    // Beside the owner's login, three paths need none: the liveness probe, and where a computer's Host enrolls and connects.
+    applications: ["mau.example.com", "mau.example.com/_agent-router/v1/host-links/enroll", "mau.example.com/_agent-router/v1/host-links/socket", "mau.example.com/health/live"],
     workers: ["mau", "mau-environment"], domains: ["mau.example.com"], lifecycle: ["mau-access-logs: expire-after-30-days"] });
   // The container's key pair is limited to the three buckets it uses, and the Worker was given exactly that pair.
   const [token] = [...f.cloud.tokens];
@@ -297,7 +299,9 @@ it("generates a configuration the server starts on, with the owner mapped to the
   const call = async (path: string, email: string) => { const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}${path}`,
     { headers: { "cf-access-jwt-assertion": access.jwt({ email }) } }); return { status: response.status, data: await response.json() }; };
   expect(await call("/_mau/v1/account", "owner@example.com")).toMatchObject({ status: 200, data: { owner: "@owner:mau.example.com", via: "edge" } });
-  expect((await call("/_mau/v1/options", "owner@example.com")).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }] });
+  expect((await call("/_mau/v1/options", "owner@example.com")).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }],
+    // No host links are connected yet, so this server offers no partners on the owner's computer.
+    external: false });
   expect(await call("/_mau/v1/account", "stranger@example.com")).toMatchObject({ status: 403, data: { error: "owner_not_configured" } });
   // The provider file names the gateway and a key file the Environment package accepts (private, beside it).
   const { loadConfiguration } = await import("@olorinm/agent-environment");

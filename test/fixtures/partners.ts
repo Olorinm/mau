@@ -5,6 +5,7 @@ import { expect } from "vitest";
 import { ledgerApi, newIdempotencyKey, type ChatEvent } from "../../web/src/api/ledger";
 import { DurableStore } from "../../src/store.js";
 import type { PartnerMessage } from "../../src/partners.js";
+import type { ExternalHosts } from "../../src/external-partners.js";
 import { mauFixture } from "./mau.js";
 
 /** One run as the fixture's Host sees it. */
@@ -95,12 +96,14 @@ export async function partnersFixture(cleanup: Array<() => unknown>, options: { 
   /** Other runtimes of the Host and what the environment profile says about them (`mauFixture`). */
   runtimes?: Record<string, Record<string, unknown>>; profile?: Record<string, unknown>; hostConfigRuntimes?: unknown[];
   /** The built console, served by the fixture's Mau for browser tests. */
-  webRoot?: string } = {}) {
+  webRoot?: string;
+  /** Host links for partners that are agents on the owner's computers (`memoryExternalHosts`). */
+  externalHosts?: ExternalHosts } = {}) {
   const scripted = scriptedHost();
   const f = await mauFixture(cleanup, { host: scripted.host, hostCapabilities: { runIdempotency: true }, ...(options.runtime ? { runtime: options.runtime } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}), ...(options.profile ? { profile: options.profile } : {}),
     ...(options.hostConfigRuntimes ? { hostConfigRuntimes: options.hostConfigRuntimes } : {}),
-    ...(options.webRoot ? { webRoot: options.webRoot } : {}) },
+    ...(options.webRoot ? { webRoot: options.webRoot } : {}), ...(options.externalHosts ? { externalHosts: options.externalHosts } : {}) },
     { nativeWork: { partnerTools: true }, ...options.mau });
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");

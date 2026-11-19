@@ -21,7 +21,7 @@ it("finds a standing deployment healthy, down to its partners, and changes nothi
   expect(exitCode).toBe(0);
   expect(report.checks.map((check) => check.check)).toEqual(["node", "source-checkout", "docker", "wrangler", "cloudflared", "cloudflare-credentials", "deployment",
     "bucket:mau-config", "bucket:mau-state", "bucket:mau-attachments", "bucket:mau-access-logs", "bucket:mau-environment-backups", "r2-key-pair", "configuration-objects", "codex-sign-in",
-    "gateway", "gateway-key", "health", "access", "deployed-revision", "deployed-configuration", "backup", "account", "environment-profile", "partner:helper", "partner:scout", "partner:new"]);
+    "gateway", "gateway-key", "health", "access", "host-links", "deployed-revision", "deployed-configuration", "backup", "account", "environment-profile", "partner:helper", "partner:scout", "partner:new"]);
   // What cannot be said either way is null, with the reason.
   expect(report.checks.filter((check) => check.ok === null).map((check) => check.check)).toEqual(["backup", "partner:new"]);
   expect(named(report.checks, "backup")).toMatchObject({ detail: expect.stringContaining("no daily backup"), fix: "docs/deployment.md#daily-backup" });
@@ -83,4 +83,21 @@ it("checks the machine alone when there is no deployment, and a service by its U
   const signedOut = { ...client, effects: { ...f.runtime.effects, run: (command: string, args: string[]) => command === "cloudflared" && args[0] === "access" ? Promise.resolve({ code: 1, stdout: "", stderr: "" }) : original(command, args) } };
   expect(named((await doctor({ url: "https://mau.example.com" }, signedOut)).report.checks, "account")).toEqual({ check: "account", ok: null, detail: "no Access credential",
     fix: "cloudflared access login https://mau.example.com (or CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET of a service token)" });
+});
+
+it("finds the paths a computer's Host uses behind the login, and says how to open them", async () => {
+  const f = deploymentFixture(cleanup);
+  expect((await deploy(first, f.runtime)).exitCode).toBe(0);
+  expect(named((await doctor({}, f.runtime)).report.checks, "host-links")).toEqual({ check: "host-links", ok: true, detail: "a computer's Host reaches the service without a login" });
+  // Without their own applications the two paths fall under the owner's login.
+  const removed = f.cloud.applications.filter((application) => application.domain.includes("/host-links/"));
+  expect(removed).toHaveLength(2);
+  f.cloud.applications.splice(0, f.cloud.applications.length, ...f.cloud.applications.filter((application) => !removed.includes(application)));
+  const { exitCode, report } = await doctor({}, f.runtime);
+  expect(exitCode).toBe(1);
+  expect(named(report.checks, "host-links")).toEqual({ check: "host-links", ok: false, fix: "mau deploy",
+    detail: "behind the login: /_agent-router/v1/host-links/enroll, /_agent-router/v1/host-links/socket; a computer cannot pair with a partner" });
+  // Deploying again makes them.
+  expect((await deploy({}, f.runtime)).exitCode).toBe(0);
+  expect(named((await doctor({}, f.runtime)).report.checks, "host-links").ok).toBe(true);
 });

@@ -8,6 +8,7 @@ import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
 import { privateFile } from "../src/files.js";
 import { aliceToken, builtCli, edgeProxy } from "./fixtures/edge.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
+import { memoryExternalHosts } from "./fixtures/external-hosts.js";
 import { partnersFixture } from "./fixtures/partners.js";
 
 const cleanup: Array<() => unknown> = [];
@@ -25,7 +26,8 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   privateFile(join(directory, "authority.json"), authority.privateJwk);
   const connectors = await listen((_req, res) => res.setHeader("Content-Type", "application/json").end(JSON.stringify({ connections: [
     { id: "alice-gmail", kind: "google", owner: alice, label: "Gmail", account: { status: "connected", verification: "oauth" } }] })));
-  const f = await partnersFixture(cleanup, { mau: {
+  const links = memoryExternalHosts();
+  const f = await partnersFixture(cleanup, { externalHosts: links.hosts, mau: {
     connectorAccounts: { url: connectors, issuer: "fixture", audience: "fixture-connectors", authorityKeyFile: join(directory, "authority.json"), consentOrigins: ["https://accounts.example.test"] },
     connectedApps: { url: connectors, issuer: "fixture", audience: "fixture-connectors", callerKeyFile: join(directory, "authority.json") } } });
   // The Host is given the owner's text followed by its channel context; the scripted partner answers the text.
@@ -53,8 +55,24 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   const mate = await ok("partner", "create", "mate", "--share", "helper");
   expect(mate).toMatchObject({ agent: { name: "mate" }, environment: { sharedFrom: f.agent.id } });
   expect(await ok("partner", "show", "scout")).toEqual(scout);
-  expect((await mau("partner", "create", "extra")).error).toMatchObject({ error: "choose_profile_or_share" });
+  expect((await mau("partner", "create", "extra")).error).toMatchObject({ error: "choose_profile_share_or_external" });
   expect((await mau("partner", "create", "scout", "--profile", "cloud")).error).toEqual({ error: "partner_exists", name: "scout" });
+  // An agent on the owner's computer: the answer has the pairing code once, and its computer is managed under `device`.
+  const laptop = await ok("partner", "create", "laptop", "--external", "--duty", "Works on my laptop");
+  expect(laptop).toMatchObject({ agent: { name: "laptop" }, kind: "external", connection: "pairing", device: null, duty: "Works on my laptop",
+    pairing: { code: expect.stringMatching(/^PAIR-/), command: expect.stringContaining("--code PAIR-") } });
+  expect((await mau("partner", "create", "both", "--external", "--profile", "cloud")).error).toMatchObject({ error: "choose_profile_share_or_external" });
+  expect(await ok("device", "show", "laptop")).toEqual({ ownership: "owner", connection: "pairing", device: null });
+  const paired = links.enroll((await ok("device", "pair", "laptop")).code);
+  await f.until(async () => (await ok("partner", "show", "laptop")).host, "paired");
+  expect(await ok("device", "list")).toEqual({ data: [{ partner: { id: laptop.agent.id, name: "laptop" }, ownership: "owner", connection: "online",
+    device: { id: paired.id, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: paired.createdAt, lastSeenAt: expect.any(String) } }] });
+  expect((await mau("device", "show", "scout")).error).toMatchObject({ error: "partner_not_external" });
+  expect((await mau("env", "show", "laptop")).error).toMatchObject({ error: "not_available_for_external_partner" });
+  expect((await mau("device", "remove", "laptop")).error).toMatchObject({ error: "confirm_with_yes" });
+  expect(await ok("device", "remove", "laptop", "--yes")).toEqual({ removed: "laptop" });
+  expect(await ok("device", "show", "laptop")).toEqual({ ownership: "owner", connection: "pairing", device: null });
+  expect(await ok("partner", "delete", "laptop", "--yes")).toEqual({ deleted: "laptop" });
   expect(await ok("env", "show", "scout")).toMatchObject({ state: "ready", profileId: "cloud" });
   expect(await ok("env", "pause", "scout")).toMatchObject({ state: "paused", busy: false });
   expect((await ok("partner", "dismiss", "scout")).dismissed).toBeTruthy();

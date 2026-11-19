@@ -8,7 +8,7 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { EXTERNAL_PARTNERS, GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
@@ -37,6 +37,14 @@ const DIRECT_CHECK_MS = 15_000;
 const NOTE_LIMIT = 20;
 /** Environment states in which a partner cannot be woken by a message. */
 const UNREACHABLE = ["paused", "pausing", "deleting", "deleted", "needs_action"];
+/**
+ * Where a partner is found. `state` is `ready` when it can work now, and otherwise what a roster shows. `reachable`:
+ * a message can be left for it. `external`: it is an agent on the owner's own computer, which Mau only messages.
+ */
+export interface Presence { state: string; reachable: boolean; external: boolean }
+/** The presence of a partner that runs in an environment of Mau's, from that environment's state. */
+export const environmentPresence = (state: string | undefined): Presence | undefined =>
+  state === undefined ? undefined : { state, reachable: !UNREACHABLE.includes(state), external: false };
 const MESSAGE_BYTES = 16_000;
 /** The answers a hand-over shows the owner share this many bytes; Router admits 64,000 for what an input shows. */
 const SHOWN_ANSWER_BYTES = 48_000;
@@ -135,7 +143,10 @@ export interface PartnersPort {
   kernel(agentId: string): string | undefined;
   /** The kernels a partner in the agent's environment can run on. */
   kernels(agentId: string): string[];
-  environmentState(owner: string, agentId: string): string | undefined;
+  /** `undefined`: the partner has neither an environment nor a computer. */
+  presence(owner: string, agentId: string): Presence | undefined;
+  /** What ends with a dismissal beside the partner's place in the roster: the pairing of a computer. */
+  dismissed(owner: string, agentId: string): Promise<void>;
   /** Refuses when another partner cannot run in the holder's environment on that kernel. */
   assertShareable(owner: string, holder: string, kernel: string | undefined): Promise<void>;
   share(owner: string, agentId: string, holder: string, duty: string, kernel: string | undefined): Promise<unknown>;
@@ -313,16 +324,20 @@ export class Partners {
   }
   private state(owner: string, agentId: string) {
     if (this.dismissed(agentId)) return "dismissed";
-    const environment = this.port.environmentState(owner, agentId);
-    if (!environment) return "no_environment";
+    const presence = this.port.presence(owner, agentId);
+    if (!presence) return "no_environment";
+    // A computer that is not connected is not working, whatever waits for it.
+    if (presence.external && presence.state !== "ready") return presence.state;
     if (this.active.get(agentId)?.size || this.outstanding(owner, ["sending", "running"]).some(message => message.to.agentId === agentId)) return "working";
-    return environment === "ready" ? "idle" : environment;
+    return presence.state === "ready" ? "idle" : presence.state;
   }
   /** Name, duty and state of the owner's partners: what every turn in the owner conversation is shown. */
   private summary(owner: string, includeDismissed: boolean) {
     return this.partners(owner).filter(agent => includeDismissed || !this.dismissed(agent.id))
-      .map(agent => ({ id: agent.id, name: agent.name, duty: this.port.duty(agent.id) ?? null, status: this.state(owner, agent.id) }));
+      .map(agent => ({ id: agent.id, name: agent.name, duty: this.port.duty(agent.id) ?? null, status: this.state(owner, agent.id),
+        ...(this.external(owner, agent.id) ? { external: true } : {}) }));
   }
+  private external(owner: string, agentId: string) { return this.port.presence(owner, agentId)?.external === true; }
   /** The owner's partners with their settings, activity and what waits at each: the roster, and the owner's list. */
   async list(owner: string, includeDismissed = true) {
     const waiting = this.outstanding(owner, ["sending", "running"]);
@@ -346,6 +361,7 @@ export class Partners {
     let options: ModelSettingsView | undefined;
     try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
     const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
+    const partners = (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId);
     const choices = (view: ModelSettingsView | undefined) => ({
       models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
       efforts: view?.efforts ?? [] });
@@ -359,7 +375,7 @@ export class Partners {
     }
     return {
       you: { name: self.name, duty: self.duty ?? null },
-      partners: (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId).map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
+      partners: partners.map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
         // The model reads names. Each member keeps its place, so a roster reads as it did before.
         ...(partner.recruitedBy ? { recruitedBy: partner.recruitedBy.name } : {}),
         model: partner.model ?? "default", effort: partner.effort ?? "default",
@@ -373,6 +389,7 @@ export class Partners {
         ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
         ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
       },
+      ...(partners.some(partner => partner.external) ? { externalNote: EXTERNAL_PARTNERS } : {}),
       limits: { waitingMessages: WAITING_LIMIT },
       guide: GUIDE,
     };
@@ -390,6 +407,8 @@ export class Partners {
     const record = this.store.get<{ agentId?: string }>(RECRUITS, key);
     // A dismissed partner comes back as it was: on its own kernel, whatever the recruit names.
     const returning = existing && this.dismissed(existing.id) && existing.id !== self.agentId ? existing : undefined;
+    if (returning && this.external(owner, returning.id)) throw new PartnerError("partner_not_recruitable", { instruction:
+      `"${returning.name}" is an agent on the owner's own computer that was dismissed. The owner connects such a partner; a recruit cannot bring it back. Tell the owner to restore it.` });
     const selection = await this.selection(admission, input, returning?.id);
     let restored = false, agent: { id: string; name: string } | undefined = existing;
     if (returning) { this.store.delete(DISMISSALS, returning.id); restored = true; }
@@ -483,28 +502,31 @@ export class Partners {
     const partners = this.partners(admission.owner), found = partners.find(agent => agent.name === input.name);
     if (!input.name || !found) throw new PartnerError("partner_not_found", { partners: partners.filter(agent => agent.id !== admission.agentId).map(agent => agent.name) });
     if (found.id === admission.agentId) throw new PartnerError("partner_is_self", { instruction: "A partner cannot dismiss itself." });
-    this.archive(admission.owner, found.id, this.self(admission).name);
+    await this.archive(admission.owner, found.id, this.self(admission).name);
     return { status: "dismissed", name: found.name, next: NEXT.dismissed };
   }
   /** Dismiss: archive. The partner keeps everything and is hidden from the roster; `restore` or a recruit of its name brings it back. */
-  archive(owner: string, agentId: string, by: string) {
+  async archive(owner: string, agentId: string, by: string) {
     if (!this.partners(owner).some(agent => agent.id === agentId)) throw new PartnerError("partner_not_found");
     if (!this.dismissed(agentId)) this.store.set(DISMISSALS, agentId, { owner, at: iso(), by });
+    await this.port.dismissed(owner, agentId);
   }
   restore(owner: string, agentId: string) {
     if (!this.partners(owner).some(agent => agent.id === agentId)) throw new PartnerError("partner_not_found");
     this.store.delete(DISMISSALS, agentId);
   }
-  private checkText(text: string) {
+  private checkText(text: string, external = false) {
     if (!text.trim()) throw new PartnerError("partner_message_empty", { instruction: "Write the message: the partner sees nothing else of this conversation." });
     if (Buffer.byteLength(text) > MESSAGE_BYTES) throw new PartnerError("partner_message_too_large", { limitBytes: MESSAGE_BYTES,
-      instruction: "Shorten the message, or put long material in a file in the shared environment and name the file." });
+      instruction: external ? "Shorten the message, or send it in parts: this partner is on the owner's own computer and cannot read files of your environment."
+        : "Shorten the message, or put long material in a file in the shared environment and name the file." });
   }
   private async message(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     if (!input.intent || input.text === undefined || !input.to) throw new PartnerError("partners_invalid_input", { instruction: "action=message needs to, text and intent." });
-    this.checkText(input.text);
+    const to = this.recipient(admission, input.to);
+    this.checkText(input.text, this.external(admission.owner, to.agentId));
     const origin = await this.origin(admission, turn);
-    return this.send(admission, turn, origin, callId, this.recipient(admission, input.to), input.intent, input.text);
+    return this.send(admission, turn, origin, callId, to, input.intent, input.text);
   }
   private async send(admission: RunAdmission, turn: Turn, origin: Origin, callId: string, to: Party, intent: Intent, text: string) {
     const owner = admission.owner, from = this.self(admission);
@@ -515,9 +537,11 @@ export class Partners {
       if (waiting.length >= WAITING_LIMIT) throw new PartnerError("partner_message_limit_reached", { waiting: waiting.map(message => ({ messageId: message.id, to: message.to.name })),
         instruction: `${WAITING_LIMIT} of your messages are waiting for replies, which is the limit. Nothing was queued. End this turn; send this one after a reply has come back.` });
     }
-    const environment = this.port.environmentState(owner, to.agentId);
-    if (!environment || UNREACHABLE.includes(environment)) throw new PartnerError("partner_unavailable", { environment: environment ?? "none",
-      instruction: `"${to.name}" cannot be woken by a message now: its environment is ${environment ?? "missing"}. Nothing was sent. Tell the owner.` });
+    const presence = this.port.presence(owner, to.agentId);
+    if (presence?.external && !presence.reachable) throw new PartnerError("partner_unavailable", { device: presence.state,
+      instruction: `"${to.name}" is an agent on the owner's own computer, and no computer is paired with it now. Nothing was sent. Tell the owner to pair it again.` });
+    if (!presence?.reachable) throw new PartnerError("partner_unavailable", { environment: presence?.state ?? "none",
+      instruction: `"${to.name}" cannot be woken by a message now: its environment is ${presence?.state ?? "missing"}. Nothing was sent. Tell the owner.` });
     if (intent === "inform" && this.outstanding(owner, ["queued"]).filter(message => message.to.agentId === to.agentId).length >= NOTE_LIMIT)
       throw new PartnerError("partner_note_limit_reached", { instruction: `${NOTE_LIMIT} notes already wait for "${to.name}" to read. Nothing was recorded. Send what matters as a message with intent ask or relay.` });
     const sender = this.authorization(admission, turn), theirs = this.port.connections(owner, to.agentId);
@@ -540,8 +564,9 @@ export class Partners {
   }
   private receipt(message: PartnerMessage) {
     const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent };
-    return message.intent === "inform" ? { ...base, expectsReply: false, next: NEXT.informed(message.to.name) }
-      : { ...base, expectsReply: true, next: NEXT.sent(message.to.name) };
+    if (message.intent === "inform") return { ...base, expectsReply: false, next: NEXT.informed(message.to.name) };
+    const presence = this.port.presence(message.owner, message.to.agentId);
+    return { ...base, expectsReply: true, next: presence?.external ? NEXT.sentExternal(message.to.name, presence.state === "ready") : NEXT.sent(message.to.name) };
   }
   private async wait(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     const owner = admission.owner, self = admission.agentId, task = await this.task(admission, turn);
@@ -654,7 +679,7 @@ export class Partners {
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
-    await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
+    await work.submit({ eventId: message.id, sessionId, input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message) : incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },

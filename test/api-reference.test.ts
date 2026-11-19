@@ -39,7 +39,7 @@ it("lists exactly the routes the service registers", async () => {
   // Bodies are JSON Schema of what the route parses.
   const body = (method: string, path: string) => mauApiReference.find(route => route.method === method && route.path === apiRoot + path)!.body;
   expect(body("PUT", "/agents/:id/connectors")).toMatchObject({ type: "object", properties: { connections: { type: "array" } }, required: ["connections"], additionalProperties: false });
-  expect(body("POST", "/agents")).toMatchObject({ anyOf: [{ required: ["name", "profileId"] }, { required: ["name", "shareWith"] }] });
+  expect(body("POST", "/agents")).toMatchObject({ anyOf: [{ required: ["name", "profileId"] }, { required: ["name", "shareWith"] }, { required: ["name", "kind"] }] });
   expect(body("GET", "/agents")).toBeUndefined();
 });
 
