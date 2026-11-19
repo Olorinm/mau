@@ -7,6 +7,8 @@
 
 # Mau
 
+**English** | [简体中文](README.zh-CN.md)
+
 **Your own team of AI partners, running in your own cloud.**
 
 Each partner is a native coding agent with its own sandbox, memory and chat.
