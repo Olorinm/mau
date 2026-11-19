@@ -44,8 +44,3 @@ it("derives one configuration revision from every object", () => {
   expect(configRevision(files)).not.toBe(configRevision(new Map([...files, ["extra", Buffer.from("")]])));
   expect(configRevision(files)).not.toBe(configRevision(new Map([["mau.json", Buffer.from("{ }")], ["cloud/start-host.sh", Buffer.from("#!/bin/sh")]])));
 });
-  expect(parseDeployArgs(["--name", "team", "--access-team-domain", "https://t.cloudflareaccess.com", "--access-audience", "aud", "--r2-access-key-id-file", "a", "--r2-secret-access-key-file", "b", "--codex-auth", "c", "--dir", "d"]))
-    .toEqual({ name: "team", accessTeamDomain: "https://t.cloudflareaccess.com", accessAudience: "aud", r2AccessKeyIdFile: "a", r2SecretAccessKeyFile: "b", codexAuth: "c", dir: "d" });
-  expect(parseDoctorArgs(["--url", "https://mau.example.com"])).toEqual({ url: "https://mau.example.com" });
-  expect(() => parseDeployArgs(["--unknown"])).toThrow();
-});
