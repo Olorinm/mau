@@ -1,11 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { EXTERNAL_PARTNERS, NEXT, contextText, externalIncomingText } from "../src/partner-text.js";
-import { ExternalPartners, type ExternalPartnersPort } from "../src/external-partners.js";
-import { HOST_LINK_PATHS, pairCommand } from "../src/host-links.js";
-import { DurableStore } from "../src/store.js";
+import { HOST_LINK_ENROLL_PATH, HOST_LINK_SOCKET_PATH } from "@agent-router/server";
+import { pairCommand } from "../src/external-partners.js";
+import { HOST_LINK_PATHS } from "../src/deploy/host-links.js";
 import type { PartnerMessage } from "../src/partners.js";
-import { memoryHostLinks, type MemoryHostLinks } from "./fixtures/host-links.js";
-import { mauFixture, root } from "./fixtures/mau.js";
+import { linkComputer } from "./fixtures/host-links.js";
+import { root } from "./fixtures/mau.js";
 import { partnersFixture, type PartnersFixture, type Turn } from "./fixtures/partners.js";
 
 // Partners that are agents on the owner's own computers: Mau sends them messages, takes their replies, and nothing else.
@@ -20,24 +20,20 @@ const call = async (f: { base: string }, method: string, path: string, body?: un
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, data: response.status === 204 ? null : await response.json() as any };
 };
+const CODE = /^[0-9A-Z]{4}-[0-9A-Z]{4}$/;
 /** A partner on the owner's computer, created through the API and paired with a computer that is connected. */
-async function paired(f: PartnersFixture, links: MemoryHostLinks, name = "laptop-agent", duty = "Works on the owner's laptop") {
+async function paired(f: PartnersFixture, name = "laptop-agent", duty = "Works on the owner's laptop") {
   const created = await f.api("/agents", { name, kind: "external", duty });
   expect(created.status).toBe(201);
-  const link = links.enroll(created.data.pairing.code);
-  await f.until(async () => (await f.api(`/agents/${created.data.agent.id}`)).data.host, "host binding");
-  return { id: created.data.agent.id as string, link };
+  const computer = await linkComputer(f.base, created.data.pairing.code, cleanup);
+  await f.until(async () => (await f.api(`/agents/${created.data.agent.id}`)).data.connection === "online", "paired and connected");
+  return { id: created.data.agent.id as string, computer };
 }
-const fixture = async () => { const links = memoryHostLinks(); return { links, f: await partnersFixture(cleanup, { hostLinks: links }) }; };
+const fixture = () => partnersFixture(cleanup);
+const partnerView = async (f: PartnersFixture, id: string) => (await f.api("/partners")).data.data.find((partner: any) => partner.id === id);
 
-it("creates a partner in one of three forms, and one on the owner's computer only where computers can pair", async () => {
-  const without = await mauFixture(cleanup);
-  expect((await without.api("/options")).data.external).toBe(false);
-  expect(await without.api("/agents", { name: "laptop-agent", kind: "external" })).toEqual({ status: 503, data: { error: "external_partners_unavailable" } });
-  expect((await without.api("/agents")).data.data.map((a: any) => a.agent.name)).toEqual(["helper"]);
-
-  const { f, links } = await fixture();
-  expect((await f.api("/options")).data.external).toBe(true);
+it("creates a partner in one of three forms; one on the owner's computer waits for its pairing", async () => {
+  const f = await fixture();
   // One form at a time, and an agent that is not the owner's own cannot be created yet.
   for (const body of [{ name: "x", kind: "external", profileId: "cloud" }, { name: "x", kind: "external", shareWith: f.agent.id }, { name: "x", kind: "other" }, { name: "x" },
     { name: "x", kind: "external", ownership: "anyone" }, { name: "x", kind: "external", kernel: "codex" }])
@@ -48,11 +44,12 @@ it("creates a partner in one of three forms, and one on the owner's computer onl
   const created = await f.api("/agents", { name: "laptop-agent", kind: "external", duty: "Works on the owner's laptop" });
   expect(created.status).toBe(201);
   expect(created.data).toMatchObject({ agent: { name: "laptop-agent" }, kind: "external", ownership: "owner", connection: "pairing", device: null, host: null, environment: null, kernel: null,
-    duty: "Works on the owner's laptop", pairing: { code: "PAIR-0001", expiresAt: expect.any(String), command: pairCommand("http://127.0.0.1", "PAIR-0001") } });
-  expect(created.data.pairing.command).toBe("agent-host link --config host.json --url http://127.0.0.1 --code PAIR-0001");
+    duty: "Works on the owner's laptop", pairing: { code: expect.stringMatching(CODE), expiresAt: expect.any(String) } });
+  const { code } = created.data.pairing;
+  expect(created.data.pairing.command).toBe(`agent-host link --config host.json --url http://127.0.0.1 --code ${code}`);
   // Only the answer of a request that makes a code has it.
   const id = created.data.agent.id;
-  expect(JSON.stringify([(await f.api(`/agents/${id}`)).data, (await f.api("/agents")).data, (await f.api("/devices")).data])).not.toContain("PAIR-");
+  expect(JSON.stringify([(await f.api(`/agents/${id}`)).data, (await f.api("/agents")).data, (await f.api("/devices")).data])).not.toContain(code);
   // The same request again leaves the partner as it is; its duty is fixed, and it never gets an environment.
   expect((await f.api("/agents", { name: "laptop-agent", kind: "external", duty: "Works on the owner's laptop" })).data.agent.id).toBe(id);
   expect(await f.api("/agents", { name: "laptop-agent", kind: "external", duty: "Another duty" })).toEqual({ status: 409, data: { error: "agent_duty_immutable" } });
@@ -64,50 +61,54 @@ it("creates a partner in one of three forms, and one on the owner's computer onl
   expect(f.creates).toBe(1);
   expect((await f.api(`/agents/${f.agent.id}`)).data).toMatchObject({ kind: "managed", environment: { state: "ready" } });
   expect((await f.api(`/agents/${f.agent.id}`)).data).not.toHaveProperty("device");
-  expect(links.links.size).toBe(0);
+  expect(f.mau.router.hostLinks.list("@alice:example.test")).toEqual([]);
 }, 60_000);
 
 it("shows the paired computer, replaces it when another pairs, and ends the pairing on request", async () => {
-  const { f, links } = await fixture();
-  const { id, link } = await paired(f, links);
-  const device = { id: link.id, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: link.createdAt, lastOnlineAt: expect.any(String) };
+  const f = await fixture(), links = f.mau.router.hostLinks, alice = "@alice:example.test";
+  const { id, computer } = await paired(f);
+  const link = links.get(id)!;
+  const device = { id: computer.linkId, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: link.createdAt, lastOnlineAt: expect.any(String) };
   expect((await f.api(`/agents/${id}`)).data).toMatchObject({ kind: "external", ownership: "owner", connection: "online", kernel: "claude", host: { runtimeId: "local" }, environment: null, device });
   expect((await f.api(`/agents/${id}/device`)).data).toEqual({ ownership: "owner", connection: "online", device });
   expect((await f.api("/devices")).data).toEqual({ data: [{ partner: { id, name: "laptop-agent" }, ownership: "owner", connection: "online", device }] });
   expect(await f.api(`/agents/${f.agent.id}/device`)).toEqual({ status: 409, data: { error: "partner_not_external" } });
   expect((await call(f, "DELETE", `/agents/${f.agent.id}/device`)).status).toBe(409);
   expect((await f.api(`/agents/${id}/device`, undefined, "bob")).status).toBe(404);
+  // The binding is the link's own, which Router resolves; Mau's Host provider never serves one.
+  expect(f.mau.router.connections.configuration(f.service.agent(id))!.host).toMatchObject({ binding: `link:${computer.linkId}`, runtimeId: "local", instructions: "" });
+  expect(() => f.mau.environments.assertReady(id, `link:${computer.linkId}`)).toThrow("environment_not_ready");
 
-  links.connect(id, false);
-  expect((await f.api(`/agents/${id}`)).data).toMatchObject({ connection: "offline", device: { online: false } });
-  expect((await f.api("/partners")).data.data.find((partner: any) => partner.id === id)).toMatchObject({ status: "offline", external: true, kernel: "claude" });
+  computer.disconnect();
+  await f.until(async () => (await f.api(`/agents/${id}`)).data.connection === "offline", "offline");
+  expect((await f.api(`/agents/${id}`)).data).toMatchObject({ device: { online: false }, host: { runtimeId: "local" } });
+  expect(await partnerView(f, id)).toMatchObject({ status: "offline", external: true, kernel: "claude" });
 
   // A new code replaces an unused one, and the computer that pairs with it replaces the one paired before.
   const first = (await f.api(`/agents/${id}/device/pair`, {})).data, second = (await f.api(`/agents/${id}/device/pair`, {})).data;
-  expect(second).toEqual({ code: expect.stringMatching(/^PAIR-/), expiresAt: expect.any(String), command: pairCommand("http://127.0.0.1", second.code) });
-  expect(() => links.enroll(first.code)).toThrow("pairing_code_invalid");
-  const desktop = links.enroll(second.code, { name: "desktop", platform: "win32", runtime: { id: "work", kernel: "codex" } });
+  expect(second).toEqual({ code: expect.stringMatching(CODE), expiresAt: expect.any(String), command: pairCommand("http://127.0.0.1", second.code) });
+  await expect(linkComputer(f.base, first.code, cleanup)).rejects.toThrow("host_link_code_invalid");
+  const desktop = await linkComputer(f.base, second.code, cleanup, { name: "desktop", platform: "win32", runtime: { id: "work", kernel: "codex" } });
   await f.until(async () => (await f.api(`/agents/${id}`)).data.host?.runtimeId === "work", "second computer");
-  await f.until(() => links.links.size === 1, "first computer disconnected");
-  expect((await f.api(`/agents/${id}`)).data).toMatchObject({ connection: "online", kernel: "codex", device: { id: desktop.id, name: "desktop", platform: "win32", kernel: "codex" } });
-  // The binding is the link's own, which Router resolves; Mau's Host provider never serves one.
-  expect(f.mau.router.connections.configuration(f.service.agent(id))!.host).toMatchObject({ binding: `link:${desktop.id}`, runtimeId: "work", instructions: "" });
-  expect(() => f.mau.environments.assertReady(id, `link:${desktop.id}`)).toThrow("environment_not_ready");
+  expect(links.list(alice).map(item => item.id)).toEqual([desktop.linkId]);
+  expect((await f.api(`/agents/${id}`)).data).toMatchObject({ connection: "online", kernel: "codex", device: { id: desktop.linkId, name: "desktop", platform: "win32", kernel: "codex" } });
+  expect(await computer.connect()).toBe(false);
 
   expect((await call(f, "DELETE", `/agents/${id}/device`)).status).toBe(204);
-  expect(links.links.size).toBe(0);
+  expect(links.list(alice)).toEqual([]);
   expect((await f.api(`/agents/${id}`)).data).toMatchObject({ kind: "external", connection: "pairing", device: null, host: null, kernel: null });
-  // A link ended at the computer leaves the partner waiting for a pairing as well.
-  const again = links.enroll((await f.api(`/agents/${id}/device/pair`, {})).data.code);
+  expect(await desktop.connect()).toBe(false);
+  // A link ended through Router's own route leaves the partner waiting for a pairing as well.
+  const again = await linkComputer(f.base, (await f.api(`/agents/${id}/device/pair`, {})).data.code, cleanup);
   await f.until(async () => (await f.api(`/agents/${id}`)).data.host, "paired again");
-  links.hosts.revoke("@alice:example.test", again.id);
-  await f.until(async () => (await f.api(`/agents/${id}`)).data.host === null, "revoked at the computer");
+  links.revoke(alice, again.linkId);
+  await f.until(async () => (await f.api(`/agents/${id}`)).data.host === null, "revoked");
   expect((await f.api(`/agents/${id}`)).data.connection).toBe("pairing");
 }, 60_000);
 
 it("gives a partner on the owner's computer nothing of Mau's: no memory, skills, connectors, model, environment or schedule", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
+  const f = await fixture();
+  const { id } = await paired(f);
   const agent = `/agents/${id}`;
   for (const [method, path, body] of [
     ["GET", "/memory"], ["POST", "/memory", { action: "add", content: "prefers tea" }], ["GET", "/memory/mutations"], ["POST", "/memory/mutations/seen", { through: 1 }],
@@ -137,22 +138,22 @@ it("gives a partner on the owner's computer nothing of Mau's: no memory, skills,
   expect((await f.api(agent + "/device")).status).toBe(200);
 }, 60_000);
 
-it("runs the owner's turn at the computer without Mau's Host: no tools, memory or records of Mau, and still shown as working", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
+it("runs the owner's turn at the computer as text only, without Mau's Host, and still shows it working", async () => {
+  const f = await fixture();
+  const { id, computer } = await paired(f);
   let end!: (answer: string) => void;
-  links.respond(() => new Promise<string>(resolve => { end = resolve; }));
+  computer.respond(() => new Promise<string>(resolve => { end = resolve; }));
   await f.say(id, "Rename the photos in ~/Pictures");
-  const turn = await f.until(() => links.turns[0], "turn at the computer");
-  // The computer's Host refuses anything but text, so the turn arriving at all says it carried none of Mau's tools.
-  expect(turn.request.input.split("\n")[0]).toBe("Rename the photos in ~/Pictures");
-  expect(turn.request).not.toHaveProperty("tools");
-  expect(turn.request.instructions).toBe("");
+  const turn = await f.until(() => computer.turns[0], "turn at the computer");
+  // The owner's text, then Router's one line of routing ids; no instructions or tools: the computer's Host refuses a run that carries any.
+  expect(turn.body.input.split("\n")).toEqual(["Rename the photos in ~/Pictures", expect.stringMatching(/^Channel context \(provider routing IDs\): \{/)]);
+  for (const field of ["instructions", "tools", "toolOutput", "inputItems", "attachments", "settings", "admission"]) expect(turn.body[field] || undefined, field).toBeUndefined();
+  expect(computer.refused).toEqual([]);
   // Mau's Host does not see the run; that the partner is working is read from Router.
-  expect((await f.api("/partners")).data.data.find((partner: any) => partner.id === id)).toMatchObject({ status: "working", external: true });
+  expect(await partnerView(f, id)).toMatchObject({ status: "working", external: true });
   end("Done on the laptop.");
   expect(await f.until(async () => (await f.answers(id))[0], "answer")).toBe("Done on the laptop.");
-  await f.until(async () => (await f.api("/partners")).data.data.find((partner: any) => partner.id === id).status === "idle", "idle again");
+  await f.until(async () => (await partnerView(f, id)).status === "idle", "idle again");
   // Nothing of the turn went into Mau's history, memory or review records.
   await f.settle(300);
   f.store(store => {
@@ -168,25 +169,26 @@ it("runs the owner's turn at the computer without Mau's Host: no tools, memory o
 }, 60_000);
 
 it("keeps a message for a computer that is off until it is back, and says offline meanwhile", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
-  links.connect(id, false);
+  const f = await fixture();
+  const { id, computer } = await paired(f);
+  computer.disconnect();
+  await f.until(async () => (await f.api(`/agents/${id}`)).data.connection === "offline", "offline");
   await f.say(id, "Are you there?");
   f.respond(async (turn: Turn) => JSON.stringify(await turn.call("partners", { action: "message", to: "laptop-agent", intent: "ask", text: "Which files changed today?" })));
   await f.say(f.agent.id, "Ask the laptop");
   const receipt = JSON.parse(await f.until(async () => (await f.answers(f.agent.id))[0], "receipt"));
   expect(receipt).toMatchObject({ status: "sent", to: "laptop-agent", intent: "ask", expectsReply: true, next: NEXT.sentExternal("laptop-agent", false) });
   await f.settle(1500);
-  expect(links.turns).toEqual([]);
+  expect(computer.turns).toEqual([]);
   expect(f.messages()).toMatchObject([{ id: receipt.messageId, status: "running" }]);
   // Waiting for it does not make it working.
-  expect((await f.api("/partners")).data.data.find((partner: any) => partner.id === id)).toMatchObject({ status: "offline", waiting: { messages: 1 } });
+  expect(await partnerView(f, id)).toMatchObject({ status: "offline", waiting: { messages: 1 } });
 
-  links.connect(id, true);
-  await f.until(() => links.turns.length === 2, "both turns once the computer is back");
-  const inputs = links.turns.map(turn => turn.request.input);
-  expect(inputs.some(input => input.startsWith("Are you there?"))).toBe(true);
-  // Router delivers a partner's message as text that says it is no human's, and Mau's text is the message.
+  expect(await computer.connect()).toBe(true);
+  await f.until(() => computer.turns.length === 2, "both turns once the computer is back");
+  const inputs = computer.turns.map(turn => turn.body.input as string);
+  expect(inputs.some(input => input.startsWith("Are you there?\n"))).toBe(true);
+  // A partner's message is delivered as text that says no human wrote it, and Mau's text is the message.
   const delivered = inputs.find(input => !input.startsWith("Are you there?"))!;
   expect(delivered.endsWith("\n\n" + externalIncomingText(f.record(receipt.messageId)))).toBe(true);
   expect(delivered).toContain("[Automated delivery: this input is not a message from a human user]");
@@ -194,9 +196,9 @@ it("keeps a message for a computer that is off until it is back, and says offlin
 }, 60_000);
 
 it("lets the main partner relay, ask and inform a partner on the owner's computer, and brings its reply back", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
-  links.respond(turn => turn.request.input.includes("budget") ? "The budget file says 20000." : "Noted.");
+  const f = await fixture();
+  const { id, computer } = await paired(f);
+  computer.respond(turn => turn.body.input.includes("budget") ? "The budget file says 20000." : "Noted.");
   const said: Record<string, any> = {};
   f.respond(async (turn: Turn) => {
     if (turn.text.includes("[Partner results")) return `Passing on: ${turn.text.split("-----")[2]?.trim()}`;
@@ -216,14 +218,14 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   expect(said.recruit).toMatchObject({ isError: true, error: "partner_name_taken" });
 
   // The computer gets the message with who sent it and where the answer goes, and the note left before it.
-  const turn = await f.until(() => links.turns[0], "turn at the computer");
-  const message = f.record(said.relay.messageId), note = f.record(said.inform.messageId);
-  expect(turn.request.input.endsWith("\n\n" + externalIncomingText(message, [note]))).toBe(true);
-  expect(turn.request.input).toContain("- From \"helper\", " + note.createdAt + ": \"The trip moved to June.\"");
-  expect(turn.request.input).toContain("The owner asks: what is the budget?");
+  const turn = await f.until(() => computer.turns[0], "turn at the computer");
+  const message = f.record(said.relay.messageId), note = f.record(said.inform.messageId), input = turn.body.input as string;
+  expect(input.endsWith("\n\n" + externalIncomingText(message, [note]))).toBe(true);
+  expect(input).toContain("- From \"helper\", " + note.createdAt + ": \"The trip moved to June.\"");
+  expect(input).toContain("The owner asks: what is the budget?");
   // The turn is a delegation: Router says so in its own words before the message, and the owner is not its author.
-  expect(turn.request.input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
-  expect(turn.request.admission).toMatchObject({ kind: "delegation", reference: message.id, agentId: id });
+  expect(input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
+  expect(computer.refused).toEqual([]);
   expect(message).toMatchObject({ sentTo: { kernel: "claude", model: null, effort: null }, grants: { connections: [] } });
   // The note was carried by that message, once.
   await f.until(() => f.record(said.inform.messageId).status === "seen", "inform read");
@@ -236,8 +238,9 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   await f.say(f.agent.id, "Tell the laptop the hotel is booked");
   await f.until(() => said.later, "second inform");
   await f.say(id, "What do you know?");
-  const owners = await f.until(() => links.turns[1], "the owner's turn");
-  expect(owners.request.input).not.toContain("The hotel is booked.");
+  const owners = await f.until(() => computer.turns[1], "the owner's turn");
+  expect(owners.body.input.split("\n")[0]).toBe("What do you know?");
+  expect(owners.body.input).not.toContain("The hotel is booked.");
   await f.until(async () => (await f.answers(id)).length === 2, "the owner's turn ended");
   expect(f.record(said.later.messageId).status).toBe("queued");
   f.respond(async (turn: Turn) => {
@@ -246,18 +249,18 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
     return "Asked.";
   });
   await f.say(f.agent.id, "Ask the laptop which hotel");
-  const carried = await f.until(() => links.turns[2], "turn carrying the note");
-  expect(carried.request.input.endsWith("\n\n" + externalIncomingText(f.record(said.ask.messageId), [f.record(said.later.messageId)]))).toBe(true);
-  expect(carried.request.input).not.toContain("The trip moved to June.");
+  const carried = await f.until(() => computer.turns[2], "turn carrying the note");
+  expect(carried.body.input.endsWith("\n\n" + externalIncomingText(f.record(said.ask.messageId), [f.record(said.later.messageId)]))).toBe(true);
+  expect(carried.body.input).not.toContain("The trip moved to June.");
   await f.until(() => f.record(said.later.messageId).status === "seen", "second inform read");
 }, 60_000);
 
 it("refuses a message to a partner with no paired computer and a recruit of a dismissed one", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
+  const f = await fixture();
+  const { id } = await paired(f);
   // Dismissing ends the pairing; restoring leaves it waiting for a new one.
   expect((await f.api(`/agents/${id}/dismiss`, {})).data).toMatchObject({ connection: "pairing", device: null, host: null, dismissed: expect.any(String) });
-  expect(links.links.size).toBe(0);
+  expect(f.mau.router.hostLinks.get(id)).toBeUndefined();
   const said: Record<string, any> = {};
   f.respond(async (turn: Turn) => {
     said.recruit = await turn.call("partners", { action: "recruit", name: "laptop-agent", duty: "Works on the owner's laptop" });
@@ -282,69 +285,26 @@ it("refuses a message to a partner with no paired computer and a recruit of a di
 }, 60_000);
 
 it("removes the pairing and every record with a deleted partner", async () => {
-  const { f, links } = await fixture();
-  const { id } = await paired(f, links);
-  links.respond(() => "Done.");
+  const f = await fixture(), links = f.mau.router.hostLinks;
+  const { id, computer } = await paired(f);
+  computer.respond(() => "Done.");
   await f.say(id, "Hello");
   await f.until(async () => (await f.answers(id))[0], "answer");
-  expect(links.links.size).toBe(1);
+  expect(links.get(id)).toBeDefined();
   expect((await call(f, "DELETE", `/agents/${id}`)).status).toBe(204);
-  expect(links.links.size).toBe(0);
+  expect(links.get(id)).toBeUndefined();
+  expect(await computer.connect()).toBe(false);
   expect((await f.api("/devices")).data).toEqual({ data: [] });
   expect((await f.api(`/agents/${id}`)).status).toBe(404);
-  f.store(store => {
-    expect(store.entries("external_partners")).toEqual([]);
-  });
+  f.store(store => { expect(store.entries("external_partners")).toEqual([]); });
   // The name is free again, for a partner of any kind.
   const again = await f.api("/agents", { name: "laptop-agent", kind: "external" });
   expect(again.status).toBe(201);
   expect(again.data.agent.id).not.toBe(id);
   // A partner still waiting for its computer is deleted with its unused code.
   expect((await call(f, "DELETE", `/agents/${again.data.agent.id}`)).status).toBe(204);
-  expect(() => links.enroll(again.data.pairing.code)).toThrow("pairing_code_invalid");
+  await expect(linkComputer(f.base, again.data.pairing.code, cleanup)).rejects.toThrow("host_link_code_invalid");
 }, 60_000);
-
-it("writes the Host binding when a computer enrolls and takes it away when the link ends", async () => {
-  const links = memoryHostLinks(), store = new DurableStore(":memory:", "external"), agentId = "11111111-1111-4111-8111-111111111111", other = "22222222-2222-4222-8222-222222222222", owner = "alice";
-  cleanup.push(() => store.close());
-  const bound: Array<unknown> = [];
-  let binding: { binding: string; runtimeId: string } | undefined;
-  const port: ExternalPartnersPort = { serviceUrl: "https://mau.example", binding: () => binding, bind: async (_owner, _agentId, host) => { binding = host; bound.push(host ?? null); } };
-  const partners = new ExternalPartners(store, links.hosts, port);
-  cleanup.push(() => partners.close());
-  partners.register(owner, agentId, "owner", undefined, true);
-  expect(() => partners.register("bob", agentId, "owner", undefined, true)).toThrow("partner_not_external");
-  expect(() => partners.register(owner, other, "owner", undefined, false)).toThrow("partner_not_external");
-  expect(partners.presence(agentId)).toEqual({ state: "unpaired", reachable: false, external: true });
-  expect(partners.presence(other)).toBeUndefined();
-  const { code, command } = partners.pair(owner, agentId);
-  expect(command).toBe(`agent-host link --config host.json --url https://mau.example --code ${code}`);
-  expect(() => partners.pair("bob", agentId)).toThrow("partner_not_external");
-  const link = links.enroll(code);
-  await vi.waitFor(() => expect(bound).toEqual([{ binding: `link:${link.id}`, runtimeId: "local" }]));
-  expect(partners.presence(agentId)).toEqual({ state: "ready", reachable: true, external: true });
-  expect(partners.kernel(agentId)).toBe("claude");
-  // Connecting and disconnecting change what is shown, never the binding.
-  links.connect(agentId, false);
-  expect(partners.presence(agentId)).toEqual({ state: "offline", reachable: true, external: true });
-  expect(partners.view(owner, agentId)).toMatchObject({ connection: "offline", device: { name: "laptop", online: false } });
-  links.connect(agentId, true);
-  // A link of an Agent that is no partner of this kind is not Mau's to bind.
-  links.enroll(links.hosts.createCode(owner, other).code);
-  await partners.unpair(owner, other);
-  expect(bound).toHaveLength(1);
-  expect(links.links.size).toBe(2);
-
-  await partners.unpair(owner, agentId);
-  expect(bound).toEqual([{ binding: `link:${link.id}`, runtimeId: "local" }, null]);
-  expect(links.hosts.get(agentId)).toBeUndefined();
-  expect(partners.presence(agentId)).toEqual({ state: "unpaired", reachable: false, external: true });
-  // Without host links nothing of the kind can be made.
-  const none = new ExternalPartners(store, undefined, port);
-  expect(none.available).toBe(false);
-  expect(() => none.creatable("owner")).toThrow("external_partners_unavailable");
-  expect(() => partners.creatable("other")).toThrow("external_ownership_not_supported");
-});
 
 it("pins what a model is told about a partner on the owner's computer, and where a computer connects", () => {
   // Like the texts in `model-visible-text.test.ts`: every word steers a model, so a change is made on purpose.
@@ -372,5 +332,6 @@ it("pins what a model is told about a partner on the owner's computer, and where
   expect(NEXT.sentExternal("laptop-agent", false)).toContain("That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner. ");
   expect(contextText({ you: "desk", waiting: [], notes: [], roster: [{ name: "laptop-agent", duty: null, status: "offline", external: true }, { name: "trip", duty: null, status: "idle" }] }).partners)
     .toContain("- laptop-agent [offline, on the owner's own computer]: no duty recorded\n- trip [idle]: no duty recorded");
-  expect(HOST_LINK_PATHS).toEqual({ enroll: "/_agent-router/v1/host-links/enroll", socket: "/_agent-router/v1/host-links/socket" });
+  // The deploy step and doctor name Router's two paths without importing Router; they are the same.
+  expect(HOST_LINK_PATHS).toEqual({ enroll: HOST_LINK_ENROLL_PATH, socket: HOST_LINK_SOCKET_PATH });
 });

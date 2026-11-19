@@ -21,7 +21,7 @@ import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, confirmationCard, confirmationEvent, type ProactivePort } from "./proactive.js";
 import { NativePartnerTools } from "./native-work.js";
 import { Partners, environmentPresence } from "./partners.js";
-import { ExternalPartners, type ExternalHosts } from "./external-partners.js";
+import { ExternalPartners } from "./external-partners.js";
 import { closeRunApprovals } from "./connector-approvals.js";
 import { SessionHistory, historyQuery } from "./session-history.js";
 import { checkConnector } from "./connector-precheck.js";
@@ -35,7 +35,6 @@ import { chatChannelApplication } from "./feishu-entry.js";
 export { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "./restricted-memory-reviewer.js";
 export type { ReviewRuntimeBinding, ReviewToolBinding, CodexRestrictedReviewerDependencies } from "./restricted-memory-reviewer.js";
 export type { RestrictedMemoryReviewer } from "./memory-review.js";
-export type { ExternalHosts, HostLink, HostLinkEvent } from "./external-partners.js";
 
 const optionsSchema = z.object({
   environments: environmentOptionsSchema,
@@ -77,8 +76,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   router?: Omit<ServiceDependencies, "configure" | "authorizeOperator">;
   environments?: () => Promise<Environments>;
   reviewer?: RestrictedMemoryReviewer;
-  /** Host links for a service whose Router has none of its own; see `hostLinks` in `createMau`. */
-  hostLinks?: ExternalHosts;
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
@@ -132,15 +129,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       http: (id, binding) => environments.http(id, binding),
     },
   });
-  /**
-   * The one place Agent Kit's host links are connected: the computers of the owner that pair with a code and connect
-   * to the service themselves. The pinned Agent Kit has none, so a service has them only when it is given some; with
-   * a release that has them this is `router.hostLinks`. Without them no partner on the owner's computer can be
-   * created (`external_partners_unavailable`).
-   */
-  const hostLinks: ExternalHosts | undefined = dependencies.hostLinks;
   const hostOf = (owner: string, agentId: string) => router.connections.configuration(router.service.owned(agentId, owner))?.host;
-  const externals = new ExternalPartners(businessStore, hostLinks, {
+  const externals = new ExternalPartners(businessStore, router.hostLinks, {
     serviceUrl: new URL(config.publicUrl).origin,
     binding: hostOf,
     bind: async (owner, agentId, host) => {
@@ -462,7 +452,6 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.get("/options", (_req, res) => res.json({
     environments: environments.profiles(res.locals.owner).map(({ id, label, kernel, otherKernels }) =>
       ({ id, label, kernel, kernels: [kernel, ...otherKernels.map(other => other.kernel)] })),
-    external: externals.available,
   }));
   const summary = (owner: string, id: string) => ({
     ...router.connections.summary(router.service.owned(id, owner)),
@@ -480,6 +469,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       const ownership = externals.creatable(input.ownership);
       const agent = await router.service.create(owner, input.name);
       externals.register(owner, agent.id, ownership, input.duty, !environments.summary(owner, agent.id) && !hostOf(owner, agent.id));
+      // The partner has a conversation before it has a computer: what the owner writes meanwhile waits for the pairing.
+      if (!router.connections.configuration(agent)) await router.connections.edit(owner, agent.id, () => undefined);
       res.status(201).json({ ...summary(owner, agent.id), pairing: externals.pair(owner, agent.id) }); return;
     }
     // Asked again for a name that exists, Router answers with that partner: one on the owner's computer gets no environment.

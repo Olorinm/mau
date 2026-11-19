@@ -299,9 +299,7 @@ it("generates a configuration the server starts on, with the owner mapped to the
   const call = async (path: string, email: string) => { const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}${path}`,
     { headers: { "cf-access-jwt-assertion": access.jwt({ email }) } }); return { status: response.status, data: await response.json() }; };
   expect(await call("/_mau/v1/account", "owner@example.com")).toMatchObject({ status: 200, data: { owner: "@owner:mau.example.com", via: "edge" } });
-  expect((await call("/_mau/v1/options", "owner@example.com")).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }],
-    // No host links are connected yet, so this server offers no partners on the owner's computer.
-    external: false });
+  expect((await call("/_mau/v1/options", "owner@example.com")).data).toEqual({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }] });
   expect(await call("/_mau/v1/account", "stranger@example.com")).toMatchObject({ status: 403, data: { error: "owner_not_configured" } });
   // The provider file names the gateway and a key file the Environment package accepts (private, beside it).
   const { loadConfiguration } = await import("@olorinm/agent-environment");

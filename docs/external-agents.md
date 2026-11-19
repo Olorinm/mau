@@ -7,10 +7,6 @@ on connects to your Mau service by itself; nothing connects to your computer fro
 Mau does three things with such a partner: it sends it messages, takes its replies, and passes its requests for
 approval to you. Its kernel, model, permissions, memory, skills and files are its own.
 
-A service offers this only when it runs with Agent Kit's host links. One that does not answers
-`external_partners_unavailable` (HTTP 503), `GET /_mau/v1/options` says `"external": false`, and the console's
-"My computer" choice is disabled.
-
 ## Steps
 
 ```sh
@@ -58,8 +54,9 @@ is replaced by the next one. One partner has one computer. Dismissing or deletin
 ## What it can and cannot do
 
 - **Messages.** You write to it in the console, the CLI or a chat channel connected to it, like to any partner.
-  It takes text only: an attachment is answered with a line saying so. While its computer is offline your messages
-  wait and are handled when it is back.
+  It takes text only: an attachment is answered with a line saying so. While its computer is offline or not yet
+  paired your messages wait and are handled when it is there; the conversation and `mau chat send` say what they
+  wait for.
 - **Other partners.** A partner in an environment can send it a message with the `partners` tool and gets its reply
   back in the conversation it sent from. A relay or an ask to an offline computer waits, for at most 48 hours. An
   inform wakes nobody: it is added to the next relay or ask a partner sends it (your own messages do not carry

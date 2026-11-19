@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as see, type Page } from "@playwright/test";
-import { memoryHostLinks } from "./fixtures/host-links.js";
+import { linkComputer } from "./fixtures/host-links.js";
 import { partnersFixture, type PartnersFixture } from "./fixtures/partners.js";
 
 // Browser acceptance, in the built console, of a partner that is an agent on the owner's computer: creating it,
@@ -29,7 +29,7 @@ const tab = (page: Page, name: string) => profile(page).getByRole("group", { nam
 const roster = (page: Page) => page.getByRole("complementary", { name: "全部对话" });
 
 it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing code once, then its device in place of an environment", async () => {
-  const links = memoryHostLinks(), f = await partnersFixture(cleanup, { webRoot, hostLinks: links });
+  const f = await partnersFixture(cleanup, { webRoot }), links = f.mau.router.hostLinks;
   const { page, errors } = await browser(f);
   const posted: unknown[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
@@ -48,13 +48,19 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await dialog.getByRole("button", { name: "创建" }).click();
   // The code and the command are shown once, with the partner already made.
   const pairing = page.getByRole("dialog", { name: "laptop" });
-  await see(pairing.locator(".mau-pairing-code-value")).toHaveText("PAIR-0001");
-  await see(pairing.locator(".mau-pairing-command")).toHaveText("agent-host link --config host.json --url http://127.0.0.1 --code PAIR-0001");
+  await see(pairing.locator(".mau-pairing-code-value")).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  const first = await pairing.locator(".mau-pairing-code-value").innerText();
+  await see(pairing.locator(".mau-pairing-command")).toHaveText(`agent-host link --config host.json --url http://127.0.0.1 --code ${first}`);
   await see(pairing.locator(".agent-status-line")).toHaveText("等待配对");
   expect(posted).toEqual([{ name: "laptop", kind: "external", duty: "在我的笔记本上整理文件" }]);
   await pairing.getByRole("button", { name: "完成" }).click();
   const laptop = f.partner("laptop");
   await see(chip(page, laptop.id)).toHaveAttribute("aria-selected", "true");
+  // A message written before a computer is paired waits, and the conversation says for what.
+  await page.getByRole("textbox").last().fill("在吗？");
+  await page.keyboard.press("Enter");
+  const stream = page.locator(".room-chat-stream");
+  await see(stream.locator(".room-chat-thinking")).toHaveText("等待配对");
 
   // Its profile: a device where the others have an environment, and neither capabilities nor documents.
   await chip(page, laptop.id).click();
@@ -70,8 +76,8 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await see(row("解除配对")).toHaveCount(0);
   // A new code from the profile; the computer that uses it becomes the device.
   await row("生成配对码").click();
-  await see(card.locator(".mau-pairing-code-value")).toHaveText("PAIR-0002");
-  links.enroll("PAIR-0002", { name: "work-laptop", platform: "win32", runtime: { id: "local", kernel: "claude" } });
+  await see(card.locator(".mau-pairing-code-value")).not.toHaveText(first);
+  const computer = await linkComputer(f.base, await card.locator(".mau-pairing-code-value").innerText(), cleanup, { name: "work-laptop", platform: "win32" });
   await see(row("状态")).toContainText("在线");
   await see(row("设备名")).toContainText("work-laptop");
   await see(row("平台")).toContainText("win32");
@@ -80,7 +86,7 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await see(card.locator(".mau-pairing-code-value")).toHaveCount(0);
   await see(row("重新配对")).toBeVisible();
   // The list says online or offline, never an environment state.
-  links.connect(laptop.id, false);
+  computer.disconnect();
   await see(row("状态")).toContainText("离线", { timeout: 15_000 });
 
   // Configuration: its kernel, and neither a model nor an environment to destroy.
@@ -96,25 +102,15 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await row("解除配对").click();
   await page.getByRole("dialog", { name: "解除 laptop 的配对？" }).getByRole("button", { name: "解除配对", exact: true }).click();
   await see(row("状态")).toContainText("等待配对");
-  expect(links.links.size).toBe(0);
+  expect(links.get(laptop.id)).toBeUndefined();
   // The list says waiting, online or offline, never an environment state.
   await card.getByRole("button", { name: "收起", exact: true }).click();
   const state = chip(page, laptop.id).locator("small");
   await see(state).toHaveText("等待配对");
-  links.enroll((await f.api(`/agents/${laptop.id}/device/pair`, {})).data.code);
+  const again = await linkComputer(f.base, (await f.api(`/agents/${laptop.id}/device/pair`, {})).data.code, cleanup);
   await see(state).toHaveText("在线", { timeout: 15_000 });
-  links.connect(laptop.id, false);
+  again.disconnect();
   await see(state).toHaveText("离线", { timeout: 15_000 });
   await see(chip(page, laptop.id).locator(".agent-pixel-avatar")).toHaveAttribute("data-state", "offline");
   expect(errors).toEqual([]);
 }, 90_000);
-
-it.skipIf(!built)("does not offer a partner on the owner's computer where the service has no host links", async () => {
-  const f = await partnersFixture(cleanup, { webRoot });
-  const { page, errors } = await browser(f);
-  await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
-  await roster(page).getByRole("button", { name: "新建伙伴", exact: true }).click();
-  await see(page.getByRole("dialog", { name: "新建伙伴" }).getByRole("group", { name: "环境类型" }).getByRole("button", { name: "我的电脑", exact: true })).toBeDisabled();
-  expect(errors).toEqual([]);
-}, 60_000);

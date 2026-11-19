@@ -146,20 +146,24 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
   </section>;
 }
 
-/** Queued or starting: the same "working" line a running reply shows, in the same place. */
-export function WorkingSurface({ fallback = "" }: { fallback?: string }) {
+/**
+ * Queued or starting: the same "working" line a running reply shows, in the same place. `waiting` says what a turn
+ * that cannot start yet waits for: the computer of a partner that runs on one.
+ */
+export function WorkingSurface({ fallback = "", waiting }: { fallback?: string; waiting?: string | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
   return <RunMessage id="working" parts={[]} fallbackText={fallback} status="running"
-    agentPresentation={{ state: "working", label: zh ? "正在执行" : "Running" }}
+    agentPresentation={waiting ? { state: "listening", label: waiting } : { state: "working", label: zh ? "正在执行" : "Running" }}
     onResolveApproval={() => undefined} onResolveQuestion={() => undefined} onInsertPrompt={() => undefined} />;
 }
 
-export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls, partnerLink }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls, partnerLink, waiting }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+  waiting?: string | undefined;
   /** What opens a partner that an activity row of the run names. */
   partnerLink?: PartnerLinkResolver | undefined }) {
   const { language } = useI18n(), zh = language === "zh-CN";
-  if (!task.runs.length) return task.status === "canceled" ? <p role="status">{zh ? "已取消" : "Cancelled"}</p> : <WorkingSurface fallback={fallback} />;
+  if (!task.runs.length) return task.status === "canceled" ? <p role="status">{zh ? "已取消" : "Cancelled"}</p> : <WorkingSurface fallback={fallback} waiting={waiting} />;
   return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />
     : run.phase === "unknown" ? <p role="status" key={run.claimId}>{zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically."}</p>
-    : <WorkingSurface key={run.claimId} fallback={fallback} />)}</>;
+    : <WorkingSurface key={run.claimId} fallback={fallback} waiting={waiting} />)}</>;
 }

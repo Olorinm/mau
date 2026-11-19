@@ -99,7 +99,7 @@ without `send` conversations are read-only.
   and has no pause, resume, reconcile or destroy; its checks, documents and settings are its own. The profile of
   the partner that has the environment lists the partners sharing it; destroying that environment or deleting that
   partner is refused, naming them, until they are deleted.
-- Where the service has Agent Kit's host links, the third choice for a new partner is "My computer": the partner
+- The third choice for a new partner is "My computer": the partner
   is an agent already installed on the owner's computer. The dialog then shows, once, the pairing code and the
   command to run there. Its profile has "Device" in place of the environment (state, name, platform, kernel, last
   online, pair again, unpair), no capabilities or documents, and neither a model nor an environment to destroy

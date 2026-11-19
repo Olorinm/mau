@@ -1,33 +1,8 @@
-import { RouterError } from "@agent-router/server";
+import { RouterError, type HostLinkEvent, type HostLinks } from "@agent-router/server";
 import type { DurableStore } from "./store.js";
-import { pairCommand } from "./host-links.js";
 
-/** One computer paired with a partner, as Agent Kit's host links describe it. */
-export interface HostLink {
-  id: string; agentId: string;
-  /** The computer's name and operating system, as its Host reported them when it enrolled. */
-  deviceName: string; platform: string;
-  /** The runtime on that computer the partner is: its id at the Host and the kernel it runs. */
-  runtime: { id: string; kernel: string };
-  online: boolean; createdAt: string; lastOnlineAt: string | null;
-}
-/** `binding` is the link's Host binding in Router, which Router resolves itself. */
-export interface HostLinkEvent { type: "enrolled" | "online" | "offline" | "revoked"; owner: string; link: HostLink; binding: string }
-/**
- * Agent Kit's host links, as far as Mau uses them: computers that pair with a code and then connect to the service
- * themselves. Router runs a paired computer's turns and removes a deleted Agent's links on its own.
- */
-export interface ExternalHosts {
-  /** A new pairing code for the Agent; an earlier unused one stops working. */
-  createCode(owner: string, agentId: string): { code: string; expiresAt: string };
-  list(owner: string): HostLink[];
-  /** The computer paired with the Agent. */
-  get(agentId: string): HostLink | undefined;
-  online(agentId: string): boolean;
-  /** End one link: its computer is disconnected and can no longer connect. */
-  revoke(owner: string, linkId: string): void;
-  subscribe(listener: (event: HostLinkEvent) => unknown): () => void;
-}
+/** The command the owner runs on the computer whose agent becomes a partner. */
+export const pairCommand = (service: string, code: string) => `agent-host link --config host.json --url ${service} --code ${code}`;
 
 /** What Mau records of a partner that is an agent on a computer: whose it is, and its duty. The rest is the link's. */
 interface ExternalPartner { agentId: string; owner: string; ownership: "owner"; duty?: string; createdAt: string }
@@ -47,16 +22,16 @@ const report = (error: unknown) => console.warn(JSON.stringify({ event: "externa
 /**
  * Partners that are agents on the owner's own computers. Mau sends such a partner messages, takes its replies and
  * passes its approvals to the owner; its kernel, model, permissions, memory and skills are its own. A partner has at
- * most one paired computer, and Router has a Host binding for it only while it is paired: Mau writes the binding
+ * most one paired computer (a new pairing replaces it), and Router has a Host binding for it only while it is paired: Mau writes the binding
  * when a computer enrolls and removes it when the link ends. Router resolves that binding itself, so no turn of
  * such a partner passes through Mau's Host (`BusinessHost`): it gets no tools, memory or skills of Mau's. A deleted
  * partner's record goes with its other product records (`forgetPartnerRecords`).
  */
 export class ExternalPartners {
-  private readonly unsubscribe: (() => void) | undefined;
+  private readonly unsubscribe: () => void;
   private queue: Promise<void> = Promise.resolve();
-  constructor(private readonly store: DurableStore, private readonly hosts: ExternalHosts | undefined, private readonly port: ExternalPartnersPort) {
-    this.unsubscribe = hosts?.subscribe(event => { void this.after(() => this.changed(event)).catch(report); });
+  constructor(private readonly store: DurableStore, private readonly hosts: HostLinks, private readonly port: ExternalPartnersPort) {
+    this.unsubscribe = hosts.subscribe(event => { void this.after(() => this.changed(event)).catch(report); });
   }
   /** Changes of Host bindings happen one after the other, each on what the one before left. */
   private after(step: () => Promise<void>) {
@@ -64,10 +39,7 @@ export class ExternalPartners {
     this.queue = done.catch(() => undefined);
     return done;
   }
-  close() { this.unsubscribe?.(); }
-  /** Whether this service can pair computers at all. */
-  get available() { return this.hosts !== undefined; }
-  private links() { if (!this.hosts) throw new RouterError("external_partners_unavailable", 503); return this.hosts; }
+  close() { this.unsubscribe(); }
   private record(agentId: string) { return this.store.get<ExternalPartner>(PARTNERS, agentId); }
   has(agentId: string) { return this.record(agentId) !== undefined; }
   isOwned(owner: string, agentId: string) { return this.record(agentId)?.owner === owner; }
@@ -78,12 +50,11 @@ export class ExternalPartners {
     return record;
   }
   duty(agentId: string) { return this.record(agentId)?.duty; }
-  private link(agentId: string) { return this.has(agentId) ? this.hosts?.get(agentId) : undefined; }
+  private link(agentId: string) { return this.has(agentId) ? this.hosts.get(agentId) : undefined; }
   kernel(agentId: string) { return this.link(agentId)?.runtime.kernel; }
 
-  /** Refuses what cannot be created: any such partner without host links, and for now an agent that is not the owner's own. */
+  /** For now only the owner's own agent can be created. */
   creatable(ownership: "owner" | "other") {
-    this.links();
     if (ownership !== "owner") throw new RouterError("external_ownership_not_supported", 400);
     return ownership;
   }
@@ -96,12 +67,12 @@ export class ExternalPartners {
   }
   /** A pairing code and the command that uses it. The computer that pairs replaces the one paired before. */
   pair(owner: string, agentId: string) {
-    const record = this.owned(owner, agentId), { code, expiresAt } = this.links().createCode(owner, record.agentId);
+    const record = this.owned(owner, agentId), { code, expiresAt } = this.hosts.createCode(owner, record.agentId);
     return { code, expiresAt, command: pairCommand(this.port.serviceUrl, code) };
   }
   /** End the partner's pairing: its computer is disconnected and Router no longer has a Host for it. */
   async unpair(owner: string, agentId: string) {
-    if (!this.isOwned(owner, agentId) || !this.hosts) return;
+    if (!this.isOwned(owner, agentId)) return;
     for (const link of this.hosts.list(owner)) if (link.agentId === agentId) this.hosts.revoke(owner, link.id);
     // After what the ended links themselves set off; a binding whose link was already gone ends here.
     await this.after(async () => { if (this.port.binding(owner, agentId)) await this.port.bind(owner, agentId, undefined); });
@@ -111,8 +82,6 @@ export class ExternalPartners {
     const bound = this.port.binding(owner, link.agentId);
     if (type === "revoked") { if (bound?.binding === binding) await this.port.bind(owner, link.agentId, undefined); return; }
     if (bound?.binding !== binding || bound.runtimeId !== link.runtime.id) await this.port.bind(owner, link.agentId, { binding, runtimeId: link.runtime.id });
-    // One computer per partner: the one paired before is disconnected.
-    for (const other of this.links().list(owner)) if (other.agentId === link.agentId && other.id !== link.id) this.links().revoke(owner, other.id);
   }
 
   /** What the owner is shown of the partner: whose it is, whether its computer is connected, and that computer. */

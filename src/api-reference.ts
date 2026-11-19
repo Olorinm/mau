@@ -72,7 +72,7 @@ export const mauApiReference: ApiRoute[] = [
   route("GET", "/info", "How to sign in and out; the only route that needs no sign-in."),
   route("GET", "/account", "The signed-in owner."),
   route("GET", "/reference", "This list: every HTTP route of the service."),
-  route("GET", "/options", "The environment profiles the owner can create partners with, and whether a partner can be an agent on the owner's computer."),
+  route("GET", "/options", "The environment profiles the owner can create partners with."),
   { ...route("GET", "/tokens", "The owner's access tokens, newest first, without their secrets; for the signed-in owner only."), scope: "owner" },
   route("POST", "/tokens", "Create an access token that lets an Access service token of the owner do more than read; the answer has the token, once.", apiInput.newToken, "owner"),
   route("DELETE", "/tokens/:id", "Revoke an access token.", undefined, "owner"),

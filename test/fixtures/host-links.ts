@@ -1,114 +1,76 @@
-// An in-memory stand-in for Agent Kit's host links, with the shape of its `HostLinks`: computers pair with a code,
-// connect and disconnect when the test says so, and run the turns they are given by a script. The pinned Router has no
-// host links, so `attach` also stands in for what Router does with them: it resolves a `link:` binding itself,
-// without asking the product's Host provider, and sends such a Host text only.
-import { RouterError, type HostBindingProvider, type HostPort, type HostRun, type HostStartInput } from "@agent-router/server";
-import type { ExternalHosts, HostLink, HostLinkEvent } from "../../src/external-partners.js";
+// The owner's computer, for tests of partners that are agents on one: it exchanges a pairing code at Router's enroll
+// path, opens Router's host link socket with the credential it got, and answers the Host requests Router sends
+// through it. Its runs follow a script, so a turn ends when the test says so.
+import { HOST_LINK_ENROLL_PATH, HOST_LINK_SOCKET_PATH } from "@agent-router/server";
 
-/** One turn as the computer's Host received it. */
-export interface LinkTurn { agentId: string; runId: string; request: HostStartInput }
+/** One turn as the computer's Host received it: the body of its `POST /v1/runs`. */
+export interface LinkTurn { runId: string; body: any }
 type Script = (turn: LinkTurn) => Promise<string> | string;
-const PREFIX = "link:";
+interface Run { id: string; sessionId: string; runtimeId: string; status: string; answer: string; requestKey?: string; outcome?: unknown }
 
-export function memoryHostLinks() {
-  const links = new Map<string, HostLink & { owner: string }>(), codes = new Map<string, { owner: string; agentId: string; expiresAt: string }>();
-  const listeners = new Set<(event: HostLinkEvent) => unknown>(), runs = new Map<string, HostRun & { requestKey?: string }>(), turns: LinkTurn[] = [];
-  let script: Script = turn => `answer to ${turn.request.input}`, issued = 0;
-  const view = ({ owner: _owner, ...link }: HostLink & { owner: string }): HostLink => ({ ...link });
-  const emit = (type: HostLinkEvent["type"], link: HostLink & { owner: string }) => { for (const listener of listeners) listener({ type, owner: link.owner, link: view(link), binding: PREFIX + link.id }); };
-  const of = (agentId: string) => [...links.values()].find(link => link.agentId === agentId);
-  const connected = (agentId: string, binding: string) => {
-    const link = links.get(binding.slice(PREFIX.length));
-    if (link?.agentId !== agentId || !link.online) throw new RouterError("host_link_offline", 409);
-  };
-  const hosts: ExternalHosts & { remove(agentId: string): void } = {
-    createCode(owner, agentId) {
-      for (const [code, pairing] of codes) if (pairing.agentId === agentId) codes.delete(code);
-      const code = `PAIR-${String(++issued).padStart(4, "0")}`, expiresAt = new Date(Date.now() + 600_000).toISOString();
-      codes.set(code, { owner, agentId, expiresAt });
-      return { code, expiresAt };
-    },
-    list: owner => [...links.values()].filter(link => link.owner === owner).map(view),
-    get: agentId => { const link = of(agentId); return link && view(link); },
-    online: agentId => of(agentId)?.online === true,
-    revoke(owner, linkId) {
-      const link = links.get(linkId);
-      if (link?.owner !== owner) return;
-      links.delete(linkId);
-      emit("revoked", link);
-    },
-    remove(agentId) {
-      for (const [id, link] of links) if (link.agentId === agentId) links.delete(id);
-      for (const [code, pairing] of codes) if (pairing.agentId === agentId) codes.delete(code);
-    },
-    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-  };
-  /** The Host of a paired computer. Like Agent Kit's, it takes text only and refuses a run that carries anything else. */
-  const host = (agentId: string, binding: string): HostPort => {
-    const found = (id: string) => { const run = runs.get(id); if (!run) throw new RouterError("run_not_found", 404); return run; };
-    return {
-      identity: binding, supportsRunLookup: true,
-      async connect() {},
-      async start(input) {
-        connected(agentId, binding);
-        if (input.instructions || input.tools?.length || input.toolOutput || input.inputItems?.length || input.attachments?.length) throw new RouterError("host_link_text_only", 403);
-        const prior = [...runs.values()].find(run => input.requestKey && run.requestKey === input.requestKey);
-        if (prior) return prior;
-        const run: HostRun & { requestKey?: string } = { id: `link-run-${runs.size + 1}`, sessionId: input.sessionId, runtimeId: input.runtimeId, status: "running", answer: "",
-          ...(input.requestKey ? { requestKey: input.requestKey } : {}) };
-        runs.set(run.id, run);
-        const turn = { agentId, runId: run.id, request: structuredClone(input) };
+/** Enroll a computer with a pairing code. It is connected when this returns. */
+export async function linkComputer(base: string, code: string, cleanup: Array<() => unknown>,
+  device: { name?: string; platform?: string; runtime?: { id: string; kernel: string } } = {}) {
+  const runtime = device.runtime ?? { id: "local", kernel: "claude" };
+  const response = await fetch(base + HOST_LINK_ENROLL_PATH, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code, deviceName: device.name ?? "laptop", platform: device.platform ?? "darwin", runtime }) });
+  if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? `enroll_${response.status}`);
+  const { linkId, credential } = await response.json() as { linkId: string; credential: string };
+  const runs = new Map<string, Run>(), turns: LinkTurn[] = [], refused: string[] = [];
+  let script: Script = turn => `answer to ${turn.body.input}`, socket: WebSocket | undefined;
+  const answer = (method: string, path: string, body: any): { status: number; body: unknown } => {
+    const url = new URL(path, "http://host.local"), [, , area, id, action] = url.pathname.split("/");
+    if (path === "/v1/health") return { status: 200, body: { ok: true, protocolVersion: 1, capabilities: { runIdempotency: true } } };
+    if (path === "/v1/runtimes") return { status: 200, body: { runtimes: [{ id: runtime.id }] } };
+    // Like Agent Kit's Host on a link: runs only, and a run of text only.
+    if (area !== "runs") { refused.push(`${method} ${url.pathname}`); return { status: 403, body: { error: "link_route_not_allowed" } }; }
+    const view = ({ requestKey: _key, ...run }: Run) => run;
+    if (method === "POST" && !id) {
+      const field = ["instructions", "tools", "toolOutput", "inputItems", "attachments"].find(name => Array.isArray(body[name]) ? body[name].length : body[name]);
+      if (field) { refused.push(`run with ${field}`); return { status: 403, body: { error: `link_field_not_allowed:${field}` } }; }
+      let run = [...runs.values()].find(item => body.requestKey && item.requestKey === body.requestKey);
+      if (!run) {
+        const started: Run = run = { id: `run-${runs.size + 1}`, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "", ...(body.requestKey ? { requestKey: body.requestKey } : {}) };
+        runs.set(started.id, started);
+        const turn = { runId: started.id, body };
         turns.push(turn);
-        void Promise.resolve().then(() => script(turn)).then(answer => { if (run.status === "running") Object.assign(run, { status: "completed", answer }); },
-          () => { if (run.status === "running") Object.assign(run, { status: "failed", outcome: { status: "failed", error: "failed" } }); });
-        return run;
-      },
-      async findRun(_runtimeId, requestKey) { return [...runs.values()].find(run => run.requestKey === requestKey) ?? null; },
-      // A runtime that takes no native tool output: Router delivers a partner's message to it as text.
-      async inspectRuntime(runtimeId) { return { id: runtimeId, available: true, capabilities: { features: { "input.nativeItems": { status: "unsupported" } } } }; },
-      async get(id) { return found(id); },
-      async cancel(id) { const run = found(id); if (run.status === "running") run.status = "cancelled"; },
-      async calls() { return []; },
-      async resolve() {},
-    };
+        void Promise.resolve().then(() => script(turn)).then(text => { if (started.status === "running") Object.assign(started, { status: "completed", answer: text }); },
+          () => { if (started.status === "running") Object.assign(started, { status: "failed", outcome: { status: "failed", error: "failed" } }); });
+      }
+      return { status: 202, body: view(run) };
+    }
+    if (id === "by-request") { const run = [...runs.values()].find(item => item.requestKey === url.searchParams.get("requestKey")); return { status: 200, body: { run: run ? view(run) : null } }; }
+    const run = runs.get(id!);
+    if (!run) return { status: 404, body: { error: "run_not_found" } };
+    if (!action) return { status: 200, body: view(run) };
+    if (action === "events") return { status: 200, body: { events: [], cursor: Number(url.searchParams.get("after")), hasMore: false, historyTruncated: false, liveGap: false } };
+    if (action === "calls") return { status: 200, body: { calls: [] } };
+    if (action === "cancel") { if (run.status === "running") run.status = "cancelled"; return { status: 200, body: { cancellationRequested: true } }; }
+    return { status: 404, body: { error: "route_not_found" } };
   };
-  return { hosts, links, turns,
-    /**
-     * Stands in for a Router that has host links: a `link:` binding is answered here and never reaches the product's
-     * provider, the Host gets neither Router's instructions nor its tools, and a deleted Agent's links go.
-     */
-    attach(provider: HostBindingProvider) {
-      const own = { ...provider }, linked = (binding: string) => binding.startsWith(PREFIX);
-      Object.assign(provider, {
-        assertReady: (id, binding) => linked(binding) ? connected(id, binding) : own.assertReady(id, binding),
-        wake: (id, binding) => { if (!linked(binding)) own.wake?.(id, binding); },
-        host: (id, binding) => {
-          if (!linked(binding)) return own.host(id, binding);
-          const link = host(id, binding);
-          return { ...link, start: ({ tools: _tools, ...input }) => link.start({ ...input, instructions: "" }) };
-        },
-      } satisfies Partial<HostBindingProvider>);
-    },
-    /** A computer uses a pairing code, as its Host would at the enroll path. It is connected from then on. */
-    enroll(code: string, device: { name?: string; platform?: string; runtime?: { id: string; kernel: string } } = {}) {
-      const pairing = codes.get(code);
-      if (!pairing || Date.parse(pairing.expiresAt) <= Date.now()) throw new RouterError("pairing_code_invalid", 403);
-      codes.delete(code);
-      const link = { id: `l${links.size + 1}-${code.toLowerCase()}`, agentId: pairing.agentId, owner: pairing.owner, deviceName: device.name ?? "laptop", platform: device.platform ?? "darwin",
-        runtime: device.runtime ?? { id: "local", kernel: "claude" }, online: true, createdAt: new Date().toISOString(), lastOnlineAt: new Date().toISOString() };
-      links.set(link.id, link);
-      emit("enrolled", link);
-      return view(link);
-    },
-    /** The partner's computer connects or disconnects. */
-    connect(agentId: string, online: boolean) {
-      const link = of(agentId);
-      if (!link) return;
-      Object.assign(link, { online, lastOnlineAt: new Date().toISOString() });
-      emit(online ? "online" : "offline", link);
-    },
+  /** Open the socket as the computer's Host does; resolves with whether Router greeted it. */
+  const connect = () => new Promise<boolean>(resolve => {
+    // Node's WebSocket takes request headers beside the protocols.
+    const ws = new WebSocket(base.replace(/^http/, "ws") + HOST_LINK_SOCKET_PATH, { headers: { authorization: `Bearer ${credential}` } } as unknown as string[]);
+    socket = ws;
+    ws.addEventListener("error", () => resolve(false));
+    ws.addEventListener("close", () => resolve(false));
+    ws.addEventListener("message", event => {
+      const frame = JSON.parse(String(event.data));
+      if (frame.type === "hello") return resolve(true);
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "response", id: frame.id, ...answer(frame.method, frame.path, frame.body) }));
+    });
+  });
+  cleanup.push(() => socket?.close());
+  if (!await connect()) throw new Error("host_link_not_connected");
+  return { linkId, turns,
+    /** What Router asked of the computer that its Host refuses. */
+    refused,
+    /** The computer goes offline. */
+    disconnect() { socket?.close(); },
+    /** The computer comes back; false when its credential is refused. */
+    connect,
     /** What every following run does. Throwing fails the run. */
-    respond(next: Script) { script = next; },
-  };
+    respond(next: Script) { script = next; } };
 }
-export type MemoryHostLinks = ReturnType<typeof memoryHostLinks>;
+export type LinkedComputer = Awaited<ReturnType<typeof linkComputer>>;

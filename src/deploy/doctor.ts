@@ -5,7 +5,7 @@ import { Cloudflare, r2Endpoint } from "./cloudflare.js";
 import { systemRuntime, type Runtime } from "./effects.js";
 import { Bucket } from "./s3.js";
 import { DeployError, Source, inspectCodexAuth } from "./source.js";
-import { HOST_LINK_PATHS } from "../host-links.js";
+import { HOST_LINK_PATHS } from "./host-links.js";
 import { Directory, configRevision, containerBuckets, defaultDirectory, ownerId, resources, sha256, type Deployment } from "./state.js";
 
 export interface DoctorInput { dir?: string; name?: string; url?: string }

@@ -11,7 +11,7 @@ import { renderConfig, renderGatewayWrangler, renderWorkerWrangler } from "./ren
 import { Bucket, type S3Credentials } from "./s3.js";
 import { AGE, DeployError, Source, inspectCodexAuth, type Pin } from "./source.js";
 import { configRevision, containerBuckets, resources, sha256, type Deployment, type Directory, type OwnerAction } from "./state.js";
-import { HOST_LINK_PATHS } from "../host-links.js";
+import { HOST_LINK_PATHS } from "./host-links.js";
 
 export interface DeployInput {
   hostname?: string; ownerEmail?: string; name?: string; dir?: string; codexAuth?: string;

@@ -130,7 +130,9 @@ mau device pair laptop           # a new pairing code and the command to run on 
 mau device remove laptop --yes   # end the pairing; the partner stays
 ```
 
-`partner create --external` and `device pair` are the only commands that print a pairing code. The `env`, `ssh`,
+`partner create --external` and `device pair` are the only commands that print a pairing code. `mau chat send` to
+a partner whose computer is not paired or not connected does not wait for a turn: it answers
+`"state": "queued", "waitingFor": "pairing"` (or `"offline"`), and the message is handled when the computer is there. The `env`, `ssh`,
 `memory`, `partner model` and connector commands answer `not_available_for_external_partner` for such a partner.
 See [Connect an agent on your computer](external-agents.md).
 

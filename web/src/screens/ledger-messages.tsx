@@ -121,8 +121,10 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
 }
 
 /** One ledger turn rendered with the existing run surface, keyed by turnId. */
-function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink }: {
+function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink, waiting }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
+  /** What a turn that has not started waits for. */
+  waiting?: string | undefined;
   controls?: RunControls | undefined; partnerLink?: PartnerLinkResolver | undefined;
 }) {
   const terminal = terminalTurn.includes(turn.state);
@@ -137,9 +139,9 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
   });
   if (!detail.data) return detail.error || terminal
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
-    : <WorkingSurface fallback={fallback} />;
+    : <WorkingSurface fallback={fallback} waiting={waiting} />;
   const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
-  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />;
+  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} waiting={waiting} />;
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
@@ -537,13 +539,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}),
     });
     const turnView = (turn: LedgerTurn): MessageView => {
-      const name = agentName(turn.agentId);
+      const name = agentName(turn.agentId), partner = agents.data?.find(({ agent }) => agent.id === turn.agentId);
+      // A partner on the owner's computer starts the turn when that computer is paired and connected.
+      const waiting = partner?.kind === "external" && partner.connection !== "online" ? t(`device.${partner.connection ?? "pairing"}`) : undefined;
       return {
         id: "turn:" + turn.turnId, role: "assistant", title: name,
         avatar: <PartnerAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
-          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} />,
+          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} waiting={waiting} />,
       };
     };
     for (const item of fold.items) {

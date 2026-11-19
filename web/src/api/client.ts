@@ -152,7 +152,7 @@ export function mauApi(token: string) {
     updateConnectorSiteAccess: (id: string, change: { webAccess: WebAccess } | { remove: string }) =>
       request<SiteAccess>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/access", { token, method: "PUT", body: change }),
     resetConnectorPolicy: (id: string) => request<ConnectorPolicy>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/policy/reset", { token, body: {} }),
-    options: () => request<{ environments: EnvironmentProfile[]; external: boolean }>(mau + "/options", { token }),
+    options: () => request<{ environments: EnvironmentProfile[] }>(mau + "/options", { token }),
     agents: () => request<{ data: AgentSummary[] }>(mau + "/agents", { token }).then((r) => r.data),
     agent: (id: string) => request<AgentSummary>(mau + agent(id), { token }),
     /** The partner's fixed instructions (read-only): its environment profile's, or its own text in a shared environment. */

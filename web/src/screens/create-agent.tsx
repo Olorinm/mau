@@ -35,7 +35,7 @@ export function CreateAgentDialog(props: {
   const hosts = props.partners.filter(canShareEnvironment);
   const [kind, setKind] = useState<EnvironmentKind>();
   // On the owner's computer: no environment of Mau's, only a computer that pairs with the partner.
-  const external = kind === "external" && !!options.data?.external;
+  const external = kind === "external";
   const shared = !external && hosts.length > 0 && (kind ?? (options.isSuccess && !profiles.length ? "shared" : "own")) === "shared";
   // With several partners to share with, the owner picks one; nothing is preselected.
   const [partner, setPartner] = useState<string | null>(null);
@@ -136,7 +136,7 @@ export function CreateAgentDialog(props: {
           options={[
             { value: "own", label: t("create.ownEnvironment") },
             { value: "shared", label: t("create.sharedEnvironment"), disabled: !hosts.length },
-            { value: "external", label: t("create.external"), disabled: !options.data?.external },
+            { value: "external", label: t("create.external") },
           ]}
         />
         {external ? null : shared ? (

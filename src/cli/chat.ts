@@ -99,12 +99,14 @@ export const chatCommands: Command[] = [
   { path: ["chat", "send"], args: "NAME TEXT", options: waitOption,
     summary: "Send TEXT in your direct chat with the partner and wait for its turn: prints its replies, and the cards it asks you to answer.",
     run: async ({ args, options, client }) => {
-      const chat = await openDirect(client(), await client().partner(args[0]!));
+      const partner = await client().partner(args[0]!), chat = await openDirect(client(), partner);
+      // An agent on your computer answers only while that computer is paired and connected; until then the message waits.
+      const { kind, connection } = partner.summary, waitingFor = kind === "external" && connection !== "online" ? connection as string : undefined;
       const sent = await client().post(chatPath(chat.chatId) + "/messages", { idempotencyKey: randomUUID(), text: args[1] });
       const result = { chatId: chat.chatId, eventId: sent.event.eventId as string, seq: sent.event.seq as number };
       const queued = sent.addressed.some((item: { state: string }) => item.state === "queued");
       // A control message (such as `/new`) starts no turn; `--no-wait` does not wait for the one that was started.
-      if (!queued || options["no-wait"]) return { ...result, state: queued ? "queued" : "not_queued", replies: [], pendingCards: [] };
+      if (!queued || options["no-wait"] || waitingFor) return { ...result, state: queued ? "queued" : "not_queued", ...(queued && waitingFor ? { waitingFor } : {}), replies: [], pendingCards: [] };
       return { ...result, ...await followTurn(client(), chat.chatId, sent.event.seq,
         events => events.find(event => event.kind === "turn" && event.inputEventIds?.includes(sent.event.eventId))?.turnId) };
     } },
