@@ -287,9 +287,9 @@ it("asks the owner where the message came from when the computer's kernel wants 
   expect(own.text).toContain("rm -rf build");
   expect(own.text.split("\n")[0]).toContain("helper");
   expect(copy).toMatchObject({ status: "pending", source: "product", choices: own.choices.map(({ choiceId, label }: any) => ({ choiceId, label })),
-    display: { partnerApproval: { partner: { id, name: "laptop-agent" }, from: { id: f.agent.id, name: "helper" }, messageId: said.sent.messageId, summary: own.text } } });
+    display: { partnerApproval: { partner: { id, name: "laptop-agent" }, from: { id: f.agent.id, name: "helper" }, messageId: said.sent.messageId, summary: own.text.split("\n").slice(1).join("\n") } } });
   expect(copy.display!.partnerApproval).not.toHaveProperty("connection");
-  expect(copy.text.endsWith(`处理「helper」转来的消息时需要执行：${own.text}`)).toBe(true);
+  expect(copy.text.endsWith(`处理「helper」转来的消息时需要执行：${own.text.split("\n").slice(1).join("\n")}`)).toBe(true);
   // The sender is told at once that its message waits for the owner, not left waiting or told it failed.
   expect(said.wait).toMatchObject({ results: [], pending: [{ messageId: said.sent.messageId, to: "laptop-agent", waitingFor: "owner_approval" }], ownerApprovalNote: OWNER_APPROVAL });
   expect(said.roster.waitingForReplies).toMatchObject([{ messageId: said.sent.messageId, state: "waiting for the owner's approval" }]);

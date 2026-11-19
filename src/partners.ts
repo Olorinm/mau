@@ -770,7 +770,7 @@ export class Partners {
           choices: card.choices.map(choice => choice.choiceId), ...(shown ? { desk: `partner-card-${digest(id).slice(0, 40)}` } : {}) };
         if (!this.store.insert(CARDS, id, record) || !record.desk) continue;
         try {
-          await this.desk(message).open({ id: record.desk, summary: card.text, choices: card.choices.map(choice => ({ id: choice.choiceId, label: choice.label })),
+          await this.desk(message).open({ id: record.desk, summary: withoutOriginLine(card), choices: card.choices.map(choice => ({ id: choice.choiceId, label: choice.label })),
             deadlineAt: card.deadlineAt ?? iso(Date.parse(message.createdAt) + UNANSWERED_MS) });
         } catch (error) {
           // Nowhere to ask there: the card stays in the partner's own conversation.
@@ -1020,4 +1020,13 @@ export class Partners {
       request: async id => (await work()).lookupRequest(id) ?? undefined,
     };
   }
+}
+
+/**
+ * Router starts the text of a card raised in a turn the owner did not start with one bracketed line that says which
+ * agent's message started it. In the conversation that message was sent from, the card's own first line says so.
+ */
+function withoutOriginLine(card: { text: string; origin?: unknown }): string {
+  const [first = "", ...rest] = card.text.split("\n");
+  return card.origin && rest.length && first.startsWith("［") && first.endsWith("］") ? rest.join("\n") : card.text;
 }
