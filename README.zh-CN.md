@@ -19,7 +19,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 
-[本机试用](#-两分钟本机试用) · [部署自己的](#️-部署自己的) · [命令行](#️-用命令行操作) · [文档](#-文档)
+[本机试用](#-两分钟本机试用) · [部署自己的](#-部署自己的) · [命令行](#-用命令行操作) · [文档](#-文档)
 
 <img src="docs/images/console.png" width="860" alt="Mau 网页控制台：与一个伙伴对话，它把任务转给了另一个伙伴">
 
@@ -66,7 +66,7 @@ node dist/cli.js chat send helper "hello"
 本地模式只用于试用：它唯一的登录方式是一个私有文件里的令牌，沙箱的网络访问也不受限制。
 详见 [docs/local.md](docs/local.md)（英文）。
 
-## ☁️ 部署自己的
+## 🌐 部署自己的
 
 Mau 跑在你的 Cloudflare 账号里：一个 Worker 加一个容器。在同一份代码里执行：
 
@@ -84,7 +84,7 @@ node dist/cli.js doctor        # 缺什么、坏了什么，每一项都给出�
 
 前置条件、API 令牌需要的权限、哪些步骤仍然要人来做：见 [docs/deployment.md](docs/deployment.md)（英文）。
 
-## ⌨️ 用命令行操作
+## 💻 用命令行操作
 
 在任意一台机器上安装客户端（它不带任何服务端依赖），然后登录你的部署：
 
