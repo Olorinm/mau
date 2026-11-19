@@ -113,7 +113,7 @@ mau login https://mau.example
 mau login https://mau.example \
   --access-client-id-file /private/id --access-client-secret-file /private/secret
 mau profiles
-mau partner create helper --profile cloud-codex
+mau partner create helper --profile codex
 mau channel connect helper feishu
 mau chat send helper "Hello"
 mau partner show helper

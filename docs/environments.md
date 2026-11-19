@@ -73,7 +73,7 @@ Host token per environment. Cloud management credentials stay in Mau. Private ga
 must preserve application Authorization and required sandbox routing headers.
 
 ```sh
-mau partner create helper --profile cloud-codex
+mau partner create helper --profile codex
 mau partner check helper
 mau partner show helper
 mau env pause helper

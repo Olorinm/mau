@@ -16,7 +16,7 @@ Mau 部署在 Cloudflare 上：一个 Worker 加一个容器，配置和状态�
 cloudflared access login https://mau.example
 mau login https://mau.example
 mau profiles
-mau partner create helper --profile cloud-codex
+mau partner create helper --profile codex
 mau channel connect helper feishu
 mau partner check helper
 mau partner show helper

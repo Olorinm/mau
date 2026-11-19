@@ -57,7 +57,7 @@ token, which is read on every request and sent as a bearer header to the loopbac
 
 ```sh
 mau profiles                                              # the environment profiles you can use
-mau partner create helper --profile cloud-codex --duty "Keeps my calendar"
+mau partner create helper --profile codex --duty "Keeps my calendar"
 mau partner create scout --share helper                   # runs in helper's environment
 mau partner list
 mau partner model helper --set model=MODEL_ID --set effort=high
