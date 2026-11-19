@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/images/mau.svg" width="88" height="88" alt="Mau">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/mau-dark.svg">
+  <img src="docs/images/mau.svg" width="96" height="96" alt="Mau">
+</picture>
 
 # Mau
 
