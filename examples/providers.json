@@ -1,0 +1,10 @@
+{
+  "providers": [
+    {
+      "id": "cloudflare",
+      "kind": "cloudflare",
+      "apiUrl": "https://mau-environment.YOUR-SUBDOMAIN.workers.dev",
+      "apiKeyFile": "gateway-key"
+    }
+  ]
+}
