@@ -176,8 +176,7 @@ mau api POST /_mau/v1/proactive/RULE_ID/state --data '{"status":"paused"}'
 
 `mau api METHOD PATH` calls any route under `/_mau/v1` or `/_agent-router/v1` with your sign-in and prints its
 JSON answer; `--data-file FILE` reads the body from a file. `mau api` lists the routes from the service
-(`GET /_mau/v1/reference`). When the service's Router does not publish its routes, the list has Mau's and
-`"routerReference": "unavailable"`.
+(`GET /_mau/v1/reference`): Mau's under `/_mau/v1`, then Router's under `/_agent-router/v1`.
 
 ## For agents
 

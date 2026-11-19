@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { routerApiReference } from "@agent-router/server";
 import { apiRoot, mauApiReference } from "../src/api-reference.js";
 import { mauFixture } from "./fixtures/mau.js";
 
@@ -30,14 +31,15 @@ it("lists exactly the routes the service registers", async () => {
   expect(body("GET", "/agents")).toBeUndefined();
 });
 
-it("serves the reference to a signed-in owner and says when Router's part is missing", async () => {
+it("serves the reference to a signed-in owner: Mau's routes, then Router's", async () => {
   const f = await mauFixture(cleanup);
   expect((await fetch(f.base + apiRoot + "/reference")).status).toBe(401);
   const { status, data } = await f.api("/reference");
   expect(status).toBe(200);
-  expect(data.routes.slice(0, mauApiReference.length)).toEqual(JSON.parse(JSON.stringify(mauApiReference)));
-  // Router's routes follow when the installed Router package publishes its table; otherwise the answer says so.
-  const router = (await import("@agent-router/server") as { routerApiReference?: unknown[] }).routerApiReference;
-  expect(data.routes.length).toBe(mauApiReference.length + (router?.length ?? 0));
-  expect(data.routerReference).toBe(router ? undefined : "unavailable");
+  expect(Object.keys(data)).toEqual(["routes"]);
+  expect(data.routes).toEqual(JSON.parse(JSON.stringify([...mauApiReference, ...routerApiReference])));
+  const listed = data.routes.map((route: { method: string; path: string }) => `${route.method} ${route.path}`);
+  expect(new Set(listed).size).toBe(listed.length);
+  for (const route of ["DELETE /_agent-router/v1/agents/:agentId/connections/:connectionId", "GET /_agent-router/v1/agents/:agentId/connections/:connectionId/access",
+    "PUT /_agent-router/v1/agents/:agentId/connections/:connectionId/access", "POST /_agent-router/v1/web/socket-tickets"]) expect(listed).toContain(route);
 });

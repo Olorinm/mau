@@ -1,13 +1,13 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
 import { privateFile } from "../src/files.js";
 import { aliceToken, builtCli, edgeProxy } from "./fixtures/edge.js";
-import { alice } from "./fixtures/mau.js";
+import { alice, mauFixture } from "./fixtures/mau.js";
 import { partnersFixture } from "./fixtures/partners.js";
 
 const cleanup: Array<() => unknown> = [];
@@ -132,9 +132,40 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   expect((await mau("partner", "list")).error).toEqual({ error: "login_required" });
 }, 120_000);
 
+it("edits a channel connection's access lists and removes the connection through Router", async () => {
+  const f = await mauFixture(cleanup);
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  // A Feishu connection as Router's setup job leaves it: `feishu/credentials.json` and the app secret in the agent's directory.
+  const connections = f.mau.router.connections, dir = join(connections.agentDirectory(f.agent.id), "feishu");
+  mkdirSync(dir, { mode: 0o700 });
+  writeFileSync(join(dir, "feishu-secret"), "fixture-secret\n", { mode: 0o600 });
+  writeFileSync(join(dir, "credentials.json"), JSON.stringify({ version: 1, appId: "cli_fixture", appSecretFile: "feishu-secret", domain: "feishu", ownerOpenId: "ou_owner" }), { mode: 0o600 });
+  await connections.edit(alice, f.agent.id, config => {
+    config.connections.push({ id: "feishu", kind: "feishu", credentialsFile: join(dir, "credentials.json"), domain: "feishu", ownerAddresses: ["ou_owner"], peerAddresses: ["ou_p1", "ou_p2"], groupIds: ["oc_g1"] });
+  });
+  const edge = await edgeProxy(cleanup, () => f.base, f.access.jwt), mau = builtCli(cleanup, { CF_ACCESS_TOKEN: aliceToken });
+  expect((await mau("login", edge)).json).toEqual({ owner: alice, url: edge });
+  // Access: no option shows; an option replaces its list and keeps the other.
+  expect((await mau("channel", "access", "helper", "feishu")).json).toEqual({ groupIds: ["oc_g1"], peerAddresses: ["ou_p1", "ou_p2"], ownerAddresses: ["ou_owner"] });
+  expect((await mau("channel", "access", "helper", "feishu", "--groups", "oc_g2, oc_g3")).json).toEqual({ groupIds: ["oc_g2", "oc_g3"], peerAddresses: ["ou_p1", "ou_p2"], ownerAddresses: ["ou_owner"] });
+  expect((await mau("channel", "access", "helper", "feishu", "--peers", "", "--groups", "oc_g4")).json).toEqual({ groupIds: ["oc_g4"], peerAddresses: [], ownerAddresses: ["ou_owner"] });
+  expect(connections.configuration(f.service.agent(f.agent.id))!.connections[0]).toMatchObject({ groupIds: ["oc_g4"], peerAddresses: [] });
+  expect((await mau("channel", "access", "helper", "gone")).error).toMatchObject({ error: "connection_not_found", httpStatus: 404 });
+  // Disconnecting needs --yes, removes the connection with its credential files, and reports the server's error as it is.
+  expect((await mau("channel", "disconnect", "helper", "feishu")).error).toMatchObject({ error: "confirm_with_yes", option: "--yes" });
+  expect(connections.summary(f.service.agent(f.agent.id)).connections.map(connection => connection.id)).toContain("feishu");
+  const removed = (await mau("channel", "disconnect", "helper", "feishu", "--yes")).json;
+  expect(removed.agent).toMatchObject({ id: f.agent.id, name: "helper" });
+  expect(removed.connections.map((connection: { id: string }) => connection.id)).not.toContain("feishu");
+  expect(existsSync(dir)).toBe(false);
+  expect(await mau("channel", "disconnect", "helper", "feishu", "--yes")).toMatchObject({ code: 1, stdout: "", error: { error: "connection_not_found", httpStatus: 404 } });
+  expect(await mau("channel", "disconnect", "helper", "web", "--yes")).toMatchObject({ code: 1, error: { error: "connection_not_found", httpStatus: 404 } });
+}, 60_000);
+
 /**
- * A service made of canned answers, for what the fixture service cannot do: Router routes the pinned Router does not
- * have yet (removing a connection, its access lists), cards, and connector consent.
+ * A service made of canned answers, for what the fixture service cannot do: channel checks and connection jobs that
+ * reach a chat platform, cards, and connector consent.
  */
 async function stubService(routes: Record<string, (body: any, res: ServerResponse) => unknown>) {
   const requests: Array<{ call: string; body: any }> = [];
@@ -156,16 +187,10 @@ const account = { "GET /_mau/v1/account": () => ({ owner: alice }),
   "GET /_mau/v1/agents": () => ({ data: [{ agent: { id: "a1", name: "helper" }, connections: [{ id: "feishu", kind: "feishu" }, { id: "web", kind: "web" }] }] }) };
 const refuse = (res: ServerResponse, status: number, body: unknown) => { res.writeHead(status).end(JSON.stringify(body)); };
 
-it("removes a channel connection and edits its access lists through Router's connection routes", async () => {
-  let access = { groupIds: ["g1"], peerAddresses: ["p1", "p2"] };
-  const connection = "/_agent-router/v1/agents/a1/connections/feishu";
+it("checks a partner's channels and follows connection jobs that need a person", async () => {
   const s = await stubService({ ...account,
     "POST /_agent-router/v1/agents/a1/check": () => ({ checks: [{ agentId: "a1", kind: "host", status: "verified", detail: "Host is ready." },
       { agentId: "a1", connectionId: "feishu", kind: "feishu", status: "needs_action", detail: "Bot is not in any chat." }] }),
-    [`GET ${connection}/access`]: () => ({ ...access, ownerAddresses: ["owner"] }),
-    [`PUT ${connection}/access`]: body => { access = body; return access; },
-    [`DELETE ${connection}`]: () => ({ agent: { id: "a1", name: "helper" }, connections: [{ id: "web", kind: "web" }] }),
-    "DELETE /_agent-router/v1/agents/a1/connections/gone": (_body, res) => refuse(res, 404, { error: "connection_not_found" }),
     "POST /_agent-router/v1/agents/a1/connections": () => ({ id: "j1", kind: "weixin", state: "starting", expiresAt: new Date(Date.now() + 60_000).toISOString() }),
     "GET /_agent-router/v1/agents/a1/connection-jobs/j1": () => ({ id: "j1", kind: "weixin", state: "waiting", url: "https://login.example.test/qr?code=1", qr: "[QR]", expiresAt: new Date(Date.now() + 60_000).toISOString() }),
     "GET /_agent-router/v1/agents/a1/connection-jobs/j2": () => ({ id: "j2", kind: "weixin", state: "pairing", url: "https://login.example.test/qr?code=1", expiresAt: new Date(Date.now() + 60_000).toISOString() }),
@@ -173,16 +198,6 @@ it("removes a channel connection and edits its access lists through Router's con
   expect((await s.mau("login", s.base)).json).toEqual({ owner: alice, url: s.base });
   expect((await s.mau("channel", "list", "helper")).json).toEqual({ data: [{ id: "feishu", kind: "feishu", status: "needs_action", detail: "Bot is not in any chat." }, { id: "web", kind: "web" }],
     checks: [{ agentId: "a1", kind: "host", status: "verified", detail: "Host is ready." }] });
-  // Access: no option shows; an option replaces its list and keeps the other.
-  expect((await s.mau("channel", "access", "helper", "feishu")).json).toEqual({ groupIds: ["g1"], peerAddresses: ["p1", "p2"], ownerAddresses: ["owner"] });
-  expect((await s.mau("channel", "access", "helper", "feishu", "--groups", "g2, g3")).json).toEqual({ groupIds: ["g2", "g3"], peerAddresses: ["p1", "p2"] });
-  expect((await s.mau("channel", "access", "helper", "feishu", "--peers", "", "--groups", "g4")).json).toEqual({ groupIds: ["g4"], peerAddresses: [] });
-  expect(s.bodies(`PUT ${connection}/access`)).toEqual([{ groupIds: ["g2", "g3"], peerAddresses: ["p1", "p2"] }, { groupIds: ["g4"], peerAddresses: [] }]);
-  // Disconnecting needs --yes and reports the server's error as it is.
-  expect((await s.mau("channel", "disconnect", "helper", "feishu")).error).toMatchObject({ error: "confirm_with_yes", option: "--yes" });
-  expect(s.requests.some(request => request.call.startsWith("DELETE"))).toBe(false);
-  expect((await s.mau("channel", "disconnect", "helper", "feishu", "--yes")).json).toEqual({ agent: { id: "a1", name: "helper" }, connections: [{ id: "web", kind: "web" }] });
-  expect(await s.mau("channel", "disconnect", "helper", "gone", "--yes")).toMatchObject({ code: 1, stdout: "", error: { error: "connection_not_found", httpStatus: 404 } });
   // A job that needs a person: the link and QR code on stderr, and in the result what to hand over.
   const waiting = await s.mau("channel", "connect", "helper", "weixin", "--no-wait");
   expect(waiting.json).toMatchObject({ id: "j1", state: "waiting", needsOwner: { action: "open_link", url: "https://login.example.test/qr?code=1" } });

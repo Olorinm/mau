@@ -1,5 +1,5 @@
 import { z } from "zod";
-import * as routerPackage from "@agent-router/server";
+import { routerApiReference } from "@agent-router/server";
 import { connectInputSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
 import { connectorAssignmentInput } from "./connected-apps.js";
 import { dutySchema } from "./environments.js";
@@ -114,9 +114,5 @@ export const mauApiReference: ApiRoute[] = [
   route("POST", rule + "/cancel", "Cancel the running work of a scheduled rule.", apiInput.empty),
 ];
 
-const routerRoutes = z.array(z.object({ method: z.string(), path: z.string(), summary: z.string(), body: z.unknown().optional() }));
-/** Mau's routes and Router's, when the installed Router package publishes its own table. */
-export function apiReference(): { routes: Array<z.infer<typeof routerRoutes>[number]>; routerReference?: "unavailable" } {
-  const router = routerRoutes.safeParse((routerPackage as { routerApiReference?: unknown }).routerApiReference);
-  return router.success ? { routes: [...mauApiReference, ...router.data] } : { routes: mauApiReference, routerReference: "unavailable" };
-}
+/** Every HTTP route of the service: Mau's, then Router's own table. */
+export const apiReference = (): { routes: ApiRoute[] } => ({ routes: [...mauApiReference, ...routerApiReference] });
