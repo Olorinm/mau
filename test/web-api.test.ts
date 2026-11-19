@@ -130,6 +130,40 @@ it("edge login boots without a login page, token or stored session; sign-out goe
   expect(events).toEqual([accessExpiredEvent]);
 });
 
+it("local mode: the owner token comes once in the address fragment, stays in this tab and is sent as the bearer", async () => {
+  const storage = new MemoryStorage(), token = "t".repeat(43), replaced: string[] = [];
+  vi.stubGlobal("sessionStorage", storage);
+  vi.stubGlobal("history", { state: null, replaceState: (_state: unknown, _title: string, url: string) => { replaced.push(url); } });
+  vi.stubGlobal("location", { hash: "", pathname: "/", search: "?agent=a1", reload: () => { replaced.push("reload"); } });
+  let accepted = token;
+  const calls = stubFetch((call) => call.url === "/_mau/v1/info" ? Response.json({ login: "local" })
+    : call.headers.get("authorization") === `Bearer ${accepted}` ? Response.json({ owner: "@owner:localhost", via: "bearer" }) : Response.json({ error: "account_session_invalid" }, { status: 401 }));
+  // Without the token the console says where it comes from and asks the service for nothing else.
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "local_token_required" });
+  expect(calls.map((call) => call.url)).toEqual(["/_mau/v1/info"]);
+  for (const language of ["zh-CN", "en"] as const) expect(errorMessage(translator(language), "local_token_required")).toContain("mau local");
+  // A fragment that is not a token is not kept.
+  vi.stubGlobal("location", { hash: "#token=short", pathname: "/", search: "" });
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "local_token_required" });
+  expect(storage.size).toBe(0);
+  // The token leaves the address at once and signs the owner in; a reload of the tab finds it in sessionStorage.
+  vi.stubGlobal("location", { hash: `#token=${token}`, pathname: "/", search: "?agent=a1", reload: () => { replaced.push("reload"); } });
+  const boot = await bootSession();
+  expect(boot).toEqual({ mode: "local", session: { token, owner: "@owner:localhost" } });
+  expect(replaced).toEqual(["/?agent=a1"]);
+  expect(calls.at(-1)).toMatchObject({ url: "/_mau/v1/account" });
+  vi.stubGlobal("location", { hash: "", pathname: "/", search: "", reload: () => { replaced.push("reload"); } });
+  expect(await bootSession()).toEqual(boot);
+  // Signing out forgets the token; so does a token the service refuses.
+  if (boot.mode !== "local") throw new Error("local_boot_expected");
+  logout(boot.session);
+  expect(storage.size).toBe(0);
+  expect(replaced.at(-1)).toBe("reload");
+  storage.setItem("mau.localToken", token); accepted = "another";
+  expect(await bootSession()).toEqual({ mode: "edge-failed", code: "local_token_required" });
+  expect(storage.size).toBe(0);
+});
+
 it("a service without edge login has no web login: the boot fails with web_login_unavailable and asks for nothing else", async () => {
   const storage = new MemoryStorage();
   // A session an older console stored is never read or used.

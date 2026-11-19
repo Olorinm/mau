@@ -41,7 +41,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     void bootSession().then((result) => {
       if (!active) return;
       setBoot(result);
-      if (result.mode === "edge") setSession(result.session);
+      if (result.mode === "edge" || result.mode === "local") setSession(result.session);
     });
     return () => { active = false; };
   }, []);
@@ -184,7 +184,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
                 : setView(id)
             }
             account={{
-              name: session.edge.email ?? session.owner,
+              name: session.edge?.email ?? session.owner,
               avatar: (
                 <PartnerAvatar
                   seed={session.owner}

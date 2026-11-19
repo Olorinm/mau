@@ -1,29 +1,57 @@
 import { ApiError, request } from "./http";
 
 /**
- * The owner's console session. The only login is the edge identity (Cloudflare Access): the console holds no token,
- * so `token` is always empty, requests carry no bearer and Cloudflare adds the JWT from the Access cookie.
+ * The owner's console session. Behind the edge identity (Cloudflare Access) the console holds no token: `token` is
+ * empty, requests carry no bearer and Cloudflare adds the JWT from the Access cookie. A service in local mode
+ * (`mau local`) has no edge: the console holds its owner token for this tab and sends it as the bearer.
  */
-export interface Session { token: ""; owner: string; edge: EdgeLogin }
+export interface Session { token: string; owner: string; edge?: EdgeLogin }
 export interface EdgeLogin { logoutUrl: string; email?: string; expiresAt?: string }
-/** `/_mau/v1/info`. Only `login:"edge"` opens the console. */
+/** `/_mau/v1/info`. `login:"edge"` and `login:"local"` open the console. */
 export type MauInfo = { login?: string; logoutUrl?: string };
 export type Boot =
-  | { mode: "edge"; session: Session }
+  | { mode: "edge" | "local"; session: Session }
   | { mode: "edge-denied"; email?: string; logoutUrl: string }
   | { mode: "edge-failed"; code: string };
 
 /** Only a same-origin path is followed for the Access logout. */
 const logoutPath = (value: unknown) => typeof value === "string" && /^\/[^/\\]/.test(value) ? value : "/cdn-cgi/access/logout";
 
+const localTokenKey = "mau.localToken";
 /**
- * Console boot (agent-router ADR 0005 18.3): the account is read with the same-origin Access cookie only. A service
- * without an edge identity has no web login (`web_login_unavailable`); a failed request offers a retry.
+ * The local owner token. `mau local` prints the console's address with the token in its fragment, which a browser
+ * sends to no server. It is moved to this tab's sessionStorage and taken out of the address at once.
+ */
+function localToken(storage: Storage): string | undefined {
+  const given = new URLSearchParams(location.hash.slice(1)).get("token");
+  if (given && /^[A-Za-z0-9_-]{32,}$/.test(given)) {
+    storage.setItem(localTokenKey, given);
+    history.replaceState(history.state, "", location.pathname + location.search);
+  }
+  return storage.getItem(localTokenKey) ?? undefined;
+}
+
+/**
+ * Console boot (agent-router ADR 0005 18.3). Edge: the account is read with the same-origin Access cookie only.
+ * Local: with the owner token, and without it the console says where the token comes from (`local_token_required`).
+ * A service with neither login has no web login (`web_login_unavailable`); a failed request offers a retry.
  */
 export async function bootSession(): Promise<Boot> {
   let info: MauInfo;
   try { info = await request<MauInfo>("/_mau/v1/info"); }
   catch (error) { return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" }; }
+  if (info.login === "local") {
+    const storage = sessionStorage, token = localToken(storage);
+    if (!token) return { mode: "edge-failed", code: "local_token_required" };
+    try {
+      const account = await request<{ owner?: unknown }>("/_mau/v1/account", { token, credentials: "omit" });
+      return typeof account.owner === "string" ? { mode: "local", session: { token, owner: account.owner } } : { mode: "edge-failed", code: "invalid_account_response" };
+    } catch (error) {
+      // A token the service refuses is of another local directory, or of one that was made again.
+      if (error instanceof ApiError && error.status === 401) { storage.removeItem(localTokenKey); return { mode: "edge-failed", code: "local_token_required" }; }
+      return { mode: "edge-failed", code: error instanceof ApiError ? error.code : "request_failed" };
+    }
+  }
   if (info.login !== "edge") return { mode: "edge-failed", code: "web_login_unavailable" };
   const logoutUrl = logoutPath(info.logoutUrl);
   try {
@@ -42,7 +70,7 @@ export async function bootSession(): Promise<Boot> {
 const draftsKey = "mau.reloadDrafts";
 /** Fired before the console reloads to renew an expired Access session; open composers save their text then. */
 export const beforeAccessReloadEvent = "mau:before-access-reload";
-/** "重新登录": keep unsent composer text per chat in sessionStorage, then reload so Access signs the owner in again. */
+/** "重新登录": keep unsent composer text per chat in sessionStorage, then reload so the owner is signed in again. */
 export function reloadForAccess() {
   globalThis.dispatchEvent(new Event(beforeAccessReloadEvent));
   location.reload();
@@ -61,7 +89,9 @@ export function reloadDrafts(storage: Storage = sessionStorage, clear = false): 
   } catch { return {}; }
 }
 
-/** Sign out through the edge: Access ends its session at the logout URL. */
+/** Sign out. Edge: Access ends its session at the logout URL. Local: this tab forgets the owner token. */
 export function logout(session: Session) {
-  location.assign(session.edge.logoutUrl);
+  if (session.edge) { location.assign(session.edge.logoutUrl); return; }
+  sessionStorage.removeItem(localTokenKey);
+  location.reload();
 }
