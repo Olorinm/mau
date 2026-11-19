@@ -15,9 +15,21 @@ It does not install the Mau server or any Agent Kit package. It is distributed t
 Commands are `mau <noun> <verb> [NAME] [arguments]`. A partner is always named by its NAME; there is no
 selected partner. `mau help` lists every command, `mau <noun> --help` adds the options of one group.
 
+## Run Mau on this machine
+
+```sh
+node dist/cli.js local [--dir DIR] [--port PORT] [--codex-auth FILE] [--sandbox-proxy URL]
+```
+
+From a source checkout, `mau local` runs the whole service on `127.0.0.1` until it is interrupted, with partner
+environments as local Docker containers, and signs this CLI in to it: every command below then works without
+Cloudflare Access. It prints one JSON document when the service is ready (`url`, `owner`, `dir`, `console` when the
+web console is built, `next`); the server's log goes to stderr. The installed client archive has no server and
+answers `local_requires_source_checkout`. See [local mode](local.md) for what it needs, keeps and does not protect.
+
 ## Sign in
 
-Mau sits behind Cloudflare Access. Your operator supplies the service URL, maps your Access email (or an
+A deployed Mau sits behind Cloudflare Access. Your operator supplies the service URL, maps your Access email (or an
 Access service token) to an account, and assigns an environment profile with model access configured.
 
 ```sh
@@ -35,6 +47,11 @@ again, from the first of these that is present: a service token
 (`--access-client-id-file` and `--access-client-secret-file`, or `CF_ACCESS_CLIENT_ID[_FILE]` and
 `CF_ACCESS_CLIENT_SECRET[_FILE]`), an Access token (`--access-token-file` or `CF_ACCESS_TOKEN[_FILE]`), or
 `cloudflared access token`. The URL must be `https://`; `http://` is accepted for a loopback host only.
+
+A local sign-in is written by `mau local`, not by `mau login` (which answers
+`local_service_signs_in_with_mau_local` for such a service): the session names the file with the local owner
+token, which is read on every request and sent as a bearer header to the loopback address only. While
+`mau local` is not running, commands answer `service_unreachable` with `"fix": "mau local"`.
 
 ## Partners and environments
 
@@ -193,6 +210,9 @@ JSON answer; `--data-file FILE` reads the body from a file. `mau api` lists the 
 - Secrets are read from files (`--bot-token-file`, `--api-key-file`, `--code-file`, the Access options), never from
   argument values.
 - Results are the service's own JSON. `mau api` lists every route with its body schema, for what has no command.
+- `mau local` is the one command that keeps running: its one JSON document is printed when the service is ready, and
+  it exits 0 when it is interrupted. `mau deploy` and `mau doctor` also print one document; their exit codes are in
+  [deployment](deployment.md).
 
 Maintainers can build this archive with `npm run pack:cli` and verify a fresh
 global installation with `npm run verify:cli` after bootstrapping the source tree.

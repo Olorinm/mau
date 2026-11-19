@@ -5,6 +5,8 @@ environment gateway of [Agent Kit](https://github.com/Olorinm/agent-kit/tree/mai
 that gives each partner a sandbox, R2 buckets for configuration and state, and Cloudflare Access as the only login.
 One command makes all of it and is the same command that continues, repairs and upgrades it.
 
+To try Mau first without a Cloudflare account, run it on your own machine: [local mode](local.md).
+
 ## Deploy your own
 
 You need:
@@ -123,7 +125,10 @@ every object of `config/` against the bucket, the Codex sign-in, the gateway's r
 that Access protects `/`, the deployed revision and configuration against this checkout and `config/`, whether a
 backup is configured); and, with an Access sign-in (`cloudflared access login URL`, or a service token in
 `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`), the running service: the account, the owner's environment
-profiles, and each partner's environment and channels. `--url` alone checks a service you did not deploy.
+profiles, and each partner's environment and channels. `--url` alone checks a service you did not deploy. With
+the URL of the service [`mau local`](local.md) signed the CLI in to, it checks what local mode needs instead
+(Node.js, the checkout, Docker, the local directory and its Codex sign-in) and the running service with the local
+token.
 
 ## How it runs
 

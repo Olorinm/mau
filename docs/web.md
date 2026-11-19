@@ -48,7 +48,7 @@ framed page is the live browser view an Agent hands to its owner.
 
 ## Login (Cloudflare Access)
 
-The console has no login page and stores no token. Its only login is the edge identity: with `edgeIdentity`
+Behind Cloudflare Access the console has no login page and stores no token. Its login is the edge identity: with `edgeIdentity`
 in `mau.json` (the shape of Router's `edgeIdentity`), Router verifies the `Cf-Access-Jwt-Assertion` JWT on
 every `/_mau/v1` and `/_agent-router/v1` owner request and on the SSH upgrade, and maps its email (or a
 configured service token) to an owner. The plain email header and the `CF_Authorization` cookie are never
@@ -56,6 +56,12 @@ trusted. A service token is not the owner's sign-in: unless its `serviceTokens` 
 `{ "owner": "...", "access": "owner" }`, it only reads (`GET`, `HEAD`; not the SSH upgrade) and, on Router's web
 routes, sends a chat message, opens a DM chat, marks a chat read and requests a socket ticket. Every other request,
 which is every write under `/_mau/v1`, answers `403 owner_sign_in_required`. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
+
+A service started by [`mau local`](local.md) has no edge identity. `GET /_mau/v1/info` returns `{ "login": "local" }`
+there, and the console signs in with the local owner token: `mau local` prints the console's address with the token
+in its fragment, the page keeps the token in that tab's `sessionStorage`, removes it from the address and sends it
+as a bearer header (the event socket through its single-use ticket, attachments through the same header). A tab
+without the token shows where it comes from. Signing out forgets the token.
 Mau does not start without `edgeIdentity` (`edge_identity_required`) or without Router's ledger
 (`ledger_read_required`).
 

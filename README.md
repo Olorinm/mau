@@ -19,29 +19,46 @@ and runnable. Mau uses only its public package exports; all account authenticati
 and ownership checks still belong to Router. Product routes use `/_mau/v1` and
 communication routes use `/_agent-router/v1`.
 
-## Install the CLI
+## 1. Try it on your machine
 
-With Node.js 24+, install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a release on the
-[Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.43:
+With Node.js 24+, a running Docker engine and a Codex sign-in (`codex login`), one command runs the whole product
+locally: the server, one owner, and each partner in its own container. See [local mode](docs/local.md).
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.43/olorinm-mau-cli-0.1.0-alpha.43.tgz
-mau --version
+git clone https://github.com/Olorinm/mau && cd mau
+node scripts/bootstrap.mjs && npm run build
+node dist/cli.js local                                      # runs until interrupted; prints what to do next
+node dist/cli.js partner create helper --profile codex      # in another terminal
+node dist/cli.js chat send helper "hello"
 ```
 
-The client has no server or Agent Kit dependencies. See [CLI usage](docs/cli.md).
-The build steps below are for running or developing the server.
+Local mode has no login beyond a token in a private file and gives its sandboxes unrestricted network access. It
+is for trying Mau out, not for production.
 
-## Deploy your own
+## 2. Deploy your own
 
-Mau runs in your own Cloudflare account. From a checkout, one command creates the buckets, the two Workers, the
-login and the configuration, and the same command upgrades them later; `mau doctor` says what is missing or
+Mau runs in your own Cloudflare account. From the same checkout, one command creates the buckets, the two Workers,
+the login and the configuration, and the same command upgrades them later; `mau doctor` says what is missing or
 broken. See [deployment](docs/deployment.md).
 
 ```sh
-node scripts/bootstrap.mjs && npm run build
 node dist/cli.js deploy --hostname mau.example.com --owner-email you@example.com
 ```
+
+## 3. Use the CLI
+
+To drive a deployed Mau from any machine, install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a
+release on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.43:
+
+```sh
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.43/olorinm-mau-cli-0.1.0-alpha.43.tgz
+mau login https://mau.example.com
+mau --help
+```
+
+The client has no server or Agent Kit dependencies. [CLI usage](docs/cli.md) has every command and the output
+contract for agents that drive it: one JSON document on stdout, one JSON error on stderr, nothing asked
+interactively.
 
 ## Build
 
@@ -85,7 +102,7 @@ lets an owner's partners recruit and message each other, and provides bounded He
 native skill/memory management and persisted proactive rules. Product tools require explicit configuration; no
 rules or new account authorizations are created by enabling the integration.
 
-Mau sits behind Cloudflare Access. The operator supplies the Mau URL and maps your Access email (or an Access
+A deployed Mau sits behind Cloudflare Access. The operator supplies the Mau URL and maps your Access email (or an Access
 service token) to an owner; Mau does not register a second identity. The CLI stores no Access credential: it reads
 one on every call, from `cloudflared` or from private files, never from positional command-line arguments.
 

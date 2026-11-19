@@ -8,14 +8,14 @@ channel authorization and delivery. Host owns native execution and sessions.
 
 ## Configure the server
 
-[`mau deploy`](deployment.md#deploy-your-own) does all of this for a deployment on Cloudflare. The steps below are
-what it does, for a setup made by hand.
+[`mau deploy`](deployment.md#deploy-your-own) does all of this for a deployment on Cloudflare, and
+[`mau local`](local.md) for a service on your own machine. The steps below are what they do, for a setup made by hand.
 
-1. Put the service behind Cloudflare Access and add `edgeIdentity` to `mau.json` (see [web console](web.md#login-cloudflare-access)): it is the only owner login, and Mau does not start without it. Mau embeds Router and runs it without Matrix; run only one process on a state directory and its channels.
+1. Put the service behind Cloudflare Access and add `edgeIdentity` to `mau.json` (see [web console](web.md#login-cloudflare-access)): it is the only owner login of a service others can reach, and Mau does not start without it. The one exception is [local mode](local.md): with `MAU_LOCAL_TOKEN_FILE` naming a private file, `mau-server` signs in the bearer of the token in it as `@owner:<MATRIX_SERVER_NAME>`, and starts only with `HOST` set to `127.0.0.1` or `::1` and no edge identity. Mau embeds Router and runs it without Matrix; run only one process on a state directory and its channels.
 2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment). Mau allocates sandboxes, not clusters or networks.
 3. Install Host and the native kernel in the template. Start Host with `serve --ready-file ...`; preserve Host state, native sessions and workspace on durable paths.
 4. Copy [mau.json](../examples/mau.json) and [Host config](../examples/cloud/host-profile.json) outside the repository. Supply private Environment `providers.json` and API-key files. Paths resolve relative to `mau.json`; adjust them when moving files.
-5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
+5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. A profile's optional `env` names variables its environments are created with, for example a proxy; it is not for secrets, and an environment keeps the ones it was created with. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
 6. Optional `connectionsFile` points to Router's private JSON containing `mailServices`. All channel connection logic stays in Router.
 
 Mau is deployed on Cloudflare as a Worker with one container; [deployment](deployment.md) describes the
