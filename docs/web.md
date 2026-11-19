@@ -55,7 +55,14 @@ configured service token) to an owner. The plain email header and the `CF_Author
 trusted. A service token is not the owner's sign-in: unless its `serviceTokens` entry is
 `{ "owner": "...", "access": "owner" }`, it only reads (`GET`, `HEAD`; not the SSH upgrade) and, on Router's web
 routes, sends a chat message, opens a DM chat, marks a chat read and requests a socket ticket. Every other request,
-which is every write under `/_mau/v1`, answers `403 owner_sign_in_required`. `GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
+which is every write under `/_mau/v1`, answers `403 owner_sign_in_required` (with `scope`, what the route needs, on
+Mau's routes) unless it carries an access token of the same owner in the `Mau-Token` header whose scopes cover it.
+The owner creates such tokens (`mau token create`, `POST /_mau/v1/tokens`): each has scopes (`chat`, `approve`,
+`manage`), expires within 90 days and can be revoked; only its digest is stored. A token is consulted for a
+verified service token only, never signs anyone in, and never reaches the owner's own routes (the tokens
+themselves, purging a chat, linking identities); an allowed write still needs the service's own `Origin`.
+`"access": "owner"` remains the unscoped alternative. See [Giving an agent access](cli.md#giving-an-agent-access).
+`GET /_mau/v1/info` returns `{ "login": "edge", "logoutUrl": "/cdn-cgi/access/logout" }`.
 
 A service started by [`mau local`](local.md) has no edge identity. `GET /_mau/v1/info` returns `{ "login": "local" }`
 there, and the console signs in with the local owner token: `mau local` prints the console's address with the token

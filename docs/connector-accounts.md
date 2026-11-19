@@ -124,8 +124,8 @@ it is stored with Mau's other product records, changed through the API, and remo
 | PUT | `/_mau/v1/agents/:id/connectors` | Body `{ "connections": [...] }` replaces the partner's own assignment; an empty list removes it. Returns the same as GET |
 
 Every id must be a connection of the signed-in owner; anything else is `400 connector_not_found`. Another owner's
-partner is `404`. An Access service token without owner access can read and cannot change the assignment
-(`403 owner_sign_in_required`). The CLI commands are `mau connector assign ID NAME` and `mau connector unassign ID NAME`.
+partner is `404`. An Access service token without owner access, and without an access token of the `manage` scope,
+can read and cannot change the assignment (`403 owner_sign_in_required`). The CLI commands are `mau connector assign ID NAME` and `mau connector unassign ID NAME`.
 
 A change needs no restart. When a partner sees it:
 

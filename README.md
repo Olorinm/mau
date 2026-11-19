@@ -103,6 +103,7 @@ Commands read as `mau NOUN VERB NAME`, and a partner is always named:
 | `mau memory show helper` | What the partner remembers |
 | `mau channel connect helper feishu` | Reach the partner from a chat app |
 | `mau env pause helper` · `mau env resume helper` | Control its sandbox |
+| `mau token create my-agent --scope chat --scope approve` | A scoped, expiring, revocable token for an agent that drives Mau for you |
 | `mau api` | Every HTTP route; `mau api METHOD PATH` calls one |
 
 Output is one JSON document on stdout. A failure is one JSON object on the last stderr line with exit code 1.
