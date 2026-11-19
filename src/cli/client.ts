@@ -6,11 +6,12 @@ import { isLoopback, localHeaders, readSession, removeSession, writeSession, typ
 
 export const mau = "/_mau/v1", router = "/_agent-router/v1";
 
-/** Options every command takes: where the Cloudflare Access credentials come from. */
+/** Options every command takes: where the Cloudflare Access credentials and the Mau access token come from. */
 export const accessOptions: Record<string, Option> = {
   "access-client-id-file": { type: "string", value: "FILE", help: "Access service token: the file with its client id (or CF_ACCESS_CLIENT_ID[_FILE])." },
   "access-client-secret-file": { type: "string", value: "FILE", help: "Access service token: the file with its client secret (or CF_ACCESS_CLIENT_SECRET[_FILE])." },
   "access-token-file": { type: "string", value: "FILE", help: "The file with an Access token (or CF_ACCESS_TOKEN[_FILE]); otherwise `cloudflared access token` is asked." },
+  "mau-token-file": { type: "string", value: "FILE", help: "The file with a Mau access token from `mau token create` (or MAU_TOKEN[_FILE]): what lets a service token do more than read." },
 };
 
 /** The one line of a secret file. Secrets are never taken from argument values. */
@@ -58,6 +59,13 @@ function accessHeaders(url: string, options: OptionValues): Record<string, strin
   return { "cf-access-token": token, Origin: url };
 }
 
+/** The Mau access token, when one is configured. It is read on every call and kept nowhere. */
+function tokenHeaders(options: OptionValues): Record<string, string> {
+  const token = configured(typeof options["mau-token-file"] === "string" ? options["mau-token-file"] : undefined, "MAU_TOKEN");
+  if (token === undefined) return {};
+  return /^mau_[0-9a-f]+_[A-Za-z0-9_-]+$/.test(token) ? { "Mau-Token": token } : fail("invalid_mau_token");
+}
+
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export interface Reply { status: number; data: any; headers: Headers }
 export interface Partner { id: string; name: string }
@@ -84,10 +92,13 @@ export class Client {
     return new Client(serviceUrl(session.url), options, signal, "login" in session ? session : undefined);
   }
 
-  /** The headers that authenticate the owner: the local token, read on every call, or the Access credentials, read once per run. */
+  /**
+   * The headers that authenticate the owner: the local token, read on every call, or the Access credentials, read once
+   * per run, with the Mau access token beside them. A local service has no service tokens, so it is sent no access token.
+   */
   headers() {
     if (this.local) return localHeaders(this.local) ?? fail("local_token_unreadable", { tokenFile: this.local.tokenFile, fix: "mau local" });
-    return this.resolved ??= accessHeaders(this.url, this.options);
+    return { ...(this.resolved ??= accessHeaders(this.url, this.options)), ...tokenHeaders(this.options) };
   }
 
   /** One request. An answer that is not JSON, or no answer, is a failure; an HTTP error status is returned. */
@@ -118,6 +129,8 @@ export class Client {
   result(reply: Reply): any {
     if (reply.status >= 200 && reply.status < 300) return reply.data;
     const { error, ...fields } = reply.data && typeof reply.data === "object" && !Array.isArray(reply.data) ? reply.data as Record<string, unknown> : {};
+    // A service token was refused: the server names the scope an access token needs for this route, when it has one.
+    if (error === "owner_sign_in_required" && typeof fields.scope === "string") { fields.needs = fields.scope; delete fields.scope; }
     throw new CliError(typeof error === "string" && /^[a-z0-9_]+$/.test(error) ? error : "request_failed", { ...fields, httpStatus: reply.status });
   }
   get(path: string, timeoutMs?: number) { return this.request("GET", path, undefined, timeoutMs); }

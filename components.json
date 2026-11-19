@@ -1,11 +1,11 @@
 {
   "repository": "Olorinm/agent-kit",
-  "version": "0.11.0-alpha.7",
-  "revision": "35c7e6b148250a984025e893f72ebeaa76d9d960",
+  "version": "0.11.0-alpha.8",
+  "revision": "6ac91aed6fafd1c026b25c26d138c120e597fa25",
   "integrity": {
-    "host": "sha512-lS1qV+t4SvHdBP2ZE0YAQ8ftdU2uIXT7xN32uzyHL6+kZuU3w/jHxghAiwTDQvGZ+C5cGVTq4RXCvEbJgtILdQ==",
-    "router": "sha512-/PaUDrGTkBVZMPiv5hvoEsSzqau2x92yH34gRVTFM7s8H5i8xu6gw3ywg+Oua/DM4INwSAVsx/L85pKAZhoiuA==",
-    "connectors": "sha512-HKEcYrw0jKjfk1RQayQScyABCLTgfsfMZ0rt0bJbOXd0359aD1YKOQME3X8z9CKEsPKOrCDDwCOQcdCtj36YfA==",
-    "environment": "sha512-/wT5ekqPPR6icEMyqhq0okuO/nRCRqU3NGdb+dH6g/6oz4VaKEMltq9s0eZrlJ5eIZcIKMk3rs7F8KMuf6ymHg=="
+    "host": "sha512-1JA7j1V04VIBFavV2CcSLBGu/eaZyQe2ctMLxmKlWWRGRpYBL+a7tYdVUBsUUVB/htbJkbPAe2fT7p0fqUeheA==",
+    "router": "sha512-6clbk2nVhbGG1l7dgdUNp7Hb2oSLuoY1ICv91qtMIOiZZCBmsD3qthcqw+tguzM9fY+Pp3odxio5i7qITEoF+w==",
+    "connectors": "sha512-G8n2NAWVcQIaBd9gMT4v6F48cIbzIROznS76A/AJY/GYLn4oDgaQC+DIe6OKTTFq96Xlqmcct15hW8zdFHp+NA==",
+    "environment": "sha512-T++qX1bMFHobSglwLJI2hrkBXj/Sl1ZUD3Nqa7lAa9lX2a4owuKmdpD6zZ5n8OXxLiPu4q5TSEgQ5RrwwCqpfQ=="
   }
 }

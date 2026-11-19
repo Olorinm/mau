@@ -13,11 +13,15 @@ import { promisify } from "node:util";
 /** The Access token that stands for alice's signed-in session. */
 export const aliceToken = "alice-access-token";
 
-export async function edgeProxy(cleanup: Array<() => unknown>, upstream: () => string, jwt: (claims?: Record<string, unknown>) => string) {
+/** `serviceTokens`: Access service tokens by client id, each with its secret and the name Access puts in the JWT. */
+export async function edgeProxy(cleanup: Array<() => unknown>, upstream: () => string, jwt: (claims?: Record<string, unknown>) => string,
+  serviceTokens: Record<string, { secret: string; commonName: string }> = {}) {
   const server = createServer((req, res) => {
-    const { "cf-access-token": token, "cf-access-jwt-assertion": _forged, ...headers } = req.headers;
+    const { "cf-access-token": token, "cf-access-jwt-assertion": _forged, "cf-access-client-id": clientId, "cf-access-client-secret": clientSecret, ...headers } = req.headers;
     const target = new URL(req.url ?? "/", upstream());
-    const forward = request(target, { method: req.method, headers: { ...headers, ...(token === aliceToken ? { "cf-access-jwt-assertion": jwt() } : {}) } }, answer => {
+    const service = typeof clientId === "string" && Object.hasOwn(serviceTokens, clientId) && serviceTokens[clientId]!.secret === clientSecret ? serviceTokens[clientId] : undefined;
+    const assertion = token === aliceToken ? jwt() : service ? jwt({ email: undefined, sub: "", common_name: service.commonName }) : undefined;
+    const forward = request(target, { method: req.method, headers: { ...headers, ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}) } }, answer => {
       res.writeHead(answer.statusCode ?? 502, answer.headers); answer.pipe(res);
     });
     forward.on("error", () => { res.writeHead(502).end(); });

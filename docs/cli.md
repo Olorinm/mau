@@ -1,10 +1,10 @@
 # Mau CLI
 
 Install Node.js 24 or later, then install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a release
-on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.55:
+on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.56:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.55/olorinm-mau-cli-0.1.0-alpha.55.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.56/olorinm-mau-cli-0.1.0-alpha.56.tgz
 mau --version
 ```
 
@@ -37,7 +37,7 @@ cloudflared access login https://mau.example
 mau login https://mau.example
 mau whoami
 # automation: an Access service token mapped by the operator. It can read; commands that change something
-# answer owner_sign_in_required unless the operator gave the token "access": "owner" (see web.md).
+# answer owner_sign_in_required until you give it an access token (see "Giving an agent access").
 mau login https://mau.example --access-client-id-file /private/id --access-client-secret-file /private/secret
 ```
 
@@ -52,6 +52,43 @@ A local sign-in is written by `mau local`, not by `mau login` (which answers
 `local_service_signs_in_with_mau_local` for such a service): the session names the file with the local owner
 token, which is read on every request and sent as a bearer header to the loopback address only. While
 `mau local` is not running, commands answer `service_unreachable` with `"fix": "mau local"`.
+
+## Giving an agent access
+
+An agent that drives Mau for you signs in with a Cloudflare Access service token, which gets it through Access, and
+is told what it may do by a Mau access token that you create, scope and can take back:
+
+1. Create a service token in Cloudflare Access and allow it in the Access policy of your Mau.
+2. Map it to your account in `edgeIdentity.serviceTokens` (see [web console](web.md#login-cloudflare-access)). On
+   its own it reads, sends chat messages and nothing else.
+3. Create an access token and hand its file to the agent with the service token's id and secret:
+
+```sh
+mau token create my-agent --scope chat --scope approve --days 7 --out /private/mau-token   # shown or written once
+mau token list                                            # id, name, scopes, expiry, last use; never the token
+mau token revoke TOKEN_ID                                 # its next request is refused
+
+# the agent
+export CF_ACCESS_CLIENT_ID_FILE=/private/id CF_ACCESS_CLIENT_SECRET_FILE=/private/secret MAU_TOKEN_FILE=/private/mau-token
+mau login https://mau.example
+mau whoami                                                # "token": its name, scopes and expiry
+```
+
+| Scope | What it adds to reading |
+| --- | --- |
+| `chat` | Conversations as you: send, redact and attach, steer or cancel a turn, start a new context window |
+| `approve` | Deciding for you: answer cards (approvals, questions, confirmations) and pending memory changes |
+| `manage` | Partners, environments and SSH, models, memory, which connections a partner uses, schedules, channel connections, groups |
+
+A token carries at least one scope, expires after `--days` (1 to 90, 7 when not given) and is one of at most 20
+working tokens. Without `--out` the token is part of the JSON result; with it the token goes to a new file only you
+can read. Only its digest is stored, so it cannot be shown again. The agent names it with `--mau-token-file FILE`,
+`MAU_TOKEN_FILE` or `MAU_TOKEN`; it is read for every command and sent as the `Mau-Token` header. It works only
+beside a service token of the same owner: it is no sign-in, and it means nothing with your own sign-in or in local
+mode. No token creates, lists or revokes tokens, purges a chat's history, links an identity, or changes when you
+are asked (a connection's operation settings, a browser connection's site access): those need you. A
+command the token does not cover fails with `owner_sign_in_required` and, for routes under `/_mau/v1`, `needs`: the
+scope that would allow it. `"access": "owner"` in the edge identity remains the unscoped alternative.
 
 ## Partners and environments
 
@@ -193,7 +230,8 @@ mau api POST /_mau/v1/proactive/RULE_ID/state --data '{"status":"paused"}'
 
 `mau api METHOD PATH` calls any route under `/_mau/v1` or `/_agent-router/v1` with your sign-in and prints its
 JSON answer; `--data-file FILE` reads the body from a file. `mau api` lists the routes from the service
-(`GET /_mau/v1/reference`): Mau's under `/_mau/v1`, then Router's under `/_agent-router/v1`.
+(`GET /_mau/v1/reference`): Mau's under `/_mau/v1`, then Router's under `/_agent-router/v1`, each with the `scope`
+an access token needs for it (`read`, `chat`, `approve`, `manage`, or `owner` for what no token can do).
 
 ## For agents
 
@@ -207,8 +245,10 @@ JSON answer; `--data-file FILE` reads the body from a file. `mau api` lists the 
 - Commands that take time wait for the outcome; `--no-wait` returns the current state instead.
 - When a person has to act, the result (or the error) has `needsOwner`: `{"action":"open_link","url":"…"}`,
   `{"action":"enter_pairing_code","command":"…"}` or `{"action":"connect_in_console","url":"…"}`. Hand it to the owner.
-- Secrets are read from files (`--bot-token-file`, `--api-key-file`, `--code-file`, the Access options), never from
-  argument values.
+- Secrets are read from files (`--bot-token-file`, `--api-key-file`, `--code-file`, the Access options,
+  `--mau-token-file`), never from argument values.
+- `owner_sign_in_required` means your access token does not cover the command; `needs` names the scope to ask the
+  owner for, when the service said which.
 - Results are the service's own JSON. `mau api` lists every route with its body schema, for what has no command.
 - `mau local` is the one command that keeps running: its one JSON document is printed when the service is ready, and
   it exits 0 when it is interrupted. `mau deploy` and `mau doctor` also print one document; their exit codes are in
