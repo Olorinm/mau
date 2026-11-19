@@ -104,7 +104,7 @@ export class BusinessTools {
     const files = this.files, skills = this.skills, guides = appReader ? this.guides?.(agentId) : undefined;
     const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
-      appReader ? { connections: this.apps!.connections(agentId, owner), browser: this.apps!.browser(agentId, owner),
+      appReader ? { connections: () => this.apps!.connections(agentId, owner), browser: () => this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
         ...(this.sites ? { sites: this.sites } : {}),
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
@@ -130,8 +130,9 @@ interface SiteRequest {
 }
 /** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
 interface ConnectedAppHosting {
-  connections: string[];
-  browser: string[];
+  /** The connections the Agent can use now, and the browser ones among them: read on every use, as the owner can change them. */
+  connections(): string[];
+  browser(): string[];
   approvals?: ApprovalPort;
   sites?: SitePort;
   files?: () => Promise<SandboxFiles>;
@@ -193,7 +194,8 @@ export class BusinessHost extends HttpAgentHost {
       const granted = (kind: "feishu" | "connectedApps") => admission &&
         (admission.kind === "owner" && !admission.toolGrants || Boolean(partnerTurn) || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
-        ...(granted("connectedApps") && this.appReader ? [connectedAppDefinition] : []),
+        // A session gets `connected_apps` when the Agent has a connection at its first turn; what the tool reaches is read on every call.
+        ...(granted("connectedApps") && this.appReader && this.apps?.connections().length !== 0 ? [connectedAppDefinition] : []),
         ...(admission && admission.kind !== "schedule" ? this.partner?.definitions ?? [] : [])];
       return this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
     };
@@ -415,7 +417,7 @@ export class BusinessHost extends HttpAgentHost {
   }
   private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
     const granted = admission.toolGrants?.connectedApps, apps = this.apps;
-    let connections = (apps?.connections ?? []).filter(id => !granted || granted.connections.includes(id));
+    let connections = (apps?.connections() ?? []).filter(id => !granted || granted.connections.includes(id));
     // A turn a partner's message started may write where the owner's turn that message came from could.
     const partnerTurn = this.partner?.authority?.(admission);
     // Hard check: connections acting as the owner's personal identity only in the owner's private conversation,
@@ -427,7 +429,7 @@ export class BusinessHost extends HttpAgentHost {
       connections = connections.filter(id => !blocked.includes(id));
     }
     const scope = blocked.length ? { connections, ...(granted?.operations ? { operations: granted.operations } : {}) } : granted;
-    const browser = (apps?.browser ?? []).filter(id => connections.includes(id));
+    const browser = (apps?.browser() ?? []).filter(id => connections.includes(id));
     // The owner can be asked in the owner's own turn, and for a partner turn that came from one. Schedules keep read-only tokens.
     const write = (admission.kind === "owner" || partnerTurn?.write === true) && !!this.approvals;
     const options = write ? { write: true } : undefined;
@@ -563,7 +565,7 @@ export class BusinessHost extends HttpAgentHost {
     this.store.set("browser_site_requests", id, { ...record, status: "closed" });
   }
   private async finishApp(call: Pick<HostCall, "runId" | "id">, name: string, outcome: unknown) {
-    const found = browserTool(name, this.apps?.browser ?? []);
+    const found = browserTool(name, this.apps?.browser() ?? []);
     if (!found) return scrub(outcome);
     try {
       return await finishBrowser(found.tool, outcome, this.apps?.files, handoff => {

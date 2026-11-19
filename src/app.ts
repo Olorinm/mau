@@ -8,13 +8,13 @@ import type { Duplex } from "node:stream";
 import { attachSsh, sshKeyId } from "./ssh.js";
 import { webConsole } from "./web.js";
 import { createRouter, HttpAgentHost, RouterError, type ServiceConfig, type ServiceDependencies } from "@agent-router/server";
-import { EnvironmentManager, dutySchema, environmentOptionsSchema, type Environments } from "./environments.js";
-
+import { EnvironmentManager, environmentOptionsSchema, type Environments } from "./environments.js";
+import { apiInput, apiReference, apiRoot } from "./api-reference.js";
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
-import { ConnectedApps, connectedAppsSchema } from "./connected-apps.js";
+import { ConnectedApps, connectedAppsSchema, connectorAssignmentInput } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
 import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, confirmationCard, confirmationEvent, type ProactivePort } from "./proactive.js";
@@ -49,15 +49,14 @@ const optionsSchema = z.object({
    * Required here or in the Router service config: it is the only owner login. */
   edgeIdentity: z.record(z.string(), z.unknown()).optional(),
 }).strict();
-const apiRoot = "/_mau/v1";
 /** The authenticated owner, as returned by Router's `authenticateRequest` (agent-router ADR 0005 18.2). */
 interface OwnerPrincipal { ownerId: string; personId?: string; via?: string; email?: string; expiresAt?: number; operator?: true }
 type EdgeIdentityConfig = NonNullable<ServiceConfig["edgeIdentity"]>;
 interface OwnerRequest { headers: IncomingMessage["headers"]; method?: string | undefined; url?: string | undefined; originalUrl?: string | undefined }
 
 /** One product process composes independent components; it shares Router accounts, never duplicates them. */
-/** Product records keyed or tagged by a deleted partner: business scopes (`agentId:operation`), JSON keys
- * starting with [owner, agentId], and values naming the Agent. Hashed index rows are unreachable once the ID is gone. */
+/** Product records keyed or tagged by a deleted partner: its own documents (connector assignment), business scopes
+ * (`agentId:operation`), JSON keys starting with [owner, agentId], and values naming the Agent. Hashed index rows are unreachable once the ID is gone. */
 function forgetPartnerRecords(store: DurableStore, owner: string, agentId: string) {
   const prefix = JSON.stringify([owner, agentId]).slice(0, -1);
   store.db.prepare(`DELETE FROM documents WHERE id=? OR substr(id,1,length(?)+1)=?||':' OR substr(id,1,length(?))=?
@@ -81,7 +80,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   let environments: EnvironmentManager;
   const businessStore = new DurableStore(join(config.stateDir, "business-tools.sqlite"), config.serverName);
   // Owner writes need an approval presenter: only Mau's authority key (connectorAccounts) can sign grants.
-  const connectedApps = new ConnectedApps(options.connectedApps, base, !!options.connectorAccounts,
+  const connectedApps = new ConnectedApps(options.connectedApps, base, businessStore, !!options.connectorAccounts,
     { sharedFrom: agentId => environments.sharedFrom(agentId), sharedBy: agentId => environments.sharedBy(agentId) });
   const business = new BusinessTools(options.feishuBotReaders, base, businessStore, connectedApps);
   const connectorAccounts = new ConnectorAccounts(options.connectorAccounts, base);
@@ -307,36 +306,37 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.json({ owner: ownerId, ...(personId ? { person: { id: personId, name: router.service.persons.person(personId)?.displayName ?? ownerId } } : {}),
       via: via ?? "bearer", ...(email ? { email } : {}), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}) });
   });
+  product.get("/reference", (_req, res) => res.json(apiReference()));
   product.get("/proactive", (_req, res) => res.json({ data: proactive.list(res.locals.owner) }));
   product.post("/proactive", async (req, res) => res.status(201).json(await proactive.save(res.locals.owner, req.body)));
   product.put("/proactive/:id", async (req, res) => {
-    const { expectedVersion, rule } = z.object({ expectedVersion: z.number().int().positive(), rule: z.unknown() }).strict().parse(req.body);
+    const { expectedVersion, rule } = apiInput.ruleUpdate.parse(req.body);
     res.json(await proactive.save(res.locals.owner, rule, String(req.params.id), expectedVersion));
   });
   product.get("/proactive/:id", (req, res) => res.json(proactive.rule(res.locals.owner, String(req.params.id))));
   product.get("/proactive/:id/runs", (req, res) => res.json({ data: proactive.runs(res.locals.owner, String(req.params.id)), notifications: proactive.notices(res.locals.owner, String(req.params.id)) }));
   product.post("/proactive/:id/state", async (req, res) => {
-    const { status } = z.object({ status: z.enum(["active", "paused"]) }).strict().parse(req.body);
+    const { status } = apiInput.ruleState.parse(req.body);
     res.json(await proactive.state(res.locals.owner, String(req.params.id), status));
   });
   product.post("/proactive/:id/run", async (req, res) => {
-    const { requestId } = z.object({ requestId: z.string().min(1).max(160) }).strict().parse(req.body);
+    const { requestId } = apiInput.ruleRun.parse(req.body);
     res.status(202).json(await proactive.runNow(res.locals.owner, String(req.params.id), requestId));
   });
-  product.post("/proactive/:id/cancel", async (req, res) => { z.object({}).strict().parse(req.body); await proactive.cancel(res.locals.owner, String(req.params.id)); res.json({ status: "requested" }); });
+  product.post("/proactive/:id/cancel", async (req, res) => { apiInput.empty.parse(req.body); await proactive.cancel(res.locals.owner, String(req.params.id)); res.json({ status: "requested" }); });
   product.get("/agents/:id/memory", (req, res) => res.json(facts.read(res.locals.owner, String(req.params.id))));
   product.post("/agents/:id/memory", (req, res) => res.json(facts.mutate(res.locals.owner, String(req.params.id), req.body, { origin: "owner" })));
   product.get("/agents/:id/memory/mutations", (req, res) => res.json({ data: facts.mutations(res.locals.owner, String(req.params.id)) }));
   product.post("/agents/:id/memory/mutations/seen", (req, res) => {
-    const { through } = z.object({ through: z.number().int().min(0) }).strict().parse(req.body);
+    const { through } = apiInput.memorySeen.parse(req.body);
     res.json(facts.markSeen(res.locals.owner, String(req.params.id), through));
   });
   product.post("/agents/:id/memory/mutations/:mutationId/undo", (req, res) => {
-    z.object({}).strict().parse(req.body); res.json(facts.undo(res.locals.owner, String(req.params.id), String(req.params.mutationId)));
+    apiInput.empty.parse(req.body); res.json(facts.undo(res.locals.owner, String(req.params.id), String(req.params.mutationId)));
   });
   product.post("/agents/:id/memory/search", (req, res) => res.json(history.search(res.locals.owner, String(req.params.id), historyQuery.parse(req.body))));
   product.post("/agents/:id/memory/history/import", async (req, res) => {
-    const input = z.object({ sessionId: z.string().min(1).max(160), cursor: z.string().max(10000).optional() }).strict().parse(req.body);
+    const input = apiInput.historyImport.parse(req.body);
     const page = await (await sessions(res.locals.owner, String(req.params.id))).history(input.sessionId, { limit: 100, itemsView: "full", sortDirection: "asc", ...(input.cursor ? { cursor: input.cursor } : {}) });
     res.json(history.importPage(res.locals.owner, String(req.params.id), input.sessionId, page));
   });
@@ -346,26 +346,26 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.json({ ...reviews.status(scope), data: reviews.list(scope) });
   });
   product.post("/agents/:id/memory/reviews/state", (req, res) => {
-    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body);
+    const { enabled } = apiInput.reviewState.parse(req.body);
     const scope = { owner: res.locals.owner as string, agentId: String(req.params.id) }; assertOwned(scope.owner, scope.agentId);
     if (enabled) reviews.resume(scope); else reviews.stop(scope); res.json(reviews.status(scope));
   });
   product.post("/agents/:id/memory/pending/:pendingId/approve", (req, res) => {
-    z.object({}).strict().parse(req.body); res.json(facts.approve(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
+    apiInput.empty.parse(req.body); res.json(facts.approve(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
   });
   product.post("/agents/:id/memory/pending/:pendingId/discard", (req, res) => {
-    z.object({}).strict().parse(req.body); res.json(facts.discard(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
+    apiInput.empty.parse(req.body); res.json(facts.discard(res.locals.owner, String(req.params.id), String(req.params.pendingId)));
   });
-  product.post("/agents/:id/native/discover", async (req, res) => { z.object({}).strict().parse(req.body); res.json(await (await sessions(res.locals.owner, String(req.params.id))).discover()); });
+  product.post("/agents/:id/native/discover", async (req, res) => { apiInput.empty.parse(req.body); res.json(await (await sessions(res.locals.owner, String(req.params.id))).discover()); });
   product.get("/agents/:id/native/skills", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).skills()));
   product.post("/agents/:id/native/skills", async (req, res) => {
-    const { path, enabled } = z.object({ path: z.string().min(1).max(4096), enabled: z.boolean() }).strict().parse(req.body);
+    const { path, enabled } = apiInput.skillState.parse(req.body);
     res.json(await (await sessions(res.locals.owner, String(req.params.id))).configureSkill(path, enabled));
   });
   product.get("/agents/:id/native/memory", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).memoryStatus()));
   product.get("/agents/:id/work-sessions/:sessionId/memory", async (req, res) => res.json(await (await sessions(res.locals.owner, String(req.params.id))).readMemory(String(req.params.sessionId))));
   product.post("/agents/:id/work-sessions/:sessionId/memory", async (req, res) => {
-    const { mode } = z.object({ mode: z.enum(["enabled", "disabled"]) }).strict().parse(req.body);
+    const { mode } = apiInput.sessionMemoryMode.parse(req.body);
     res.json(await (await sessions(res.locals.owner, String(req.params.id))).memoryMode(String(req.params.sessionId), mode));
   });
   product.get("/connector-accounts", async (_req, res) => {
@@ -378,7 +378,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   // Unified 飞书 entry, step 2: hand the app of the Agent's Feishu chat channel to the owner's Feishu connection.
   product.post("/connector-accounts/:id/feishu-application", async (req, res) => {
-    const { agentId } = z.object({ agentId: z.uuid() }).strict().parse(req.body);
+    const { agentId } = apiInput.feishuApplication.parse(req.body);
     const owner = res.locals.owner as string, agent = router.service.owned(agentId, owner), id = String(req.params.id);
     if (!connectedApps.assigned(owner, id).includes(agentId)) throw new RouterError("connector_not_assigned_to_agent", 409);
     // A partner using another partner's connections does not change the application behind them.
@@ -395,7 +395,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.put("/connector-accounts/:id/policy", async (req, res) =>
     res.json(await connectorAccounts.setPolicy(res.locals.owner, String(req.params.id), policySettingsSchema.parse(req.body))));
   product.post("/connector-accounts/:id/policy/reset", async (req, res) => {
-    z.object({}).strict().parse(req.body ?? {});
+    apiInput.empty.parse(req.body ?? {});
     res.json(await connectorAccounts.resetPolicy(res.locals.owner, String(req.params.id)));
   });
   // A browser connection's site permissions: open new sites directly or ask first, and the always-allowed sites.
@@ -405,7 +405,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.post("/connector-accounts/:id/:action", async (req, res) => {
     const action = z.enum(["check", "connect", "complete", "disconnect"]).parse(req.params.action);
     // Connect may name operations whose missing scopes to add; every other action takes no input.
-    const input = action === "connect" ? connectInputSchema.parse(req.body ?? {}) : (z.object({}).strict().parse(req.body), {});
+    const input = action === "connect" ? connectInputSchema.parse(req.body ?? {}) : (apiInput.empty.parse(req.body), {});
     const result = await connectorAccounts.action(res.locals.owner, String(req.params.id), action, input);
     if (result.authorizationUrl) connectorRuntime?.bind(result.authorizationUrl, res);
     res.json(result);
@@ -422,12 +422,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     dismissed: partners.dismissedAt(id) ?? null,
   });
   product.get("/agents", (_req, res) => res.json({ data: router.service.agents(res.locals.owner).map(a => summary(a.owner, a.id)) }));
-  // A partner gets an environment of its own (`profileId`) or runs in another partner's (`shareWith`).
-  const newAgent = { name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/), duty: dutySchema.optional() };
-  const newAgentInput = z.union([z.object({ ...newAgent, profileId: z.string().min(1).max(48) }).strict(),
-    z.object({ ...newAgent, shareWith: z.uuid(), kernel: z.string().min(1).max(48).optional() }).strict()]);
   product.post("/agents", async (req, res) => {
-    const input = newAgentInput.parse(req.body), owner = res.locals.owner as string;
+    const input = apiInput.newAgent.parse(req.body), owner = res.locals.owner as string;
     if ("shareWith" in input) {
       await environments.assertShareable(owner, input.shareWith, input.kernel);
       const agent = await router.service.create(owner, input.name);
@@ -443,7 +439,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
   // Dismissing archives a partner: everything it has is kept, and it leaves the roster until it is restored.
   for (const action of ["dismiss", "restore"] as const) product.post(`/agents/:id/${action}`, (req, res) => {
-    z.object({}).strict().parse(req.body);
+    apiInput.empty.parse(req.body);
     const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;
     if (action === "dismiss") partners.archive(owner, id, "owner"); else partners.restore(owner, id);
     res.json(summary(owner, id));
@@ -458,28 +454,46 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.status(204).end();
   });
   product.post("/agents/:id/ssh", async (req, res) => {
-    const { publicKey } = z.object({ publicKey: z.string().max(128) }).strict().parse(req.body);
+    const { publicKey } = apiInput.sshKey.parse(req.body);
     sshKeyId(publicKey);
     res.json(await environments.prepareSsh(res.locals.owner, String(req.params.id), publicKey));
   });
   product.get("/agents/:id/instructions", (req, res) => res.json(environments.instructions(res.locals.owner, String(req.params.id))));
   product.get("/agents/:id/model-settings", async (req, res) => res.json(await modelSettings.view(res.locals.owner, String(req.params.id))));
   product.put("/agents/:id/model-settings", async (req, res) => res.json(await modelSettings.select(res.locals.owner, String(req.params.id), req.body)));
+  // What a partner can use of the owner's connector connections. Every call of `connected_apps` reads it, so a change
+  // needs no restart; the tool itself is added to a conversation at its first turn (`business_session_catalog`).
+  const connectors = (owner: string, id: string) => {
+    const inherited = connectedApps.inheritedFrom(id, owner);
+    return { connections: connectedApps.connections(id, owner),
+      ...(inherited ? { inheritedFrom: { id: inherited, name: router.service.agent(inherited).name } } : {}) };
+  };
+  product.get("/agents/:id/connectors", (req, res) => {
+    const owner = res.locals.owner as string;
+    res.json(connectors(owner, router.service.owned(String(req.params.id), owner).id));
+  });
+  product.put("/agents/:id/connectors", async (req, res) => {
+    const { connections } = connectorAssignmentInput.parse(req.body), owner = res.locals.owner as string;
+    const id = router.service.owned(String(req.params.id), owner).id, known = (await connectorAccounts.list(owner)).data.map(account => account.id);
+    if (connections.some(connection => !known.includes(connection))) throw new RouterError("connector_not_found", 400);
+    connectedApps.assign(owner, id, connections);
+    res.json(connectors(owner, id));
+  });
   product.get("/agents/:id/environment", (req, res) => res.json(environments.summary(res.locals.owner, String(req.params.id)) ?? { state: "unconfigured", busy: false }));
   product.post("/agents/:id/environment", async (req, res) => {
-    const { profileId } = z.object({ profileId: z.string().min(1).max(48) }).strict().parse(req.body);
+    const { profileId } = apiInput.environment.parse(req.body);
     res.status(202).json(await environments.begin(res.locals.owner, String(req.params.id), profileId));
   });
   product.post("/agents/:id/environment/replace", async (req, res) => {
-    const input = z.object({ profileId: z.string().min(1).max(48), expectedOperationId: z.uuid() }).strict().parse(req.body);
+    const input = apiInput.environmentReplace.parse(req.body);
     res.status(202).json(await environments.replace(res.locals.owner, String(req.params.id), input.profileId, input.expectedOperationId));
   });
   product.post("/agents/:id/environment/rollback", async (req, res) => {
-    const input = z.object({ expectedOperationId: z.uuid() }).strict().parse(req.body);
+    const input = apiInput.environmentRollback.parse(req.body);
     res.status(202).json(await environments.rollbackReplacement(res.locals.owner, String(req.params.id), input.expectedOperationId));
   });
   product.post("/agents/:id/environment/:action", async (req, res) => {
-    z.object({}).strict().parse(req.body);
+    apiInput.empty.parse(req.body);
     const action = z.enum(["pause", "resume", "destroy", "reconcile"]).parse(req.params.action);
     res.status(202).json(await environments.action(res.locals.owner, String(req.params.id), action));
   });

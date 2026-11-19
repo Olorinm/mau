@@ -19,7 +19,7 @@ const operationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("replace"), old_text: z.string().min(1).max(65536), content: z.string().min(1).max(65536) }).strict(),
   z.object({ action: z.literal("remove"), old_text: z.string().min(1).max(65536) }).strict(),
 ]);
-const memoryMutationInput = z.discriminatedUnion("action", [...operationSchema.options,
+export const memoryMutationInput = z.discriminatedUnion("action", [...operationSchema.options,
   z.object({ action: z.literal("batch"), operations: z.array(operationSchema).min(1).max(30) }).strict()]);
 export const memoryInput = z.union([z.object({ action: z.literal("read") }).strict(), memoryMutationInput]);
 // Kernel tool catalogs require an object at the root. The discriminated runtime

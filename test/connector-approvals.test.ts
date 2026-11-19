@@ -115,7 +115,7 @@ async function fixture(options: { deadlineMs?: number; files?: boolean; partner?
       throw new Error("unexpected_request " + path);
     }
   }("https://host.fixture", "host-secret");
-  const hosting = { connections: ["browser"], browser: ["browser"], approvals: accounts, ...(options.files === false ? {} : { files: async () => files }) };
+  const hosting = { connections: () => ["browser"], browser: () => ["browser"], approvals: accounts, ...(options.files === false ? {} : { files: async () => files }) };
   const make = () => new BusinessHost(http, undefined, store, "agent:binding", reader, principal, options.partner, undefined, hosting);
   const host = make();
   const call = (name: string, args: Record<string, unknown>, id = "call-1") => {
@@ -330,8 +330,8 @@ it("refuses the workspace relay when the sandbox is unavailable", async () => {
 it("mints write-capable caller tokens only through the owner path", async () => {
   const dir = temp(), key = await generateSigningKey("caller"), agent = "6f1f2d4e-6d1c-4f5b-9a7a-1f4f1a0c2b3d";
   privateFile(join(dir, "caller.json"), key.privateJwk);
-  const config = { url: "http://127.0.0.1:18100", issuer: "mau", audience: "connectors", callerKeyFile: "caller.json",
-    assignments: [{ agentId: agent, owner, connections: ["browser"] }], browserConnections: ["browser"] };
+  const config = { url: "http://127.0.0.1:18100", issuer: "mau", audience: "connectors", callerKeyFile: "caller.json", browserConnections: ["browser"] };
+  const assignments = new DurableStore(":memory:", "fixture"); cleanup.push(() => assignments.close());
   const tokens: string[] = [];
   vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
     tokens.push(new Headers(init?.headers).get("authorization")!.slice(7));
@@ -342,7 +342,8 @@ it("mints write-capable caller tokens only through the owner path", async () => 
       : { content: [], structuredContent: { status: "approval_required", operationId: "op", summary: "s", expiresAt: new Date().toISOString() } };
     return Response.json({ jsonrpc: "2.0", id: body.id, result });
   });
-  const apps = new ConnectedApps(config, dir, true);
+  const apps = new ConnectedApps(config, dir, assignments, true);
+  apps.assign(owner, agent, ["browser"]);
   expect(apps.browser(agent, owner)).toEqual(["browser"]);
   expect(await apps.reader(agent, owner)!({ action: "tools" }, undefined, { write: true })).toMatchObject({ tools: [{ name: "browser__click", risk: "write" }] });
   expect(await apps.reader(agent, owner)!({ action: "call", name: "browser__click", arguments: {} }, undefined, { write: true })).toMatchObject({ status: "approval_required" });
@@ -350,7 +351,7 @@ it("mints write-capable caller tokens only through the owner path", async () => 
   for (const token of tokens) expect(decodeJwt(token)).toMatchObject({ sub: agent, owner, connections: ["browser"], readOnly: false });
   // Without an approval presenter, Mau never builds the write-capable client.
   const readOnly = vi.spyOn(ConnectorCallerClient.prototype, "call");
-  const unconfigured = new ConnectedApps(config, dir, false);
+  const unconfigured = new ConnectedApps(config, dir, assignments, false);
   expect(unconfigured.writable).toBe(false);
   await unconfigured.reader(agent, owner)!({ action: "call", name: "browser__click", arguments: {} }, undefined, { write: true }).catch(() => undefined);
   expect(readOnly).not.toHaveBeenCalled();

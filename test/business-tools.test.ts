@@ -344,7 +344,7 @@ it("admits owner-identity connections only in the owner's private conversation, 
     ? { status: "completed", tools: (scope?.connections ?? ["alice-feishu", "alice-gmail"]).map((id: string) => ({ name: `${id.replaceAll("-", "_")}__read` })) }
     : { status: "completed", result: "ok" });
   let privateConversation = false, known: Set<string> | undefined = new Set(["alice-feishu"]);
-  const hosting = { connections: ["alice-feishu", "alice-gmail"], browser: [],
+  const hosting = { connections: () => ["alice-feishu", "alice-gmail"], browser: () => [],
     ownerPrivate: { connections: async () => known, admitted: async () => privateConversation } };
   const host = new BusinessHost(f.http, undefined, f.store, "private:binding", read, principal, undefined, undefined, hosting);
   await host.start({ ...input, tools, admission });

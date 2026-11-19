@@ -287,9 +287,11 @@ it("gives a partner's turn what the sending turn could use within the partner's 
   // The sender has mail, calendar and the owner's personal Feishu; "trip" has calendar, Feishu and a browser of its own;
   // "plain" has no assignment and so uses those of the partner whose environment it runs in.
   await f.restart({ nativeWork: { partnerTools: true }, connectedApps: { url: "http://127.0.0.1:18100", issuer: "mau", audience: "connectors", callerKeyFile: "caller.json",
-    ownerPrivateConnections: ["alice-feishu"], assignments: [
-      { agentId: f.agent.id, owner: alice, connections: ["alice-mail", "alice-calendar", "alice-feishu"] },
-      { agentId: trip.id, owner: alice, connections: ["alice-calendar", "alice-feishu", "trip-browser"] }] } });
+    ownerPrivateConnections: ["alice-feishu"] } });
+  f.store(store => {
+    store.set("connector_assignments", f.agent.id, { owner: alice, connections: ["alice-mail", "alice-calendar", "alice-feishu"] });
+    store.set("connector_assignments", trip.id, { owner: alice, connections: ["alice-calendar", "alice-feishu", "trip-browser"] });
+  });
   const tools = vi.spyOn(ConnectorReadClient.prototype, "tools").mockResolvedValue([]);
   const call = vi.spyOn(ConnectorReadClient.prototype, "call").mockResolvedValue({ status: "completed", result: {} });
   const personal = { action: "call", name: "alice_feishu__docs_read", arguments: {} };
