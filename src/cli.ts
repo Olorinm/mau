@@ -8,6 +8,7 @@ import { chatCommands } from "./cli/chat.js";
 import { accessOptions, Client } from "./cli/client.js";
 import { arity, CliError, fail, usage, type Command, type OptionValues } from "./cli/command.js";
 import { connectorCommands } from "./cli/connector.js";
+import { deployCommands } from "./cli/deploy.js";
 import { environmentCommands } from "./cli/environment.js";
 import { memoryCommands } from "./cli/memory.js";
 import { partnerCommands } from "./cli/partner.js";
@@ -22,6 +23,7 @@ const commands: Command[] = [
   ...channelCommands,
   ...connectorCommands,
   ...apiCommands,
+  ...deployCommands,
 ];
 
 const nouns = [...new Set(commands.map(command => command.path[0]))];
