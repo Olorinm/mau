@@ -7,6 +7,8 @@
 
 # Mau
 
+**English** | [简体中文](README.zh-CN.md)
+
 **Your own team of AI partners, running in your own cloud.**
 
 Each partner is a native coding agent with its own sandbox, memory and chat.
@@ -65,7 +67,7 @@ node dist/cli.js chat send helper "hello"
 Local mode is for trying Mau out: its only login is a token in a private file and its sandboxes have unrestricted
 network access. More in [docs/local.md](docs/local.md).
 
-## ☁️ Deploy your own
+## 🌐 Deploy your own
 
 Mau runs in your Cloudflare account as one Worker with one container. From the same checkout:
 
@@ -84,7 +86,7 @@ node dist/cli.js doctor        # what is missing or broken, with the fix for eac
 
 Prerequisites, the API token permissions and what a human still does: [docs/deployment.md](docs/deployment.md).
 
-## ⌨️ Drive it from the command line
+## 💻 Drive it from the command line
 
 Install the client on any machine (it has no server dependencies), then sign in to your deployment:
 
