@@ -89,10 +89,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     resolve(base, options.connectorAccounts.runtimeConfigFile), options.connectorAccounts.url, new URL(config.publicUrl).origin, businessStore) : undefined;
   const edgeIdentity = options.edgeIdentity as EdgeIdentityConfig | undefined ?? config.edgeIdentity;
   if (options.edgeIdentity && config.edgeIdentity) throw new Error("edge_identity_configured_twice");
-  // Owners sign in through the edge identity only. The console's chat source is Router's ledger, which Router always serves.
-  if (!edgeIdentity) throw new Error("edge_identity_required");
-  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"),
-    edgeIdentity };
+  // Owners sign in through the edge identity. Only a process that supplies its own owner login starts without one:
+  // local mode (`src/local-login.ts`). The console's chat source is Router's ledger, which Router always serves.
+  if (!edgeIdentity && !dependencies.router?.authenticate) throw new Error("edge_identity_required");
+  const routerConfig: ServiceConfig = { ...config, stateDir: join(config.stateDir, "router"), ...(edgeIdentity ? { edgeIdentity } : {}) };
   const router = createRouter(routerConfig, {
     dependencies: {
       ...dependencies.router,
@@ -295,7 +295,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.use(rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: "draft-8", legacyHeaders: false }));
   product.use(express.json({ limit: "16kb" }));
   product.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  product.get("/info", (_req, res) => res.json({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" }));
+  product.get("/info", (_req, res) => res.json(edgeIdentity ? { login: "edge", logoutUrl: "/cdn-cgi/access/logout" } : { login: "local" }));
   product.use(async (req, res, next) => {
     const principal = await authenticateRequest(req);
     res.locals.principal = principal; res.locals.owner = principal.ownerId;
