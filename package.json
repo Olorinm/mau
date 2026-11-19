@@ -63,9 +63,9 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@agent-router/server": "0.11.0-alpha.6",
-    "@olorinm/agent-connectors": "0.11.0-alpha.6",
-    "@olorinm/agent-environment": "0.11.0-alpha.6"
+    "@agent-router/server": "0.11.0-alpha.7",
+    "@olorinm/agent-connectors": "0.11.0-alpha.7",
+    "@olorinm/agent-environment": "0.11.0-alpha.7"
   },
   "allowScripts": {
     "@larksuite/cli@1.0.97": true,
