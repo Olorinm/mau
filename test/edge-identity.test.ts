@@ -61,7 +61,7 @@ it("holds an Access service token to reading: no write under /_mau/v1 and no SSH
   // The last member is the scope the answer names: what an access token would need, for a route of Mau's that has one.
   const writes: Array<[string, string, unknown, string?]> = [["POST", "/_mau/v1/agents", { name: "other" }, "manage"], ["DELETE", agent, undefined, "manage"], ["POST", agent + "/environment", { profileId: "cloud" }, "manage"],
     ["POST", agent + "/environment/destroy", {}, "manage"], ["POST", agent + "/memory", {}, "manage"], ["PUT", agent + "/model-settings", {}, "manage"], ["PUT", agent + "/instructions", {}],
-    ["POST", "/_mau/v1/proactive", {}, "manage"], ["PUT", "/_mau/v1/connector-accounts/account/policy", {}, "manage"], ["POST", "/_mau/v1/connector-accounts", {}],
+    ["POST", "/_mau/v1/proactive", {}, "manage"], ["PUT", "/_mau/v1/connector-accounts/account/policy", {}], ["POST", "/_mau/v1/connector-accounts", {}],
     ["POST", "/_agent-router/v1/web/identities/pairing-codes", {}], ["POST", "/_agent-router/v1/web/chats/chat/cards/card/answer", {}], ["POST", "/_agent-router/v1/web/chats/chat/purge", {}],
     ["DELETE", `/_agent-router/v1/agents/${f.agent.id}`, undefined]];
   for (const [method, path, body, scope] of writes) expect(await call(method, path, operator, body), `${method} ${path}`)

@@ -1,10 +1,10 @@
 # Mau CLI
 
 Install Node.js 24 or later, then install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a release
-on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.55:
+on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.56:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.55/olorinm-mau-cli-0.1.0-alpha.55.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.56/olorinm-mau-cli-0.1.0-alpha.56.tgz
 mau --version
 ```
 
@@ -78,14 +78,15 @@ mau whoami                                                # "token": its name, s
 | --- | --- |
 | `chat` | Conversations as you: send, redact and attach, steer or cancel a turn, start a new context window |
 | `approve` | Deciding for you: answer cards (approvals, questions, confirmations) and pending memory changes |
-| `manage` | Partners, environments and SSH, models, memory, connectors and their policy, schedules, channel connections, groups |
+| `manage` | Partners, environments and SSH, models, memory, which connections a partner uses, schedules, channel connections, groups |
 
 A token carries at least one scope, expires after `--days` (1 to 90, 7 when not given) and is one of at most 20
 working tokens. Without `--out` the token is part of the JSON result; with it the token goes to a new file only you
 can read. Only its digest is stored, so it cannot be shown again. The agent names it with `--mau-token-file FILE`,
 `MAU_TOKEN_FILE` or `MAU_TOKEN`; it is read for every command and sent as the `Mau-Token` header. It works only
 beside a service token of the same owner: it is no sign-in, and it means nothing with your own sign-in or in local
-mode. No token creates, lists or revokes tokens, purges a chat's history or links an identity: those need you. A
+mode. No token creates, lists or revokes tokens, purges a chat's history, links an identity, or changes when you
+are asked (a connection's operation settings, a browser connection's site access): those need you. A
 command the token does not cover fails with `owner_sign_in_required` and, for routes under `/_mau/v1`, `needs`: the
 scope that would allow it. `"access": "owner"` in the edge identity remains the unscoped alternative.
 

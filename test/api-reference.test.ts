@@ -25,11 +25,13 @@ it("lists exactly the routes the service registers", async () => {
   expect([...listed].sort()).toEqual([...registered].sort());
   for (const route of mauApiReference) expect(route.summary, route.path).toMatch(/^[A-Z].*\.$/);
   // Every route says what it needs. A GET reads, except the list of access tokens, which is the owner's alone like
-  // the routes that create and revoke them; nothing else of Mau's is.
+  // the routes that create and revoke them. So is what decides when the owner is asked: a connection's operation
+  // settings and a browser connection's site access. A token that could change those could approve for itself.
   const scopes = ["read", "chat", "approve", "manage", "owner"];
   for (const route of mauApiReference) expect(scopes, `${route.method} ${route.path}`).toContain(route.scope);
-  const tokenRoutes = ["GET /_mau/v1/tokens", "POST /_mau/v1/tokens", "DELETE /_mau/v1/tokens/:id"];
-  expect(mauApiReference.filter(route => route.scope === "owner").map(route => `${route.method} ${route.path}`)).toEqual(tokenRoutes);
+  const ownerRoutes = ["GET /_mau/v1/tokens", "POST /_mau/v1/tokens", "DELETE /_mau/v1/tokens/:id", "PUT /_mau/v1/connector-accounts/:id/policy",
+    "POST /_mau/v1/connector-accounts/:id/policy/reset", "PUT /_mau/v1/connector-accounts/:id/access"];
+  expect(mauApiReference.filter(route => route.scope === "owner").map(route => `${route.method} ${route.path}`)).toEqual(ownerRoutes);
   for (const route of mauApiReference) if (route.method === "GET" && route.scope !== "owner") expect(route.scope, route.path).toBe("read");
   for (const route of mauApiReference) if (route.method !== "GET") expect(route.scope, `${route.method} ${route.path}`).not.toBe("read");
   for (const route of routerApiReference) expect(scopes, `${route.method} ${route.path}`).toContain(route.scope);

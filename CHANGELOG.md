@@ -4,6 +4,19 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.56] - 2026-11-19
+
+- Pins Agent Kit 0.11.0-alpha.8.
+- Access tokens: the owner gives an agent a scoped, expiring, revocable token (`mau token create NAME --scope …`,
+  `mau token list`, `mau token revoke ID`; `GET`, `POST /_mau/v1/tokens`, `DELETE /_mau/v1/tokens/:id`). A token
+  carries `chat`, `approve` and/or `manage`, expires within 90 days and is stored only as a digest. It is presented
+  as the `Mau-Token` header (`--mau-token-file`, `MAU_TOKEN_FILE`, `MAU_TOKEN`) beside an Access service token of
+  the same owner and lets that service token do what the scopes cover; it is no sign-in. What only the signed-in
+  owner can do stays so: tokens themselves, purging a chat, identities, a connection's operation settings and a
+  browser connection's site access. `mau whoami` shows the token in use.
+- Every route in `GET /_mau/v1/reference` (`mau api`) has a `scope`. A refused request under `/_mau/v1` names the
+  scope it needs.
+
 ## [0.1.0-alpha.55] - 2026-11-19
 
 - Pins Agent Kit 0.11.0-alpha.7.

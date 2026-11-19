@@ -118,10 +118,10 @@ export const mauApiReference: ApiRoute[] = [
   route("GET", "/connector-accounts", "The owner's connector connections with their authorization state and the partners that can use each."),
   route("POST", account + "/feishu-application", "Give the app of a partner's Feishu chat channel to the owner's Feishu connection.", apiInput.feishuApplication, "manage"),
   route("GET", account + "/policy", "The connection's operations with the owner's setting for each: allow, ask or deny."),
-  route("PUT", account + "/policy", "Set operations of the connection to allow, ask or deny.", policySettingsSchema, "manage"),
-  route("POST", account + "/policy/reset", "Return every operation of the connection to its default setting.", apiInput.empty, "manage"),
+  route("PUT", account + "/policy", "Set operations of the connection to allow, ask or deny.", policySettingsSchema, "owner"),
+  route("POST", account + "/policy/reset", "Return every operation of the connection to its default setting.", apiInput.empty, "owner"),
   route("GET", account + "/access", "A browser connection's site access: whether new sites open directly or ask first, and the sites always allowed."),
-  route("PUT", account + "/access", "Change a browser connection's site access: set webAccess, or remove one always-allowed site.", siteAccessInputSchema, "manage"),
+  route("PUT", account + "/access", "Change a browser connection's site access: set webAccess, or remove one always-allowed site.", siteAccessInputSchema, "owner"),
   route("POST", account + "/:action", "Run one account action: check, connect, complete (Feishu device consent) or disconnect; only connect takes a body.", connectInputSchema, "manage"),
 
   route("GET", "/proactive", "The owner's scheduled rules."),
