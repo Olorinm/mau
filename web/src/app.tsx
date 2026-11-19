@@ -1,4 +1,5 @@
 import { useThemePreference } from "./theme";
+import { MauMark } from "./mau-mark";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
@@ -19,7 +20,6 @@ import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/r
 import {
   AppShell,
   Navigation,
-  SaplingPlaceholder,
   FrontendProvider,
   frontendLabels,
   type FrontendLabelKey,
@@ -86,7 +86,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   if (boot.mode === "edge-denied" || boot.mode === "edge-failed")
     return (
       <main className="mau-access-page" role="alert">
-        <SaplingPlaceholder />
+        <MauMark size={72} />
         <h1>{boot.mode === "edge-denied" ? t("access.notConfigured", { email: boot.email ?? "" }) : t("access.failed")}</h1>
         <p className="mau-muted">{boot.mode === "edge-denied" ? t("access.notConfiguredHint") : errorMessage(t, boot.code)}</p>
         {boot.mode === "edge-denied"
@@ -173,7 +173,7 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
       <PartnerAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
         brand={t("app.name")}
-        logo={<SaplingPlaceholder />}
+        logo={<MauMark />}
         navigation={
           <Navigation
             groups={groups}
