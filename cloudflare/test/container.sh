@@ -30,7 +30,7 @@ node -e '
 ' "$root/examples" "$work/config"
 cp "$root/examples/cloud/host-profile.json" "$work/config/cloud/"
 cat > "$work/config/mau.env" <<'EOF'
-MATRIX_SERVER_NAME=agents.example
+MATRIX_SERVER_NAME=mau.example.com
 AGENT_SERVICE_URL=http://localhost:8790/_agent-router/v1
 EOF
 
