@@ -92,7 +92,7 @@ mau login https://mau.example.com
 
 Commands read as `mau NOUN VERB NAME`, and a partner is always named:
 
-| | |
+| Command | What it does |
 | --- | --- |
 | `mau partner create scout --share helper --duty "Finds sources"` | A second partner in helper's sandbox |
 | `mau chat send helper "Summarise yesterday's notes"` | Send, wait for the turn, print the replies |
