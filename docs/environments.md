@@ -8,6 +8,9 @@ channel authorization and delivery. Host owns native execution and sessions.
 
 ## Configure the server
 
+[`mau deploy`](deployment.md#deploy-your-own) does all of this for a deployment on Cloudflare. The steps below are
+what it does, for a setup made by hand.
+
 1. Put the service behind Cloudflare Access and add `edgeIdentity` to `mau.json` (see [web console](web.md#login-cloudflare-access)): it is the only owner login, and Mau does not start without it. Mau embeds Router and runs it without Matrix; run only one process on a state directory and its channels.
 2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment). Mau allocates sandboxes, not clusters or networks.
 3. Install Host and the native kernel in the template. Start Host with `serve --ready-file ...`; preserve Host state, native sessions and workspace on durable paths.

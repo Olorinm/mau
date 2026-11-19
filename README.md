@@ -32,6 +32,17 @@ mau --version
 The client has no server or Agent Kit dependencies. See [CLI usage](docs/cli.md).
 The build steps below are for running or developing the server.
 
+## Deploy your own
+
+Mau runs in your own Cloudflare account. From a checkout, one command creates the buckets, the two Workers, the
+login and the configuration, and the same command upgrades them later; `mau doctor` says what is missing or
+broken. See [deployment](docs/deployment.md).
+
+```sh
+node scripts/bootstrap.mjs && npm run build
+node dist/cli.js deploy --hostname mau.example.com --owner-email you@example.com
+```
+
 ## Build
 
 Requires Node.js 24+, npm and curl. For the server, use the verified Node.js 24.22.2 runtime or a newer version that passes the unchanged HTTP security probe. That probe passes on 24.22.2 (matching Docker and CI) and 26.13.0; tested 24.21.0 fails it.
