@@ -4,6 +4,35 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.55] - 2026-11-19
+
+- Pins Agent Kit 0.11.0-alpha.7.
+- The CLI is rewritten as `mau NOUN VERB NAME`: `partner`, `env`, `chat`, `card`, `memory`, `channel`, `connector`,
+  plus `login`, `logout`, `whoami`, `profiles`, `ssh`, `api`, `deploy`, `doctor` and `local`. A partner is always
+  named; there is no selected partner. The result is one JSON document on stdout; a failure is one JSON object on
+  the last stderr line and exit code 1. The old commands (`setup`, `use`, `agents`, `status`, `check`,
+  `environment-*`, `pause`, `resume`, `destroy`, `reconcile`, `channel-*`) and the `--allow-http` and `--token-file`
+  options are removed. See [docs/cli.md](docs/cli.md).
+- New from the CLI: chatting with a partner and waiting for its turn, stopping a turn, starting a new conversation,
+  listing and answering cards, reading and changing memory, model settings, disconnecting a channel and replacing
+  its allowlists, connector accounts with their policies and site access, and `mau api` for any route.
+- `mau deploy --hostname HOSTNAME --owner-email EMAIL` deploys Mau to a Cloudflare account: buckets, the R2 key,
+  the environment gateway, the Access applications, the configuration and the Worker. Each step first checks what
+  exists, so the same command continues after a failure and upgrades a deployment. What the credentials cannot do
+  is reported for the owner to do by hand (exit code 2). `mau doctor` checks a machine, a deployment and a running
+  service and names a fix for every failed check. See [docs/deployment.md](docs/deployment.md).
+- `mau local` runs Mau on one machine without Cloudflare: partner environments are Docker containers and the owner
+  signs in with a local token. The server accepts that token only when `MAU_LOCAL_TOKEN_FILE` is set, it listens on
+  a loopback address and no edge identity is configured. The web console signs in from the address `mau local`
+  prints. See [docs/local.md](docs/local.md).
+- The connections a partner may use are state, not configuration: `GET` and `PUT /_mau/v1/agents/:id/connectors`.
+  `connectedApps.assignments` is removed from `mau.json`; assign again after upgrading
+  (`mau connector assign ID NAME`). A change applies to a partner's next `connected_apps` call.
+- `GET /_mau/v1/reference` lists every HTTP route of the service with its summary and request body schema; a test
+  compares it with the routes the app registers.
+- An environment profile may set `env`, passed to the environment when it is created.
+- `examples/` is the configuration `mau deploy` and `mau local` generate from; the example profile is `codex`.
+
 ## [0.1.0-alpha.54] - 2026-11-19
 
 - Pins Agent Kit 0.11.0-alpha.6. Approvals are decided only by a card button; a typed reply is an ordinary message.

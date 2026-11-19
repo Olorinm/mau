@@ -48,10 +48,10 @@ node dist/cli.js deploy --hostname mau.example.com --owner-email you@example.com
 ## 3. Use the CLI
 
 To drive a deployed Mau from any machine, install the client archive (`olorinm-mau-cli-VERSION.tgz`) attached to a
-release on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.43:
+release on the [Releases page](https://github.com/Olorinm/mau/releases). For example, for version 0.1.0-alpha.55:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.43/olorinm-mau-cli-0.1.0-alpha.43.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.55/olorinm-mau-cli-0.1.0-alpha.55.tgz
 mau login https://mau.example.com
 mau --help
 ```
