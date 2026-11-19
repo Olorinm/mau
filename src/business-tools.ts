@@ -366,9 +366,13 @@ export class BusinessHost extends HttpAgentHost {
             this.store.set("business_call_receipts", receiptKey, result === WAITING ? { hash, approval: true } : { hash, result });
             }
           } catch (error) {
+            const known = error instanceof Error && ["business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required"].includes(error.message);
+            // The model is told only that the tool is unavailable; the operator's log has the cause, never the tool's input.
+            if (!(error instanceof Removed) && !known) process.stderr.write(JSON.stringify({ event: "mau.tool_failed", runId: id, tool: call.name,
+              name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message : String(error) }) + "\n");
             result = error instanceof Removed ? toolRemoved
-              : { isError: true, error: error instanceof Error && ["business_tool_not_authorized", "business_call_changed", "business_tool_budget_exhausted", "invalid_business_arguments", "feishu_write_requires_owner_approval", "proactive_owner_admission_required"].includes(error.message)
-                ? error.message : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.partner?.definitions.some(d => d.name === call.name) ? "partner_tool_unavailable" : "feishu_read_unavailable" };
+              : { isError: true, error: known ? (error as Error).message
+                : call.name === connectedAppDefinition.name ? "connected_app_unavailable" : this.partner?.definitions.some(d => d.name === call.name) ? "partner_tool_unavailable" : "feishu_read_unavailable" };
           }
           // A write awaiting the owner keeps its Host call pending; the approval card resolves it.
           if (result !== WAITING) { await this.deliver(id, call.id, result); delivered?.(); }
