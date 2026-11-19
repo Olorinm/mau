@@ -14,19 +14,19 @@ Mau 部署在 Cloudflare 上：一个 Worker 加一个容器，配置和状态�
 
 ```sh
 cloudflared access login https://mau.example
-mau login --url https://mau.example
-mau options
-mau setup helper --environment cloud-codex
-mau channel-connect feishu
-mau check
-mau status
-mau pause
-mau resume
+mau login https://mau.example
+mau profiles
+mau partner create helper --profile codex
+mau channel connect helper feishu
+mau partner check helper
+mau partner show helper
+mau env pause helper
+mau env resume helper
 ```
 
 `MAU_STATE/router/` 保存通信状态，`MAU_STATE/mau/` 保存环境日志和 Host token，由部署负责复制和备份；原生会话与工作区在执行环境里，需单独持久保存。暂停、销毁会先停止投递 worker，存在活动或未知结果的任务时拒绝操作；恢复复用原环境和会话绑定。
 
-中断或结果不确定的操作使用 `mau reconcile` 核对，不盲目重新购买环境。`--no-wait` 返回持久化进度；退出 CLI 不取消开通。续期连续三次失败后进入待处理状态；明确检测到环境已停止时立即处理。手动生命周期操作会等待已开始的续期完成，云端到期行为取决于方案。
+中断或结果不确定的操作使用 `mau env reconcile NAME` 核对，不盲目重新购买环境。`--no-wait` 返回持久化进度；退出 CLI 不取消开通。续期连续三次失败后进入待处理状态；明确检测到环境已停止时立即处理。手动生命周期操作会等待已开始的续期完成，云端到期行为取决于方案。
 
 方案可显式设置 `idlePauseSeconds`：空闲后暂停环境，仅在存在可投递且已授权的工作时唤醒。默认不自动暂停；手动暂停不会被消息自动唤醒。
 

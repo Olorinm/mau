@@ -41,7 +41,6 @@ export {
   type FileEditorHandle,
 } from "./files/editor";
 export { type MarkdownEditorSelection } from "./files/code-editor";
-export { SaplingPlaceholder } from "./artwork/sapling";
 export { MotionMenu, MotionMenuItem } from "./ui/menu";
 export {
   ProfileDialog,

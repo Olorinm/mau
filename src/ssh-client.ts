@@ -7,7 +7,7 @@ import type { Duplex } from "node:stream";
 import { connectSshTunnel } from "./ssh-transport.js";
 
 interface Access { username: string; hostKey: string; keyId: string }
-/** `auth` are the request headers that authenticate the owner (a bearer token or Cloudflare Access credentials). */
+/** `auth` are the request headers that authenticate the owner (Cloudflare Access credentials). */
 export async function runSsh(base: string, auth: Record<string, string>, agentId: string,
   prepare: (publicKey: string) => Promise<Access>, command: string[], signal: AbortSignal) {
   const directory = mkdtempSync(join(tmpdir(), "mau-ssh-"));

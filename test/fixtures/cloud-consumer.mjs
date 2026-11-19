@@ -45,6 +45,11 @@ async function open() {
     } },
   );
   service = mau.router.service;
+  // Stands in for the Cloudflare edge: the Access token the CLI sends is this fixture's bearer account.
+  app.use((req, _res, next) => {
+    if (req.headers["cf-access-token"] === "fixture-owner") { delete req.headers["cf-access-token"]; req.headers.authorization = "Bearer fixture-owner"; }
+    next();
+  });
   app.use(mau.app);
   await service.start();
   return "http://127.0.0.1:" + server.address().port;
@@ -75,7 +80,8 @@ try {
   });
   await save(provider, { root, directory, port });
   await save(options, {
-    // Owners sign in at the edge in production; this fixture's CLI and API calls use the bearer account below.
+    // Owners sign in at the edge in production; this fixture's API calls use a bearer account, and its CLI an Access
+    // token that the fixture's stand-in for the edge turns into that account.
     edgeIdentity: { provider: "cloudflare-access", teamDomain: "https://example-team.cloudflareaccess.com", audiences: ["fixture"],
       owners: { "alice@example.test": owner } },
     nativeWork: { partnerTools: true },
@@ -100,21 +106,19 @@ try {
   });
   let base = await open();
   const configDir = join(root, "cli");
-  const tokenFile = join(root, "owner-token");
-  await writeFile(tokenFile, "fixture-owner", { mode: 0o600 });
   const cli = async (...args) => {
     const r = await promisify(execFile)(
       process.execPath,
-      [process.argv[2], "--allow-http", ...args],
-      { env: { ...process.env, MAU_CONFIG_DIR: configDir }, timeout: 30000 },
+      [process.argv[2], ...args],
+      { env: { ...process.env, MAU_CONFIG_DIR: configDir, CF_ACCESS_TOKEN: "fixture-owner" }, timeout: 30000 },
     );
     return r.stdout ? JSON.parse(r.stdout) : null;
   };
-  await cli("login", "--url", base, "--token-file", tokenFile);
-  const result = await cli("setup", "helper", "--environment", "cloud");
+  await cli("login", base);
+  const result = await cli("partner", "create", "helper", "--profile", "cloud");
   assert.equal(result.environment.state, "ready");
-  assert.equal((await cli("check")).checks[0].status, "verified");
-  assert.deepEqual((await cli("status")).connections, []);
+  assert.equal((await cli("partner", "check", "helper")).checks[0].status, "verified");
+  assert.deepEqual((await cli("partner", "show", "helper")).connections, []);
   assert.equal(count(), 1);
   const agent = result.agent;
   async function turn(text, contextId) {
@@ -145,14 +149,13 @@ try {
   partnerTimer = setInterval(() => { void mau?.partners.tick(); }, 100);
   const first = await turn("first cloud turn");
   assert.ok(JSON.stringify(first.artifacts).includes("first cloud turn"));
-  assert.equal((await cli("pause")).state, "paused");
+  assert.equal((await cli("env", "pause", "helper")).state, "paused");
   await shutdown();
   base = await open();
-  await cli("login", "--url", base, "--token-file", tokenFile);
   // The service origin changed only because this is a loopback fixture restart.
-  await cli("use", "helper");
-  assert.equal((await cli("status")).environment.state, "paused");
-  assert.equal((await cli("resume")).state, "ready");
+  await cli("login", base);
+  assert.equal((await cli("partner", "show", "helper")).environment.state, "paused");
+  assert.equal((await cli("env", "resume", "helper")).state, "ready");
   const second = await turn("continue cloud turn", first.contextId);
   assert.ok(JSON.stringify(second.artifacts).includes("continue cloud turn"));
   assert.equal(count(), 1);
@@ -237,14 +240,14 @@ try {
     schedule: { type: "interval", minutes: 5 }, timeZone: "Asia/Shanghai", connections: [], notifications: "always", status: "active",
     notify: { channel: "web" },
     skills: [{ name: "fixture-skill", path: "/trusted/fixture/SKILL.md" }] });
-  assert.equal((await cli("pause")).state, "paused");
+  assert.equal((await cli("env", "pause", "helper")).state, "paused");
   const trigger = await api(`/proactive/${rule.id}/run`, { requestId: "fixture-trigger" });
   await mau.proactive.tick();
   await new Promise(resolve => setTimeout(resolve, 150));
   assert.equal(mau.environments.summary(owner, agent.id).state, "paused");
   assert.equal(mau.proactive.runs(owner, rule.id)[0].work.status, "submitted");
   // A deliberate owner pause must not be overridden by background work.
-  assert.equal((await cli("resume")).state, "ready");
+  assert.equal((await cli("env", "resume", "helper")).state, "ready");
   for (let n = 0; n < 600; n++) {
     await mau.proactive.tick();
     if (mau.proactive.runs(owner, rule.id)[0]?.status === "completed" && mau.proactive.notices(owner, rule.id)[0]?.status === "sent") break;
@@ -288,7 +291,7 @@ try {
   const removed = await fetch(`${base}/_mau/v1/agents/${scout.id}`, { method: "DELETE", headers: { authorization: "Bearer fixture-owner" } });
   assert.equal(removed.status, 204);
   assert.deepEqual(mau.partners.messages(owner).map(message => message.to.name), []);
-  assert.equal((await cli("destroy")).state, "deleted");
+  assert.equal((await cli("env", "destroy", "helper", "--yes")).state, "deleted");
   console.log(
     "PASS: independent Mau/Router/Environment/Host archives, CLI setup, restart/resume, owner tool -> recruited partner in the same environment -> message -> wait, a reply returned as a turn that answers the owner, narrowed fork, native skills/memory, frozen bounded memory, schedule held during manual pause -> explicit resume -> native toolOutput with current read-only memory -> stable outbox, trigger deduplication, and explicit destruction. Cloud lifecycle and Codex protocol are fixtures; no cloud/model acceptance is implied.",
   );

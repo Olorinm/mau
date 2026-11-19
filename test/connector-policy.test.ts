@@ -202,7 +202,7 @@ function host(settings: Parameters<typeof policyConnector>[0], options: { ownerP
     }
   }("https://host.fixture", "host-secret");
   const connector = policyConnector(settings);
-  const hosting = { connections: ["mail"], browser: [], approvals: connector.port,
+  const hosting = { connections: () => ["mail"], browser: () => [], approvals: connector.port,
     ...(options.ownerPrivate ? { ownerPrivate: { connections: async () => new Set(["mail"]), admitted: async () => false } } : {}) };
   const business = new BusinessHost(http, undefined, store, "agent:binding", connector.reader, principal, undefined, undefined, hosting);
   const call = async (body: unknown, id: string) => {

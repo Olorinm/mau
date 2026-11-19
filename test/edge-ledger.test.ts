@@ -23,10 +23,6 @@ async function edgeMau(serving: Parameters<typeof mauFixture>[1] = {}) {
   return { f, access: f.access };
 }
 
-it("refuses to start without an edge identity: there is no other owner login", async () => {
-  await expect(mauFixture(cleanup, {}, { edgeIdentity: undefined })).rejects.toThrow("edge_identity_required");
-});
-
 it("creates, configures and deletes partners and serves the edge-only info", async () => {
   const { f, access } = await edgeMau();
   const urls = recordFetch();

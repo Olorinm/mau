@@ -8,11 +8,14 @@ channel authorization and delivery. Host owns native execution and sessions.
 
 ## Configure the server
 
-1. Put the service behind Cloudflare Access and add `edgeIdentity` to `mau.json` (see [web console](web.md#login-cloudflare-access)): it is the only owner login, and Mau does not start without it. Mau embeds Router and runs it without Matrix; run only one process on a state directory and its channels.
+[`mau deploy`](deployment.md#deploy-your-own) does all of this for a deployment on Cloudflare, and
+[`mau local`](local.md) for a service on your own machine. The steps below are what they do, for a setup made by hand.
+
+1. Put the service behind Cloudflare Access and add `edgeIdentity` to `mau.json` (see [web console](web.md#login-cloudflare-access)): it is the only owner login of a service others can reach, and Mau does not start without it. The one exception is [local mode](local.md): with `MAU_LOCAL_TOKEN_FILE` naming a private file, `mau-server` signs in the bearer of the token in it as `@owner:<MATRIX_SERVER_NAME>`, and starts only with `HOST` set to `127.0.0.1` or `::1` and no edge identity. Mau embeds Router and runs it without Matrix; run only one process on a state directory and its channels.
 2. Prepare an existing sandbox service and template using [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment). Mau allocates sandboxes, not clusters or networks.
 3. Install Host and the native kernel in the template. Start Host with `serve --ready-file ...`; preserve Host state, native sessions and workspace on durable paths.
 4. Copy [mau.json](../examples/mau.json) and [Host config](../examples/cloud/host-profile.json) outside the repository. Supply private Environment `providers.json` and API-key files. Paths resolve relative to `mau.json`; adjust them when moving files.
-5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
+5. Assign profiles to exact Router owner IDs (`owners: ["*"]` explicitly permits all accounts). Private `files` inject individual native credentials, never into a shared image. A profile's optional `env` names variables its environments are created with, for example a proxy; it is not for secrets, and an environment keeps the ones it was created with. Clients select only profile IDs; they cannot submit commands, URLs or file paths.
 6. Optional `connectionsFile` points to Router's private JSON containing `mailServices`. All channel connection logic stays in Router.
 
 Mau is deployed on Cloudflare as a Worker with one container; [deployment](deployment.md) describes the
@@ -39,7 +42,7 @@ changing cloud state. Resume retains the environment and native session binding.
 Missing environments are never silently replaced. Provider-retained snapshots
 may require separate cleanup.
 
-Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau delete NAME --yes`) first
+Deleting an Agent (`DELETE /_mau/v1/agents/:id`, `mau partner delete NAME --yes`) first
 pauses its schedules and destroys its current, retained previous and retired
 environments (a partner in a [shared environment](#partners-sharing-an-environment)
 has none of its own and leaves that environment in place); records already confirmed `deleted` are not contacted again, so an
@@ -58,7 +61,7 @@ Optional `idlePauseSeconds` (600 to 2592000) pauses a ready environment after no
 Host requests for that long from any partner running in it, using the same guarded pause. The state is `sleeping`.
 Router keeps receiving messages; when deliverable work waits, it asks Mau to wake
 the environment, and the first reply waits for resume. Active or unresolved runs
-count as activity. An explicit `mau pause` is never woken by messages.
+count as activity. An explicit `mau env pause NAME` is never woken by messages.
 
 Provider, template, kernel, runtime ID, Host directory and port identify an
 existing binding and must not change. Labels, owners, instructions, lifetime, idle,
@@ -70,21 +73,21 @@ Host token per environment. Cloud management credentials stay in Mau. Private ga
 must preserve application Authorization and required sandbox routing headers.
 
 ```sh
-mau setup helper --environment cloud-codex
-mau check
-mau status
-mau pause
-mau resume
-mau reconcile
-mau destroy
+mau partner create helper --profile codex
+mau partner check helper
+mau partner show helper
+mau env pause helper
+mau env resume helper
+mau env reconcile helper
+mau env destroy helper --yes
 ```
 
 Environment bootstrap binds the Host and keeps the Agent's channel connections. The owner's built-in chat
 is the console's conversation, served by Router's ledger; it needs no channel connection.
 
-`environment-create PROFILE` binds a selected unbound Agent. `agents` and `use NAME`
-select existing identities. `--no-wait` returns progress; closing the terminal does
-not cancel provisioning. `check` verifies configuration and HTTP/runtime access,
+`mau env create NAME --profile PROFILE` binds an unbound Agent; `mau partner list` shows the
+existing identities. `--no-wait` returns progress; closing the terminal does
+not cancel provisioning. `mau partner check NAME` verifies configuration and HTTP/runtime access,
 not real model authentication. Router's former product commands and provisioning
 routes are deleted, with no compatibility aliases or automatic state migration.
 
@@ -224,7 +227,8 @@ Rules:
   `partners: [{ id, name }]`, before anything is stopped. Delete the sharing partners first.
 - Deleting a sharing partner removes its own identity, memory, history, schedules and product
   records, and leaves the environment and the other partners untouched.
-- Without an assignment of its own in `connectedApps.assignments`, a sharing partner uses the
+- Without a connector assignment of its own (`PUT /_mau/v1/agents/:id/connectors`,
+  `mau connector assign`), a sharing partner uses the
   connections assigned to the partner whose environment it runs in, under its own Agent ID.
   Connections that act as the owner's personal identity keep their rule: they work only in the
   owner's private conversation with the partner making the call, and the application behind such a

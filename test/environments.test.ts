@@ -80,6 +80,24 @@ it("owner-scoped durable allocation publishes verified bootstrap once and binds 
   expect(f.cloud.size).toBe(0);
   expect((await f.api(f.path + "/resume", {})).status).toBe(409);
 });
+it("creates a profile's environments with the variables the profile names, and refuses names a shell could not carry", async () => {
+  const env = { HTTPS_PROXY: "http://proxy.example:7890", no_proxy: "localhost,127.0.0.1" };
+  const f = await mauFixture(cleanup, { profile: { env } });
+  const asked: unknown[] = [], create = f.provider.create;
+  f.provider.create = (input) => { asked.push(input); return create(input); };
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  expect(asked).toMatchObject([{ template: "tools", env, metadata: { "mau-operation": expect.any(String) } }]);
+  for (const bad of [{ "A=B": "x" }, { "1A": "x" }, { A: "x\0y" }]) await expect(mauFixture(cleanup, { profile: { env: bad } })).rejects.toThrow();
+  // A profile without variables asks for none.
+  const plain = await mauFixture(cleanup);
+  const plainCreate = plain.provider.create;
+  plain.provider.create = (input) => { asked.push(input); return plainCreate(input); };
+  expect((await plain.api(plain.path, { profileId: "cloud" })).status).toBe(202);
+  await plain.settled();
+  expect(asked[1]).not.toHaveProperty("env");
+});
+
 it("Mau creates the Router identity under the same owner and Router no longer exposes provisioning", async () => {
   const f = await fixture();
   expect((await f.api("/info")).data).toEqual({ login: "edge", logoutUrl: "/cdn-cgi/access/logout" });

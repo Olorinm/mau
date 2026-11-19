@@ -49,7 +49,7 @@ function fixture(options: { deadlineMs?: number; sites?: boolean } = {}) {
     }
   }("https://host.fixture", "host-secret");
   const host = new BusinessHost(http, undefined, store, "agent:binding", reader, principal, undefined, undefined,
-    { connections: ["browser"], browser: ["browser"], ...(options.sites === false ? {} : { sites }) });
+    { connections: () => ["browser"], browser: () => ["browser"], ...(options.sites === false ? {} : { sites }) });
   const open = (url: string, id = "call-1", extra: Record<string, unknown> = {}) => {
     pending = [...pending.filter(c => c.id !== id), { id, runId: "run", kind: "tool", name: "connected_apps", status: "pending",
       input: { action: "call", name: "browser__agent_browser_read", arguments: { args: ["open", url], ...extra } }, deadlineAt: new Date(Date.now() + (options.deadlineMs ?? 300_000)).toISOString() }];

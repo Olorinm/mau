@@ -85,7 +85,7 @@ it("reports expiry with its reason, owner-private usage, and finishes the device
 async function product() {
   const u = await upstream();
   const f = await mauFixture(cleanup, {}, { connectorAccounts: u.options, connectedApps: { url: u.options.url, issuer: "fixture",
-    audience: "fixture-connectors", callerKeyFile: u.keyFile, assignments: [] } });
+    audience: "fixture-connectors", callerKeyFile: u.keyFile } });
   return { u, f, channels: routerApplication(f.mau.router.connections.agentDirectory(f.agent.id)) };
 }
 
@@ -155,8 +155,7 @@ it("a partner in a shared environment is assigned the connections of the partner
   const reader = vi.spyOn(ConnectedApps.prototype, "reader");
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
-  // The fixture's Agent ID is not known when its configuration is written: assign its connections here.
-  (reader.mock.contexts[0] as any).config.assignments.push({ agentId: f.agent.id, owner: alice, connections: ["alice-feishu"] });
+  expect(await f.api(`/agents/${f.agent.id}/connectors`, { connections: ["alice-feishu"] }, "alice", undefined, "PUT")).toEqual({ status: 200, data: { connections: ["alice-feishu"] } });
   const scout = (await f.api("/agents", { name: "scout", shareWith: f.agent.id })).data.agent;
   // Its Host is composed with a connected-apps reader of its own.
   expect(reader.mock.calls.at(-1)).toEqual([scout.id, alice]);
