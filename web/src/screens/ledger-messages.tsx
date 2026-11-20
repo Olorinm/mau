@@ -73,8 +73,8 @@ function requestText(t: Translate, card: Card): string[] {
   if (!approval) return card.text.split("\n\n");
   return [t("card.partnerApproval.title", { partner: approval.partner.name }), [
     t("card.partnerApproval.operation", { from: approval.from.name, summary: approval.summary }),
-    t("card.partnerApproval.connection", { connection: approval.connection }),
-    t("card.partnerApproval.arguments", { arguments: approval.arguments }),
+    // A connector operation names its connection and arguments; what a partner's kernel asks is its text alone.
+    ...(approval.connection !== undefined ? [t("card.partnerApproval.connection", { connection: approval.connection }), t("card.partnerApproval.arguments", { arguments: approval.arguments ?? "" })] : []),
   ].join("\n")];
 }
 
@@ -96,7 +96,7 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
   const request = card.source === "product", [heading, ...rest] = request ? requestText(t, card) : [];
   const closed = request ? requestStatusKeys[card.status as keyof typeof requestStatusKeys] : undefined;
   // A partner's request is answered by approving or rejecting, in that order.
-  const labels = card.display?.partnerApproval ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")]
+  const labels = card.display?.partnerApproval?.connection !== undefined ? [t("card.partnerApproval.approve"), t("card.partnerApproval.reject")]
     : card.display?.scheduleConfirmation ? [t("card.schedule.confirm"), t("card.schedule.reject")] : [];
   return <div className="mau-ledger-card" data-density="compact" data-card-id={card.cardId} data-card-status={card.status} data-card-source={card.source}>
     {request ? <div className="mau-card-text">{rest.length ? <strong>{heading}</strong> : null}<p>{rest.length ? rest.join("\n\n") : heading}</p></div>
@@ -121,8 +121,10 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
 }
 
 /** One ledger turn rendered with the existing run surface, keyed by turnId. */
-function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink }: {
+function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink, waiting }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
+  /** What a turn that has not started waits for. */
+  waiting?: string | undefined;
   controls?: RunControls | undefined; partnerLink?: PartnerLinkResolver | undefined;
 }) {
   const terminal = terminalTurn.includes(turn.state);
@@ -137,9 +139,9 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
   });
   if (!detail.data) return detail.error || terminal
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
-    : <WorkingSurface fallback={fallback} />;
+    : <WorkingSurface fallback={fallback} waiting={waiting} />;
   const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
-  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />;
+  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} waiting={waiting} />;
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
@@ -212,7 +214,9 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const queries = useQueryClient();
   const agents = useQuery({ queryKey: ["agents", session.owner], queryFn: () => mauApi(session.token).agents(),
     // Provisioning and lifecycle changes are durable server operations; poll faster only while one runs.
-    refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000 : 10_000 });
+    refetchInterval: (query) => query.state.data?.some((item) => item.environment?.busy) ? 1000
+      // A computer that is pairing shows up within seconds.
+      : query.state.data?.some((item) => item.connection === "pairing" && !item.dismissed) ? 3000 : 10_000 });
   // The partners as they work together: who recruited whom, and what waits at each. Read more often while something waits.
   const partnerViews = useQuery({ queryKey: ["partners", session.owner], queryFn: () => mauApi(session.token).partners(), retry: false,
     refetchInterval: (query) => query.state.data?.some((item) => item.waiting.messages || item.waiting.approvals) ? 3000 : 10_000 });
@@ -374,14 +378,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const { type, id } = last.sender;
     return type === "person" || type === "external" || type === "agent" && chat.agentIds.includes(id) ? last.preview : undefined;
   };
-  const partnerEntry = ({ agent, environment, dismissed }: NonNullable<typeof agents.data>[number]): Entry => {
+  const partnerEntry = ({ agent, environment, dismissed, kind, connection }: NonNullable<typeof agents.data>[number]): Entry => {
     const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured", waiting = dismissed ? undefined : views.get(agent.id)?.waiting;
-    const working = !!chat?.activeTurns || !!waiting?.messages;
+    // A partner on the owner's computer is online or offline; a computer that is off is not working, whatever waits for it.
+    const device = kind === "external" ? connection ?? "pairing" : undefined, away = device !== undefined && device !== "online";
+    const working = !away && (!!chat?.activeTurns || !!waiting?.messages);
     // The figure's eyes carry the state: aside while a reply runs (the owner's or another partner's message), closed
     // when the environment cannot take messages or the partner is dismissed.
-    const figure = dismissed ? "offline" : working ? "working" : unavailable.includes(state) ? "offline" : "idle";
+    const figure = dismissed || away ? "offline" : working ? "working" : !device && unavailable.includes(state) ? "offline" : "idle";
     return { key: "agent:" + agent.id, title: agent.name,
-      status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(`state.${state}`),
+      status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(device ? `device.${device}` : `state.${state}`),
       preview: preview(chat), time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
       ...(waiting?.approvals ? { note: t("partners.waitingApproval") } : {}),
       avatar: (size) => <PartnerAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
@@ -533,13 +539,15 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}),
     });
     const turnView = (turn: LedgerTurn): MessageView => {
-      const name = agentName(turn.agentId);
+      const name = agentName(turn.agentId), partner = agents.data?.find(({ agent }) => agent.id === turn.agentId);
+      // A partner on the owner's computer starts the turn when that computer is paired and connected.
+      const waiting = partner?.kind === "external" && partner.connection !== "online" ? t(`device.${partner.connection ?? "pairing"}`) : undefined;
       return {
         id: "turn:" + turn.turnId, role: "assistant", title: name,
         avatar: <PartnerAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
-          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} />,
+          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} waiting={waiting} />,
       };
     };
     for (const item of fold.items) {

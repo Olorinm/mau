@@ -30,9 +30,13 @@ export const apiInput = {
   skillState: z.object({ path: z.string().min(1).max(4096), enabled: z.boolean() }).strict(),
   sessionMemoryMode: z.object({ mode: z.enum(["enabled", "disabled"]) }).strict(),
   feishuApplication: z.object({ agentId: z.uuid() }).strict(),
-  /** A partner gets an environment of its own (`profileId`) or runs in another partner's (`shareWith`). */
+  /**
+   * A partner gets an environment of its own (`profileId`), runs in another partner's (`shareWith`), or is an agent
+   * on a computer (`kind: "external"`). `ownership` says whose that agent is; only the owner's own can be created.
+   */
   newAgent: z.union([z.object({ ...newAgent, profileId }).strict(),
-    z.object({ ...newAgent, shareWith: z.uuid(), kernel: z.string().min(1).max(48).optional() }).strict()]),
+    z.object({ ...newAgent, shareWith: z.uuid(), kernel: z.string().min(1).max(48).optional() }).strict(),
+    z.object({ ...newAgent, kind: z.literal("external"), ownership: z.enum(["owner", "other"]).default("owner") }).strict()]),
   sshKey: z.object({ publicKey: z.string().max(128) }).strict(),
   environment: z.object({ profileId }).strict(),
   environmentReplace: z.object({ profileId, expectedOperationId: z.uuid() }).strict(),
@@ -73,8 +77,8 @@ export const mauApiReference: ApiRoute[] = [
   route("POST", "/tokens", "Create an access token that lets an Access service token of the owner do more than read; the answer has the token, once.", apiInput.newToken, "owner"),
   route("DELETE", "/tokens/:id", "Revoke an access token.", undefined, "owner"),
 
-  route("GET", "/agents", "The owner's partners, each with its channel connections, duty, kernel, environment and dismissal."),
-  route("POST", "/agents", "Create a partner with an environment of its own (profileId) or in another partner's environment (shareWith).", apiInput.newAgent, "manage"),
+  route("GET", "/agents", "The owner's partners, each with its kind, channel connections, duty, kernel, environment or computer, and dismissal."),
+  route("POST", "/agents", "Create a partner with an environment of its own (profileId), in another partner's environment (shareWith), or as an agent on the owner's computer (kind external), which answers with a pairing code.", apiInput.newAgent, "manage"),
   route("GET", agent, "One partner."),
   route("DELETE", agent, "Permanently delete a partner with its environment, memory, schedules and channel connections.", undefined, "manage"),
   route("POST", agent + "/dismiss", "Archive a partner: it keeps everything and leaves the roster.", apiInput.empty, "manage"),
@@ -86,6 +90,11 @@ export const mauApiReference: ApiRoute[] = [
   route("PUT", agent + "/connectors", "Replace the partner's own connector connections; an empty list removes its own assignment.", connectorAssignmentInput, "manage"),
   route("GET", "/partners", "The owner's partners as they work together, dismissed ones included: status, model, who recruited them and what waits at them."),
   route("GET", "/partners/messages", "Messages between the owner's partners, newest first; query agentId and limit."),
+
+  route("GET", "/devices", "The owner's partners that are agents on a computer, each with whether a computer is paired and connected."),
+  route("GET", agent + "/device", "The computer paired with a partner that is an agent on it: name, platform, kernel, whether it is connected and when it last was."),
+  route("POST", agent + "/device/pair", "A new pairing code for the partner and the command that uses it; the computer that pairs replaces the one paired before.", apiInput.empty, "manage"),
+  route("DELETE", agent + "/device", "End the partner's pairing: its computer is disconnected.", undefined, "manage"),
 
   route("GET", agent + "/environment", "The state of the partner's environment."),
   route("POST", agent + "/environment", "Create an environment for a partner that has none.", apiInput.environment, "manage"),

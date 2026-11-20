@@ -1,17 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
-import type { ServiceExtension, WorkEventResult, WorkSessions } from "@agent-router/server";
+import type { OwnerRequestResult, ServiceExtension, WorkEventResult, WorkPendingCard, WorkSessions } from "@agent-router/server";
 import type { DurableStore } from "./store.js";
 import type { RunAdmission } from "./run-admission.js";
 import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, GUIDE, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
-  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes";
+  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards";
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
 /** A turn started by a result may message again; this many generations may follow one owner message. */
@@ -37,6 +37,14 @@ const DIRECT_CHECK_MS = 15_000;
 const NOTE_LIMIT = 20;
 /** Environment states in which a partner cannot be woken by a message. */
 const UNREACHABLE = ["paused", "pausing", "deleting", "deleted", "needs_action"];
+/**
+ * Where a partner is found. `state` is `ready` when it can work now, and otherwise what a roster shows. `reachable`:
+ * a message can be left for it. `external`: it is an agent on the owner's own computer, which Mau only messages.
+ */
+export interface Presence { state: string; reachable: boolean; external: boolean }
+/** The presence of a partner that runs in an environment of Mau's, from that environment's state. */
+export const environmentPresence = (state: string | undefined): Presence | undefined =>
+  state === undefined ? undefined : { state, reachable: !UNREACHABLE.includes(state), external: false };
 const MESSAGE_BYTES = 16_000;
 /** The answers a hand-over shows the owner share this many bytes; Router admits 64,000 for what an input shows. */
 const SHOWN_ANSWER_BYTES = 48_000;
@@ -102,7 +110,7 @@ export interface PartnerMessage {
     readBy?: string };
   /** Since when the outcome of the recipient's turn has been unknown. */
   unknownSince?: string;
-  /** An inform: the turn whose context carries it. */
+  /** An inform: the turn whose context carries it, or the message it is sent with to an agent on the owner's computer. */
   offeredTo?: string;
 }
 interface ReturnBatch {
@@ -114,6 +122,12 @@ interface ReturnBatch {
   /** Since when the outcome of the hand-over's turn has been unknown. */
   unknownSince?: string;
 }
+/**
+ * A card the turn that handles a message put in its partner's own conversation with the owner: the partner's kernel
+ * asks before it goes on. `desk` is the copy of an approval in the conversation the message was sent from, where the
+ * owner is; other cards, and an approval too long to show there, are answered in the partner's conversation only.
+ */
+interface PartnerCard { status: "open" | "closed"; owner: string; agentId: string; messageId: string; cardId: string; desk?: string; choices: string[]; createdAt: string }
 type Turn = { kind: "owner" } | { kind: "message"; message: PartnerMessage } | { kind: "return"; batch: ReturnBatch };
 type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input" | "isOwnerInput">;
 
@@ -135,7 +149,10 @@ export interface PartnersPort {
   kernel(agentId: string): string | undefined;
   /** The kernels a partner in the agent's environment can run on. */
   kernels(agentId: string): string[];
-  environmentState(owner: string, agentId: string): string | undefined;
+  /** `undefined`: the partner has neither an environment nor a computer. */
+  presence(owner: string, agentId: string): Presence | undefined;
+  /** What ends with a dismissal beside the partner's place in the roster: the pairing of a computer. */
+  dismissed(owner: string, agentId: string): Promise<void>;
   /** Refuses when another partner cannot run in the holder's environment on that kernel. */
   assertShareable(owner: string, holder: string, kernel: string | undefined): Promise<void>;
   share(owner: string, agentId: string, holder: string, duty: string, kernel: string | undefined): Promise<unknown>;
@@ -145,6 +162,8 @@ export interface PartnersPort {
   /** The model a partner's runtime uses when none is selected, as far as it was read. */
   defaultModel(agentId: string): string | undefined;
   connections(owner: string, agentId: string): string[];
+  /** Answer a card of the partner's own conversation with what the owner chose where the card was copied to. */
+  answerCard(owner: string, agentId: string, cardId: string, answer: { key: string; by: string | null; surface: "web" | "channel"; choiceId: string }): Promise<unknown>;
   /** Withdraw the owner cards a finished run left open. */
   closeApprovals(agentId: string, runId: string, withdraw: (requestId: string) => Promise<void>): Promise<void>;
 }
@@ -313,28 +332,37 @@ export class Partners {
   }
   private state(owner: string, agentId: string) {
     if (this.dismissed(agentId)) return "dismissed";
-    const environment = this.port.environmentState(owner, agentId);
-    if (!environment) return "no_environment";
+    const presence = this.port.presence(owner, agentId);
+    if (!presence) return "no_environment";
+    // A computer that is not connected is not working, whatever waits for it.
+    if (presence.external && presence.state !== "ready") return presence.state;
     if (this.active.get(agentId)?.size || this.outstanding(owner, ["sending", "running"]).some(message => message.to.agentId === agentId)) return "working";
-    return environment === "ready" ? "idle" : environment;
+    return presence.state === "ready" ? "idle" : presence.state;
   }
   /** Name, duty and state of the owner's partners: what every turn in the owner conversation is shown. */
   private summary(owner: string, includeDismissed: boolean) {
     return this.partners(owner).filter(agent => includeDismissed || !this.dismissed(agent.id))
-      .map(agent => ({ id: agent.id, name: agent.name, duty: this.port.duty(agent.id) ?? null, status: this.state(owner, agent.id) }));
+      .map(agent => ({ id: agent.id, name: agent.name, duty: this.port.duty(agent.id) ?? null, status: this.state(owner, agent.id),
+        ...(this.external(owner, agent.id) ? { external: true } : {}) }));
   }
+  private external(owner: string, agentId: string) { return this.port.presence(owner, agentId)?.external === true; }
   /** The owner's partners with their settings, activity and what waits at each: the roster, and the owner's list. */
   async list(owner: string, includeDismissed = true) {
     const waiting = this.outstanding(owner, ["sending", "running"]);
     const approvals = this.store.entriesByStatus<{ agentId: string; desk?: unknown }>("connector_approvals", ["pending"]).map(entry => entry.value).filter(record => record.desk);
+    const cards = this.openCards(owner);
     return Promise.all(this.summary(owner, includeDismissed).map(async partner => {
       const settings = await this.port.sessions(owner, partner.id).then(work => work.defaultSettings(), () => ({} as Record<string, unknown>));
+      // Router runs the turns of an agent on the owner's computer without Mau's Host, so its open runs are read from Router.
+      const busy = partner.external && partner.status === "idle" && await this.port.sessions(owner, partner.id)
+        .then(work => work.list().some(session => session.runs.some(run => run.phase !== "finished")), () => false);
       const holder = this.port.environmentHolder(partner.id), recruit = this.store.get<{ by: Party; at: string }>(RECRUITS, JSON.stringify([owner, partner.name]));
       const dismissal = this.dismissed(partner.id);
-      return { ...partner, kernel: this.port.kernel(partner.id) ?? null,
+      return { ...partner, ...(busy ? { status: "working" } : {}), kernel: this.port.kernel(partner.id) ?? null,
         model: typeof settings.model === "string" ? settings.model : null, effort: typeof settings.effort === "string" ? settings.effort : null,
         lastActivityAt: this.store.get<{ at: string }>(ACTIVITY, partner.id)?.at ?? null,
-        waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length, approvals: approvals.filter(record => record.agentId === partner.id).length },
+        waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length,
+          approvals: approvals.filter(record => record.agentId === partner.id).length + cards.filter(card => card.agentId === partner.id).length },
         ...(holder !== partner.id ? { sharesEnvironmentOf: holder } : {}),
         ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
@@ -343,9 +371,11 @@ export class Partners {
     const self = this.self(admission), owner = admission.owner;
     const names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
     const mine = this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self.agentId);
+    const asked = new Set(this.openCards(owner).map(card => card.messageId));
     let options: ModelSettingsView | undefined;
     try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
     const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
+    const partners = (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId);
     const choices = (view: ModelSettingsView | undefined) => ({
       models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
       efforts: view?.efforts ?? [] });
@@ -359,13 +389,15 @@ export class Partners {
     }
     return {
       you: { name: self.name, duty: self.duty ?? null },
-      partners: (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId).map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
+      partners: partners.map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
         // The model reads names. Each member keeps its place, so a roster reads as it did before.
         ...(partner.recruitedBy ? { recruitedBy: partner.recruitedBy.name } : {}),
         model: partner.model ?? "default", effort: partner.effort ?? "default",
         ...(sharesEnvironmentOf ? { sharesEnvironmentOf: names.get(sharesEnvironmentOf) ?? "another partner" } : {}) })),
       waitingForReplies: mine.map(message => ({ messageId: message.id, to: message.to.name, intent: message.intent, sentAt: message.createdAt,
-        state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you" : "not answered yet" })),
+        state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you"
+          : asked.has(message.id) ? "waiting for the owner's approval" : "not answered yet" })),
+      ...(asked.size ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
       recruit: {
         kernels: kernel ? [kernel, ...others] : others,
         ...choices(options),
@@ -373,6 +405,7 @@ export class Partners {
         ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
         ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
       },
+      ...(partners.some(partner => partner.external) ? { externalNote: EXTERNAL_PARTNERS } : {}),
       limits: { waitingMessages: WAITING_LIMIT },
       guide: GUIDE,
     };
@@ -390,6 +423,8 @@ export class Partners {
     const record = this.store.get<{ agentId?: string }>(RECRUITS, key);
     // A dismissed partner comes back as it was: on its own kernel, whatever the recruit names.
     const returning = existing && this.dismissed(existing.id) && existing.id !== self.agentId ? existing : undefined;
+    if (returning && this.external(owner, returning.id)) throw new PartnerError("partner_not_recruitable", { instruction:
+      `"${returning.name}" is an agent on the owner's own computer that was dismissed. The owner connects such a partner; a recruit cannot bring it back. Tell the owner to restore it.` });
     const selection = await this.selection(admission, input, returning?.id);
     let restored = false, agent: { id: string; name: string } | undefined = existing;
     if (returning) { this.store.delete(DISMISSALS, returning.id); restored = true; }
@@ -483,28 +518,31 @@ export class Partners {
     const partners = this.partners(admission.owner), found = partners.find(agent => agent.name === input.name);
     if (!input.name || !found) throw new PartnerError("partner_not_found", { partners: partners.filter(agent => agent.id !== admission.agentId).map(agent => agent.name) });
     if (found.id === admission.agentId) throw new PartnerError("partner_is_self", { instruction: "A partner cannot dismiss itself." });
-    this.archive(admission.owner, found.id, this.self(admission).name);
+    await this.archive(admission.owner, found.id, this.self(admission).name);
     return { status: "dismissed", name: found.name, next: NEXT.dismissed };
   }
   /** Dismiss: archive. The partner keeps everything and is hidden from the roster; `restore` or a recruit of its name brings it back. */
-  archive(owner: string, agentId: string, by: string) {
+  async archive(owner: string, agentId: string, by: string) {
     if (!this.partners(owner).some(agent => agent.id === agentId)) throw new PartnerError("partner_not_found");
     if (!this.dismissed(agentId)) this.store.set(DISMISSALS, agentId, { owner, at: iso(), by });
+    await this.port.dismissed(owner, agentId);
   }
   restore(owner: string, agentId: string) {
     if (!this.partners(owner).some(agent => agent.id === agentId)) throw new PartnerError("partner_not_found");
     this.store.delete(DISMISSALS, agentId);
   }
-  private checkText(text: string) {
+  private checkText(text: string, external: () => boolean = () => false) {
     if (!text.trim()) throw new PartnerError("partner_message_empty", { instruction: "Write the message: the partner sees nothing else of this conversation." });
     if (Buffer.byteLength(text) > MESSAGE_BYTES) throw new PartnerError("partner_message_too_large", { limitBytes: MESSAGE_BYTES,
-      instruction: "Shorten the message, or put long material in a file in the shared environment and name the file." });
+      instruction: external() ? "Shorten the message, or send it in parts: this partner is on the owner's own computer and cannot read files of your environment."
+        : "Shorten the message, or put long material in a file in the shared environment and name the file." });
   }
   private async message(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     if (!input.intent || input.text === undefined || !input.to) throw new PartnerError("partners_invalid_input", { instruction: "action=message needs to, text and intent." });
-    this.checkText(input.text);
+    const { text, to } = input;
+    this.checkText(text, () => this.external(admission.owner, this.recipient(admission, to).agentId));
     const origin = await this.origin(admission, turn);
-    return this.send(admission, turn, origin, callId, this.recipient(admission, input.to), input.intent, input.text);
+    return this.send(admission, turn, origin, callId, this.recipient(admission, to), input.intent, text);
   }
   private async send(admission: RunAdmission, turn: Turn, origin: Origin, callId: string, to: Party, intent: Intent, text: string) {
     const owner = admission.owner, from = this.self(admission);
@@ -515,9 +553,11 @@ export class Partners {
       if (waiting.length >= WAITING_LIMIT) throw new PartnerError("partner_message_limit_reached", { waiting: waiting.map(message => ({ messageId: message.id, to: message.to.name })),
         instruction: `${WAITING_LIMIT} of your messages are waiting for replies, which is the limit. Nothing was queued. End this turn; send this one after a reply has come back.` });
     }
-    const environment = this.port.environmentState(owner, to.agentId);
-    if (!environment || UNREACHABLE.includes(environment)) throw new PartnerError("partner_unavailable", { environment: environment ?? "none",
-      instruction: `"${to.name}" cannot be woken by a message now: its environment is ${environment ?? "missing"}. Nothing was sent. Tell the owner.` });
+    const presence = this.port.presence(owner, to.agentId);
+    if (presence?.external && !presence.reachable) throw new PartnerError("partner_unavailable", { device: presence.state,
+      instruction: `"${to.name}" is an agent on the owner's own computer, and no computer is paired with it now. Nothing was sent. Tell the owner to pair it again.` });
+    if (!presence?.reachable) throw new PartnerError("partner_unavailable", { environment: presence?.state ?? "none",
+      instruction: `"${to.name}" cannot be woken by a message now: its environment is ${presence?.state ?? "missing"}. Nothing was sent. Tell the owner.` });
     if (intent === "inform" && this.outstanding(owner, ["queued"]).filter(message => message.to.agentId === to.agentId).length >= NOTE_LIMIT)
       throw new PartnerError("partner_note_limit_reached", { instruction: `${NOTE_LIMIT} notes already wait for "${to.name}" to read. Nothing was recorded. Send what matters as a message with intent ask or relay.` });
     const sender = this.authorization(admission, turn), theirs = this.port.connections(owner, to.agentId);
@@ -540,8 +580,9 @@ export class Partners {
   }
   private receipt(message: PartnerMessage) {
     const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent };
-    return message.intent === "inform" ? { ...base, expectsReply: false, next: NEXT.informed(message.to.name) }
-      : { ...base, expectsReply: true, next: NEXT.sent(message.to.name) };
+    const presence = this.port.presence(message.owner, message.to.agentId);
+    if (message.intent === "inform") return { ...base, expectsReply: false, next: presence?.external ? NEXT.informedExternal(message.to.name) : NEXT.informed(message.to.name) };
+    return { ...base, expectsReply: true, next: presence?.external ? NEXT.sentExternal(message.to.name, presence.state === "ready") : NEXT.sent(message.to.name) };
   }
   private async wait(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     const owner = admission.owner, self = admission.agentId, task = await this.task(admission, turn);
@@ -554,10 +595,13 @@ export class Partners {
     });
     const deadline = Date.now() + (input.timeoutSeconds ?? 30) * 1000;
     let messages = read();
-    while (messages.some(message => ["sending", "running"].includes(message.status)) && Date.now() < deadline && !this.closed) {
+    // A turn that asks the owner does not end within a wait: the call returns as soon as one does.
+    const asked = () => new Set(this.openCards(owner).map(card => card.messageId));
+    while (messages.some(message => ["sending", "running"].includes(message.status)) && !messages.some(message => asked().has(message.id)) && Date.now() < deadline && !this.closed) {
       await sleep(Math.min(250, Math.max(1, deadline - Date.now())));
       messages = read();
     }
+    const approval = asked();
     // A result the sending turn reads here is not handed over a second time, once this call's answer has reached that
     // turn (`delivered`). A result of an earlier turn's message is only read: it is on its way as a turn of its own.
     const own = (message: PartnerMessage) => message.status === "settled" && message.origin.taskId === task;
@@ -566,7 +610,9 @@ export class Partners {
     const waiting = messages.filter(message => ["sending", "running"].includes(message.status));
     const results = messages.filter(message => message.result).map(message => ({ ...resultView(message),
       ...(message.status === "returning" || message.status === "settled" && !own(message) ? { alsoArriving: "This result also reaches you as a turn of its own." } : {}) }));
-    return { results, pending: waiting.map(message => ({ messageId: message.id, to: message.to.name, sentAt: message.createdAt })),
+    return { results, pending: waiting.map(message => ({ messageId: message.id, to: message.to.name, sentAt: message.createdAt,
+        ...(approval.has(message.id) ? { waitingFor: "owner_approval" } : {}) })),
+      ...(waiting.some(message => approval.has(message.id)) ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
       next: [results.length ? NEXT.results : "", waiting.length ? NEXT.stillWaiting : "", !results.length && !waiting.length ? NEXT.nothingWaiting : ""].filter(Boolean).join(" ") };
   }
   /** The answer of a partners call has reached the Host: what that call's wait returned to the sending turn counts as read. */
@@ -654,7 +700,8 @@ export class Partners {
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
-    await work.submit({ eventId: message.id, sessionId, input: incomingText(message),
+    await work.submit({ eventId: message.id, sessionId,
+      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
@@ -664,12 +711,24 @@ export class Partners {
         ...(grants.expiresAt ? { expiresAt: grants.expiresAt } : {}), ...(grants.maxToolCalls ? { maxToolCalls: grants.maxToolCalls } : {}) } });
     this.transition(message.id, ["sending"], current => ({ ...current, status: "running", sentTo }));
   }
+  /**
+   * The informs a message takes along to an agent on the owner's computer: those left before it that no message still
+   * on its way carries. They are marked before the message is submitted, so that the same message always carries the same.
+   */
+  private carried(message: PartnerMessage) {
+    const notes = this.outstanding(message.owner, ["queued"]).filter(note => note.to.agentId === message.to.agentId && note.createdAt <= message.createdAt);
+    const free = (note: PartnerMessage) => !note.offeredTo || !["sending", "running"].includes(this.store.get<PartnerMessage>(MESSAGES, note.offeredTo)?.status ?? "");
+    const taken = notes.filter(note => note.offeredTo === message.id);
+    for (const note of notes.filter(free).slice(0, CARRIED_NOTES - taken.length))
+      taken.push(this.transition(note.id, ["queued"], current => ({ ...current, offeredTo: message.id })) ?? note);
+    return taken.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
   private settle(message: PartnerMessage, result: { status: NonNullable<PartnerMessage["result"]>["status"]; answer: string; error?: string }, at = Date.now()) {
     return this.transition(message.id, ["sending", "running"], current => ({ ...current, status: "settled", delivery: { attempts: 0, nextAttemptAt: iso(at) },
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.handOver(), () => this.cleanUp()]) {
+    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
@@ -684,6 +743,54 @@ export class Partners {
     const before = iso(now - KEPT_MS);
     this.store.deleteBefore(MESSAGES, FINAL_MESSAGES, before);
     this.store.deleteBefore(RETURNS, FINAL_RETURNS, before);
+    this.store.deleteBefore(CARDS, ["closed"], before);
+  }
+  private openCards(owner: string) {
+    return this.store.entriesByStatus<PartnerCard>(CARDS, ["open"]).map(entry => entry.value).filter(card => card.owner === owner);
+  }
+  /**
+   * What the kernel of a partner asks the owner in a turn that handles a message stands as a card in that partner's
+   * own conversation, where the owner seldom is. An approval is copied to the conversation the message was sent from,
+   * through the same desk a connector write is asked at; the owner's choice there answers the partner's card, and the
+   * copy is withdrawn when that card is answered elsewhere, expires or its turn ends.
+   */
+  private async passCards() {
+    const pending = new Map<string, WorkPendingCard>(), key = (agentId: string, cardId: string) => `${agentId}:${cardId}`;
+    for (const { value: message } of this.store.entriesByStatus<PartnerMessage>(MESSAGES, ["running"])) {
+      let cards: WorkPendingCard[];
+      try { cards = (await this.port.sessions(message.owner, message.to.agentId)).lookup(message.id)?.pendingCards ?? []; }
+      catch (error) { report("partner_cards_unread", error); continue; }
+      for (const card of cards) {
+        const id = key(message.to.agentId, card.cardId);
+        pending.set(id, card);
+        if (this.store.get<PartnerCard>(CARDS, id)) continue;
+        // The owner approves what the card shows in full; a connector write that waits is already at the desk.
+        const shown = card.kind === "approval" && card.choices.length > 0 && card.text.length <= APPROVAL_DISPLAY_LIMIT;
+        const record: PartnerCard = { status: "open", owner: message.owner, agentId: message.to.agentId, messageId: message.id, cardId: card.cardId, createdAt: iso(),
+          choices: card.choices.map(choice => choice.choiceId), ...(shown ? { desk: `partner-card-${digest(id).slice(0, 40)}` } : {}) };
+        if (!this.store.insert(CARDS, id, record) || !record.desk) continue;
+        try {
+          await this.desk(message).open({ id: record.desk, summary: withoutOriginLine(card), choices: card.choices.map(choice => ({ id: choice.choiceId, label: choice.label })),
+            deadlineAt: card.deadlineAt ?? iso(Date.parse(message.createdAt) + UNANSWERED_MS) });
+        } catch (error) {
+          // Nowhere to ask there: the card stays in the partner's own conversation.
+          report("partner_card_not_shown", error);
+          const { desk: _desk, ...kept } = record; this.store.set(CARDS, id, kept);
+        }
+      }
+    }
+    for (const { id, value: card } of this.store.entriesByStatus<PartnerCard>(CARDS, ["open"])) {
+      const message = this.store.get<PartnerMessage>(MESSAGES, card.messageId), close = () => this.store.set(CARDS, id, { ...card, status: "closed" });
+      const desk = message && card.desk ? this.desk(message) : undefined;
+      if (!pending.has(id)) { await desk?.withdraw(card.desk!).catch(() => undefined); close(); continue; }
+      if (!desk) continue;
+      const request = await desk.request(card.desk!).catch(() => undefined);
+      if (!request || request.status === "pending") continue;
+      // Only a choice of the card itself is passed on; anything else leaves the partner's own card as it is.
+      if (request.status === "answered" && request.choice !== undefined && card.choices.includes(request.choice))
+        await this.port.answerCard(card.owner, card.agentId, card.cardId, { key: card.desk!, by: request.answeredBy ?? null, surface: request.surface ?? "web", choiceId: request.choice });
+      close();
+    }
   }
   /** Messages recorded but not yet in their recipient's work queue: the call that sent them was interrupted. */
   private async resume() {
@@ -779,6 +886,9 @@ export class Partners {
     const message = event.eventId.startsWith("pm-") ? this.store.get<PartnerMessage>(MESSAGES, event.eventId) : undefined;
     if (message) {
       this.settle(message, { status, answer: event.answer, ...(event.error ? { error: event.error } : status === "unknown" ? { error: "outcome_unknown" } : {}) }, at);
+      // A completed turn has read the informs its message carried.
+      if (status === "completed") for (const note of this.outstanding(message.owner, ["queued"]))
+        if (note.offeredTo === message.id) this.transition(note.id, ["queued"], current => ({ ...current, status: "seen" }));
       // Repeated after a crash: the cards the run left open are closed whichever reading settled the message.
       if (event.runId) await this.port.closeApprovals(message.to.agentId, event.runId, id => this.desk(message).withdraw(id)).catch(() => undefined);
       return;
@@ -884,20 +994,20 @@ export class Partners {
         toolGrants: { feishu: authorization.feishu, connectedApps: { connections: authorization.connections, ...(authorization.operations ? { operations: authorization.operations } : {}) } } } });
   }
   /** Where the owner is asked for a turn that handles a message: the conversation the message was sent from. */
-  private desk(message: PartnerMessage): ApprovalDesk {
+  private desk(message: PartnerMessage): ApprovalDesk & { request(id: string): Promise<OwnerRequestResult | undefined> } {
     const work = () => this.port.sessions(message.owner, message.from.agentId);
     return {
       open: async card => {
         const sessions = await work(), connection = message.origin.connectionId;
         // The text is what a channel shows and what stands in the transcript. `display` carries the same as members, for a
         // console to show in its own words and language.
-        const shown = shownArguments(card.arguments);
+        const operation = card.connection === undefined ? undefined : { connection: card.connection, arguments: shownArguments(card.arguments) };
         sessions.request({ eventId: card.id, kind: "approval", title: `伙伴「${message.to.name}」请求批准`,
-          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`, `连接：${card.connection}`,
-            `参数：${shown}`].join("\n"),
-          choices: [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
+          text: [`处理「${message.from.name}」转来的消息时需要执行：${card.summary}`,
+            ...(operation ? [`连接：${operation.connection}`, `参数：${operation.arguments}`] : [])].join("\n"),
+          choices: card.choices ?? [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }], expiresAt: card.deadlineAt,
           display: { partnerApproval: { partner: { id: message.to.agentId, name: message.to.name }, from: { id: message.from.agentId, name: message.from.name },
-            messageId: message.id, summary: card.summary, connection: card.connection, arguments: shown } },
+            messageId: message.id, summary: card.summary, ...operation } },
           ...(sessions.deliveryConnections().includes(connection) ? { connectionId: connection } : {}) });
       },
       status: async id => {
@@ -907,6 +1017,16 @@ export class Partners {
         return request.status === "answered" && request.choice === "allow" ? "approved" : "denied";
       },
       withdraw: async id => { (await work()).withdrawRequest(id); },
+      request: async id => (await work()).lookupRequest(id) ?? undefined,
     };
   }
+}
+
+/**
+ * Router starts the text of a card raised in a turn the owner did not start with one bracketed line that says which
+ * agent's message started it. In the conversation that message was sent from, the card's own first line says so.
+ */
+function withoutOriginLine(card: { text: string; origin?: unknown }): string {
+  const [first = "", ...rest] = card.text.split("\n");
+  return card.origin && rest.length && first.startsWith("［") && first.endsWith("］") ? rest.join("\n") : card.text;
 }

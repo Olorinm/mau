@@ -27,9 +27,18 @@ export interface AgentSummary {
   /** The kernel the partner itself runs on; partners in one environment can run on different ones. */
   kernel: string | null;
   environment: EnvironmentView | null;
+  /** `external`: it runs on the owner's own computer, which pairs with it; it has no environment. */
+  kind: "managed" | "external";
+  connection?: DeviceConnection;
+  device?: DeviceView | null;
   /** When the partner was dismissed: it keeps its conversation and memory, and is not listed until it is restored. */
   dismissed?: string | null;
 }
+export type DeviceConnection = "pairing" | "online" | "offline";
+/** The computer paired with a partner that runs on it. */
+export interface DeviceView { id: string; name: string; platform: string; kernel: string; online: boolean; pairedAt: string; lastOnlineAt: string | null }
+/** A pairing code and the command that uses it on the computer; the server shows a code only when it makes one. */
+export interface Pairing { code: string; expiresAt: string; command: string }
 /** A partner as it works with the others: who recruited it and what waits at it. */
 export interface PartnerView {
   id: string; name: string; duty: string | null; status: string;
@@ -38,8 +47,8 @@ export interface PartnerView {
   waiting: { messages: number; approvals: number };
   sharesEnvironmentOf?: string; recruitedBy?: PartnerRef; recruitedAt?: string; dismissedAt?: string;
 }
-/** Where a new partner runs: in an environment of its own, or in another partner's (on its main kernel unless one is named). */
-export type NewPartnerEnvironment = { profileId: string } | { shareWith: string; kernel?: string };
+/** Where a new partner runs: in an environment of its own, in another partner's (on its main kernel unless one is named), or on the owner's computer. */
+export type NewPartnerEnvironment = { profileId: string } | { shareWith: string; kernel?: string } | { kind: "external" };
 /** A partner another one can run in the environment of: it has its own, not destroyed. Sharing does not chain. */
 export const canShareEnvironment = ({ environment }: AgentSummary) =>
   !!environment && !environment.sharedFrom && !["deleting", "deleted"].includes(environment.state);
@@ -164,15 +173,18 @@ export function mauApi(token: string) {
     /** Takes one change back; refused with `memory_undo_conflict` when the memory changed in that place since. */
     undoAgentMemoryMutation: (id: string, mutationId: string) =>
       request<unknown>(mau + agent(id) + "/memory/mutations/" + encodeURIComponent(mutationId) + "/undo", { token, body: {} }),
-    /** With `shareWith` no environment is created and the partner is usable when the request returns. */
+    /** With `shareWith` no environment is created and the partner is usable when the request returns; with `kind` the answer has its pairing code. */
     createAgent: (name: string, environment: NewPartnerEnvironment, duty?: string) =>
-      request<AgentSummary>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
+      request<AgentSummary & { pairing?: Pairing }>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
     /** The owner's partners, dismissed ones included. */
     partners: () => request<{ data: PartnerView[] }>(mau + "/partners", { token }).then((r) => r.data),
     /** Archive a partner (it keeps everything and leaves the roster), or bring it back. */
     dismissAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/dismiss", { token, body: {} }),
     restoreAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/restore", { token, body: {} }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),
+    /** A new pairing code; the computer that pairs with it replaces the one paired before. */
+    pairDevice: (id: string) => request<Pairing>(mau + agent(id) + "/device/pair", { token, body: {} }),
+    unpairDevice: (id: string) => request<null>(mau + agent(id) + "/device", { token, method: "DELETE" }),
     environment: (id: string) => request<EnvironmentView>(mau + agent(id) + "/environment", { token }),
     createEnvironment: (id: string, profileId: string) =>
       request<EnvironmentView>(mau + agent(id) + "/environment", { token, body: { profileId } }),

@@ -43,7 +43,7 @@ a bucket that it did not make.
 | `buckets` | `NAME-config`, `NAME-state`, `NAME-attachments`, `NAME-access-logs` (objects deleted after 30 days), `NAME-environment-backups`. |
 | `r2-credentials` | An account API token `NAME-container-r2` limited to object read and write on the first three buckets; its S3 key pair is what the container uses. |
 | `gateway` | The Worker `NAME-environment` on the account's workers.dev subdomain, from the gateway source in the pinned Agent Kit archive, with its two secrets and the `age` program its sandbox backups need. |
-| `access` | An Access application for the hostname that admits the owner's email only, and one for `/health/live` with a Bypass policy. |
+| `access` | An Access application for the hostname that admits the owner's email only, and one with a Bypass policy for each path that needs no login: `/health/live`, and the two a computer's Host uses to pair and connect ([an agent on your computer](external-agents.md)), `/_agent-router/v1/host-links/enroll` and `/_agent-router/v1/host-links/socket`. |
 | `config` | The configuration (below), uploaded to `NAME-config`; only changed objects are written. |
 | `deploy` | The Worker `NAME` on the hostname, with the image built from this checkout. |
 | `verify` | Nothing. Waits until `/health/live` answers and checks that `/` is redirected to Access. |
@@ -86,7 +86,7 @@ depend on it, and takes the result on the next run:
 | When | You do | Then |
 | --- | --- | --- |
 | The credentials may not create API tokens | Create an R2 "Account API token" in the dashboard: Object Read & Write on the three buckets deploy names | `--r2-access-key-id-file FILE --r2-secret-access-key-file FILE` |
-| The credentials may not manage Access | Create the two Access applications deploy describes | `--access-team-domain https://TEAM.cloudflareaccess.com --access-audience AUDIENCE_TAG` |
+| The credentials may not manage Access | Create the Access applications deploy describes: one for the owner, and a Bypass one for each path that needs no login | `--access-team-domain https://TEAM.cloudflareaccess.com --access-audience AUDIENCE_TAG` |
 | The account has no Zero Trust organization, no workers.dev subdomain, or R2 is not enabled | Open the dashboard page deploy names; these need a human's choice or a payment method | run the same command |
 | `~/.codex/auth.json` does not exist | `codex login` | run the same command |
 
@@ -122,7 +122,7 @@ prints one JSON document of checks, each `{ "check", "ok": true | false | null, 
 not be checked, `detail` says why), and exits 1 when a check is false. It reads only. It checks this machine
 (Node.js, Docker, Wrangler, cloudflared, Cloudflare credentials); the deployment (every bucket, the R2 key pair,
 every object of `config/` against the bucket, the Codex sign-in, the gateway's revision and key, `/health/live`,
-that Access protects `/`, the deployed revision and configuration against this checkout and `config/`, whether a
+that Access protects `/` and lets a computer's Host through (`host-links`), the deployed revision and configuration against this checkout and `config/`, whether a
 backup is configured); and, with an Access sign-in (`cloudflared access login URL`, or a service token in
 `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`), the running service: the account, the owner's environment
 profiles, and each partner's environment and channels. `--url` alone checks a service you did not deploy. With

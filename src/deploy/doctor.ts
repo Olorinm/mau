@@ -5,6 +5,7 @@ import { Cloudflare, r2Endpoint } from "./cloudflare.js";
 import { systemRuntime, type Runtime } from "./effects.js";
 import { Bucket } from "./s3.js";
 import { DeployError, Source, inspectCodexAuth } from "./source.js";
+import { HOST_LINK_PATHS } from "./host-links.js";
 import { Directory, configRevision, containerBuckets, defaultDirectory, ownerId, resources, sha256, type Deployment } from "./state.js";
 
 export interface DoctorInput { dir?: string; name?: string; url?: string }
@@ -138,6 +139,18 @@ export async function doctor(input: DoctorInput, runtime: Runtime = systemRuntim
       const root = await get(`${url}/`), team = new URL(deployment.access.teamDomain).host;
       const redirected = root.status >= 300 && root.status < 400 && !!root.location && URL.canParse(root.location) && new URL(root.location).host === team;
       return redirected ? good(`an unauthenticated request to / is sent to ${team}`) : bad(`an unauthenticated request to / answered ${root.status} without a redirect to ${team}`, `Check the Access application for ${deployment.hostname} in the Zero Trust dashboard.`);
+    });
+    await check("host-links", async () => {
+      if (!deployment.access) return bad("no Access application is recorded", again);
+      // A computer's Host has no owner sign-in: Access must let these two paths through to the service.
+      const team = new URL(deployment.access.teamDomain).host, behind: string[] = [];
+      for (const path of Object.values(HOST_LINK_PATHS)) {
+        const { location } = await get(url + path);
+        if (location && URL.canParse(location) && new URL(location).host === team) behind.push(path);
+      }
+      return behind.length ? bad(`behind the login: ${behind.join(", ")}; a computer cannot pair with a partner`,
+        deployment.access.source === "owner" ? `Add an Access application with a Bypass policy for Everyone for each of these paths of ${deployment.hostname}.` : again)
+        : good("a computer's Host reaches the service without a login");
     });
     const settings = account ? await account.workerSettings(names.worker).catch(() => null) : null;
     await check("deployed-revision", () => {

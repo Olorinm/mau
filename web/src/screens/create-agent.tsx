@@ -2,15 +2,16 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ProfileDialog } from "@olorinm/agent-ui/pages";
 import { Button, GroupPanel, ListRow, PartnerAvatar, SegmentedControl, SelectMenu, SettingsSection } from "@olorinm/agent-ui/app";
-import { canShareEnvironment, mauApi, type AgentSummary } from "../api/client";
+import { canShareEnvironment, mauApi, type AgentSummary, type Pairing } from "../api/client";
 import type { Session } from "../api/session";
 import { failureMessage, useI18n } from "../i18n";
+import { DeviceStatus, PairingRows } from "./device";
 
 // Same rules as Mau's POST /agents schema: the name, and a duty of one line of at most 200 characters.
 const namePattern = /^[a-z][a-z0-9-]{0,47}$/;
 const dutyLimit = 200;
 const lineBreaks = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
-type EnvironmentKind = "own" | "shared";
+type EnvironmentKind = "own" | "shared" | "external";
 
 export function CreateAgentDialog(props: {
   session: Session;
@@ -33,7 +34,9 @@ export function CreateAgentDialog(props: {
   // An environment of its own unless the owner chooses to share one; sharing is all there is without a profile.
   const hosts = props.partners.filter(canShareEnvironment);
   const [kind, setKind] = useState<EnvironmentKind>();
-  const shared = hosts.length > 0 && (kind ?? (options.isSuccess && !profiles.length ? "shared" : "own")) === "shared";
+  // On the owner's computer: no environment of Mau's, only a computer that pairs with the partner.
+  const external = kind === "external";
+  const shared = !external && hosts.length > 0 && (kind ?? (options.isSuccess && !profiles.length ? "shared" : "own")) === "shared";
   // With several partners to share with, the owner picks one; nothing is preselected.
   const [partner, setPartner] = useState<string | null>(null);
   const shareWith = hosts.some(({ agent }) => agent.id === partner) ? partner : hosts.length === 1 ? hosts[0]!.agent.id : null;
@@ -43,16 +46,28 @@ export function CreateAgentDialog(props: {
   const kernels = profiles.find((profile) => profile.id === sharedProfile)?.kernels ?? [];
   const [picked, setPicked] = useState<string | null>(null);
   const kernel = picked !== null && kernels.includes(picked) ? picked : kernels[0] ?? null;
-  const environment = shared ? (shareWith ? { shareWith, ...(kernel && kernel !== kernels[0] ? { kernel } : {}) } : null) : profileId ? { profileId } : null;
+  const environment = external ? { kind: "external" as const } : shared ? (shareWith ? { shareWith, ...(kernel && kernel !== kernels[0] ? { kernel } : {}) } : null) : profileId ? { profileId } : null;
   const create = useMutation({
     mutationFn: () => api.createAgent(name, environment!, duty.trim()),
-    onSuccess: (summary) => props.onCreated(summary.agent.id),
+    // The pairing code is shown here, once; the dialog closes when the owner has it.
+    onSuccess: (summary) => summary.pairing ? setPaired({ agentId: summary.agent.id, pairing: summary.pairing }) : props.onCreated(summary.agent.id),
   });
+  const [paired, setPaired] = useState<{ agentId: string; pairing: Pairing }>();
   const valid = namePattern.test(name) && !!environment;
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (valid && !create.isPending) create.mutate();
+    if (paired) props.onCreated(paired.agentId);
+    else if (valid && !create.isPending) create.mutate();
   };
+  if (paired) return (
+    <ProfileDialog open onOpenChange={(open) => { if (!open) props.onCreated(paired.agentId); }} title={name} onSubmit={submit}
+      actions={<Button type="submit" variant="primary">{t("device.done")}</Button>}>
+      <SettingsSection title={t("device.title")}>
+        <ListRow title={t("env.state")} trailing={<DeviceStatus connection="pairing" />} />
+        <PairingRows pairing={paired.pairing} />
+      </SettingsSection>
+    </ProfileDialog>
+  );
   return (
     <ProfileDialog
       open
@@ -116,14 +131,15 @@ export function CreateAgentDialog(props: {
       <SettingsSection title={t("env.title")} panel={false}>
         <SegmentedControl<EnvironmentKind>
           label={t("create.environment")}
-          value={shared ? "shared" : "own"}
+          value={external ? "external" : shared ? "shared" : "own"}
           onChange={setKind}
           options={[
             { value: "own", label: t("create.ownEnvironment") },
             { value: "shared", label: t("create.sharedEnvironment"), disabled: !hosts.length },
+            { value: "external", label: t("create.external") },
           ]}
         />
-        {shared ? (
+        {external ? null : shared ? (
           <GroupPanel>
             <ListRow
               title={t("create.sharePartner")}

@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.56",
+  "version": "0.1.0-alpha.57",
   "private": true,
   "description": "Mau: an agent product built on Agent Kit (Router, Host, Connectors, Environment).",
   "type": "module",
@@ -39,7 +39,7 @@
     "dev:web": "npm --prefix web run dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:web": "npm run build:web && MAU_WEB_E2E=1 vitest run test/web-api.test.ts test/web-console.test.ts test/web-ledger-groups.test.ts test/web-partners.test.ts test/i18n.test.ts test/run-experience.test.ts test/ledger-console.test.ts test/style-surfaces.test.ts",
+    "test:web": "npm run build:web && MAU_WEB_E2E=1 vitest run test/web-api.test.ts test/web-console.test.ts test/web-ledger-groups.test.ts test/web-partners.test.ts test/web-external-partners.test.ts test/i18n.test.ts test/run-experience.test.ts test/ledger-console.test.ts test/style-surfaces.test.ts",
     "start": "node dist/main.js",
     "verify:packages": "npm run build && node scripts/verify-packages.mjs",
     "pack:cli": "npm run build && node scripts/pack-cli.mjs",
@@ -63,9 +63,9 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@agent-router/server": "0.11.0-alpha.8",
-    "@olorinm/agent-connectors": "0.11.0-alpha.8",
-    "@olorinm/agent-environment": "0.11.0-alpha.8"
+    "@agent-router/server": "0.11.0-alpha.9",
+    "@olorinm/agent-connectors": "0.11.0-alpha.9",
+    "@olorinm/agent-environment": "0.11.0-alpha.9"
   },
   "allowScripts": {
     "@larksuite/cli@1.0.97": true,

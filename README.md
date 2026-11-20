@@ -31,6 +31,8 @@ Talk to them from the web, the command line or your chat apps; they can recruit 
   another, hand work over and wait for the answer.
 - 📦 **A real sandbox per partner.** A native agent (Codex by default) works in its own container with
   files and a shell. Idle sandboxes pause; a message wakes them.
+- 💻 **Your own computer, too.** An agent already installed on your machine pairs with a code and becomes a
+  partner: Mau sends it messages and takes its replies, and everything else stays on that machine.
 - 💬 **Reach them anywhere.** Web console, CLI, Feishu, Weixin, Telegram, email and push, all in one conversation
   history.
 - 🔐 **You stay in control.** Writes to your accounts wait for your approval on a card. Credentials live outside the
@@ -91,7 +93,7 @@ Prerequisites, the API token permissions and what a human still does: [docs/depl
 Install the client on any machine (it has no server dependencies), then sign in to your deployment:
 
 ```sh
-npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.56/olorinm-mau-cli-0.1.0-alpha.56.tgz
+npm install --global https://github.com/Olorinm/mau/releases/download/v0.1.0-alpha.57/olorinm-mau-cli-0.1.0-alpha.57.tgz
 mau login https://mau.example.com
 ```
 
@@ -140,6 +142,7 @@ you ── web · CLI · chat apps ──▶ Router ──▶ Host ──▶ nat
 | [Web console](docs/web.md) · [中文](docs/web.zh-CN.md) | Sign-in and what the console covers |
 | [Environments](docs/environments.md) · [中文](docs/environments.zh-CN.md) | Profiles, several kernels, shared sandboxes, SSH |
 | [Partners, memory and schedules](docs/native-work.md) | How partners work together and what they remember |
+| [An agent on your computer](docs/external-agents.md) | Pair an agent you already run as a partner; what Mau can and cannot do with it |
 | [Connector accounts](docs/connector-accounts.md) | Connecting your services and per-operation permissions |
 
 ## 🛠 Development

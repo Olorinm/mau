@@ -11,6 +11,7 @@ import { renderConfig, renderGatewayWrangler, renderWorkerWrangler } from "./ren
 import { Bucket, type S3Credentials } from "./s3.js";
 import { AGE, DeployError, Source, inspectCodexAuth, type Pin } from "./source.js";
 import { configRevision, containerBuckets, resources, sha256, type Deployment, type Directory, type OwnerAction } from "./state.js";
+import { HOST_LINK_PATHS } from "./host-links.js";
 
 export interface DeployInput {
   hostname?: string; ownerEmail?: string; name?: string; dir?: string; codexAuth?: string;
@@ -331,9 +332,12 @@ const gateway: Step = { id: "gateway", needs: ["buckets"], async run(context) {
 
 const access: Step = { id: "access", needs: ["preflight"], async run(context) {
   const { cloudflare, record, input } = context, liveness = `${record.hostname}/health/live`;
+  // What needs no owner sign-in: the liveness probe, and where a computer's Host enrolls and connects with its own credential.
+  const open = [{ domain: liveness, name: `${record.name} liveness` },
+    { domain: record.hostname + HOST_LINK_PATHS.enroll, name: `${record.name} host link enroll` }, { domain: record.hostname + HOST_LINK_PATHS.socket, name: `${record.name} host link socket` }];
   const manual = (reason: string): OwnerAction => ({ reason, continue: context.continueWith("--access-team-domain https://TEAM.cloudflareaccess.com --access-audience AUDIENCE_TAG"), instructions: [
     `Zero Trust dashboard (https://one.dash.cloudflare.com/), Access, Applications, "Add an application", Self-hosted: public hostname ${record.hostname}; one policy with action Allow that includes the email ${record.ownerEmail}.`,
-    `Add a second self-hosted application for ${record.hostname} with path health/live and one policy with action Bypass that includes Everyone. It keeps the liveness probe reachable without a login.`,
+    `Add a self-hosted application for each of these paths of ${record.hostname}, with one policy with action Bypass that includes Everyone: ${open.map(({ domain }) => domain.slice(record.hostname.length + 1)).join(", ")}. They keep the liveness probe, and the computers that pair with a partner, reachable without a login.`,
     "Pass the first application's Application Audience (AUD) Tag and the team domain (Settings, Team name and domain).",
     tokenAdvice("Access: Apps and Policies Edit") ] });
 
@@ -348,13 +352,12 @@ const access: Step = { id: "access", needs: ["preflight"], async run(context) {
 
   // https://developers.cloudflare.com/cloudflare-one/access-controls/policies/ : a path that must stay public gets
   // its own application with a Bypass policy; the more specific path wins.
-  let team: string | undefined, application: AccessApplication | undefined, probe: AccessApplication | undefined;
+  let team: string | undefined, application: AccessApplication | undefined;
   try {
     team = await cloudflare.accessTeamDomain();
     if (!team) return { reason: "zero_trust_not_set_up", continue: context.continueWith(),
       instructions: ["Open https://one.dash.cloudflare.com/, choose a team name and the Free plan. Cloudflare Access is the only login of Mau."] };
     application = await cloudflare.accessApplication(record.hostname);
-    probe = await cloudflare.accessApplication(liveness);
     const ensure = async (domain: string, name: string, decision: "allow" | "bypass", include: unknown[]) => {
       const policy = await cloudflare.accessPolicy(name) ?? await cloudflare.createAccessPolicy(name, decision, include);
       return cloudflare.createAccessApplication(name, domain, policy);
@@ -362,8 +365,8 @@ const access: Step = { id: "access", needs: ["preflight"], async run(context) {
     if (!application) await context.act(`create Access application for ${record.hostname} that admits ${record.ownerEmail} only`, async () => {
       application = await ensure(record.hostname, `${record.name} owner`, "allow", [{ email: { email: record.ownerEmail } }]);
     });
-    if (!probe) await context.act(`create Access application for ${liveness} that needs no login`, async () => {
-      await ensure(liveness, `${record.name} liveness`, "bypass", [{ everyone: {} }]);
+    for (const { domain, name } of open) if (!await cloudflare.accessApplication(domain)) await context.act(`create Access application for ${domain} that needs no login`, async () => {
+      await ensure(domain, name, "bypass", [{ everyone: {} }]);
     });
   } catch (error) { if (error instanceof CloudflareError && error.denied) return manual("access_needs_owner"); throw error; }
   if (application) { record.access = { source: "api", teamDomain: `https://${team}`, audience: application.aud, applicationId: application.id }; context.save(); }

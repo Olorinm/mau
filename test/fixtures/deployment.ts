@@ -134,7 +134,7 @@ export function deploymentFixture(cleanup: Array<() => unknown>) {
     const guarded = cloud.applications.filter((application) => `${url.host}${url.pathname}`.startsWith(application.domain)).sort((a, b) => b.domain.length - a.domain.length)[0];
     const bypass = guarded && (cloud.policies.get((guarded.policies[0] as { id: string }).id)?.decision === "bypass");
     if (url.pathname === "/health/live") return guarded && !bypass ? new Response(null, { status: 302, headers: { location: `https://${cloud.team}/cdn-cgi/access/login` } }) : Response.json({ status: "ok" });
-    if (guarded && headers.get("cf-access-token") !== ACCESS_TOKEN) return new Response(null, { status: 302, headers: { location: `https://${cloud.team}/cdn-cgi/access/login/${url.host}` } });
+    if (guarded && !bypass && headers.get("cf-access-token") !== ACCESS_TOKEN) return new Response(null, { status: 302, headers: { location: `https://${cloud.team}/cdn-cgi/access/login/${url.host}` } });
     if (!guarded && url.pathname === "/") return new Response("console", { status: 200 });
     if (url.pathname === "/_mau/v1/account") return Response.json({ owner: `@owner:${url.host}`, via: "edge", email: "owner@example.com" });
     if (url.pathname === "/_mau/v1/options") return Response.json({ environments: [{ id: "codex", label: "Codex", kernel: "codex", kernels: ["codex"] }] });

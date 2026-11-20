@@ -278,6 +278,7 @@ body {
 .mau-pairing-code { display: grid; gap: 6px; padding: 12px var(--space-row-x); }
 .mau-pairing-code-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.6rem; letter-spacing: .12em; }
 .mau-pairing-code p { margin: 0; font-size: var(--fs-sm); }
+.mau-pairing-command { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: all; }
 
 /* Ledger attachments (ADR 0005 16.5): inline images and file cards; the owner's sit above their text. */
 .mau-dropzone {

@@ -20,7 +20,8 @@ import { AgentSkills } from "./agent-skills.js";
 import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, confirmationCard, confirmationEvent, type ProactivePort } from "./proactive.js";
 import { NativePartnerTools } from "./native-work.js";
-import { Partners } from "./partners.js";
+import { Partners, environmentPresence } from "./partners.js";
+import { ExternalPartners } from "./external-partners.js";
 import { closeRunApprovals } from "./connector-approvals.js";
 import { SessionHistory, historyQuery } from "./session-history.js";
 import { checkConnector } from "./connector-precheck.js";
@@ -128,6 +129,16 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       http: (id, binding) => environments.http(id, binding),
     },
   });
+  const hostOf = (owner: string, agentId: string) => router.connections.configuration(router.service.owned(agentId, owner))?.host;
+  const externals = new ExternalPartners(businessStore, router.hostLinks, {
+    serviceUrl: new URL(config.publicUrl).origin,
+    binding: hostOf,
+    bind: async (owner, agentId, host) => {
+      // A computer's sessions are its own: pairing one, or ending a pairing, starts the partner's execution sessions afresh.
+      if (host) await router.connections.replaceHost(owner, agentId, { ...host, instanceName: "channel-host", instructions: "" });
+      else await router.connections.edit(owner, agentId, config => { delete config.host; }, undefined, true);
+    },
+  });
   /** Every owner route and the SSH upgrade: the Access JWT when the request carries one, otherwise the bearer token. */
   // The method lets Router apply its CSRF guard (Origin, content type) to unsafe edge requests. Method, path and
   // headers let it hold a service token to an operator's requests: here that is reading, without the SSH upgrade.
@@ -176,6 +187,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   } : null;
   const proactivePort: ProactivePort = {
     validate: async rule => {
+      if (externals.has(rule.agentId)) throw new RouterError("not_available_for_external_partner", 409);
       const work = await sessions(rule.owner, rule.agentId);
       work.validateTarget(rule.targetSessionId);
       if (rule.session.type === "conversation") work.validateTarget(rule.session.sessionId);
@@ -240,6 +252,9 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   const reviewOrigin = (admission: import("./run-admission.js").RunAdmission) => reviews.list({ owner: admission.owner, agentId: admission.agentId }).find(job => job.id === admission.reference);
   const routerOf = (agentId: string) => router.service.runtime(agentId).then(r => r.extension, () => undefined);
+  /** A partner's duty and kernel: recorded with its environment, or with it and its computer. */
+  const duty = (agentId: string) => externals.duty(agentId) ?? environments.duty(agentId);
+  const kernel = (agentId: string) => externals.kernel(agentId) ?? environments.kernel(agentId);
   const partners = new Partners(businessStore, {
     agents: owner => router.service.agents(owner),
     create: (owner, name) => router.service.create(owner, name),
@@ -250,11 +265,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       // A turn that answers in a conversation has ended when its answer is recorded there.
       return input ? input.state === "done" : ["completed", "failed", "canceled", "rejected"].includes(runtime.work.inspect(taskId).status);
     },
-    duty: agentId => environments.duty(agentId),
+    duty: agentId => duty(agentId),
     environmentHolder: agentId => environments.sharedFrom(agentId) ?? agentId,
-    kernel: agentId => environments.kernel(agentId),
+    kernel: agentId => kernel(agentId),
     kernels: agentId => environments.kernels(agentId),
-    environmentState: (owner, agentId) => environments.summary(owner, agentId)?.state,
+    presence: (owner, agentId) => externals.presence(agentId) ?? environmentPresence(environments.summary(owner, agentId)?.state),
+    dismissed: (owner, agentId) => externals.unpair(owner, agentId),
     assertShareable: (owner, holder, kernel) => environments.assertShareable(owner, holder, kernel),
     share: (owner, agentId, holder, duty, kernel) => environments.beginShared(owner, agentId, holder, duty, kernel),
     models: (owner, agentId) => modelSettings.view(owner, agentId),
@@ -266,6 +282,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ? modelSettings.kernelDefaultModel(holder, kernel) : modelSettings.defaultModel(holder));
     },
     connections: (owner, agentId) => connectedApps.connections(agentId, owner),
+    answerCard: async (owner, agentId, cardId, answer) => {
+      router.service.owned(agentId, owner);
+      const control = (await router.service.runtime(agentId)).extension?.control;
+      if (!control) throw new RouterError("host_sessions_unavailable", 409);
+      return control.answer(cardId, answer);
+    },
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
   });
   business.setAdmissionValidator(admission => {
@@ -304,6 +326,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   product.use(async (req, res, next) => {
     const principal = await authenticateRequest(req);
     res.locals.principal = principal; res.locals.owner = principal.ownerId;
+    next();
+  });
+  // A partner on the owner's computer has its own kernel, model, memory, skills and files, and nothing of Mau's:
+  // of a partner's routes it has only itself, its dismissal and its computer.
+  product.use("/agents/:id", (req, res, next) => {
+    if (externals.isOwned(res.locals.owner, String(req.params.id)) && !/^\/(?:dismiss|restore|device(?:\/pair)?)?$/.test(req.path))
+      throw new RouterError("not_available_for_external_partner", 409);
     next();
   });
   product.get("/account", (req, res) => {
@@ -432,14 +461,26 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   }));
   const summary = (owner: string, id: string) => ({
     ...router.connections.summary(router.service.owned(id, owner)),
-    duty: environments.duty(id) ?? null,
-    kernel: environments.kernel(id) ?? null,
+    kind: externals.has(id) ? "external" as const : "managed" as const,
+    duty: duty(id) ?? null,
+    kernel: kernel(id) ?? null,
     environment: environments.summary(owner, id),
+    ...(externals.has(id) ? externals.view(owner, id) : {}),
     dismissed: partners.dismissedAt(id) ?? null,
   });
   product.get("/agents", (_req, res) => res.json({ data: router.service.agents(res.locals.owner).map(a => summary(a.owner, a.id)) }));
   product.post("/agents", async (req, res) => {
     const input = apiInput.newAgent.parse(req.body), owner = res.locals.owner as string;
+    if ("kind" in input) {
+      const ownership = externals.creatable(input.ownership);
+      const agent = await router.service.create(owner, input.name);
+      externals.register(owner, agent.id, ownership, input.duty, !environments.summary(owner, agent.id) && !hostOf(owner, agent.id));
+      // The partner has a conversation before it has a computer: what the owner writes meanwhile waits for the pairing.
+      if (!router.connections.configuration(agent)) await router.connections.edit(owner, agent.id, () => undefined);
+      res.status(201).json({ ...summary(owner, agent.id), pairing: externals.pair(owner, agent.id) }); return;
+    }
+    // Asked again for a name that exists, Router answers with that partner: one on the owner's computer gets no environment.
+    if (router.service.agents(owner).some(agent => agent.name === input.name && externals.has(agent.id))) throw new RouterError("not_available_for_external_partner", 409);
     if ("shareWith" in input) {
       await environments.assertShareable(owner, input.shareWith, input.kernel);
       const agent = await router.service.create(owner, input.name);
@@ -454,11 +495,32 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
   // Dismissing archives a partner: everything it has is kept, and it leaves the roster until it is restored.
-  for (const action of ["dismiss", "restore"] as const) product.post(`/agents/:id/${action}`, (req, res) => {
+  for (const action of ["dismiss", "restore"] as const) product.post(`/agents/:id/${action}`, async (req, res) => {
     apiInput.empty.parse(req.body);
     const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;
-    if (action === "dismiss") partners.archive(owner, id, "owner"); else partners.restore(owner, id);
+    if (action === "dismiss") await partners.archive(owner, id, "owner"); else partners.restore(owner, id);
     res.json(summary(owner, id));
+  });
+  // The computer paired with a partner that is an agent on it.
+  product.get("/devices", (_req, res) => {
+    const owner = res.locals.owner as string, names = new Map(router.service.agents(owner).map(agent => [agent.id, agent.name]));
+    res.json({ data: externals.list(owner).flatMap(({ agentId, ...view }) => names.has(agentId) ? [{ partner: { id: agentId, name: names.get(agentId)! }, ...view }] : []) });
+  });
+  product.get("/agents/:id/device", (req, res) => {
+    const owner = res.locals.owner as string;
+    res.json(externals.view(owner, router.service.owned(String(req.params.id), owner).id));
+  });
+  product.post("/agents/:id/device/pair", (req, res) => {
+    apiInput.empty.parse(req.body);
+    const owner = res.locals.owner as string;
+    res.json(externals.pair(owner, router.service.owned(String(req.params.id), owner).id));
+  });
+  product.delete("/agents/:id/device", async (req, res) => {
+    const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;
+    // Refused for a partner of another kind.
+    externals.view(owner, id);
+    await externals.unpair(owner, id);
+    res.status(204).end();
   });
   product.get("/partners", async (_req, res) => res.json({ data: await partners.list(res.locals.owner) }));
   product.get("/partners/messages", (req, res) => {
@@ -543,5 +605,5 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,
       (owner, agentId, keyId) => environments.connectSsh(owner, agentId, keyId),
       (req, socket, head) => router.upgrade(req, socket, head))); },
-    close: async () => { for (const close of sshServers) close(); await proactive.close(); await partners.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
+    close: async () => { for (const close of sshServers) close(); await proactive.close(); await partners.close(); await completedTurns.close(); await nativeRelay.close(); await reviews.close(); await environments.close(); externals.close(); await router.close(); await connectorRuntime?.close(); proactiveStore.close(); businessStore.close(); } };
 }

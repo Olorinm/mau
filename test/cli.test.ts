@@ -8,6 +8,7 @@ import { generateSigningKey } from "@olorinm/agent-connectors/issuer";
 import { privateFile } from "../src/files.js";
 import { aliceToken, builtCli, edgeProxy } from "./fixtures/edge.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
+import { linkComputer } from "./fixtures/host-links.js";
 import { partnersFixture } from "./fixtures/partners.js";
 
 const cleanup: Array<() => unknown> = [];
@@ -53,8 +54,29 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   const mate = await ok("partner", "create", "mate", "--share", "helper");
   expect(mate).toMatchObject({ agent: { name: "mate" }, environment: { sharedFrom: f.agent.id } });
   expect(await ok("partner", "show", "scout")).toEqual(scout);
-  expect((await mau("partner", "create", "extra")).error).toMatchObject({ error: "choose_profile_or_share" });
+  expect((await mau("partner", "create", "extra")).error).toMatchObject({ error: "choose_profile_share_or_external" });
   expect((await mau("partner", "create", "scout", "--profile", "cloud")).error).toEqual({ error: "partner_exists", name: "scout" });
+  // An agent on the owner's computer: the answer has the pairing code once, and its computer is managed under `device`.
+  const laptop = await ok("partner", "create", "laptop", "--external", "--duty", "Works on my laptop");
+  expect(laptop).toMatchObject({ agent: { name: "laptop" }, kind: "external", connection: "pairing", device: null, duty: "Works on my laptop",
+    pairing: { code: expect.stringMatching(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/), command: expect.stringContaining("agent-host link --config host.json --url ") } });
+  expect((await mau("partner", "create", "both", "--external", "--profile", "cloud")).error).toMatchObject({ error: "choose_profile_share_or_external" });
+  expect(await ok("device", "show", "laptop")).toEqual({ ownership: "owner", connection: "pairing", device: null });
+  // A message to it says what it waits for instead of waiting for a turn that cannot start.
+  expect(await ok("chat", "send", "laptop", "Are you there?")).toMatchObject({ state: "queued", waitingFor: "pairing", replies: [] });
+  const computer = await linkComputer(f.base, (await ok("device", "pair", "laptop")).code, cleanup);
+  await f.until(async () => (await ok("partner", "show", "laptop")).connection === "online", "paired");
+  expect(await ok("device", "list")).toEqual({ data: [{ partner: { id: laptop.agent.id, name: "laptop" }, ownership: "owner", connection: "online",
+    device: { id: computer.linkId, name: "laptop", platform: "darwin", kernel: "claude", online: true, pairedAt: expect.any(String), lastOnlineAt: expect.any(String) } }] });
+  // The message that waited is handled once the computer is there, and the next one is answered at once.
+  await f.until(() => computer.turns[0], "the waiting message");
+  expect((await ok("chat", "send", "laptop", "And now?")).replies.map((reply: any) => reply.text)).toEqual([expect.stringContaining("answer to And now?")]);
+  expect((await mau("device", "show", "scout")).error).toMatchObject({ error: "partner_not_external" });
+  expect((await mau("env", "show", "laptop")).error).toMatchObject({ error: "not_available_for_external_partner" });
+  expect((await mau("device", "remove", "laptop")).error).toMatchObject({ error: "confirm_with_yes" });
+  expect(await ok("device", "remove", "laptop", "--yes")).toEqual({ removed: "laptop" });
+  expect(await ok("device", "show", "laptop")).toEqual({ ownership: "owner", connection: "pairing", device: null });
+  expect(await ok("partner", "delete", "laptop", "--yes")).toEqual({ deleted: "laptop" });
   expect(await ok("env", "show", "scout")).toMatchObject({ state: "ready", profileId: "cloud" });
   expect(await ok("env", "pause", "scout")).toMatchObject({ state: "paused", busy: false });
   expect((await ok("partner", "dismiss", "scout")).dismissed).toBeTruthy();

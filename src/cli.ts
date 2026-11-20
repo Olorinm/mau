@@ -9,6 +9,7 @@ import { accessOptions, Client } from "./cli/client.js";
 import { arity, CliError, fail, usage, type Command, type OptionValues } from "./cli/command.js";
 import { connectorCommands } from "./cli/connector.js";
 import { deployCommands } from "./cli/deploy.js";
+import { deviceCommands } from "./cli/device.js";
 import { environmentCommands } from "./cli/environment.js";
 import { localCommands } from "./cli/local.js";
 import { memoryCommands } from "./cli/memory.js";
@@ -22,6 +23,7 @@ const commands: Command[] = [
   ...tokenCommands,
   ...partnerCommands,
   ...environmentCommands,
+  ...deviceCommands,
   ...chatCommands,
   ...memoryCommands,
   ...channelCommands,
