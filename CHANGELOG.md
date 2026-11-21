@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.59] - 2026-11-22
+
+- Update production Hono to 4.13.19 and its Node adapter to 2.1.11.
+- Pin Agent Kit 0.11.0-alpha.11 with Zod 4.6.7 in Agent Host.
+
 ## [0.1.0-alpha.58] - 2026-11-21
 
 - Owners can edit a partner's name and duty in its console configuration, with `mau partner edit NAME`,
