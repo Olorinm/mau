@@ -232,7 +232,8 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   await f.until(() => f.record(said.inform.messageId).status === "seen", "inform read");
   // The reply returns to the conversation the message was sent from, as a turn of the sender.
   expect(await f.until(async () => (await f.answers(f.agent.id)).find(answer => answer.startsWith("Passing on")), "reply")).toContain("The budget file says 20000.");
-  expect(f.messages().find(item => item.id === said.relay.messageId)).toMatchObject({ status: "returned", result: { status: "completed", answer: "The budget file says 20000." } });
+  const returned = await f.until(() => f.messages().find(item => item.id === said.relay.messageId && item.status === "returned"), "handover recorded");
+  expect(returned).toMatchObject({ status: "returned", result: { status: "completed", answer: "The budget file says 20000." } });
 
   // An inform alone waits: the owner's own message does not carry it, the next message of a partner does.
   const profile = "/agents/" + id, before = (await f.api(profile)).data;
