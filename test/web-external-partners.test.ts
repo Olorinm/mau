@@ -97,10 +97,16 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await see(row("销毁环境")).toHaveCount(0);
   await see(row("解散伙伴")).toBeVisible();
   await see(row("删除伙伴")).toBeVisible();
+  await row("编辑名称和描述").click();
+  await card.getByLabel("名称", { exact: true }).fill("Mac");
+  await card.getByLabel("描述", { exact: true }).fill("My workstation");
+  await card.getByRole("button", { name: "保存", exact: true }).click();
+  await see(card.getByRole("heading", { name: "Mac", exact: true })).toBeVisible();
+  await see(card.getByText("My workstation", { exact: true })).toBeVisible();
   // Unpairing asks first, then leaves the partner waiting for a computer.
   await tab(page, "状态").click();
   await row("解除配对").click();
-  await page.getByRole("dialog", { name: "解除 laptop 的配对？" }).getByRole("button", { name: "解除配对", exact: true }).click();
+  await page.getByRole("dialog", { name: "解除 Mac 的配对？" }).getByRole("button", { name: "解除配对", exact: true }).click();
   await see(row("状态")).toContainText("等待配对");
   expect(links.get(laptop.id)).toBeUndefined();
   // The list says waiting, online or offline, never an environment state.

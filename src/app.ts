@@ -253,7 +253,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const reviewOrigin = (admission: import("./run-admission.js").RunAdmission) => reviews.list({ owner: admission.owner, agentId: admission.agentId }).find(job => job.id === admission.reference);
   const routerOf = (agentId: string) => router.service.runtime(agentId).then(r => r.extension, () => undefined);
   /** A partner's duty and kernel: recorded with its environment, or with it and its computer. */
-  const duty = (agentId: string) => externals.duty(agentId) ?? environments.duty(agentId);
+  const duty = (agentId: string) => {
+    const description = router.service.agent(agentId).description;
+    return description === undefined ? externals.duty(agentId) ?? environments.duty(agentId) : description ?? undefined;
+  };
   const kernel = (agentId: string) => externals.kernel(agentId) ?? environments.kernel(agentId);
   const partners = new Partners(businessStore, {
     agents: owner => router.service.agents(owner),
@@ -494,6 +497,12 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     res.status(202).json(summary(owner, agent.id));
   });
   product.get("/agents/:id", (req, res) => res.json(summary(res.locals.owner, String(req.params.id))));
+  product.patch("/agents/:id", (req, res) => {
+    const owner = res.locals.owner as string, id = String(req.params.id);
+    const { name, duty } = apiInput.partnerEdit.parse(req.body);
+    router.service.updateProfile(owner, id, { ...(name !== undefined ? { name } : {}), ...(duty !== undefined ? { description: duty } : {}) });
+    res.json(summary(owner, id));
+  });
   // Dismissing archives a partner: everything it has is kept, and it leaves the roster until it is restored.
   for (const action of ["dismiss", "restore"] as const) product.post(`/agents/:id/${action}`, async (req, res) => {
     apiInput.empty.parse(req.body);

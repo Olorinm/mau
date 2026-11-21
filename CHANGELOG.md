@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.58] - 2026-11-21
+
+- Owners can edit a partner's name and duty in its console configuration, with `mau partner edit NAME`,
+  or through `PATCH /_mau/v1/agents/:id`. Partners see the new name and duty in their roster and
+  can address the same partner by its new name. Existing device pairings and conversations are preserved.
+- Pins Agent Kit 0.11.0-alpha.10.
+
 ## [0.1.0-alpha.57] - 2026-11-19
 
 - Pins Agent Kit 0.11.0-alpha.9.

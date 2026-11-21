@@ -73,10 +73,14 @@ it("drives a Mau service behind its edge: partners, chat, memory, connectors and
   expect((await ok("chat", "send", "laptop", "And now?")).replies.map((reply: any) => reply.text)).toEqual([expect.stringContaining("answer to And now?")]);
   expect((await mau("device", "show", "scout")).error).toMatchObject({ error: "partner_not_external" });
   expect((await mau("env", "show", "laptop")).error).toMatchObject({ error: "not_available_for_external_partner" });
-  expect((await mau("device", "remove", "laptop")).error).toMatchObject({ error: "confirm_with_yes" });
-  expect(await ok("device", "remove", "laptop", "--yes")).toEqual({ removed: "laptop" });
-  expect(await ok("device", "show", "laptop")).toEqual({ ownership: "owner", connection: "pairing", device: null });
-  expect(await ok("partner", "delete", "laptop", "--yes")).toEqual({ deleted: "laptop" });
+  expect((await mau("partner", "edit", "laptop")).error).toMatchObject({ error: "profile_change_required" });
+  const updated = await ok("partner", "edit", "laptop", "--name", "Workstation", "--duty", "Local work");
+  expect(updated).toMatchObject({ agent: { name: "Workstation" }, duty: "Local work", connection: "online" });
+  expect((await ok("partner", "edit", "Workstation", "--duty", "")).duty).toBeNull();
+  expect((await mau("device", "remove", "Workstation")).error).toMatchObject({ error: "confirm_with_yes" });
+  expect(await ok("device", "remove", "Workstation", "--yes")).toEqual({ removed: "Workstation" });
+  expect(await ok("device", "show", "Workstation")).toEqual({ ownership: "owner", connection: "pairing", device: null });
+  expect(await ok("partner", "delete", "Workstation", "--yes")).toEqual({ deleted: "Workstation" });
   expect(await ok("env", "show", "scout")).toMatchObject({ state: "ready", profileId: "cloud" });
   expect(await ok("env", "pause", "scout")).toMatchObject({ state: "paused", busy: false });
   expect((await ok("partner", "dismiss", "scout")).dismissed).toBeTruthy();

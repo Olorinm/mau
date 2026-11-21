@@ -134,6 +134,19 @@ export function AgentDetail(props: {
     if (error instanceof ApiError && error.status === 401) return;
     toast({ kind: "error", title: failureMessage(t, error) });
   };
+  const [draft, setDraft] = useState<{ name?: string; duty?: string } | null>(null);
+  const nameText = draft?.name ?? agent.name, dutyText = draft?.duty ?? duty ?? "";
+  const edit = useMutation({
+    mutationFn: () => mau.editAgent(agent.id, {
+      ...(nameText.trim() !== agent.name ? { name: nameText.trim() } : {}),
+      ...(dutyText.trim() !== (duty ?? "") ? { duty: dutyText.trim() || null } : {}),
+    }),
+    onSuccess: async () => {
+      await Promise.all([refresh(), queries.invalidateQueries({ queryKey: ["ledger-chats", props.session.token] })]);
+      setDraft(null);
+    },
+    onError: failed,
+  });
   const undo = useMutation({
     mutationFn: (mutation: MemoryMutation) => mau.undoAgentMemoryMutation(agent.id, mutation.id),
     onSettled: () => Promise.all([queries.invalidateQueries({ queryKey: ["agent-memory", agent.id] }), queries.invalidateQueries({ queryKey: ["agent-memory-mutations", agent.id] })]),
@@ -366,6 +379,16 @@ export function AgentDetail(props: {
           </>
         ) : (
           <>
+            <SettingsSection title={zh ? "伙伴资料" : "Partner profile"}>
+              {draft ? <form className="mau-profile-edit" onSubmit={event => { event.preventDefault(); edit.mutate(); }}>
+                <label>{zh ? "名称" : "Name"}<input autoFocus required maxLength={48} value={nameText} disabled={edit.isPending}
+                  onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
+                <label>{zh ? "描述" : "Description"}<input maxLength={200} value={dutyText} disabled={edit.isPending}
+                  onChange={event => setDraft({ ...draft, duty: event.target.value })} /></label>
+                <div><button type="submit" disabled={edit.isPending || !nameText.trim() || (nameText.trim() === agent.name && dutyText.trim() === (duty ?? ""))}>{zh ? "保存" : "Save"}</button>
+                  <button type="button" disabled={edit.isPending} onClick={() => setDraft(null)}>{zh ? "取消" : "Cancel"}</button></div>
+              </form> : <ListRow tone="action" title={zh ? "编辑名称和描述" : "Edit name and description"} onClick={() => setDraft({})} />}
+            </SettingsSection>
             <SettingsSection title={zh ? "运行方式" : "Runtime"}>
               <ListRow title={zh ? "内核" : "Kernel"} trailing={<span className="mau-profile-value">{kernel ?? "—"}</span>} />
               {external ? null : modelRows()}
