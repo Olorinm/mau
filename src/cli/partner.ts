@@ -30,6 +30,17 @@ export const partnerCommands: Command[] = [
       if (created.environment) await settled(client(), created.agent.id, created.environment, options);
       return client().get(agentPath(mau, created.agent.id));
     } },
+  { path: ["partner", "edit"], args: "NAME", summary: "Edit the name or duty of an existing partner.",
+    options: {
+      name: { type: "string", value: "NAME", help: "The new partner name." },
+      duty: { type: "string", value: "TEXT", help: "One line describing the partner. An empty string clears it." },
+    },
+    run: async ({ args, options, client }) => {
+      const name = text(options.name), duty = text(options.duty);
+      if (name === undefined && duty === undefined) fail("profile_change_required");
+      const partner = await client().partner(args[0]!);
+      return client().request("PATCH", agentPath(mau, partner.id), { name, duty: duty === "" ? null : duty });
+    } },
   { path: ["partner", "delete"], args: "NAME", options: yes, summary: "Permanently delete a partner with its environment or pairing, memory, schedules and channel connections.",
     run: async ({ args, client }) => {
       const partner = await client().partner(args[0]!);

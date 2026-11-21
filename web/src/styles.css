@@ -875,3 +875,8 @@ body {
     inset: 0;
   }
 }
+
+.mau-profile-edit { display: grid; gap: 12px; padding: 12px; }
+.mau-profile-edit label { display: grid; gap: 4px; }
+.mau-profile-edit input { min-width: 0; padding: 6px 8px; font: inherit; }
+.mau-profile-edit > div { display: flex; gap: 8px; }

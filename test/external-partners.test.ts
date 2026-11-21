@@ -232,10 +232,26 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   await f.until(() => f.record(said.inform.messageId).status === "seen", "inform read");
   // The reply returns to the conversation the message was sent from, as a turn of the sender.
   expect(await f.until(async () => (await f.answers(f.agent.id)).find(answer => answer.startsWith("Passing on")), "reply")).toContain("The budget file says 20000.");
-  expect(f.messages().find(item => item.id === said.relay.messageId)).toMatchObject({ status: "returned", result: { status: "completed", answer: "The budget file says 20000." } });
+  const returned = await f.until(() => f.messages().find(item => item.id === said.relay.messageId && item.status === "returned"), "handover recorded");
+  expect(returned).toMatchObject({ status: "returned", result: { status: "completed", answer: "The budget file says 20000." } });
 
   // An inform alone waits: the owner's own message does not carry it, the next message of a partner does.
-  f.respond(async (turn: Turn) => { said.later = await turn.call("partners", { action: "message", to: "laptop-agent", intent: "inform", text: "The hotel is booked." }); return "Told it."; });
+  const profile = "/agents/" + id, before = (await f.api(profile)).data;
+  const history = (await f.events(id)).map(event => event.eventId);
+  expect(history.length).toBeGreaterThan(0);
+  const edit = (change: unknown) => call(f, "PATCH", profile, change);
+  expect(await edit({ name: f.agent.name, duty: "rejected" })).toMatchObject({ status: 409, data: { error: "partner_name_taken" } });
+  expect((await f.api(profile)).data.duty).toBe(before.duty);
+  expect((await edit({ duty: null })).data.duty).toBeNull();
+  for (const change of [{}, { name: "   " }, { duty: "a\nb" }]) expect((await edit(change)).status).toBe(400);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    expect(await edit({ name: "Mac", duty: "Works on my Mac" })).toMatchObject({ status: 200,
+      data: { agent: { id, name: "Mac", address: before.agent.address }, duty: "Works on my Mac", connection: "online",
+        device: { id: before.device.id, pairedAt: before.device.pairedAt } } });
+  }
+  expect(await partnerView(f, id)).toMatchObject({ name: "Mac", duty: "Works on my Mac", external: true });
+  expect((await f.events(id)).map(event => event.eventId)).toEqual(expect.arrayContaining(history));
+  f.respond(async (turn: Turn) => { said.later = await turn.call("partners", { action: "message", to: "Mac", intent: "inform", text: "The hotel is booked." }); return "Told it."; });
   await f.say(f.agent.id, "Tell the laptop the hotel is booked");
   await f.until(() => said.later, "second inform");
   await f.say(id, "What do you know?");
@@ -246,7 +262,7 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   expect(f.record(said.later.messageId).status).toBe("queued");
   f.respond(async (turn: Turn) => {
     if (turn.text.includes("[Partner results")) return "Passed on again.";
-    said.ask = await turn.call("partners", { action: "message", to: "laptop-agent", intent: "ask", text: "Which hotel?" });
+    said.ask = await turn.call("partners", { action: "message", to: "Mac", intent: "ask", text: "Which hotel?" });
     return "Asked.";
   });
   await f.say(f.agent.id, "Ask the laptop which hotel");

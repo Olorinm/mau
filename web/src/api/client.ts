@@ -179,6 +179,8 @@ export function mauApi(token: string) {
     /** The owner's partners, dismissed ones included. */
     partners: () => request<{ data: PartnerView[] }>(mau + "/partners", { token }).then((r) => r.data),
     /** Archive a partner (it keeps everything and leaves the roster), or bring it back. */
+    editAgent: (id: string, change: { name?: string; duty?: string | null }) =>
+      request<AgentSummary>(mau + agent(id), { token, method: "PATCH", body: change }),
     dismissAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/dismiss", { token, body: {} }),
     restoreAgent: (id: string) => request<AgentSummary>(mau + agent(id) + "/restore", { token, body: {} }),
     deleteAgent: (id: string) => request<null>(mau + agent(id), { token, method: "DELETE", timeoutMs: 300_000 }),

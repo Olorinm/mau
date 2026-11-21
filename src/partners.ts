@@ -351,12 +351,15 @@ export class Partners {
     const waiting = this.outstanding(owner, ["sending", "running"]);
     const approvals = this.store.entriesByStatus<{ agentId: string; desk?: unknown }>("connector_approvals", ["pending"]).map(entry => entry.value).filter(record => record.desk);
     const cards = this.openCards(owner);
+    const recruits = new Map(this.store.entries<{ owner: string; agentId?: string; by: Party; at: string }>(RECRUITS)
+      .map(entry => entry.value).filter(record => record.owner === owner && record.agentId).map(record => [record.agentId, record]));
+    const names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
     return Promise.all(this.summary(owner, includeDismissed).map(async partner => {
       const settings = await this.port.sessions(owner, partner.id).then(work => work.defaultSettings(), () => ({} as Record<string, unknown>));
       // Router runs the turns of an agent on the owner's computer without Mau's Host, so its open runs are read from Router.
       const busy = partner.external && partner.status === "idle" && await this.port.sessions(owner, partner.id)
         .then(work => work.list().some(session => session.runs.some(run => run.phase !== "finished")), () => false);
-      const holder = this.port.environmentHolder(partner.id), recruit = this.store.get<{ by: Party; at: string }>(RECRUITS, JSON.stringify([owner, partner.name]));
+      const holder = this.port.environmentHolder(partner.id), recruit = recruits.get(partner.id);
       const dismissal = this.dismissed(partner.id);
       return { ...partner, ...(busy ? { status: "working" } : {}), kernel: this.port.kernel(partner.id) ?? null,
         model: typeof settings.model === "string" ? settings.model : null, effort: typeof settings.effort === "string" ? settings.effort : null,
@@ -364,7 +367,7 @@ export class Partners {
         waiting: { messages: waiting.filter(message => message.to.agentId === partner.id).length,
           approvals: approvals.filter(record => record.agentId === partner.id).length + cards.filter(card => card.agentId === partner.id).length },
         ...(holder !== partner.id ? { sharesEnvironmentOf: holder } : {}),
-        ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
+        ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: names.get(recruit.by.agentId) ?? recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
   }
   private async roster(admission: RunAdmission, includeDismissed: boolean) {
@@ -412,15 +415,17 @@ export class Partners {
   }
   private async recruit(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     const origin = await this.origin(admission, turn), owner = admission.owner, self = this.self(admission);
-    const name = partnerName.safeParse(input.name);
+    const existing = this.partners(owner).find(agent => agent.name === input.name);
+    const name = existing ? { success: true as const, data: existing.name } : partnerName.safeParse(input.name);
     if (!name.success) throw new PartnerError("partner_name_invalid", { instruction: "name: lowercase letters, digits and hyphens, starting with a letter, at most 48 characters." });
     const described = dutySchema.safeParse(input.duty);
     if (!described.success) throw new PartnerError("partner_duty_invalid", { instruction: "duty: one line of plain text, at most 200 characters, saying what the partner is responsible for." });
     if (input.message !== undefined && !input.intent) throw new PartnerError("partner_intent_required", { instruction: "A first message needs intent: relay, ask or inform." });
     if (input.message === undefined && input.intent) throw new PartnerError("partner_message_required", { instruction: "intent goes with a first message. Leave both out to recruit without one." });
     if (input.message !== undefined) this.checkText(input.message);
-    const key = JSON.stringify([owner, name.data]), existing = this.partners(owner).find(agent => agent.name === name.data);
+    const key = JSON.stringify([owner, name.data]);
     const record = this.store.get<{ agentId?: string }>(RECRUITS, key);
+    if (!existing && record?.agentId) throw new PartnerError("partner_name_taken", { instruction: "The original address is reserved. Choose another name." });
     // A dismissed partner comes back as it was: on its own kernel, whatever the recruit names.
     const returning = existing && this.dismissed(existing.id) && existing.id !== self.agentId ? existing : undefined;
     if (returning && this.external(owner, returning.id)) throw new PartnerError("partner_not_recruitable", { instruction:

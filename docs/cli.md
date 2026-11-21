@@ -97,6 +97,7 @@ mau profiles                                              # the environment prof
 mau partner create helper --profile codex --duty "Keeps my calendar"
 mau partner create scout --share helper                   # runs in helper's environment
 mau partner create laptop --external                      # an agent on your computer; prints its pairing code
+mau partner edit laptop --name Workstation --duty "Works on my computer"
 mau partner list
 mau partner model helper --set model=MODEL_ID --set effort=high
 mau env pause helper

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { routerApiReference, routerRouteScope } from "@agent-router/server";
+import { agentProfileName, routerApiReference, routerRouteScope } from "@agent-router/server";
 import { connectInputSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
 import { connectorAssignmentInput } from "./connected-apps.js";
 import { dutySchema } from "./environments.js";
@@ -37,6 +37,8 @@ export const apiInput = {
   newAgent: z.union([z.object({ ...newAgent, profileId }).strict(),
     z.object({ ...newAgent, shareWith: z.uuid(), kernel: z.string().min(1).max(48).optional() }).strict(),
     z.object({ ...newAgent, kind: z.literal("external"), ownership: z.enum(["owner", "other"]).default("owner") }).strict()]),
+  partnerEdit: z.object({ name: agentProfileName.optional(), duty: dutySchema.nullable().optional() }).strict()
+    .refine(value => value.name !== undefined || value.duty !== undefined),
   sshKey: z.object({ publicKey: z.string().max(128) }).strict(),
   environment: z.object({ profileId }).strict(),
   environmentReplace: z.object({ profileId, expectedOperationId: z.uuid() }).strict(),
@@ -80,6 +82,7 @@ export const mauApiReference: ApiRoute[] = [
   route("GET", "/agents", "The owner's partners, each with its kind, channel connections, duty, kernel, environment or computer, and dismissal."),
   route("POST", "/agents", "Create a partner with an environment of its own (profileId), in another partner's environment (shareWith), or as an agent on the owner's computer (kind external), which answers with a pairing code.", apiInput.newAgent, "manage"),
   route("GET", agent, "One partner."),
+  route("PATCH", agent, "Edit a partner’s name or duty in place; a null duty clears it.", apiInput.partnerEdit, "manage"),
   route("DELETE", agent, "Permanently delete a partner with its environment, memory, schedules and channel connections.", undefined, "manage"),
   route("POST", agent + "/dismiss", "Archive a partner: it keeps everything and leaves the roster.", apiInput.empty, "manage"),
   route("POST", agent + "/restore", "Bring a dismissed partner back.", apiInput.empty, "manage"),
