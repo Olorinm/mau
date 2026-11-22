@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { statSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DurableStore } from "../src/store.js";
@@ -473,4 +473,58 @@ it("rollback cannot replace a working binding with an expired or unexpectedly ru
   await f.api(f.path+"/rollback",{expectedOperationId:replacement.operationId});const rejected=await f.settled();
   expect(rejected.error).toBe("previous_environment_missing");expect(rejected.operationId).toBe(replacement.operationId);
   await f.api(f.path+"/resume",{});expect((await f.settled()).state).toBe("ready");
+});
+
+it("keeps real Codex auth.json out of sandboxes when the provider supports gateway-managed credentials", async () => {
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const accessToken = `${b64({ alg: "RS256" })}.${b64({ exp: 2_000_000_000, client_id: "app_codex", "https://api.openai.com/auth": { chatgpt_account_id: "acct-owner-1", chatgpt_plan_type: "plus" } })}.real-sig`;
+  const realAuth = JSON.stringify({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: { access_token: accessToken, refresh_token: "rt_super_secret", id_token: accessToken, account_id: "acct-owner-1" },
+  });
+  const f = await fixture();
+  const authPath = join(f.directory, "codex-auth.json");
+  writeFileSync(authPath, realAuth, { mode: 0o600 });
+  f.mau.environments.options.profiles[0]!.files.push({ source: authPath, destination: "/home/user/.codex/auth.json" });
+
+  const stored: Array<[string, unknown]> = [], created: unknown[] = [], resumed: unknown[] = [];
+  const origCreate = f.provider.create.bind(f.provider), origResume = f.provider.resume.bind(f.provider);
+  const id = "codex-" + createHash("sha256").update(authPath).digest("hex");
+  const meta = { id, service: "openai" as const, mode: "chatgpt" as const, accountId: "acct-owner-1",
+    updatedAt: new Date().toISOString(), renewable: true };
+  f.provider.getModelCredential = async () => stored.length ? meta : null;
+  f.provider.putModelCredential = async (key, input, options) => {
+    expect(options?.ifAbsent).toBe(true);
+    stored.push([key, input]); return meta;
+  };
+  let installs = 0;
+  f.provider.prepareCodexAuth = async () => { installs++; };
+  f.provider.create = (input) => { created.push(input); return origCreate(input); };
+  f.provider.resume = (id, seconds, options) => { resumed.push(options); return origResume(id, seconds, options); };
+
+  await f.api(f.path, { profileId: "cloud" }); await f.settled();
+  expect(stored).toMatchObject([[id, { accountId: "acct-owner-1", refreshToken: "rt_super_secret" }]]);
+  const selection = { modelAccounts: { openai: ["acct-owner-1"] }, modelCredentials: { openai: id }, codexAuthUsers: ["user"] };
+  expect(created[0]).toMatchObject(selection);
+  const guest = [...f.cloud.values()][0]!;
+  expect(guest.files.has("/home/user/.codex/auth.json")).toBe(false);
+  expect(installs).toBe(1);
+  await f.api(f.path + "/pause", {}); await f.settled();
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resumed[0]).toMatchObject(selection);
+  expect(stored).toHaveLength(1);
+  expect(installs).toBe(1);
+});
+
+it("fails before creating a managed environment when a configured login cannot be imported", async () => {
+  const f = await fixture();
+  const source = join(f.directory, "invalid-login.json");
+  writeFileSync(source, JSON.stringify({ auth_mode: "unsupported", tokens: { refresh_token: "fixture-only" } }));
+  f.mau.environments.options.profiles[0]!.files.push({ source, destination: "/home/user/.codex/auth.json" });
+  f.provider.putModelCredential = vi.fn(); f.provider.getModelCredential = vi.fn(); f.provider.prepareCodexAuth = vi.fn();
+  await f.api(f.path, { profileId: "cloud" });
+  expect((await f.settled()).state).toBe("needs_action");
+  expect(f.creates).toBe(0);
+  expect(f.provider.putModelCredential).not.toHaveBeenCalled();
 });

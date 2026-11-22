@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.61] - 2026-11-22
+
+- Import shared Codex credentials once at the environment gateway and keep real model sign-in files out of managed sandboxes.
+- Refuse unrecognized credentials and require a paused environment before migrating existing model authentication.
+
 ## [0.1.0-alpha.60] - 2026-11-22
 
 - Install managed skills with the workspace user's permissions and keep system command installation separate.
