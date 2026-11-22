@@ -3,7 +3,7 @@ import { statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DurableStore } from "../src/store.js";
-import { EnvironmentManager, parseCodexAuthForGateway, placeholderCodexAuth } from "../src/environments.js";
+import { EnvironmentManager } from "../src/environments.js";
 import { sshKeyId } from "../src/ssh.js";
 import { connectSshTunnel } from "../src/ssh-transport.js";
 import { alice, bob, mauFixture, root } from "./fixtures/mau.js";
@@ -483,13 +483,6 @@ it("keeps real Codex auth.json out of sandboxes when the provider supports gatew
     OPENAI_API_KEY: null,
     tokens: { access_token: accessToken, refresh_token: "rt_super_secret", id_token: accessToken, account_id: "acct-owner-1" },
   });
-  const parsed = parseCodexAuthForGateway(realAuth)!;
-  expect(parsed.input).toEqual({ service: "openai", mode: "chatgpt", accessToken, refreshToken: "rt_super_secret", accountId: "acct-owner-1", clientId: "app_codex" });
-  const placeholder = placeholderCodexAuth(parsed).toString("utf8");
-  expect(placeholder).not.toContain("real-sig");
-  expect(placeholder).not.toContain("rt_super_secret");
-  expect(JSON.parse(placeholder)).toMatchObject({ auth_mode: "chatgpt", tokens: { refresh_token: "gateway-managed", account_id: "acct-owner-1" } });
-
   const f = await fixture();
   const authPath = join(f.directory, "codex-auth.json");
   writeFileSync(authPath, realAuth, { mode: 0o600 });
@@ -497,28 +490,41 @@ it("keeps real Codex auth.json out of sandboxes when the provider supports gatew
 
   const stored: Array<[string, unknown]> = [], created: unknown[] = [], resumed: unknown[] = [];
   const origCreate = f.provider.create.bind(f.provider), origResume = f.provider.resume.bind(f.provider);
-  f.provider.putModelCredential = async (id, input) => {
-    stored.push([id, input]);
-    return { id, service: input.service, mode: input.mode, ...(input.mode === "chatgpt" && input.accountId ? { accountId: input.accountId } : {}) };
+  const id = "codex-" + createHash("sha256").update(authPath).digest("hex");
+  const meta = { id, service: "openai" as const, mode: "chatgpt" as const, accountId: "acct-owner-1",
+    updatedAt: new Date().toISOString(), renewable: true };
+  f.provider.getModelCredential = async () => stored.length ? meta : null;
+  f.provider.putModelCredential = async (key, input, options) => {
+    expect(options?.ifAbsent).toBe(true);
+    stored.push([key, input]); return meta;
   };
+  let installs = 0;
+  f.provider.prepareCodexAuth = async () => { installs++; };
   f.provider.create = (input) => { created.push(input); return origCreate(input); };
   f.provider.resume = (id, seconds, options) => { resumed.push(options); return origResume(id, seconds, options); };
 
   await f.api(f.path, { profileId: "cloud" }); await f.settled();
-  expect(stored).toEqual([["codex-cloud", parsed.input]]);
-  expect(created[0]).toMatchObject({ modelAccounts: { openai: ["acct-owner-1"] }, modelCredentials: { openai: "codex-cloud" } });
-  const sandboxId = [...f.cloud.keys()][0]!;
-  const writtenInSandbox = Buffer.from(f.cloud.get(sandboxId)!.files.get("/home/user/.codex/auth.json")!).toString("utf8");
-  expect(writtenInSandbox).toBe(placeholder);
-  expect(writtenInSandbox).not.toContain("rt_super_secret");
-  expect(writtenInSandbox).not.toContain("real-sig");
-
-  // Even if an older paused snapshot still held the real auth.json, resuming scrubs it with the placeholder.
+  expect(stored).toMatchObject([[id, { accountId: "acct-owner-1", refreshToken: "rt_super_secret" }]]);
+  const selection = { modelAccounts: { openai: ["acct-owner-1"] }, modelCredentials: { openai: id }, codexAuthUsers: ["user"] };
+  expect(created[0]).toMatchObject(selection);
+  const guest = [...f.cloud.values()][0]!;
+  expect(guest.files.has("/home/user/.codex/auth.json")).toBe(false);
+  expect(installs).toBe(1);
   await f.api(f.path + "/pause", {}); await f.settled();
-  f.cloud.get(sandboxId)!.files.set("/home/user/.codex/auth.json", realAuth);
-  await f.api(f.path + "/resume", {}); await f.settled();
-  expect(resumed[0]).toMatchObject({ modelAccounts: { openai: ["acct-owner-1"] }, modelCredentials: { openai: "codex-cloud" } });
-  const afterResume = Buffer.from(f.cloud.get(sandboxId)!.files.get("/home/user/.codex/auth.json")!).toString("utf8");
-  expect(afterResume).toBe(placeholder);
-  expect(afterResume).not.toContain("rt_super_secret");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resumed[0]).toMatchObject(selection);
+  expect(stored).toHaveLength(1);
+  expect(installs).toBe(1);
+});
+
+it("fails before creating a managed environment when a configured login cannot be imported", async () => {
+  const f = await fixture();
+  const source = join(f.directory, "invalid-login.json");
+  writeFileSync(source, JSON.stringify({ auth_mode: "unsupported", tokens: { refresh_token: "fixture-only" } }));
+  f.mau.environments.options.profiles[0]!.files.push({ source, destination: "/home/user/.codex/auth.json" });
+  f.provider.putModelCredential = vi.fn(); f.provider.getModelCredential = vi.fn(); f.provider.prepareCodexAuth = vi.fn();
+  await f.api(f.path, { profileId: "cloud" });
+  expect((await f.settled()).state).toBe("needs_action");
+  expect(f.creates).toBe(0);
+  expect(f.provider.putModelCredential).not.toHaveBeenCalled();
 });
