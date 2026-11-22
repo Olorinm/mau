@@ -73,8 +73,18 @@ export const environmentOptionsSchema = z
   })
   .strict();
 type Profile = z.infer<typeof environmentOptionsSchema>["profiles"][number];
-export type EnvironmentProvider = Pick<ComponentProvider,
-  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "readFile" | "writeFile">;
+export type ModelCredentialInput =
+  | { service: "openai"; mode: "chatgpt"; accessToken: string; refreshToken?: string; accountId?: string; clientId?: string }
+  | { service: "openai"; mode: "api_key"; apiKey: string };
+type CreateInput = Parameters<ComponentProvider["create"]>[0] & { modelCredentials?: Record<string, string> };
+type ResumeInput = NonNullable<Parameters<ComponentProvider["resume"]>[2]> & { modelCredentials?: Record<string, string> };
+export type EnvironmentProvider = Omit<Pick<ComponentProvider,
+  "create" | "list" | "info" | "resume" | "pause" | "destroy" | "setTimeout" | "httpEndpoint" | "exec" | "readFile" | "writeFile">,
+  "create" | "resume"> & {
+  create(request: CreateInput): ReturnType<ComponentProvider["create"]>;
+  resume(id: string, timeoutSeconds?: number, options?: ResumeInput): ReturnType<ComponentProvider["resume"]>;
+  putModelCredential?(id: string, input: ModelCredentialInput): Promise<{ id: string; service: "openai"; mode: "chatgpt" | "api_key"; accountId?: string }>;
+};
 export interface Environments {
   provider(id: string): EnvironmentProvider;
 }
@@ -138,15 +148,100 @@ const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, 
  * profile with one kernel names none, so its requests to the provider are what they always were and the provider's
  * default decides; so does one with a kernel that is not known here.
  */
-const admitted = (p: Profile) => {
+const admitted = (p: Profile, modelCredentials?: Record<string, string>) => {
   const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
-  return services || accounts ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}) } : undefined;
+  return services || accounts || modelCredentials
+    ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}), ...(modelCredentials ? { modelCredentials } : {}) }
+    : undefined;
 };
 /** What the provider is asked to create for one operation of a profile. */
-const creation = (p: Profile, operationId: string) => ({ template: p.template, timeoutSeconds: p.lifetimeSeconds, onTimeout: p.onTimeout,
-  metadata: { "mau-operation": operationId }, ...(p.env ? { env: p.env } : {}), ...admitted(p) });
+const creation = (p: Profile, operationId: string, modelCredentials?: Record<string, string>) => ({ template: p.template, timeoutSeconds: p.lifetimeSeconds, onTimeout: p.onTimeout,
+  metadata: { "mau-operation": operationId }, ...(p.env ? { env: p.env } : {}), ...admitted(p, modelCredentials) });
 /** The private files of a profile: its own, then those of its other kernels. */
 const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
+/**
+ * Extracts a Codex `auth.json` into a gateway-managed OpenAI credential so real tokens never enter the sandbox.
+ * Returns `undefined` when the file is not a recognizable Codex sign-in.
+ */
+export function parseCodexAuthForGateway(content: string): { input: ModelCredentialInput; planType?: string } | undefined {
+  try {
+    const auth = JSON.parse(content) as {
+      auth_mode?: unknown;
+      OPENAI_API_KEY?: unknown;
+      tokens?: { access_token?: unknown; refresh_token?: unknown; id_token?: unknown; account_id?: unknown };
+    };
+    const jwtClaims = (token: unknown): Record<string, unknown> | undefined => {
+      try {
+        const parsed = JSON.parse(Buffer.from(String(token).split(".")[1] ?? "", "base64url").toString("utf8"));
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+      } catch { return undefined; }
+    };
+    const accessToken = typeof auth.tokens?.access_token === "string" && auth.tokens.access_token.trim() ? auth.tokens.access_token.trim() : undefined;
+    if (accessToken && (auth.auth_mode === undefined || auth.auth_mode === "chatgpt")) {
+      const accountId = codexAccount(content);
+      if (!accountId) return undefined;
+      const accessClaims = jwtClaims(accessToken), idClaims = jwtClaims(auth.tokens?.id_token);
+      const refreshToken = typeof auth.tokens?.refresh_token === "string" && auth.tokens.refresh_token.trim() ? auth.tokens.refresh_token.trim() : undefined;
+      const clientId = typeof accessClaims?.client_id === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(accessClaims.client_id) ? accessClaims.client_id : undefined;
+      const authClaim = (claims: Record<string, unknown> | undefined) => claims?.["https://api.openai.com/auth"] as { chatgpt_plan_type?: unknown } | undefined;
+      const planType = [authClaim(idClaims)?.chatgpt_plan_type, authClaim(accessClaims)?.chatgpt_plan_type]
+        .find((value): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value));
+      return {
+        input: { service: "openai", mode: "chatgpt", accessToken, accountId, ...(refreshToken ? { refreshToken } : {}), ...(clientId ? { clientId } : {}) },
+        ...(planType ? { planType } : {}),
+      };
+    }
+    const apiKey = typeof auth.OPENAI_API_KEY === "string" && auth.OPENAI_API_KEY.trim() ? auth.OPENAI_API_KEY.trim() : undefined;
+    if (apiKey && auth.auth_mode !== "chatgpt") {
+      return { input: { service: "openai", mode: "api_key", apiKey } };
+    }
+    return undefined;
+  } catch { return undefined; }
+}
+/**
+ * Zero-secret placeholder `auth.json` written into a sandbox whose real OpenAI credential lives in the gateway.
+ * Keeps Codex's local parser happy (valid JWT shape, account id, far-future expiry) while holding no real token.
+ */
+export function placeholderCodexAuth(parsed: { input: ModelCredentialInput; planType?: string }): Buffer {
+  if (parsed.input.mode === "api_key") {
+    return Buffer.from(JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: "sk-gateway-managed" }, null, 2) + "\n", "utf8");
+  }
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  const claims = {
+    exp: 4_102_444_800,
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: parsed.input.accountId,
+      ...(parsed.planType ? { chatgpt_plan_type: parsed.planType } : {}),
+    },
+  };
+  const fakeJwt = `${b64({ alg: "none", typ: "JWT" })}.${b64(claims)}.placeholder`;
+  return Buffer.from(JSON.stringify({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: {
+      id_token: fakeJwt,
+      access_token: fakeJwt,
+      refresh_token: "gateway-managed",
+      account_id: parsed.input.accountId,
+    },
+    last_refresh: "2099-01-01T00:00:00.000Z",
+  }, null, 2) + "\n", "utf8");
+}
+interface GatewayCodexCredential {
+  credentialId: string;
+  placeholder: Buffer;
+  destinations: string[];
+}
+async function syncGatewayCodexCredential(provider: EnvironmentProvider, profile: Profile): Promise<GatewayCodexCredential | undefined> {
+  if (typeof provider.putModelCredential !== "function") return undefined;
+  const codexFiles = privateFiles(profile).filter((file) => file.destination.endsWith("/.codex/auth.json"));
+  if (!codexFiles.length) return undefined;
+  const parsed = parseCodexAuthForGateway(readFileSync(codexFiles[0]!.source, "utf8"));
+  if (!parsed) return undefined;
+  const credentialId = `codex-${profile.id}`;
+  await provider.putModelCredential(credentialId, parsed.input);
+  return { credentialId, placeholder: placeholderCodexAuth(parsed), destinations: codexFiles.map((file) => file.destination) };
+}
 /**
  * The ChatGPT account of a Codex sign-in file (`auth.json`): the one its access token names, which is what the
  * provider compares, else the ID token's, else the recorded one. None for a file that signs in with an API key.
@@ -469,9 +564,10 @@ export class EnvironmentManager {
       return this.view(winner);
     }
     this.launch(record, async () => {
-      record.ref = await provider.create(creation(profile, record.operationId));
+      const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
+      record.ref = await provider.create(creation(profile, record.operationId, gatewayCodex ? { openai: gatewayCodex.credentialId } : undefined));
       this.save(record); // durable ID precedes bootstrap or further network work
-      await this.bootstrap(owner, record, provider, profile);
+      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
     });
     return this.view(record);
   }
@@ -537,9 +633,10 @@ export class EnvironmentManager {
     this.save(record);
     this.launch(record, async () => {
       const provider = await this.provider(record);
-      record.ref = await provider.create(creation(profile, record.operationId));
+      const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
+      record.ref = await provider.create(creation(profile, record.operationId, gatewayCodex ? { openai: gatewayCodex.credentialId } : undefined));
       this.save(record);
-      await this.bootstrap(owner, record, provider, profile);
+      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
     });
     return this.view(record);
   }
@@ -653,6 +750,7 @@ export class EnvironmentManager {
     record: Binding,
     provider: EnvironmentProvider,
     profile: Profile,
+    gatewayCodex?: GatewayCodexCredential,
   ) {
     const id = record.ref!.id;
     record.phase = "starting";
@@ -684,7 +782,8 @@ export class EnvironmentManager {
         "700",
         posix.dirname(file.destination),
       ]);
-      await provider.writeFile(id, file.destination, readFileSync(file.source));
+      const data = gatewayCodex?.destinations.includes(file.destination) ? gatewayCodex.placeholder : readFileSync(file.source);
+      await provider.writeFile(id, file.destination, data);
       await this.exec(provider, id, ["chmod", "--", "600", file.destination]);
     }
     const dir = profile.directory;
@@ -1019,16 +1118,25 @@ export class EnvironmentManager {
     record.phase = "resuming";
     delete record.error;
     this.save(record);
+    const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
+    const resumeOptions = admitted(profile, gatewayCodex ? { openai: gatewayCodex.credentialId } : undefined);
     if (
-      (await provider.resume(id, profile.lifetimeSeconds, ...(admitted(profile) ? [admitted(profile)] : []))).state !== "running"
+      (await provider.resume(id, profile.lifetimeSeconds, ...(resumeOptions ? [resumeOptions] : []))).state !== "running"
     )
       throw new WorkError("environment_resume_pending", 409);
     const config = this.configuration.configuration(
       this.service.agent(agentId),
     );
     if (config?.host?.binding !== record.operationId)
-      await this.bootstrap(owner, record, provider, profile);
+      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
     else {
+      // Scrub any real auth.json that lived in an older snapshot before gateway-managed credentials were enabled.
+      if (gatewayCodex) {
+        for (const destination of gatewayCodex.destinations) {
+          await provider.writeFile(id, destination, gatewayCodex.placeholder);
+          await this.exec(provider, id, ["chmod", "--", "600", destination]);
+        }
+      }
       await this.ready(record, profile);
       record.phase = "ready";
       delete record.error;
