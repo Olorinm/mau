@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -90,6 +90,11 @@ async function fixture(options: { deadlineMs?: number; files?: boolean; partner?
   // Sandbox: a real directory; exec runs the real Node helpers against real symlinks and staging.
   const sandbox = realpathSync(temp()), workspace = join(sandbox, "workspace"), stage = join(sandbox, "stage");
   mkdirSync(workspace); mkdirSync(stage);
+  // In root-run CI the guest workspace still belongs to an unprivileged account.
+  if (process.getuid?.() === 0) {
+    chmodSync(sandbox, 0o711);
+    chownSync(workspace, 65534, 65534);
+  }
   const files: SandboxFiles = { directory: workspace, stageDirectory: stage,
     exec: async (argv, options) => {
       const cmd = argv[0] === "node" ? process.execPath : argv[0]!;

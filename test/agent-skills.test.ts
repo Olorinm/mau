@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { execFile, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as skills from "../src/agent-skills.js";
@@ -29,6 +29,11 @@ function sandbox(relay: boolean) {
   const root = mkdtempSync(join(tmpdir(), "mau-skills-")); roots.push(root);
   const codex = join(root, "home/user/.codex"), bin = join(root, "usr/local/bin"), client = join(root, "relay-cli.js");
   mkdirSync(codex, { recursive: true }); mkdirSync(bin, { recursive: true });
+  // In root-run CI the guest workspace still belongs to an unprivileged account.
+  if (process.getuid?.() === 0) {
+    chmodSync(root, 0o711);
+    chownSync(codex, 65534, 65534);
+  }
   if (relay) writeFileSync(client, "");
   let writes = 0;
   const files = {
