@@ -1,9 +1,13 @@
 import { it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RouterError } from "@agent-router/server";
-import { attachSsh } from "../src/ssh.js";
+import { attachSsh, sshKeyId } from "../src/ssh.js";
 import { connectSshTunnel } from "../src/ssh-transport.js";
 
 it("SSH tunnels preserve binary streams and release access when either end disconnects", async () => {
@@ -50,3 +54,20 @@ it("SSH tunnels preserve binary streams and release access when either end disco
     await Promise.all([new Promise<void>(r => upstream.close(() => r())), new Promise<void>(r => gateway.close(() => r()))]);
   }
 }, 15_000);
+
+it("ssh-environment refuses symlinked remote or ssh directories", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mau-ssh-sec-"));
+  try {
+    const script = readFileSync(new URL("../src/ssh-environment.mjs", import.meta.url), "utf8");
+    const key = "ssh-ed25519 " + Buffer.concat([Buffer.from("AAAAC3NzaC1lZDI1NTE5AAAAIA==", "base64"), Buffer.alloc(32, 9)]).toString("base64");
+    const keyId = sshKeyId(key), victim = join(dir, "victim"), link = join(dir, "remote-link");
+    mkdirSync(victim); symlinkSync(victim, link);
+    const run = (target: string) => spawnSync(process.execPath,
+      ["--input-type=module", "-e", script, "--", "prepare", target, "37421", keyId, key, Buffer.from(script, "utf8").toString("base64")],
+      { encoding: "utf8", env: { ...process.env, MAU_SSH_TOKEN: "test-token-123456789012345678901234" } });
+    expect(run(link).status).not.toBe(0);
+    const realRemote = join(dir, "remote"); mkdirSync(realRemote);
+    symlinkSync(victim, join(realRemote, "ssh"));
+    expect(run(realRemote).status).not.toBe(0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

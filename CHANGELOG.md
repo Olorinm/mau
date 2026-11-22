@@ -4,6 +4,12 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.60] - 2026-11-22
+
+- Install managed skills with the workspace user's permissions and keep system command installation separate.
+- Preserve binary browser uploads and receive downloads through private staging files.
+- Isolate the SSH bridge and its credentials from the execution user while allowing OpenSSH to read authorized public keys.
+
 ## [0.1.0-alpha.59] - 2026-11-22
 
 - Update production Hono to 4.13.19 and its Node adapter to 2.1.11.

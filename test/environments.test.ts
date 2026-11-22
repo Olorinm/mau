@@ -384,8 +384,10 @@ it("SSH requires an assigned owner, explicit profile support and a ready environ
   expect((await f.api(path, { publicKey: key }, "bob")).status).toBe(404);
   expect((await f.api(path, { publicKey: key + "\ncommand=bad" })).status).toBe(400);
   const exec = f.provider.exec.bind(f.provider);
+  const sshCalls: Array<{ argv: string[]; env?: Record<string, string> | undefined }> = [];
   f.provider.exec = async function* (id, argv, options) {
-    if (argv[0] === "node" && argv[2] === "prepare") {
+    if (argv[0] === "node" && argv.includes("prepare")) {
+      sshCalls.push({ argv, env: options?.env });
       yield { stream: "stdout", text: JSON.stringify({ username: "user", hostKey: key }) };
       options?.onExit?.({ exitCode: 0 }); return;
     }
@@ -395,6 +397,11 @@ it("SSH requires an assigned owner, explicit profile support and a ready environ
   expect(prepared.status).toBe(200);
   expect(prepared.data).toEqual({ username: "user", hostKey: key, keyId: sshKeyId(key) });
   expect(JSON.stringify(prepared.data)).not.toMatch(/private-traffic|Bearer|ssh-token/);
+  // SSH preparation passes the token in env only and never writes bridge.mjs or token under the user-owned directory.
+  expect(sshCalls).toHaveLength(1);
+  expect(sshCalls[0]!.env?.MAU_SSH_TOKEN).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+  expect(sshCalls[0]!.argv.join(" ")).not.toContain(sshCalls[0]!.env!.MAU_SSH_TOKEN!);
+  expect([...[...f.cloud.values()][0]!.files.keys()].some(file => file.includes("/ssh/"))).toBe(false);
   // Upgrade must repeat authentication and ownership checks, bypassing neither via HTTP Upgrade.
   await expect(connectSshTunnel(new URL(path + "/" + sshKeyId(key), f.base), { Authorization: "Bearer bob" }))
     .rejects.toThrow("ssh_connection_rejected");

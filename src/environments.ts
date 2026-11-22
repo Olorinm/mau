@@ -783,12 +783,15 @@ export class EnvironmentManager {
     this.activity.set(record.agentId, Date.now());
     return {
       directory: directory.data,
-      exec: async (argv) => {
-        let exitCode: number | null = null, stdout = "";
+      exec: async (argv, options) => {
+        const limit = options?.maxStdoutBytes ?? 64_000;
+        let exitCode: number | null = null, size = 0;
+        let stdout = "";
         for await (const chunk of provider.exec(id, argv, { timeoutSeconds: 30, onExit: (e) => { exitCode = e.exitCode; } })) {
           if (chunk.stream !== "stdout") continue;
+          size += Buffer.byteLength(chunk.text);
+          if (size > limit) throw new WorkError("environment_command_output_too_large", 502);
           stdout += chunk.text;
-          if (stdout.length > 64_000) throw new WorkError("environment_command_output_too_large", 502);
         }
         return { exitCode, stdout };
       },
