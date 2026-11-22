@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import { join } from "node:path";
 import type { Server, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { RouterError } from "@agent-router/server";
@@ -19,28 +19,29 @@ export function sshKeyId(publicKey: string): string {
 
 export async function prepareSsh(provider: EnvironmentProvider, id: string, remoteDirectory: string,
   localDirectory: string, port: number, publicKey: string) {
-  const keyId = sshKeyId(publicKey), directory = posix.join(remoteDirectory, "ssh");
+  const keyId = sshKeyId(publicKey);
   let token: string;
   try { token = readFileSync(join(localDirectory, "ssh-token"), "utf8"); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     token = randomBytes(32).toString("base64url"); privateFile(join(localDirectory, "ssh-token"), token);
   }
-  async function exec(argv: string[]) {
+  const script = readFileSync(new URL("./ssh-environment.mjs", import.meta.url), "utf8");
+  async function exec(argv: string[], env?: Record<string, string>) {
     let output = "", code: number | null = null;
-    for await (const chunk of provider.exec(id, argv, { timeoutSeconds: 30, onExit: result => { code = result.exitCode; } }))
+    for await (const chunk of provider.exec(id, argv, { timeoutSeconds: 30, ...(env ? { env } : {}), onExit: result => { code = result.exitCode; } }))
       if (chunk.stream === "stdout") output += chunk.text;
     if (code !== 0) throw new RouterError("ssh_environment_not_prepared", 502);
     return output;
   }
-  await exec(["mkdir", "-p", "--", directory]);
-  await exec(["chmod", "700", "--", directory]);
-  await provider.writeFile(id, posix.join(directory, "token"), token);
-  await exec(["chmod", "600", "--", posix.join(directory, "token")]);
-  await provider.writeFile(id, posix.join(directory, "bridge.mjs"), readFileSync(new URL("./ssh-environment.mjs", import.meta.url)));
-  const result = JSON.parse(await exec(["node", posix.join(directory, "bridge.mjs"), "prepare", directory, String(port), keyId, publicKey]));
+  // Never write or execute bridge.mjs inside a user-writable directory when the provider runs as root.
+  // The token is passed only in env (0400 in /proc/<pid>/environ), never in argv or a user-readable path.
+  const result = JSON.parse(await exec(
+    ["node", "--input-type=module", "-e", script, "--", "prepare", remoteDirectory, String(port), keyId, publicKey, Buffer.from(script, "utf8").toString("base64")],
+    { MAU_SSH_TOKEN: token },
+  ));
   if (typeof result.username !== "string" || !/^[a-z_][a-z0-9_-]*[$]?$/.test(result.username) ||
-      typeof result.hostKey !== "string") throw new RouterError("invalid_ssh_environment", 502);
+      result.username === "root" || typeof result.hostKey !== "string") throw new RouterError("invalid_ssh_environment", 502);
   sshKeyId(result.hostKey);
   return { username: result.username as string, hostKey: result.hostKey as string, keyId };
 }

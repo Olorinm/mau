@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as skills from "../src/agent-skills.js";
@@ -24,24 +24,26 @@ it("plans the guide of each assigned connection whose CLI tools the connector of
   expect(skills.planSkills(connections, ["google-gmail"], ["google_gmail__get_thread"]).skills).toEqual([]);
 });
 
-/** A local stand-in for the environment: the installer runs with node against temporary directories. */
+/** A local stand-in for the environment: the installer runs with node against temporary directories, without touching /tmp. */
 function sandbox(relay: boolean) {
   const root = mkdtempSync(join(tmpdir(), "mau-skills-")); roots.push(root);
   const codex = join(root, "home/user/.codex"), bin = join(root, "usr/local/bin"), client = join(root, "relay-cli.js");
   mkdirSync(codex, { recursive: true }); mkdirSync(bin, { recursive: true });
   if (relay) writeFileSync(client, "");
+  let writes = 0;
   const files = {
     directory: root,
-    writeFile: async (path: string, data: Uint8Array) => {
-      // Point the installer at the temporary directories instead of the environment's.
-      const plan = JSON.parse(new TextDecoder().decode(data));
-      writeFileSync(join(root, "plan.json"), JSON.stringify({ ...plan, skillsDirectory: join(codex, "skills"), binDirectory: bin, relayClient: client }));
-      expect(path.startsWith("/tmp/mau-agent-skills-")).toBe(true);
+    writeFile: async () => { writes++; throw new Error("unexpected_write_file"); },
+    exec: async (argv: string[]) => {
+      expect(argv[0]).toBe("node"); expect(argv[1]).toBe("-e"); expect(argv[3]).toBe("--");
+      const plan = JSON.parse(Buffer.from(argv.slice(4).join(""), "base64").toString("utf8"));
+      const rewritten = Buffer.from(JSON.stringify({ ...plan, skillsDirectory: join(codex, "skills"), binDirectory: bin, relayClient: client }), "utf8").toString("base64");
+      const out = spawnSync(process.execPath, ["-e", argv[2]!, "--", rewritten], { encoding: "utf8" });
+      return { exitCode: out.status, stdout: out.stdout ?? "" };
     },
-    exec: async (argv: string[]) => ({ exitCode: 0, stdout: execFileSync(argv[0]!, [argv[1]!, argv[2]!, join(root, "plan.json")], { encoding: "utf8" }) }),
     readFile: async () => new Uint8Array(),
   };
-  return { root, codex, bin, files };
+  return { root, codex, bin, files, writes: () => writes };
 }
 
 it("installs skills and relay commands, keeps unmanaged files, removes stale managed ones and repeats only on change", async () => {
@@ -160,4 +162,26 @@ it("installs nothing for a kernel whose shell does not relay, and gives it the s
   expect(manager.toolGuides("codex")).toBeUndefined();
   expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toMatchObject({ skills: ["google-gmail"], commands: ["gws"] });
   expect(existsSync(join(box.bin, "gws"))).toBe(true);
+  expect(box.writes()).toBe(0);
+});
+
+it("refuses symlinks for .codex, skills directory, skill subdirectories and SKILL.md without modifying targets", async () => {
+  const apps = { reader: () => async () => ({ status: "completed", tools: [{ name: "google_gmail__gws_read" }] }),
+    connections: () => ["google-gmail"] } as unknown as ConnectedApps;
+  // Symlinked skills directory must never be followed or modified.
+  const box1 = sandbox(true), victim1 = join(box1.root, "victim"); mkdirSync(victim1);
+  symlinkSync(victim1, join(box1.codex, "skills"));
+  await expect(new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "b1", async () => box1.files)).rejects.toThrow("agent_skills_install_failed");
+  expect(existsSync(join(victim1, "google-gmail"))).toBe(false);
+  // Symlinked .codex home directory is refused.
+  const box2 = sandbox(true), victim2 = join(box2.root, "victim"); mkdirSync(victim2);
+  rmSync(box2.codex, { recursive: true }); symlinkSync(victim2, box2.codex);
+  await expect(new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "b2", async () => box2.files)).rejects.toThrow("agent_skills_install_failed");
+  expect(existsSync(join(victim2, "skills"))).toBe(false);
+  // Symlinked SKILL.md is refused without clobbering target.
+  const box3 = sandbox(true), secret = join(box3.root, "secret.txt"); writeFileSync(secret, "keep-me");
+  mkdirSync(join(box3.codex, "skills/google-gmail"), { recursive: true });
+  symlinkSync(secret, join(box3.codex, "skills/google-gmail/SKILL.md"));
+  await expect(new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "b3", async () => box3.files)).rejects.toThrow("agent_skills_install_failed");
+  expect(readFileSync(secret, "utf8")).toBe("keep-me");
 });

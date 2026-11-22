@@ -7,7 +7,9 @@ import { browserToolName } from "./connected-apps.js";
 export interface SandboxFiles {
   /** The runtime's working directory; uploads and downloads stay below it. */
   directory: string;
-  exec(argv: string[]): Promise<{ exitCode: number | null; stdout: string }>;
+  /** Parent directory for private download staging (defaults to /run for root, the temporary directory otherwise). */
+  stageDirectory?: string;
+  exec(argv: string[], options?: { maxStdoutBytes?: number }): Promise<{ exitCode: number | null; stdout: string }>;
   readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, data: Uint8Array): Promise<void>;
 }
@@ -90,18 +92,145 @@ function withoutTask(schema: unknown) {
   const { task: _task, ...properties } = parsed.data.properties;
   return { ...parsed.data, properties };
 }
-const lines = (text: string) => text.split("\n").filter(Boolean);
-async function check(files: SandboxFiles, argv: string[], error: string) {
-  const result = await files.exec(argv);
-  if (result.exitCode !== 0) throw new RelayError(error);
-  return result.stdout;
+const UPLOAD_ERRORS = new Set(["browser_upload_file_not_found", "browser_upload_path_outside_workspace", "browser_upload_not_a_file", "browser_upload_too_large"]);
+/**
+ * Reads one workspace file inside the sandbox: drops root privileges to the workspace owner, rejects symlinks on every
+ * segment, opens with O_NOFOLLOW, verifies the opened fd stays beneath the workspace (via /proc/self/fd on Linux), and
+ * streams the exact bytes from that fd so a symlink swap cannot escape the workspace or read root-only files.
+ */
+const READ_WORKSPACE_HELPER = `
+const fs = require("node:fs"), path = require("node:path");
+const { O_RDONLY, O_NOFOLLOW } = fs.constants;
+const [workspace, relative, maxText] = process.argv.slice(1);
+const maxBytes = Number(maxText);
+const fail = (code) => { process.stdout.write(code); process.exit(1); };
+let rootInfo;
+try { rootInfo = fs.lstatSync(workspace); } catch { fail("browser_upload_path_outside_workspace"); }
+if (!rootInfo.isDirectory()) fail("browser_upload_path_outside_workspace");
+if (typeof process.getuid === "function" && process.getuid() === 0) {
+  if (rootInfo.uid === 0) fail("browser_upload_path_outside_workspace");
+  if (typeof process.setgroups === "function") process.setgroups([rootInfo.gid]);
+  process.setgid(rootInfo.gid);
+  process.setuid(rootInfo.uid);
 }
-/** Resolve symlinks inside the sandbox and require the target to stay below the working directory. */
-async function contained(files: SandboxFiles, relative: string) {
-  const [root, target, ...rest] = lines(await check(files, ["realpath", "-e", "--", files.directory, posix.join(files.directory, relative)], "browser_upload_file_not_found"));
-  if (!root || !target || rest.length || !target.startsWith(root === "/" ? "/" : root + "/")) throw new RelayError("browser_upload_path_outside_workspace");
-  return target;
+let root;
+try { root = fs.realpathSync(workspace); } catch { fail("browser_upload_path_outside_workspace"); }
+const prefix = root === "/" ? "/" : root + "/";
+let cur = root;
+for (const part of relative.split("/")) {
+  if (!part || part === "." || part === "..") fail("browser_upload_path_outside_workspace");
+  cur = path.join(cur, part);
+  let st;
+  try { st = fs.lstatSync(cur); } catch (e) { fail(e && e.code === "ENOENT" ? "browser_upload_file_not_found" : "browser_upload_path_outside_workspace"); }
+  if (st.isSymbolicLink()) fail("browser_upload_path_outside_workspace");
 }
+let fd;
+try {
+  fd = fs.openSync(cur, O_RDONLY | O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  const st = fs.fstatSync(fd);
+  if (!st.isFile()) fail("browser_upload_not_a_file");
+  if (!(st.size <= maxBytes)) fail("browser_upload_too_large");
+  if (fs.existsSync("/proc/self/fd/" + fd)) {
+    const opened = fs.realpathSync("/proc/self/fd/" + fd);
+    if (!opened.startsWith(prefix)) fail("browser_upload_path_outside_workspace");
+  } else {
+    const resolved = fs.realpathSync(cur), check = fs.lstatSync(cur);
+    if (!resolved.startsWith(prefix) || check.dev !== st.dev || check.ino !== st.ino) fail("browser_upload_path_outside_workspace");
+  }
+  const chunks = []; let total = 0;
+  const buf = Buffer.allocUnsafe(65536);
+  for (;;) {
+    const n = fs.readSync(fd, buf, 0, buf.length, null);
+    if (n === 0) break;
+    total += n;
+    if (total > maxBytes) fail("browser_upload_too_large");
+    chunks.push(Buffer.from(buf.subarray(0, n)));
+  }
+  process.stdout.write(Buffer.concat(chunks, total).toString("base64"));
+} catch (e) {
+  if (e && e.code === "ENOENT") fail("browser_upload_file_not_found");
+  if (e && e.code === "ELOOP") fail("browser_upload_path_outside_workspace");
+  if (e && e.code === "EISDIR") fail("browser_upload_not_a_file");
+  fail("browser_upload_path_outside_workspace");
+} finally { if (fd !== undefined) fs.closeSync(fd); }
+`;
+// The provider preserves an existing file's mode on replacement. Create it privately before sending any bytes.
+const PREPARE_STAGE = `
+const fs = require("node:fs"), path = require("node:path");
+const parent = process.argv[1] || (process.getuid() === 0 ? "/run" : require("node:os").tmpdir());
+const dir = fs.mkdtempSync(path.join(parent, "mau-relay-"));
+const target = path.join(dir, "download");
+try {
+  fs.closeSync(fs.openSync(target, "wx", 0o600));
+  process.stdout.write(target);
+} catch (error) { fs.rmdirSync(dir); throw error; }
+`;
+/**
+ * Moves a staged download into workspace/browser_downloads/: opens and unlinks the staged file before dropping
+ * privileges to the workspace owner, then creates the destination with O_CREAT|O_EXCL|O_NOFOLLOW and verifies the
+ * opened fd lies inside browser_downloads/ before writing any bytes.
+ */
+const WRITE_WORKSPACE_HELPER = `
+const fs = require("node:fs"), path = require("node:path");
+const { O_RDONLY, O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+const [workspace, folderName, fileName, stagePath, maxText] = process.argv.slice(1);
+const maxBytes = Number(maxText);
+const fail = (code) => { process.stdout.write(code); process.exit(1); };
+const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+let srcFd, folderFd, dstFd;
+try {
+  const stageDir = path.dirname(stagePath);
+  const stageDirInfo = fs.lstatSync(stageDir);
+  if (!stageDirInfo.isDirectory() || (isRoot && stageDirInfo.uid !== 0)) fail("browser_download_unwritable");
+  if ((stageDirInfo.mode & 0o077) !== 0) fail("browser_download_unwritable");
+  srcFd = fs.openSync(stagePath, O_RDONLY | O_NOFOLLOW);
+  const srcInfo = fs.fstatSync(srcFd);
+  if (!srcInfo.isFile() || (isRoot && srcInfo.uid !== 0) || srcInfo.size > maxBytes) fail("browser_download_unwritable");
+  fs.unlinkSync(stagePath);
+  fs.rmdirSync(stageDir);
+  const rootInfo = fs.lstatSync(workspace);
+  if (!rootInfo.isDirectory() || (isRoot && rootInfo.uid === 0)) fail("browser_download_unwritable");
+  if (isRoot) {
+    if (typeof process.setgroups === "function") process.setgroups([rootInfo.gid]);
+    process.setgid(rootInfo.gid);
+    process.setuid(rootInfo.uid);
+  }
+  const root = fs.realpathSync(workspace), folder = path.join(root, folderName);
+  try {
+    if (!fs.lstatSync(folder).isDirectory()) fail("browser_download_unwritable");
+  } catch (e) {
+    if (e && e.code === "ENOENT") fs.mkdirSync(folder, { mode: 0o755 });
+    else fail("browser_download_unwritable");
+  }
+  if (fs.realpathSync(folder) !== folder) fail("browser_download_unwritable");
+  const target = path.join(folder, fileName);
+  folderFd = fs.openSync(folder, O_RDONLY | fs.constants.O_DIRECTORY | O_NOFOLLOW);
+  const fdDirectory = "/proc/self/fd/" + folderFd;
+  const pinned = process.platform === "linux";
+  if (pinned && fs.realpathSync(fdDirectory) !== folder) fail("browser_download_unwritable");
+  dstFd = fs.openSync(pinned ? path.join(fdDirectory, fileName) : target, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o644);
+  if (fs.existsSync("/proc/self/fd/" + dstFd) && fs.realpathSync("/proc/self/fd/" + dstFd) !== target) {
+    fail("browser_download_unwritable");
+  }
+  const buf = Buffer.allocUnsafe(65536); let total = 0;
+  for (;;) {
+    const n = fs.readSync(srcFd, buf, 0, buf.length, null);
+    if (n === 0) break;
+    total += n;
+    if (total > maxBytes) fail("browser_download_too_large");
+    let written = 0;
+    while (written < n) written += fs.writeSync(dstFd, buf, written, n - written);
+  }
+  process.stdout.write(target);
+} catch {
+  try { fs.unlinkSync(stagePath); } catch {}
+  fail("browser_download_unwritable");
+} finally {
+  if (dstFd !== undefined) fs.closeSync(dstFd);
+  if (folderFd !== undefined) fs.closeSync(folderFd);
+  if (srcFd !== undefined) fs.closeSync(srcFd);
+}
+`;
 /** A workspace path, relative to the shell's directory when the command gave one, as a path below the working directory. */
 function workspacePath(files: SandboxFiles, path: string, cwd: string | undefined) {
   let relative = path;
@@ -132,14 +261,14 @@ function mediaType(name: string) {
   return MEDIA_TYPES[posix.extname(name).slice(1).toLowerCase()] ?? "application/octet-stream";
 }
 async function readFile(files: SandboxFiles, relative: string) {
-  const target = await contained(files, relative);
-  const [size, kind] = (await check(files, ["stat", "-c", "%s:%F", "--", target], "browser_upload_file_not_found")).trim().split(":");
-  if (kind !== "regular file") throw new RelayError("browser_upload_not_a_file");
-  if (!(Number(size) <= MAX_RELAY_BYTES)) throw new RelayError("browser_upload_too_large");
-  const bytes = await files.readFile(target);
+  const result = await files.exec(["node", "-e", READ_WORKSPACE_HELPER, "--", files.directory, relative, String(MAX_RELAY_BYTES)],
+    { maxStdoutBytes: 4 * Math.ceil(MAX_RELAY_BYTES / 3) });
+  if (result.exitCode !== 0) {
+    const code = result.stdout.trim();
+    throw new RelayError(UPLOAD_ERRORS.has(code) ? code : "browser_upload_file_not_found");
+  }
+  const bytes = Buffer.from(result.stdout, "base64");
   if (bytes.length > MAX_RELAY_BYTES) throw new RelayError("browser_upload_too_large");
-  // A swap to a symlink after the first check changes what realpath reports.
-  if (await contained(files, relative) !== target) throw new RelayError("browser_upload_path_outside_workspace");
   return bytes;
 }
 /**
@@ -185,14 +314,21 @@ const safeName = (name: string) => {
 async function saveFile(files: SandboxFiles, result: z.infer<typeof fileResult>) {
   const bytes = Buffer.from(result.contentBase64, "base64");
   if (bytes.length > MAX_RELAY_BYTES) throw new RelayError("browser_download_too_large");
-  const folder = posix.join(files.directory, "browser_downloads");
-  await check(files, ["mkdir", "-p", "--", folder], "browser_download_unwritable");
-  const [root, real, ...rest] = lines(await check(files, ["realpath", "-e", "--", files.directory, folder], "browser_download_unwritable"));
-  // The folder itself must not be a symlink out of the workspace.
-  if (!root || rest.length || real !== posix.join(root, "browser_downloads")) throw new RelayError("browser_download_unwritable");
   const file = `${randomUUID().slice(0, 8)}-${safeName(result.name)}`;
-  await files.writeFile(posix.join(real, file), bytes);
-  return { path: posix.join(real, file), name: safeName(result.name), mediaType: result.mediaType, size: bytes.length };
+  const prepared = await files.exec(["node", "-e", PREPARE_STAGE, "--", files.stageDirectory ?? ""]);
+  const stagePath = prepared.stdout.trim();
+  if (prepared.exitCode !== 0 || !posix.isAbsolute(stagePath) || posix.basename(stagePath) !== "download")
+    throw new RelayError("browser_download_unwritable");
+  try {
+    await files.writeFile(stagePath, bytes);
+    const moved = await files.exec(["node", "-e", WRITE_WORKSPACE_HELPER, "--", files.directory, "browser_downloads", file, stagePath, String(MAX_RELAY_BYTES)]);
+    if (moved.exitCode !== 0 || !moved.stdout.trim()) throw new RelayError("browser_download_unwritable");
+    return { path: moved.stdout.trim(), name: safeName(result.name), mediaType: result.mediaType, size: bytes.length };
+  } catch {
+    const cleanup = "const fs=require('node:fs'); fs.rmSync(process.argv[1],{force:true}); try { fs.rmdirSync(require('node:path').dirname(process.argv[1])); } catch(e) { if(e.code!=='ENOENT') throw e; }";
+    await files.exec(["node", "-e", cleanup, "--", stagePath]).catch(() => {});
+    throw new RelayError("browser_download_unwritable");
+  }
 }
 export interface Handoff { connection: string; handoffId: string; liveViewUrl: string; expiresAt: string; instructions?: string; pageHost?: string; runId: string; callId: string; status: "open" | "closed"; }
 /**

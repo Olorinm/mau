@@ -109,37 +109,95 @@ export function toolGuides(connections: ConnectionSummary[], tools: string[], gu
   return found.length ? { guidesNote: TOOL_GUIDES, guides: found } : {};
 }
 
-/** Runs inside the environment as root: write managed skills and commands, remove stale managed ones. */
+/** Runs inside the environment: installs managed commands as root (when root), then drops privileges to the owner of .codex before touching skills. */
 const installer = `
-const fs = require("node:fs"), path = require("node:path");
-const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.rmSync(process.argv[1], { force: true });
+const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
+const plan = JSON.parse(Buffer.from(process.argv.slice(1).join(""), "base64").toString("utf8"));
 const marker = ${JSON.stringify(MARKER)}, root = plan.skillsDirectory, home = path.dirname(root);
-if (!fs.existsSync(home)) { console.log(JSON.stringify({ skipped: "codex_home_missing" })); process.exit(0); }
-const owner = fs.statSync(home);
-const own = (p) => fs.chownSync(p, owner.uid, owner.gid);
-const atomic = (file, content, mode) => { const tmp = file + ".mau"; fs.writeFileSync(tmp, content, { mode }); return tmp; };
-fs.mkdirSync(root, { recursive: true }); own(root);
-const wanted = new Set(plan.skills.map((s) => s.name)), result = { skills: [], commands: [], removed: [] };
-for (const skill of plan.skills) {
-  const dir = path.join(root, skill.name), file = path.join(dir, "SKILL.md");
-  if (fs.existsSync(file) && !fs.readFileSync(file, "utf8").includes(marker)) { result.skills.push(skill.name + ":kept-unmanaged"); continue; }
-  fs.mkdirSync(dir, { recursive: true }); own(dir);
-  const tmp = atomic(file, skill.content, 0o644); own(tmp); fs.renameSync(tmp, file); result.skills.push(skill.name);
+const { O_RDONLY, O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+const safeName = (name) => typeof name === "string" && name.length > 0 && name !== "." && name !== ".." && !/[\\\\/\\0]/.test(name);
+const readNoFollow = (file) => {
+  let fd;
+  try {
+    fd = fs.openSync(file, O_RDONLY | O_NOFOLLOW);
+    if (!fs.fstatSync(fd).isFile()) throw new Error("not_a_regular_file");
+    return fs.readFileSync(fd, "utf8");
+  } catch (error) {
+    if (error && error.code === "ENOENT") return undefined;
+    throw error;
+  } finally { if (fd !== undefined) fs.closeSync(fd); }
+};
+const writeAtomic = (file, content, mode) => {
+  const tmp = file + ".mau-" + crypto.randomBytes(8).toString("hex");
+  let fd;
+  try {
+    fd = fs.openSync(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode);
+    fs.writeFileSync(fd, content, "utf8");
+    fs.fchmodSync(fd, mode);
+    fs.closeSync(fd); fd = undefined;
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    if (fd !== undefined) fs.closeSync(fd);
+    try { fs.unlinkSync(tmp); } catch {}
+    throw error;
+  }
+};
+let owner;
+try { owner = fs.lstatSync(home); } catch (error) {
+  if (error && error.code === "ENOENT") { console.log(JSON.stringify({ skipped: "codex_home_missing" })); process.exit(0); }
+  throw error;
 }
-for (const name of fs.readdirSync(root)) {
-  const file = path.join(root, name, "SKILL.md");
-  if (!wanted.has(name) && fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(marker)) { fs.rmSync(path.join(root, name), { recursive: true, force: true }); result.removed.push(name); }
-}
+if (!owner.isDirectory()) throw new Error("codex_home_not_directory");
+const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+if (isRoot && owner.uid === 0) throw new Error("codex_home_owned_by_root");
+const result = { skills: [], commands: [], removed: [] };
+// Step 1: manage relay commands in binDirectory before dropping privileges.
+if (!fs.lstatSync(plan.binDirectory).isDirectory()) throw new Error("bin_directory_invalid");
 const relay = plan.relayClient, available = fs.existsSync(relay);
 for (const command of plan.known) {
-  const file = path.join(plan.binDirectory, command), managed = fs.existsSync(file) && fs.readFileSync(file, "utf8").includes(marker);
+  if (!safeName(command)) throw new Error("command_name_invalid");
+  const file = path.join(plan.binDirectory, command), existing = readNoFollow(file);
+  const managed = existing !== undefined && existing.includes(marker);
   if (plan.commands.includes(command) && available) {
-    if (fs.existsSync(file) && !managed) { result.commands.push(command + ":kept-unmanaged"); continue; }
+    if (existing !== undefined && !managed) { result.commands.push(command + ":kept-unmanaged"); continue; }
     const script = plan.clients[command] ?? "#!/bin/sh\\n# " + marker + ": runs " + command + " through the owner's connector in Mau (agent-host-relay).\\nexec node " + JSON.stringify(relay) + " " + command + " \\"$@\\"\\n";
-    const tmp = atomic(file, script, 0o755); fs.chmodSync(tmp, 0o755); fs.renameSync(tmp, file); result.commands.push(command);
-  } else if (managed) { fs.rmSync(file, { force: true }); result.removed.push(command); }
+    writeAtomic(file, script, 0o755); result.commands.push(command);
+  } else if (managed) { fs.unlinkSync(file); result.removed.push(command); }
 }
 if (!available) result.relay = "relay_client_missing";
+// Step 2: permanently drop privileges to the .codex owner before touching any user-controlled path.
+if (isRoot) {
+  if (typeof process.setgroups === "function") process.setgroups([owner.gid]);
+  process.setgid(owner.gid);
+  process.setuid(owner.uid);
+}
+try {
+  if (!fs.lstatSync(root).isDirectory()) throw new Error("skills_directory_not_directory");
+} catch (error) {
+  if (error && error.code === "ENOENT") fs.mkdirSync(root, { mode: 0o755 });
+  else throw error;
+}
+const wanted = new Set(plan.skills.map((s) => s.name));
+for (const skill of plan.skills) {
+  if (!safeName(skill.name)) throw new Error("skill_name_invalid");
+  const dir = path.join(root, skill.name), file = path.join(dir, "SKILL.md");
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) throw new Error("skill_directory_not_directory");
+  } catch (error) {
+    if (error && error.code === "ENOENT") fs.mkdirSync(dir, { mode: 0o755 });
+    else throw error;
+  }
+  const existing = readNoFollow(file);
+  if (existing !== undefined && !existing.includes(marker)) { result.skills.push(skill.name + ":kept-unmanaged"); continue; }
+  writeAtomic(file, skill.content, 0o644); result.skills.push(skill.name);
+}
+for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+  if (!entry.isDirectory() || wanted.has(entry.name)) continue;
+  const file = path.join(root, entry.name, "SKILL.md");
+  let existing;
+  try { existing = readNoFollow(file); } catch { continue; }
+  if (existing !== undefined && existing.includes(marker)) { fs.rmSync(path.join(root, entry.name), { recursive: true, force: true }); result.removed.push(entry.name); }
+}
 console.log(JSON.stringify(result));
 `;
 
@@ -174,9 +232,9 @@ export class AgentSkills {
       known: COMMANDS, clients: { "agent-browser": BROWSER_CLIENT } });
     const digest = createHash("sha256").update(payload).digest("hex");
     if (this.synced.get(key) === digest) return undefined;
-    const sandbox = await files(), file = `/tmp/mau-agent-skills-${digest.slice(0, 16)}.json`;
-    await sandbox.writeFile(file, new TextEncoder().encode(payload));
-    const run = await sandbox.exec(["node", "-e", installer, file]);
+    const sandbox = await files(), encoded = Buffer.from(payload, "utf8").toString("base64"), chunks: string[] = [];
+    for (let offset = 0; offset < encoded.length; offset += 32_768) chunks.push(encoded.slice(offset, offset + 32_768));
+    const run = await sandbox.exec(["node", "-e", installer, "--", ...chunks]);
     if (run.exitCode !== 0) { this.checked.delete(key); throw new Error("agent_skills_install_failed"); }
     this.synced.set(key, digest);
     return JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;

@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ServiceHttp } from "@agent-router/server";
@@ -86,18 +87,20 @@ async function fixture(options: { deadlineMs?: number; files?: boolean; partner?
     if (input.action === "tools") return { status: "completed", tools: service.tools(who) };
     return service.call(who, input.name!, input.arguments ?? {}, AbortSignal.timeout(5000));
   };
-  // Sandbox: a real directory; realpath/stat resolve real symlinks like the provider's exec would.
-  const sandbox = realpathSync(temp()), workspace = join(sandbox, "workspace"); mkdirSync(workspace);
-  const files: SandboxFiles = { directory: workspace,
-    exec: async argv => {
-      try {
-        if (argv[0] === "realpath") return { exitCode: 0, stdout: argv.slice(3).map(p => realpathSync(p)).join("\n") + "\n" };
-        if (argv[0] === "stat") { const s = statSync(argv[4]!); return { exitCode: 0, stdout: `${s.size}:${s.isFile() ? "regular file" : "directory"}\n` }; }
-        if (argv[0] === "mkdir") { mkdirSync(argv[3]!, { recursive: true }); return { exitCode: 0, stdout: "" }; }
-      } catch { return { exitCode: 1, stdout: "" }; }
-      return { exitCode: 127, stdout: "" };
+  // Sandbox: a real directory; exec runs the real Node helpers against real symlinks and staging.
+  const sandbox = realpathSync(temp()), workspace = join(sandbox, "workspace"), stage = join(sandbox, "stage");
+  mkdirSync(workspace); mkdirSync(stage);
+  const files: SandboxFiles = { directory: workspace, stageDirectory: stage,
+    exec: async (argv, options) => {
+      const cmd = argv[0] === "node" ? process.execPath : argv[0]!;
+      const out = spawnSync(cmd, argv.slice(1), { maxBuffer: (options?.maxStdoutBytes ?? 64_000) + 65_536 });
+      return { exitCode: out.status, stdout: out.stdout?.toString("utf8") ?? "" };
     },
-    readFile: async path => readFileSync(path), writeFile: async (path, data) => writeFileSync(path, data, { flag: "wx" }) };
+    readFile: async path => readFileSync(path), writeFile: async (path, data) => {
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+      expect(statSync(dirname(path)).mode & 0o777).toBe(0o700);
+      writeFileSync(path, data, { flag: "r+" });
+    } };
   const store = new DurableStore(":memory:", "fixture"); cleanup.push(() => store.close());
   let pending: any[] = [];
   const resolved = new Map<string, any>(), steered: string[] = [];
@@ -237,7 +240,8 @@ it("keeps schedule and delegation runs read-only: no write token, no card", asyn
 
 it("uploads only regular files inside the working directory, by path, up to 10 MB, to the site the browser is on", async () => {
   const f = await fixture(); await f.start();
-  writeFileSync(join(f.workspace, "cv.pdf"), "%PDF-cv");
+  const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x01, 0xe2]);
+  writeFileSync(join(f.workspace, "cv.pdf"), pdfBytes);
   writeFileSync(join(f.sandbox, "secret.txt"), "outside");
   symlinkSync(join(f.sandbox, "secret.txt"), join(f.workspace, "link.txt"));
   symlinkSync(f.sandbox, join(f.workspace, "escape"));
@@ -261,13 +265,13 @@ it("uploads only regular files inside the working directory, by path, up to 10 M
   mkdirSync(join(f.workspace, "docs")); writeFileSync(join(f.workspace, "docs", "notes.txt"), "hello");
   f.call("browser__agent_browser_write", { args: ["--json", "upload", "input[type=file]", "../cv.pdf", "notes.txt"], cwd: join(f.workspace, "docs") }, "good");
   const [card] = (await f.host.calls("run")).filter(c => c.kind === "interaction");
-  expect(JSON.stringify(card!.input)).not.toContain(Buffer.from("%PDF-cv").toString("base64"));
+  expect(JSON.stringify(card!.input)).not.toContain(pdfBytes.toString("base64"));
   expect(JSON.stringify(card!.input)).toContain("Upload cv.pdf, notes.txt to https://upload.example");
   await f.host.resolve("run", card!.id, { choice: "once" }); await f.host.settled("run");
   // The site is the browser's current origin; each file carries the bare MIME type of its extension.
   expect(f.executed).toEqual([{ tool: "agent_browser_read", input: { args: ["get", "url"] } }, { tool: "agent_browser_write", input: {
     args: ["--json", "upload", "input[type=file]", "cv.pdf", "notes.txt"], site: "https://upload.example", files: [
-      { name: "cv.pdf", mediaType: "application/pdf", contentBase64: Buffer.from("%PDF-cv").toString("base64") },
+      { name: "cv.pdf", mediaType: "application/pdf", contentBase64: pdfBytes.toString("base64") },
       { name: "notes.txt", mediaType: "text/plain", contentBase64: Buffer.from("hello").toString("base64") }] } }]);
 });
 
