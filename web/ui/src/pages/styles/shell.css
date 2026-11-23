@@ -56,6 +56,33 @@ body {
   height: 30px;
 }
 
+/* Wide windows: the mark sits at the top left and the destinations stand under it, down the left edge.
+   The page starts beside them, so the rail's height costs the page nothing. */
+.app-shell[data-compact="false"] {
+  --app-rail-width: 52px;
+  --app-rail-margin: 12px;
+  --app-page-top-inset: var(--app-rail-margin);
+  grid-template-rows: minmax(0, 1fr);
+  padding-left: calc(2 * var(--app-rail-margin) + var(--app-rail-width));
+}
+
+.app-shell[data-compact="false"] .app-topbar {
+  position: absolute;
+  top: var(--app-rail-margin);
+  bottom: var(--app-rail-margin);
+  left: var(--app-rail-margin);
+  width: var(--app-rail-width);
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 6px 0;
+}
+
+.app-shell[data-compact="false"] .app-mark {
+  position: static;
+  translate: none;
+}
+
 /* The destinations: one glass capsule. The current one carries its name beside its icon. */
 .app-switch {
   display: flex;
@@ -112,6 +139,31 @@ body {
 .app-switch-item svg {
   width: 20px;
   height: 20px;
+}
+
+/* The rail: round cells with their icons; the name is the cell's tooltip, since a 52px column has no room for it. */
+.app-shell[data-compact="false"] .app-switch {
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 26px;
+}
+
+.app-shell[data-compact="false"] .app-switch-item {
+  width: 44px;
+  min-width: 0;
+  height: 44px;
+  padding: 0;
+  border-radius: 22px;
+}
+
+.app-shell[data-compact="false"] .app-switch-item svg {
+  width: 22px;
+  height: 22px;
+}
+
+.app-shell[data-compact="false"] .app-switch-item > .app-switch-label {
+  display: none;
 }
 
 /* Something held over the destinations can be let go there. */
