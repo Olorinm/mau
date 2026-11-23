@@ -25,7 +25,8 @@ const allowed = z.object({ values: z.array(z.unknown()) }).passthrough();
 const description = z.object({
   kernel: z.string().optional(), model: z.string().optional(),
   allowedSettings: z.object({ model: allowed.optional(), effort: allowed.optional() }).passthrough().optional(),
-  native: z.object({ models: z.unknown() }).passthrough().optional(),
+  // A kernel that reports no model catalog (an ACP runtime such as agy) is read from the owner's allowed list alone.
+  native: z.object({ models: z.unknown().optional() }).passthrough().optional(),
 }).passthrough();
 /** Codex lists `{ model, displayName, supportedReasoningEfforts }`; the Claude SDK lists `{ value, displayName, supportedEffortLevels }`. */
 const catalogEntry = z.object({

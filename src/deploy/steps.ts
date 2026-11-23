@@ -376,7 +376,8 @@ const access: Step = { id: "access", needs: ["preflight"], async run(context) {
 const config: Step = { id: "config", needs: ["codex-auth", "r2-credentials", "gateway", "access"], async run(context) {
   const { record, directory, names } = context, credentials = context.s3(), secrets = context.gatewaySecrets();
   const startHost = join(context.gatewayDirectory, "package", "cloudflare", "examples", "start-host.sh");
-  if (!credentials || !secrets || !record.gateway || !record.access || !existsSync(startHost)) {
+  const officialSkills = join(context.gatewayDirectory, "package", "cloudflare", "examples", "official-skills.tgz");
+  if (!credentials || !secrets || !record.gateway || !record.access || !existsSync(startHost) || !existsSync(officialSkills)) {
     // Only a dry run comes here: what the steps before this one make does not exist yet.
     if (!context.dryRun) throw new DeployError("configuration_inputs_missing");
     await context.act(`generate the configuration and upload it to ${names.buckets.config}`, () => undefined);
@@ -385,7 +386,7 @@ const config: Step = { id: "config", needs: ["codex-auth", "r2-credentials", "ga
   const local = directory.configFiles();
   const rendered = renderConfig(context.source, { name: record.name, hostname: record.hostname, ownerEmail: record.ownerEmail, accountId: context.accountId,
     gatewayUrl: record.gateway.url, controlToken: secrets.CONTROL_TOKEN, teamDomain: record.access.teamDomain, audience: record.access.audience,
-    r2AccessKeyId: credentials.accessKeyId, r2SecretAccessKey: credentials.secretAccessKey, startHost: readFileSync(startHost) }, local);
+    r2AccessKeyId: credentials.accessKeyId, r2SecretAccessKey: credentials.secretAccessKey, startHost: readFileSync(startHost), officialSkills: readFileSync(officialSkills) }, local);
   const changed = [...rendered].filter(([key, bytes]) => !local.get(key)?.equals(bytes));
   if (changed.length) await context.act(`write ${changed.map(([key]) => key).join(", ")} in ${directory.config}`, () => {
     for (const [key, bytes] of changed) directory.write(join(directory.config, ...key.split("/")), bytes);

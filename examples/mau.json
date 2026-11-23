@@ -32,6 +32,14 @@
             "destination": "/home/user/.codex/auth.json"
           },
           {
+            "source": "cloud/mau-sandbox/SKILL.md",
+            "destination": "/opt/agent-environment/mau-sandbox/SKILL.md"
+          },
+          {
+            "source": "cloud/official-skills.tgz",
+            "destination": "/opt/agent-environment/official-skills.tgz"
+          },
+          {
             "source": "cloud/start-host.sh",
             "destination": "/opt/agent-environment/start.sh"
           }

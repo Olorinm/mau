@@ -18,7 +18,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 const temporary = () => { const d = mkdtempSync(join(tmpdir(), "mau-assignments-")); cleanup.push(() => rmSync(d, { recursive: true, force: true })); return d; };
 
 /** Mau with a connector service that lists two connections of alice and one of bob. */
-async function product(edgeIdentity?: Record<string, unknown>) {
+async function product(edgeIdentity?: Record<string, unknown>, employee = false) {
   const directory = temporary(), authority = await generateSigningKey("authority");
   privateFile(join(directory, "authority.json"), authority.privateJwk);
   const server = createServer((_req, res) => res.setHeader("Content-Type", "application/json").end(JSON.stringify({ connections: [
@@ -30,7 +30,7 @@ async function product(edgeIdentity?: Record<string, unknown>) {
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const f = await mauFixture(cleanup, {}, { ...(edgeIdentity ? { edgeIdentity } : {}),
     connectorAccounts: { url, issuer: "fixture", audience: "fixture-connectors", authorityKeyFile: join(directory, "authority.json"), consentOrigins: ["https://accounts.example.test"] },
-    connectedApps: { url, issuer: "fixture", audience: "fixture-connectors", callerKeyFile: join(directory, "authority.json") } });
+    connectedApps: { ...(employee ? { authorization: "employee", ownerPrivateConnections: ["alice-gmail"] } : {}), url, issuer: "fixture", audience: "fixture-connectors", callerKeyFile: join(directory, "authority.json") } });
   const connectors = `/agents/${f.agent.id}/connectors`;
   const put = (path: string, connections: unknown, owner = "alice") => f.api(path, { connections }, owner, undefined, "PUT");
   return { f, connectors, put };
@@ -131,4 +131,24 @@ it("a running partner's Host uses a changed assignment at once; the tool itself 
   apps.assign("alice", "agent", []);
   expect(await ask("run-3", "call-2")).toMatchObject({ error: "connected_app_not_granted" });
   expect(list).toHaveBeenCalledOnce();
+});
+
+it("requires explicit employee assignments in a shared sandbox and reserves personal connections for its owner", async () => {
+  const { f, connectors, put } = await product(undefined, true);
+  expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  await put(connectors, ["alice-gmail", "alice-browser"]);
+  const recruit = async (name: string) => (await f.api("/agents", { name, shareWith: f.agent.id, kernel: "codex" })).data;
+  const backend = await recruit("backend"), reviewer = await recruit("reviewer");
+  expect(backend.host.runtimeId).toBe("personal");
+  expect(reviewer.host.runtimeId).toBe(backend.host.runtimeId);
+  expect(reviewer.agent.id).not.toBe(backend.agent.id);
+  const own = `/agents/${backend.agent.id}/connectors`, review = `/agents/${reviewer.agent.id}/connectors`;
+  expect((await f.api(own)).data).toEqual({ connections: [] });
+  expect((await put(own, ["alice-gmail"])).data.error).toBe("personal_connection_requires_environment_owner");
+  expect((await put(own, ["alice-browser"])).data).toEqual({ connections: ["alice-browser"] });
+  expect((await f.api(review)).data).toEqual({ connections: [] });
+  expect((await put(review, ["alice-browser"])).data).toEqual({ connections: ["alice-browser"] });
+  expect((await put(own, [])).data).toEqual({ connections: [] });
+  expect((await f.api(review)).data).toEqual({ connections: ["alice-browser"] });
 });

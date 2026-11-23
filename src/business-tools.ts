@@ -6,7 +6,7 @@ import { HttpAgentHost, RouterError, type HostPort, type ServiceHttp, type HostT
 import { FeishuBotReader, feishuBotReaderSchema } from "@olorinm/agent-connectors/feishu-bot-reader";
 import { CloudflareReadClient, cloudflareReadSchema } from "@olorinm/agent-connectors/cloudflare-read-client";
 import { DurableStore } from "./store.js";
-import { ConnectedApps, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
+import { ConnectedApps, employeeAppDefinition, connectedAppDefinition, connectedAppInput, browserToolName, type ConnectedAppReader } from "./connected-apps.js";
 import { APPROVAL_PREFIX, ConnectorApprovals, type ApprovalDesk, type ApprovalPort } from "./connector-approvals.js";
 import { IMAGE_ITEMS, RelayError, SITE_CHOICES, agentCatalog, browserTool, finishBrowser, handoffCardInput, prepareBrowser, scrub, siteAnswer, siteCardInput, siteDenied,
   siteRequired, siteUnavailableHere, type Handoff, type SandboxFiles } from "./browser-relay.js";
@@ -63,6 +63,7 @@ export class BusinessTools {
   private partnerTools?: (agentId: string, owner: string) => PartnerTools;
   private completed?: (input: CompletedPartnerTurn) => void;
   private approvals?: ApprovalPort;
+  private employeeDesk?: (agentId: string, owner: string, scheduled: boolean) => ApprovalDesk | undefined;
   private files?: (agentId: string, binding: string) => Promise<SandboxFiles>;
   private sites?: SitePort;
   constructor(options: z.input<typeof feishuBotReadersSchema>, base: string, private readonly store: DurableStore, private readonly apps?: ConnectedApps) {
@@ -84,6 +85,7 @@ export class BusinessTools {
   onCompleted(callback: (input: CompletedPartnerTurn) => void) { this.completed = callback; }
   /** Only a component holding the authority key may present connector writes; without it every caller stays read-only. */
   setApprovals(port: ApprovalPort) { this.approvals = port; }
+  setEmployeeDesk(desk: NonNullable<BusinessTools["employeeDesk"]>) { this.employeeDesk = desk; }
   setSandboxFiles(files: (agentId: string, binding: string) => Promise<SandboxFiles>) { this.files = files; }
   /** Only a component holding the authority key can record the owner's answer on a site card; without it no turn can ask. */
   setSites(port: SitePort) { this.sites = port; }
@@ -100,17 +102,24 @@ export class BusinessTools {
     const entry = this.readers.get(agentId);
     const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
     const partner = this.partnerTools?.(agentId, owner);
-    if (!bot && !appReader && !partner) return new HttpAgentHost(http);
-    const files = this.files, skills = this.skills, guides = appReader ? this.guides?.(agentId) : undefined;
+    const skills = this.skills, prepare = skills && (() => skills(agentId, owner, binding));
+    if (!bot && !appReader && !partner) {
+      const host = new SandboxHost(http);
+      if (prepare) host.beforeStart = prepare;
+      return host;
+    }
+    const files = this.files, guides = appReader ? this.guides?.(agentId) : undefined;
     const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
-      appReader ? { connections: () => this.apps!.connections(agentId, owner), browser: () => this.apps!.browser(agentId, owner),
+      appReader ? { employeePermissions: this.apps!.employeePermissions, sharedEmployee: this.apps!.sharedEmployee(agentId),
+        ...(this.employeeDesk ? { employeeDesk: (scheduled: boolean) => this.employeeDesk!(agentId, owner, scheduled) } : {}),
+        connections: () => this.apps!.connections(agentId, owner), browser: () => this.apps!.browser(agentId, owner),
         ...(this.approvals && this.apps!.writable ? { approvals: this.approvals } : {}),
         ...(this.sites ? { sites: this.sites } : {}),
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
         ...(guides ? { guides } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
-    if (appReader && skills) host.beforeStart = () => skills(agentId, owner, binding);
+    if (prepare) host.beforeStart = prepare;
     return host;
   }
 }
@@ -123,7 +132,7 @@ export interface SitePort { allowSite(owner: string, connection: string, site: s
  * is done.
  */
 interface SiteRequest {
-  status: "open" | "decided" | "running" | "closed"; choice?: "task" | "always" | "deny";
+  desk?: string; status: "open" | "decided" | "running" | "closed"; choice?: "task" | "always" | "deny";
   runId: string; callId: string; deadlineAt: string; owner: string; agentId: string; connections: string[];
   connection: string; site: string; command: string; task: string;
   name: string; arguments: Record<string, unknown>; scope?: { connections: string[]; operations?: string[] | undefined }; write: boolean;
@@ -131,6 +140,9 @@ interface SiteRequest {
 /** Product-side extras for connected apps: owner write approvals and the browser workspace relay. */
 interface ConnectedAppHosting {
   /** The connections the Agent can use now, and the browser ones among them: read on every use, as the owner can change them. */
+  employeePermissions?: boolean;
+  sharedEmployee?: boolean;
+  employeeDesk?: (scheduled: boolean) => ApprovalDesk | undefined;
   connections(): string[];
   browser(): string[];
   approvals?: ApprovalPort;
@@ -158,11 +170,19 @@ const approvalUnavailableHere = (refusal: Record<string, unknown>) => {
 };
 const approvalRequired = z.object({ status: z.literal("approval_required"), operationId: z.string().min(1).max(64),
   expiresAt: z.string().optional() }).passthrough();
-export class BusinessHost extends HttpAgentHost {
+class SandboxHost extends HttpAgentHost {
+  beforeStart?: () => Promise<unknown>;
+  override async start(input: Parameters<HostPort["start"]>[0]) {
+    await this.beforeStart?.().catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_skills_sync_failed",
+      error: error instanceof Error ? error.message : "unknown" })));
+    return super.start(input);
+  }
+}
+
+export class BusinessHost extends SandboxHost {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly siteWork = new Map<string, Promise<void>>();
   private readonly approvals?: ConnectorApprovals;
-  beforeStart?: () => Promise<unknown>;
   constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
     private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly partner?: PartnerTools,
@@ -179,9 +199,6 @@ export class BusinessHost extends HttpAgentHost {
   }
   override async start(input: Parameters<HostPort["start"]>[0] & { admission?: RunAdmission }) {
     const { admission: supplied, ...request } = input;
-    // Installing guides must never block or fail a run.
-    await this.beforeStart?.().catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_skills_sync_failed",
-      error: error instanceof Error ? error.message : "unknown" })));
     const admission = this.admission(supplied);
     if (supplied && !admission) throw new RouterError("business_run_admission_invalid", 403);
     const requestId = input.requestKey ? `${this.scope}:${input.runtimeId}:${input.requestKey}` : undefined;
@@ -194,8 +211,8 @@ export class BusinessHost extends HttpAgentHost {
       const granted = (kind: "feishu" | "connectedApps") => admission &&
         (admission.kind === "owner" && !admission.toolGrants || Boolean(partnerTurn) || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
-        // A session gets `connected_apps` when the Agent has a connection at its first turn; what the tool reaches is read on every call.
-        ...(granted("connectedApps") && this.appReader && this.apps?.connections().length !== 0 ? [connectedAppDefinition] : []),
+        // The employee's first session can predate an assignment. Register its stable tool and resolve access on each call.
+        ...(granted("connectedApps") && this.appReader && (this.apps?.employeePermissions || this.apps?.connections().length !== 0) ? [this.apps?.employeePermissions ? employeeAppDefinition : connectedAppDefinition] : []),
         ...(admission && admission.kind !== "schedule" ? this.partner?.definitions ?? [] : [])];
       return this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
     };
@@ -397,7 +414,11 @@ export class BusinessHost extends HttpAgentHost {
   /** Where the owner is asked for a run that handles a partner's message: the conversation that message came from. */
   private desk(runId: string) {
     const admission = this.admission(this.store.get<{ admission?: RunAdmission }>("business_runs", `${this.scope}:${runId}`)?.admission);
-    return admission && this.partner?.authority?.(admission)?.approvals;
+    if (!admission) return undefined;
+    return this.approvalDesk(admission, this.partner?.authority?.(admission));
+  }
+  private approvalDesk(admission: RunAdmission, partner: PartnerAuthority | undefined) {
+    return (this.apps?.employeePermissions ? this.apps.employeeDesk?.(admission.kind === "schedule") : undefined) ?? partner?.approvals;
   }
   /** Test and shutdown hook: wait for decided approvals of a run to reach Host. */
   async settled(runId: string) {
@@ -420,14 +441,14 @@ export class BusinessHost extends HttpAgentHost {
     }
   }
   private async connectedApp(input: z.infer<typeof connectedAppInput>, admission: RunAdmission, call: HostCall): Promise<unknown> {
-    const granted = admission.toolGrants?.connectedApps, apps = this.apps;
+    const apps = this.apps, partnerTurn = this.partner?.authority?.(admission);
+    // A verified partner assignment uses the receiving employee's connections. Explicit schedule/review grants
+    // continue to limit calls to the resources named when that work was created.
+    const granted = apps?.employeePermissions && partnerTurn ? undefined : admission.toolGrants?.connectedApps;
     let connections = (apps?.connections() ?? []).filter(id => !granted || granted.connections.includes(id));
-    // A turn a partner's message started may write where the owner's turn that message came from could.
-    const partnerTurn = this.partner?.authority?.(admission);
-    // Hard check: connections acting as the owner's personal identity only in the owner's private conversation,
-    // in a turn the owner started. No partner turn is one.
     let blocked: string[] = [];
-    if (apps?.ownerPrivate && !(await apps.ownerPrivate.admitted(admission))) {
+    const requiresPrivateConversation = !(apps?.employeePermissions && partnerTurn);
+    if (apps?.ownerPrivate && (apps.sharedEmployee || (requiresPrivateConversation && !(await apps.ownerPrivate.admitted(admission))))) {
       const ids = await apps.ownerPrivate.connections();
       blocked = connections.filter(id => !ids || ids.has(id));
       connections = connections.filter(id => !blocked.includes(id));
@@ -435,11 +456,13 @@ export class BusinessHost extends HttpAgentHost {
     const scope = blocked.length ? { connections, ...(granted?.operations ? { operations: granted.operations } : {}) } : granted;
     const browser = (apps?.browser() ?? []).filter(id => connections.includes(id));
     // The owner can be asked in the owner's own turn, and for a partner turn that came from one. Schedules keep read-only tokens.
-    const write = (admission.kind === "owner" || partnerTurn?.write === true) && !!this.approvals;
+    const desk = this.approvalDesk(admission, partnerTurn);
+    const write = !!this.approvals && (admission.kind === "owner" || partnerTurn?.write === true ||
+      (apps?.employeePermissions === true && (Boolean(partnerTurn) || (admission.kind === "schedule" && !!desk))));
     const options = write ? { write: true } : undefined;
     const read = (value: z.infer<typeof connectedAppInput>) => options ? this.appReader!(value, scope, options)
       : scope ? this.appReader!(value, scope) : this.appReader!(value);
-    const unavailable = blocked.map(connection => ({ connection, reason: OWNER_PRIVATE_ONLY }));
+    const unavailable = blocked.map(connection => ({ connection, reason: apps?.sharedEmployee ? "connected_app_not_granted" : OWNER_PRIVATE_ONLY }));
     if (input.action === "tools") {
       const catalog = blocked.length && !connections.length ? { status: "completed", tools: [] } : agentCatalog(await read(input), browser);
       if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) return catalog;
@@ -448,11 +471,13 @@ export class BusinessHost extends HttpAgentHost {
         ...(listed.success ? apps?.guides?.(listed.data.tools.map(tool => tool.name)) : {}) };
     }
     const refused = blocked.find(id => input.name?.startsWith(`${id.replaceAll("-", "_")}__`));
-    if (refused) return ownerPrivateRefusal(refused);
+    if (refused) return apps?.sharedEmployee ? { status: "failed", error: "connected_app_not_granted", connection: refused } : ownerPrivateRefusal(refused);
     const found = input.name ? browserTool(input.name, browser) : undefined;
     // Site permissions given "for this task" belong to the conversation of an owner's own turn. Other turns cannot
     // ask the owner about a site and carry no task, so they reach always-allowed sites only.
-    const session = found && admission.kind === "owner" && !partnerTurn && apps?.sites
+    const mayAskSite = (admission.kind === "owner" && !partnerTurn) ||
+      (apps?.employeePermissions && (partnerTurn || (admission.kind === "schedule" && desk)));
+    const session = found && mayAskSite && apps?.sites
       ? this.store.get<{ sessionKey: string }>("business_turn_inputs", `${this.scope}:${call.runId}`)?.sessionKey : undefined;
     const task = session === undefined ? undefined : createHash("sha256").update(session).digest("hex");
     const commands = found?.tool === "agent_browser_read" || found?.tool === "agent_browser_write";
@@ -473,12 +498,20 @@ export class BusinessHost extends HttpAgentHost {
     if (site?.success) {
       if (!task) return siteUnavailableHere(site.data.detail.site);
       // The record comes first: a card without one would be a question nobody reads the answer to.
-      this.store.insert("browser_site_requests", `${this.scope}:${call.runId}:${call.id}`, { status: "open", runId: call.runId, callId: call.id, deadlineAt: call.deadlineAt,
+      const id = `${this.scope}:${call.runId}:${call.id}`;
+      const deskId = apps?.employeePermissions && desk?.choice ? "site-" + createHash("sha256").update(id).digest("hex").slice(0, 40) : undefined;
+      this.store.insert("browser_site_requests", id, { ...(deskId ? { desk: deskId } : {}), status: "open", runId: call.runId, callId: call.id, deadlineAt: call.deadlineAt,
         owner: admission.owner, agentId: admission.agentId, connections, connection: found!.connection, site: site.data.detail.site, command: site.data.detail.command, task,
         name: input.name!, arguments: args, ...(scope ? { scope } : {}), write } satisfies SiteRequest);
+      if (deskId && desk) {
+        try {
+          await desk.open({ id: deskId, deadlineAt: call.deadlineAt, summary: siteCardInput(site.data.detail.site, site.data.detail.command).questions[0]!.question,
+            choices: Object.entries(SITE_CHOICES).map(([id, label]) => ({ id, label })) });
+        } catch { this.store.delete("browser_site_requests", id); return siteUnavailableHere(site.data.detail.site); }
+      }
       return WAITING;
     }
-    return this.appResult(call, input.name ?? "", outcome, { owner: admission.owner, agentId: admission.agentId, connections }, write, partnerTurn?.approvals);
+    return this.appResult(call, input.name ?? "", outcome, { owner: admission.owner, agentId: admission.agentId, connections }, write, desk);
   }
   /** What a connected-app call comes to: a refusal where the owner cannot be asked, a wait for their approval, or its result. */
   private async appResult(call: Pick<HostCall, "runId" | "id" | "deadlineAt">, name: string, outcome: unknown, principal: { owner: string; agentId: string; connections: string[] },
@@ -505,7 +538,13 @@ export class BusinessHost extends HttpAgentHost {
       if (value.status !== "open") { void this.settleSite(id).catch(() => undefined); continue; }
       const live = hostCalls.some(call => call.id === value.callId && call.status === "pending");
       if (!live || Date.parse(value.deadlineAt) <= Date.now()) {
+        if (value.desk) await this.desk(runId)?.withdraw(value.desk).catch(() => undefined);
         if (this.decideSite(id, "deny")) await this.settleSite(id, "expired").catch(() => undefined);
+        continue;
+      }
+      if (value.desk) {
+        const choice = await this.desk(runId)?.choice?.(value.desk).catch(() => undefined);
+        if (choice && this.decideSite(id, choice === "task" || choice === "always" ? choice : "deny")) await this.settleSite(id);
         continue;
       }
       cards.push({ id: SITE_PREFIX + value.callId, runId, kind: "interaction", name: handoffMethod, status: "pending", deadlineAt: value.deadlineAt,
@@ -523,7 +562,7 @@ export class BusinessHost extends HttpAgentHost {
   /** The owner's choice on a site card. Anything but the two allowing choices, a typed line included, is a refusal. */
   private async answerSite(runId: string, callId: string, result: unknown) {
     const id = `${this.scope}:${runId}:${callId}`, record = this.store.get<SiteRequest>("browser_site_requests", id);
-    if (!record || record.status !== "open") return;
+    if (!record || record.desk || record.status !== "open") return;
     const answer = siteAnswer(result), choice = answer === SITE_CHOICES.task ? "task" : answer === SITE_CHOICES.always ? "always" : "deny";
     // A permission is recorded only for a command that still waits for it.
     const live = Date.parse(record.deadlineAt) > Date.now() && (await super.calls(runId)).some(call => call.id === callId && call.status === "pending");
@@ -557,7 +596,7 @@ export class BusinessHost extends HttpAgentHost {
         const outcome = await this.appReader({ action: "call", name: record.name, arguments: record.arguments }, record.scope, record.write ? { write: true } : undefined);
         // The permission was recorded, so a second refusal for the site is not asked about again.
         value = siteRequired.safeParse(outcome).success ? siteDenied(record.site, "permission_not_recorded")
-          : await this.appResult({ runId: record.runId, id: record.callId, deadlineAt: record.deadlineAt }, record.name, outcome, record, record.write);
+          : await this.appResult({ runId: record.runId, id: record.callId, deadlineAt: record.deadlineAt }, record.name, outcome, record, record.write, this.desk(record.runId));
       }
     } catch { value = { status: "failed", error: "connected_app_unavailable" }; }
     // The operation itself is set to ask: its approval card answers the call from here on.

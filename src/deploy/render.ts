@@ -24,8 +24,9 @@ export interface ProductInputs {
   env?: Record<string, string>;
   /** `examples/start-host.sh` of the pinned environment package. */
   startHost: Uint8Array;
+  officialSkills: Uint8Array;
 }
-export interface ConfigInputs extends Pick<ProductInputs, "startHost"> {
+export interface ConfigInputs extends Pick<ProductInputs, "startHost" | "officialSkills"> {
   name: string; hostname: string; ownerEmail: string; accountId: string;
   gatewayUrl: string; controlToken: string;
   teamDomain: string; audience: string;
@@ -73,6 +74,8 @@ export function renderProduct(source: Source, inputs: ProductInputs, existing: M
     ["cloud/host-profile.json", Buffer.from(existing.get("cloud/host-profile.json") ?? example("cloud/host-profile.json"))],
     ["cloud/agent-host.tgz", host],
     ["cloud/agent-host.sha256", Buffer.from(`${sha256(host)}  ${HOST_ARCHIVE}\n`)],
+    ["cloud/mau-sandbox/SKILL.md", example("cloud/mau-sandbox/SKILL.md")],
+    ["cloud/official-skills.tgz", Buffer.from(inputs.officialSkills)],
     ["cloud/start-host.sh", Buffer.from(inputs.startHost)],
   ] };
 }
@@ -81,7 +84,7 @@ export function renderProduct(source: Source, inputs: ProductInputs, existing: M
 export function renderConfig(source: Source, inputs: ConfigInputs, existing: Map<string, Uint8Array>): Map<string, Buffer> {
   const names = resources(inputs.name), owner = ownerId(inputs.hostname);
   const provider = { ...(JSON.parse(readFileSync(source.path("examples", "providers.json"), "utf8")) as { providers: Array<Json & { id: string }> }).providers[0]!, id: PROVIDER, apiUrl: inputs.gatewayUrl };
-  const { mau, files } = renderProduct(source, { owner, provider, startHost: inputs.startHost }, existing);
+  const { mau, files } = renderProduct(source, { owner, provider, startHost: inputs.startHost, officialSkills: inputs.officialSkills }, existing);
   mau.edgeIdentity = { ...mau.edgeIdentity, provider: "cloudflare-access", teamDomain: inputs.teamDomain, audiences: [inputs.audience],
     owners: { ...mau.edgeIdentity?.owners, [inputs.ownerEmail]: owner } };
   return new Map<string, Buffer>([

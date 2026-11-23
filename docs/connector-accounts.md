@@ -45,7 +45,15 @@ Create/select the application's Google Cloud project, enable the required API, c
 
 For a personal pilot, add the owner as a test user. Gmail authorizations in an External/Testing application expire after seven days, including offline refresh credentials; do not present this as a durable unattended deployment. Review the appropriate production or personal-use path before long-running automation. Public use of restricted scopes has separate verification requirements and exceptions. See [app audience rules](https://support.google.com/cloud/answer/15549945?hl=en) and [restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification). Do not automatically publish the app or accept new terms as part of a local code test.
 
-### Connector CLIs and guides in the Agent's environment
+### Connector CLIs in a shared employee workspace
+
+Set `connectedApps.authorization` to `employee` in Mau and `sessionRelayTools` to `["connected_apps"]` in the environment's Host profile. Assign each employee its own connections in settings. An empty assignment grants none, including when a partner shares the lead's sandbox. Assign personal connections to the lead. List personal Gmail connection IDs under `ownerPrivateConnections` if their connector does not report personal usage. The employee's current assignment applies to delegated work and to results received from coworkers. Scheduled work retains its configured source and operation scope. Restricted memory review keeps its separate grants.
+
+The same rules apply to a terminal command and a `connected_apps` call. The external connector checks its per-operation allow, ask or deny setting. Asks go to the employee's conversation with the owner. Shared employees send their asks to the environment owner's conversation. A denial ends the operation. Each terminal uses only a registered native session ID. Processes sharing a Unix user can read each other's IDs, so this mode is intended for mutually trusted employees.
+
+Use the official skill files installed by the shared cloud profile. The separate `mau-sandbox` skill describes workspace paths, approvals and browser routing. A successful `agent-browser open` selects the local Chromium for loopback pages and the assigned browser for external pages. Later commands follow the selection in that terminal session. Git and GitHub CLI use the environment's configured gateway credential.
+
+### Connector guides with the default run-based configuration
 
 A connector's guide is written around its official CLI. How it reaches an Agent follows the Agent's kernel, and the
 tool stays the same for all of them: every call ends at `connected_apps`.
@@ -75,7 +83,7 @@ shell command it is running, so they are installed by the runs of Codex partners
   owner's own skill or CLI) are never overwritten. Environments whose Agent Host predates the relay client get guides
   but no commands.
 
-An Agent on another kernel (a Claude partner, in an environment of its own or in a Codex partner's) is not installed
+An Agent on another kernel (a Claude or Antigravity partner, in an environment of its own or in a Codex partner's) is not installed
 for: its runs write no skill and no command. It uses the `connected_apps` tool directly, and the tool brings the guides
 with it. The catalog (`action=tools`) of such an Agent carries, beside `tools`:
 
@@ -90,12 +98,9 @@ under `browser_downloads/`) are the same as through the commands. In an environm
 commands exist in the shell; outside a Codex command they refuse to run and say so.
 
 The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
-ConnectorService runs for `gws_read`/`gws_write`. The browser connector's agent-browser CLI comes with Agent Connectors'
-npm dependencies; its install script is denied in `allowScripts` and is not needed. The npm package carries every
-platform's binary (about 116 MB); the Dockerfile keeps only the image's (`agent-browser-linux-x64`, about 18 MB) and marks
-it executable. An image assembled by replacing layers must do the same with
-`find node_modules -path '*/agent-browser/bin/agent-browser-*' ! -name agent-browser-linux-x64 ! -name '*.js' -delete`
-and `chmod 0755` on the kept binary; otherwise the connector copies the binary into its private directory at first use.
+ConnectorService runs for `gws_read`/`gws_write`. Agent Connectors installs the official agent-browser CLI and its native optional package for the target platform.
+Keep npm optional dependencies enabled when assembling an image. The Docker build checks the CLI version and reads its
+bundled core guide with the package install script disabled.
 
 Browser handoffs show on Mau's private card the live-view link, the host of the page the tab shows, and the Agent's
 instructions with every link removed. The console takes the link it frames from the card's structured `handoff`
@@ -244,7 +249,7 @@ Feishu is split by direction, on **one** Feishu app (like Feishu aily or Coze):
 The hand-over requires the owner's Agent, a connection owned by that owner, and an assignment of that connection to
 that Agent (see [which partners can use a connection](#which-partners-can-use-a-connection)). The secret goes only to the connector service and never to the browser.
 
-### Rule 1: personal access only in the owner's private conversation
+### Default run-based rule 1: personal access only in the owner's private conversation
 
 Connections the service lists with `usage: "owner_private"` (Feishu), plus `connectedApps.ownerPrivateConnections` and
 every `kind: "feishu"` connection of the composed runtime, are admitted by `connected_apps` only when the run is the
