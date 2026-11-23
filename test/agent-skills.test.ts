@@ -216,8 +216,8 @@ it("installs nothing for a kernel whose shell does not relay, and gives it the s
   const box = sandbox(true), manager = new skills.AgentSkills(apps, () => connections);
   // A run on such a kernel reads no catalog and writes no file: the commands in the shell would not work for it.
   // What a Codex partner of the same environment has there stays as it is.
-  mkdirSync(join(box.codex, "skills/google-gmail"), { recursive: true });
-  writeFileSync(join(box.codex, "skills/google-gmail/SKILL.md"), "Installed by Mau\n"); writeFileSync(join(box.bin, "gws"), "#!/bin/sh\n# Installed by Mau\n");
+  await new skills.AgentSkills(apps, () => connections).install("codex", "agent", "owner", "binding", async () => box.files);
+  calls = 0;
   expect(await manager.install("claude", "agent", "owner", "binding", async () => box.files)).toMatchObject({ commands: ["agent-browser"], skills: [], removed: [] });
   // Once per environment: a later run, also of another such kernel, writes nothing again.
   expect(await manager.install("agy", "agent", "owner", "binding", async () => box.files)).toBeUndefined();
