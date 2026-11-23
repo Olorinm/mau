@@ -11,7 +11,9 @@ import { dutySchema } from "./environments.js";
 import { CARRIED_NOTES, EXTERNAL_PARTNERS, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
-  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards";
+  DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards",
+  /** The roster text each session was last shown, so a turn repeats it only when it changed. */
+  SENT_ROSTER = "partner_sent_roster";
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
 /** A turn started by a result may message again; this many generations may follow one owner message. */
@@ -632,10 +634,11 @@ export class Partners {
 
   /**
    * What a turn is told beside its input: for a turn in the owner conversation (the owner's own, or one that hands
-   * results over) the current roster and who it waits for, when its session has the tool to work with them; and for
-   * every such turn and every turn that handles a message, the informs left for the partner.
+   * results over) the roster and who it waits for, when its session has the tool to work with them, and only when the
+   * session has not already read the same text; and for every such turn and every turn that handles a message, the
+   * informs left for the partner.
    */
-  async turnContext(admission: RunAdmission, roster: boolean): Promise<{ partners?: string; partnerNotes?: string }> {
+  async turnContext(admission: RunAdmission, roster: boolean, sessionKey?: string): Promise<{ partners?: string; partnerNotes?: string }> {
     const turn = this.turn(admission);
     if (!turn) return {};
     try { if (turn.kind === "owner") await this.conversation(admission, turn); } catch { return {}; }
@@ -649,6 +652,13 @@ export class Partners {
         .map(message => ({ to: message.to.name, intent: message.intent, sentAt: message.createdAt, answered: message.status !== "sending" && message.status !== "running" })),
       notes: notes.map(note => ({ from: note.from.name, sentAt: note.createdAt, text: note.text })),
     });
+    // The roster and the waits stay the same most turns. A session reads them once and again when they change, so
+    // that what a model is told each turn is what it did not already know.
+    if (context.partners !== undefined && sessionKey) {
+      const key = `${owner}:${self}:${sessionKey}`, digest = createHash("sha256").update(context.partners).digest("hex");
+      if (this.store.get<{ digest: string }>(SENT_ROSTER, key)?.digest === digest) delete context.partners;
+      else this.store.set(SENT_ROSTER, key, { digest });
+    }
     return context;
   }
   /** A completed turn has read the informs its context carried. */
@@ -709,6 +719,7 @@ export class Partners {
     await work.submit({ eventId: message.id, sessionId,
       input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message, this.port.employeePermissions),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
+      notice: "brief",
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },

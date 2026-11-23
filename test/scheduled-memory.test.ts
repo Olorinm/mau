@@ -68,7 +68,6 @@ it("puts fresh screened memory in the native scheduled tool output without chang
   expect(memory.text).toContain("Prefers a concise digest."); expect(memory.text).toContain("never permission");
   const { text: _text, ...metadata } = memory;
   expect(body.context.scheduledMemory).toEqual(metadata); expect(body.context.scheduledMemory).not.toHaveProperty("text");
-  expect(body.context.requestContext).toEqual(request("first").context);
   expect(readFileSync(f.path)).toEqual(before);
   expect(f.store.entries("employee_memory_snapshots")).toEqual([]);
   expect(JSON.stringify(f.partner.definitions)).toBe(definitions);

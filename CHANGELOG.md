@@ -4,6 +4,15 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.65] - 2026-11-23
+
+- Move desktop navigation to a left rail and open the app grid beside it. The phone layout keeps its bottom bar.
+- Pin Agent Kit 0.11.0-alpha.15.
+
+- Tell a turn the partner roster on its session's first turn and when it changes, instead of every turn. `partners` with `action=roster` returns it at any time.
+- Keep Router's routing identifiers out of what a model reads beside its input.
+- Deliver partner messages with Router's brief sender and permission notice. Paired computers apply their local approval rules to the delegated task.
+
 ## [0.1.0-alpha.64] - 2026-11-23
 
 - Run Claude, Codex and Antigravity employees in one workspace with their own connector assignments and approval routing. DeepSeek Harness is available as another native runtime.

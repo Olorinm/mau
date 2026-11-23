@@ -29,12 +29,12 @@ const until = async <T>(read: () => T | undefined | Promise<T | undefined>, labe
 /** A Host that completes every run at once and records which environment each request reached. */
 function fakeHost() {
   const runs = new Map<string, Record<string, unknown>>();
-  const started: Array<{ environment: string; agentId: string; sessionId: string; runtimeId: string; instructions: string; input: string }> = [];
+  const started: Array<{ environment: string; sessionId: string; runtimeId: string; instructions: string; input: string }> = [];
   const host = (url: URL, init?: RequestInit) => {
     const method = init?.method ?? "GET", path = url.pathname;
     if (path.endsWith("/runs") && method === "POST") {
       const body = JSON.parse(String(init?.body)), id = `run-${runs.size + 1}`;
-      started.push({ environment: path.split("/")[1]!, agentId: body.context.agentId, sessionId: body.sessionId, runtimeId: body.runtimeId,
+      started.push({ environment: path.split("/")[1]!, sessionId: body.sessionId, runtimeId: body.runtimeId,
         instructions: body.instructions, input: body.input });
       const run = { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "completed", answer: `answer to ${body.input}` };
       runs.set(id, run); return Response.json(run);
@@ -168,7 +168,7 @@ it("routes the sharing partner's Host requests, checks and files to the shared e
   expect((await work(f, f.agent.id, "helper-1", "plan the week")).status).toBe(202);
   expect(await finished(f, scout.id, "scout-1")).toMatchObject({ status: "completed" });
   expect(await finished(f, f.agent.id, "helper-1")).toMatchObject({ status: "completed" });
-  const ofScout = started.find((run) => run.agentId === scout.id)!, ofHelper = started.find((run) => run.agentId === f.agent.id)!;
+  const ofScout = started.find((run) => run.input === "sort the inbox")!, ofHelper = started.find((run) => run.input === "plan the week")!;
   expect(started).toHaveLength(2);
   expect([ofScout.environment, ofHelper.environment]).toEqual([environment, environment]);
   expect([ofScout.runtimeId, ofHelper.runtimeId]).toEqual(["personal", "personal"]);
@@ -232,7 +232,7 @@ it("pauses an idle environment only when no partner in it is active, and work fo
     expect((await work(f, scout.id, "scout-wakes", "anything new?")).status).toBe(202);
     expect(await finished(f, scout.id, "scout-wakes")).toMatchObject({ status: "completed" });
     expect(await state()).toEqual(["ready", "ready"]);
-    expect(started.map((run) => run.agentId)).toEqual([scout.id]);
+    expect(started.map((run) => run.input)).toEqual(["anything new?"]);
     expect(f.creates).toBe(1);
     // An explicit pause by the partner that has the environment is not undone by messages for the other.
     await f.api(f.path + "/pause", {});

@@ -44,7 +44,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(work.body.input).toBe("");
   expect(work.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners", retain: false });
   expect(JSON.parse(work.body.toolOutput.output)).toEqual({ source: { kind: "delegation", reference: record.id, sender: { kind: "agent", id: f.agent.id, name: "helper" } }, message: incomingText(record) });
-  expect(work.text).toContain('[Partner message: delivered by the system, not written by the owner]\nFrom: partner "helper"\nIntent: relay: the sender passes on what the owner asked for.');
+  expect(work.text).toContain('[Partner message]\nIntent: relay: the sender passes a task to you.');
   expect(work.text.endsWith("Everything below this line is the message.\n\nThe owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.")).toBe(true);
   // Opened by a partner's message, the conversation has the tools and the memory snapshot an owner's message would give it.
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
@@ -274,7 +274,7 @@ it("delivers a partner's message as text that names its source to a runtime that
   await f.say(f.agent.id, "Tell trip I prefer window seats");
   const work = await f.until(() => tripTurns(f)[0], "partner turn"), record = f.record(f.messages()[0]!.id);
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
+  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
   expect(work.body.input).toContain(`Source: {"kind":"delegation","reference":"${record.id}","sender":{"kind":"agent","id":"${f.agent.id}","name":"helper"}}`);
   expect(work.body.input.endsWith("\n\n" + incomingText(record))).toBe(true);
   const back = await f.turnOf(f.agent.id, 1);

@@ -54,7 +54,7 @@ it("says every refusal of the partners tool, of dismissing and of the memory doc
   // Its other names of this form are the collections it stores in and the events it logs for operators.
   const source = readFileSync(new URL("../src/partners.ts", import.meta.url), "utf8");
   const internal = ["partner_messages", "partner_returns", "partner_cursors", "partner_recruits", "partner_dismissals", "partner_activity", "partner_failure_wakes",
-    "partner_delivery_failed", "partner_settlements_unread", "partner_return_not_submitted", "partner_cards", "partner_cards_unread", "partner_card_not_shown"];
+    "partner_delivery_failed", "partner_settlements_unread", "partner_return_not_submitted", "partner_cards", "partner_cards_unread", "partner_card_not_shown", "partner_sent_roster"];
   const refusals = [...new Set([...source.matchAll(/"(partners?_[a-z_]+)"/g)].map((match) => match[1]!))].filter((code) => !internal.includes(code));
   expect(refusals).toEqual(expect.arrayContaining(["partner_owner_conversation_required", "partner_chain_limit", "partner_layer_limit", "partner_message_limit_reached",
     "partner_unavailable", "partner_not_found", "partner_dismissed", "partner_limit_reached", "partner_recruit_failed", "partners_invalid_input"]));

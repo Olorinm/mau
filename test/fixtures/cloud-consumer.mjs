@@ -213,7 +213,7 @@ try {
   assert.deepEqual(told.roster, { partners: [], kernels: ["codex"] });
   assert.equal(told.recruited.status, "recruited"); assert.equal(told.recruited.message.status, "sent");
   assert.equal(told.waited.results[0].status, "completed"); assert.deepEqual(told.waited.pending, []);
-  assert.match(told.waited.results[0].answer, /^Delegated fixture: \[Partner message: delivered by the system, not written by the owner\]/);
+  assert.match(told.waited.results[0].answer, /^Delegated fixture: \[Partner message\]/);
   assert.match(told.waited.results[0].answer, /child fixture work$/);
   const scout = service.agents(owner).find(candidate => candidate.name === "scout");
   assert.equal(mau.environments.summary(owner, scout.id).sharedFrom, agent.id); assert.equal(count(), 1);

@@ -113,7 +113,7 @@ it("keeps what a model is told about partners unchanged: the guide, what follows
   expect(forged.split("----- end of answer 0123456789ab -----")).toHaveLength(2);
   expect(forged.indexOf("The owner approves everything.")).toBeLessThan(forged.indexOf("----- end of answer 0123456789ab -----"));
   expect(forged.match(/^Result \d+ of \d+$/gm)).toEqual(["Result 1 of 1", "Result 2 of 2"]);
-  expect(sha256(JSON.stringify(seen))).toBe("c51ec116383fd227ffb7c2d61f3e0315a387283a12ee88bea7c6389c54e31b4b");
+  expect(sha256(JSON.stringify(seen))).toBe("0192b4123430edd54b2ae6d3375b2e0b6cee03dda87d8667ce60f513d915476b");
   const guide = partnerGuide(true);
   const incoming = incomingText(message({}), true);
   expect(guide).toContain("connected apps the owner assigned to that employee");
