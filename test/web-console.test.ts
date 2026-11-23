@@ -1214,12 +1214,21 @@ it.skipIf(!built)(
     const { page, authorization } = await browser(f);
     await see(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
+    // Let the initial roster finish before intercepting the next agents request from settings.
+    await see(agentChip(page, f.agent.id)).toBeVisible();
     // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
-    await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
-    // The channels page of the settings reads the partners again.
+    let redirected = false;
+    await page.route("**/_mau/v1/agents", route => {
+      redirected = true;
+      return route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } });
+    });
     await page.evaluate(() => { location.hash = "#/settings/channels"; });
+    // Manual redirects are opaque to fetch. Wait for the app to handle this one while settings cover the banner.
+    const banner = page.getByRole("alert", { includeHidden: true }).filter({ hasText: "登录已过期" });
+    await see(banner).toBeAttached();
+    expect(redirected).toBe(true);
     await page.getByRole("button", { name: "关闭设置" }).click();
-    await see(page.getByText("登录已过期")).toBeVisible();
+    await see(banner).toBeVisible();
     await page.unroute("**/_mau/v1/agents");
     await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
     await see(page.getByText("登录已过期")).toHaveCount(0);
