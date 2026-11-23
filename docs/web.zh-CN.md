@@ -7,7 +7,7 @@
 
 控制台提供与自有伙伴的对话（单聊和群聊）、伙伴创建与管理、环境生命周期、渠道连接、连接器账号和设置。
 它只访问同域的 Mau（`/_mau/v1`）和内嵌的 Router（`/_agent-router/v1`）；浏览器不持有 Host 凭据，也不直连执行环境。
-“新建应用”和“App 商店”入口保留，明确显示“尚未接入”，没有对应后端。
+“新建应用”入口保留，明确显示“尚未接入”，没有对应后端。应用列表来自部署方提供的应用服务（`GET /_mau/v1/apps`，由 `createMau` 的 `dependencies.apps` 提供；没有时返回 `{ configured: false, data: [] }`）。最多三个应用可以固定在顶部导航里，这个选择保存在浏览器本地。详见英文文档的 [Apps](web.md#apps)。
 
 `web/` 是 npm workspace，`web/package-lock.json` 同时锁定控制台与 `web/ui`；`npm run build:web` 先构建 `web/ui`。
 

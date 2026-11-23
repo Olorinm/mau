@@ -11,8 +11,9 @@ environment/channel workflows are in `web/src`.
 The console covers conversations with owned Agents (direct chats and groups), Agent creation and
 management, environment lifecycle, channel connections, connector accounts and settings. It talks only
 to Mau (`/_mau/v1`) and the embedded Router (`/_agent-router/v1`) on its own origin; the browser never
-receives Host credentials or reaches an environment directly. App creation and the App Store are visible
-entries that say "Not connected yet"; they have no backend.
+receives Host credentials or reaches an environment directly. App creation is a visible entry that says
+"Not connected yet"; it has no backend. The owner's apps come from the deployment's app service, when it has one
+([Apps](#apps)).
 
 `web/` is an npm workspace: `web/package-lock.json` locks the console and `web/ui` together, and
 the console depends on the workspace package directly. `npm run build:web` builds `web/ui` first.
@@ -170,6 +171,23 @@ console shows that work in the conversations it belongs to.
   than one kernel, the dialog asks which one the new partner runs on; the environment's main kernel is the default.
   An environment with one kernel shows no choice. A kernel the environment does not offer, or whose runtime is not
   available there at the moment, is refused in a sentence.
+
+## Apps
+
+The apps destination lists the owner's apps: a grid under the destinations in a wide window, a dial above them on a
+phone (a drag turns it, a press opens an app). An app opens in a tab of its own.
+
+- **Where they come from.** `GET /_mau/v1/apps` answers `{ configured, data }`, each app `{ id, name, url, icon? }`.
+  Mau has no app service of its own: a deployment gives one to `createMau` as `dependencies.apps`, an object with
+  `list(owner)` (`AppDirectory` in the package's types). Without it the answer is `{ configured: false, data: [] }`
+  and the apps destination leads straight to app creation.
+- **What is kept.** `url` is an https address or a path of the console's origin; `icon` is a path of the console's
+  origin, since the console's content policy loads images from nowhere else. An entry without an id, a name or such
+  an address is left out; an icon that is not such a path is dropped and the console draws the name's first letter.
+- **Pinned apps.** Up to three apps stand among the destinations, between the conversations and the apps. In the
+  grid each app has a pin; on a phone the app in the middle of the dial has its pin under its name, and a held app
+  can be carried onto the destinations. The choice is kept in the browser (`localStorage`, `mau.pinnedApps`), not
+  on the server: another browser starts without it.
 
 ## Settings
 

@@ -838,6 +838,72 @@ it.skipIf(!built)(
   30_000,
 );
 
+it.skipIf(!built)("apps open from the apps destination: a grid with pins in a wide window, a dial on a phone where a held app is carried onto the destinations", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  const { page, context, errors } = await browser(f);
+  const names = ["周报", "记账", "读书笔记", "客户跟进", "行程", "素材库"];
+  await page.route("**/_mau/v1/apps", (route) => route.fulfill({ json: { configured: true,
+    data: names.map((name, index) => ({ id: "app-" + index, name, url: "https://apps.example.test/" + index })) } }));
+  await context.route("https://apps.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>app</title>" }));
+  await page.reload();
+  const dock = page.getByRole("navigation", { name: "主导航" }), apps = dock.getByRole("button", { name: "应用", exact: true });
+  // A pinned app's place shows its mark; the destinations are told apart by their names.
+  const places = () => dock.getByRole("button").evaluateAll((items) => items.map((item) => item.getAttribute("title")));
+  await see.poll(places).toEqual(["对话", "应用", "我"]);
+  // A wide window: the grid under the destinations lists every app by name.
+  await apps.click();
+  const grid = page.getByRole("dialog", { name: "应用" });
+  await see(grid.locator(".mau-app-open > span:last-child")).toHaveText([...names, "新建应用"]);
+  await see(apps).toHaveAttribute("aria-expanded", "true");
+  // Pinned apps stand among the destinations, in the order they were pinned, three at most.
+  for (const name of ["记账", "行程", "周报"]) await grid.getByRole("button", { name: "固定 · " + name, exact: true }).click();
+  await see.poll(places).toEqual(["对话", "记账", "行程", "周报", "应用", "我"]);
+  await see(grid.getByRole("button", { name: "固定 · 素材库", exact: true })).toBeDisabled();
+  await grid.getByRole("button", { name: "取消固定 · 行程", exact: true }).click();
+  await see.poll(places).toEqual(["对话", "记账", "周报", "应用", "我"]);
+  await see(grid.getByRole("button", { name: "固定 · 素材库", exact: true })).toBeEnabled();
+  // An app opens in a tab of its own, from the grid and from its place among the destinations.
+  const [opened] = await Promise.all([context.waitForEvent("page"), grid.getByRole("button", { name: "读书笔记", exact: true }).click()]);
+  expect(opened.url()).toBe("https://apps.example.test/2"); await opened.close();
+  await see(grid).toBeHidden();
+  const [again] = await Promise.all([context.waitForEvent("page"), dock.getByRole("button", { name: "记账", exact: true }).click()]);
+  expect(again.url()).toBe("https://apps.example.test/1"); await again.close();
+  // Escape puts the grid away. The pins belong to this browser and are there after a reload.
+  await apps.click(); await see(grid).toBeVisible(); await page.keyboard.press("Escape"); await see(grid).toBeHidden();
+  await page.reload();
+  await see.poll(places).toEqual(["对话", "记账", "周报", "应用", "我"]);
+
+  // A phone: a dial above the destinations, the app in its middle named.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await see.poll(places).toEqual(["对话", "记账", "周报", "应用"]);
+  await apps.click();
+  const dial = page.getByRole("dialog", { name: "应用" }), middle = dial.locator(".mau-dial-middle strong"), track = dial.locator(".mau-dial-track");
+  await see(middle).toHaveText("读书笔记");
+  const box = (await track.boundingBox())!, y = box.y + 40;
+  // A drag turns it; it comes to rest on an app.
+  await page.mouse.move(box.x + 250, y); await page.mouse.down(); await page.mouse.move(box.x + 122, y, { steps: 6 }); await page.mouse.up();
+  await see(middle).toHaveText("行程");
+  // A held app is carried: over the destinations they show that it can be let go, and it is pinned there.
+  const held = (await dial.locator('.mau-dial-app[data-middle]').boundingBox())!, target = (await dock.boundingBox())!;
+  await page.mouse.move(held.x + held.width / 2, held.y + held.height / 2); await page.mouse.down(); await page.waitForTimeout(600);
+  await page.mouse.move(held.x + held.width / 2, held.y + 60, { steps: 4 }); await page.mouse.move(target.x + target.width / 2, target.y + 20, { steps: 8 });
+  await see(dock).toHaveAttribute("data-drop", "true");
+  await page.mouse.up();
+  await see(dock).not.toHaveAttribute("data-drop", "true");
+  await see.poll(places).toEqual(["对话", "记账", "周报", "行程", "应用"]);
+  // The app in the middle has its pin under its name; three are the most.
+  await see(dial.getByRole("button", { name: "取消固定 · 行程", exact: true })).toBeVisible();
+  await page.mouse.move(box.x + 100, y); await page.mouse.down(); await page.mouse.move(box.x + 164, y, { steps: 4 }); await page.mouse.up();
+  await see(middle).toHaveText("客户跟进");
+  await see(dial.getByRole("button", { name: "固定 · 客户跟进", exact: true })).toBeDisabled();
+  // A press opens an app and puts the dial away.
+  const [tapped] = await Promise.all([context.waitForEvent("page"), dial.getByRole("button", { name: "客户跟进", exact: true }).click()]);
+  expect(tapped.url()).toBe("https://apps.example.test/3"); await tapped.close();
+  await see(dial).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+}, 60_000);
+
 it.skipIf(!built)(
   "keeps appearance menus and original dialogs in the selected theme scope",
   async () => {

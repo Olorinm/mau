@@ -881,3 +881,219 @@ button.mau-chat-title:enabled:hover {
   background: var(--c-glass);
   box-shadow: var(--shadow-glass);
 }
+
+/* Apps. An app's mark is its icon, or its first letter on its own colour. */
+.mau-app-mark {
+  display: grid;
+  flex: none;
+  border-radius: 28%;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  object-fit: cover;
+  place-items: center;
+}
+.mau-app-add {
+  background: var(--c-fill);
+  color: var(--c-text-secondary);
+}
+/* Behind the apps the page stays in view, out of focus. */
+.mau-apps-veil {
+  position: fixed;
+  /* Over the page and what floats in it, under the destinations. */
+  z-index: 36;
+  background: color-mix(in srgb, var(--c-bg) 30%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  backdrop-filter: blur(10px) saturate(125%);
+  inset: 0;
+  animation: fade-in var(--motion-fast) var(--motion-ease-out);
+}
+/* A wide window: a grid under the destinations. */
+.mau-apps-grid {
+  position: fixed;
+  z-index: 38;
+  top: 58px;
+  left: 50%;
+  width: min(372px, calc(100vw - 32px));
+  translate: -50% 0;
+  border-radius: 28px;
+  background: var(--c-glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass), var(--shadow-modal);
+  padding: 16px 12px 14px;
+  animation: scale-in var(--motion-normal) var(--motion-ease-out);
+}
+.mau-apps-grid > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 8px 12px;
+}
+.mau-apps-grid > header strong {
+  font-size: var(--fs-emphasis);
+}
+.mau-apps-grid > header small {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-caption);
+}
+.mau-apps-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px 0;
+  max-height: min(420px, calc(100dvh - 160px));
+  overflow: auto;
+}
+.mau-app-tile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+.mau-app-open {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-caption);
+  padding: 4px 2px;
+}
+.mau-app-open > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-app-open:hover .mau-app-mark {
+  scale: 1.06;
+}
+.mau-app-mark {
+  transition: scale var(--motion-fast) var(--motion-ease);
+}
+/* The pin of a tile: shown while the tile is pointed at or has the focus, and always once pinned. */
+.mau-app-pin,
+.mau-dial-pinned {
+  position: absolute;
+  top: -2px;
+  right: calc(50% - 32px);
+  display: grid;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-surface);
+  box-shadow: var(--shadow-tile);
+  color: var(--c-text-secondary);
+  padding: 0;
+  place-items: center;
+}
+.mau-app-pin {
+  cursor: pointer;
+  opacity: 0;
+}
+.mau-app-tile:hover .mau-app-pin,
+.mau-app-pin:focus-visible,
+.mau-app-pin[aria-pressed="true"] {
+  opacity: 1;
+}
+.mau-app-pin[aria-pressed="true"],
+.mau-dial-pinned {
+  background: var(--c-text);
+  color: var(--c-surface);
+}
+.mau-app-pin:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+/* A narrow screen: a dial above the destinations. */
+.mau-apps-dial {
+  position: fixed;
+  z-index: 37;
+  right: 0;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  left: 0;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  animation: fade-in var(--motion-normal) var(--motion-ease-out);
+}
+.mau-dial-middle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.mau-dial-middle strong {
+  flex-basis: 100%;
+  font-size: var(--fs-emphasis);
+  text-align: center;
+}
+.mau-dial-pin,
+.mau-dial-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--c-glass);
+  box-shadow: var(--shadow-glass);
+  color: var(--c-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-note);
+  padding: 0 14px;
+}
+.mau-dial-pin:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.mau-dial-track {
+  position: relative;
+  width: 100%;
+  height: 132px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.mau-dial-app {
+  position: absolute;
+  top: 6px;
+  left: calc(50% - 26px);
+  border: 0;
+  background: none;
+  cursor: inherit;
+  padding: 0;
+  transition: translate 0.28s cubic-bezier(0.3, 1.2, 0.4, 1), scale 0.28s cubic-bezier(0.3, 1.2, 0.4, 1);
+}
+.mau-dial-app .mau-app-mark {
+  border-radius: 50%;
+  box-shadow: 0 6px 18px oklch(0% 0 0 / 0.2);
+}
+.mau-dial-app[data-carried] {
+  z-index: 40;
+  transition: none;
+}
+.mau-dial-pinned {
+  top: -3px;
+  right: -3px;
+}
+.mau-dial-hint {
+  margin: 0;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-caption);
+}
+/* The dial is carried above the destinations so a held app can be let go on them. */
+.mau-apps-dial:has([data-carried]) {
+  z-index: 41;
+}
+/* The destinations stay above the veil while the apps are open. */
+.app-shell:has(.mau-apps-veil) .app-topbar {
+  z-index: 39;
+}

@@ -1,9 +1,11 @@
 import { useThemePreference } from "./theme";
 import { MauMark } from "./mau-mark";
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useCompactLayout, useToast } from "@olorinm/agent-ui/app";
 import { useAvatarAppearance } from "./avatar";
+import { mauApi } from "./api/client";
+import { AppLauncher, AppMark, maxPinned, openApp, usePinnedApps } from "./screens/apps";
 import {
   bootSession,
   logout,
@@ -60,6 +62,14 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
   }, [t, toast]);
   const [createOpen, setCreateOpen] = useState(false);
+  // The owner's apps, from the deployment's app service when it has one; some of them stand among the destinations.
+  const apps = useQuery({ queryKey: ["apps", session?.owner], enabled: !!session, retry: false, staleTime: 60_000,
+    queryFn: () => mauApi(session!.token).apps() });
+  const appList = apps.data?.data ?? [];
+  const pins = usePinnedApps(appList);
+  const [launcher, setLauncher] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const compact = useCompactLayout();
   // `?agent=<id>` opens the conversation with that partner.
   const [conversationTarget, setConversationTarget] = useState<string | undefined>(() => new URLSearchParams(location.search).get("agent") ?? undefined);
   const current = useRef(session);
@@ -109,9 +119,10 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     open: "打开",
     empty: "暂无内容",
   };
-  // Where the owner can go: the conversations, the apps, and their own settings.
+  // Where the owner can go: the conversations, the apps they pinned, all of their apps, and their own settings.
   const destinations = [
     { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
+    ...pins.pinned.map((app) => ({ id: "app:" + app.id, label: app.name, icon: <AppMark app={app} size={22} /> })),
     { id: "apps", label: zh ? "应用" : "Apps", icon: <ProductIcon name="store" /> },
     { id: "me", label: zh ? "我" : "Me", icon: <PartnerAvatar seed={session.owner} fallbackName={session.owner} size={24} appearance="illustrated" /> },
   ];
@@ -129,9 +140,13 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         label={zh ? "主导航" : "Navigation"}
         destinations={destinations}
         selectedId="messages"
-        // No app service is connected yet, so the apps destination leads straight to making one.
+        {...(launcher ? { expandedId: "apps" } : {})}
+        dropTarget={dropping}
         onSelect={(id) => {
-          if (id === "apps") setCreateOpen(true);
+          const app = id.startsWith("app:") ? appList.find((item) => item.id === id.slice(4)) : undefined;
+          if (app) openApp(app);
+          // With no apps to choose from, the apps destination leads straight to making one.
+          else if (id === "apps") { if (appList.length) setLauncher((open) => !open); else setCreateOpen(true); }
           else if (id === "me") openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" });
         }}
       >
@@ -147,6 +162,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           onStartHandled={() => setConversationTarget(undefined)}
         />
         {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={signOut} /> : null}
+        {launcher && appList.length ? <AppLauncher apps={appList} pins={pins} compact={compact} onClose={() => setLauncher(false)}
+          onCreate={() => setCreateOpen(true)} onDropping={setDropping}
+          labels={{ title: zh ? "应用" : "Apps", pin: zh ? "固定" : "Pin", unpin: zh ? "取消固定" : "Unpin", create: zh ? "新建应用" : "Create app",
+            pinned: (count) => zh ? `已固定 ${count}/${maxPinned}` : `${count}/${maxPinned} pinned`,
+            hint: zh ? "左右滑动 · 按住拖到底栏固定" : "Swipe to turn · hold and drag to the bar to pin" }} /> : null}
         <CreateAppScreen
           open={createOpen}
           onCancel={() => setCreateOpen(false)}

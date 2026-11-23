@@ -88,7 +88,7 @@ body {
   transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
 }
 
-.app-switch-item > span {
+.app-switch-label {
   display: none;
 }
 
@@ -101,13 +101,27 @@ body {
   color: var(--c-text);
 }
 
-.app-switch-item[aria-current="page"] > span {
+.app-switch-item[aria-current="page"] > .app-switch-label {
   display: inline;
+}
+
+.app-switch-item[aria-expanded="true"] {
+  color: var(--c-text);
 }
 
 .app-switch-item svg {
   width: 20px;
   height: 20px;
+}
+
+/* Something held over the destinations can be let go there. */
+.app-switch[data-drop] {
+  box-shadow: var(--shadow-glass), 0 0 0 2px var(--c-accent-solid);
+  scale: 1.04;
+}
+
+.app-switch {
+  transition: scale var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
 }
 
 /* Narrow screens: the page takes the whole screen and the destinations float at its foot.

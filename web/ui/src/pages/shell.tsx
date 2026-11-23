@@ -26,6 +26,8 @@ export function AppShell({
   label,
   destinations,
   selectedId,
+  expandedId,
+  dropTarget,
   onSelect,
   children,
   className = "",
@@ -35,6 +37,10 @@ export function AppShell({
   label: string;
   destinations: readonly Destination[];
   selectedId?: string;
+  /** The destination that has opened something over the page (a list to choose from), when one has. */
+  expandedId?: string;
+  /** Whether something held over the destinations would be added to them if let go. */
+  dropTarget?: boolean;
   onSelect(id: string): void;
   children: ReactNode;
   className?: string;
@@ -50,7 +56,7 @@ export function AppShell({
           <span className="app-mark" aria-hidden="true">
             {logo}
           </span>
-          <nav className="app-switch" aria-label={label}>
+          <nav className="app-switch" aria-label={label} data-drop={dropTarget || undefined}>
             {destinations.map((item) => (
               <button
                 key={item.id}
@@ -58,11 +64,12 @@ export function AppShell({
                 className="app-switch-item"
                 data-id={item.id}
                 aria-current={item.id === selectedId ? "page" : undefined}
+                aria-expanded={expandedId === undefined ? undefined : item.id === expandedId}
                 title={item.label}
                 onClick={() => onSelect(item.id)}
               >
                 {item.icon}
-                <span>{item.label}</span>
+                <span className="app-switch-label">{item.label}</span>
               </button>
             ))}
           </nav>
