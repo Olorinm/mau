@@ -8,14 +8,8 @@ export {
 } from "./provider";
 export { AppShell, type Destination } from "./shell";
 export {
-  ItemList,
   ListDetailLayout,
-  PageHeader,
-  DetailPanel,
-  type ListItem,
   CollectionEmptyState,
-  CollaborationTabs,
-  SidebarHeader,
   SearchField,
   LoadingSurface,
   InlineNotice,
@@ -35,12 +29,7 @@ export {
 } from "./files/editor";
 export { type MarkdownEditorSelection } from "./files/code-editor";
 export { MotionMenu, MotionMenuItem } from "./ui/menu";
-export {
-  ProfileDialog,
-  AppCreateForm,
-  AppIdentityEditor,
-  AppSettingsDialog,
-} from "./forms";
+export { ProfileDialog } from "./forms";
 
 export { RoomComposer, type MentionOption } from "./presentation/room-composer";
 export { RoomChatSurface } from "./presentation/room-chat-surface";

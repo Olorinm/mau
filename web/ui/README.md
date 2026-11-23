@@ -72,7 +72,7 @@ native approvals, questions, forms and URL requests without renaming IDs or addi
 
 - `AppShell`: the frame. A mark and the caller's destinations as one capsule: in the middle of a row at the
   top of a wide window, at the foot of a narrow one, where a page marked `data-app-page` puts it away.
-- `ListDetailLayout`, `ItemList`, `PageHeader`, `SearchField`, `CollectionEmptyState`, `LoadingSurface`,
+- `ListDetailLayout`, `SearchField`, `CollectionEmptyState`, `LoadingSurface`,
   `InlineNotice`: list/detail layout with compact back navigation, an inspector slot and empty states.
 - `Conversation`, `RoomHeaderActions`, `MessageFileCard`: room stream, message bubbles, attachments
   and the IME-aware composer. `RunMessage` renders a run's process, approvals, questions and answer.

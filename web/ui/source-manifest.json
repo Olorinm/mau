@@ -92,14 +92,6 @@
       "source": "web/src/components/apps/app-create-wizard.css",
       "sourceSha256": "109848468cc7caa8b5abc37d2ce688db5cb57a80d3f69568c7f7fe8376d15432"
     },
-    "styles/app-settings.module.css": {
-      "source": "web/src/components/apps/app-settings-dialog.module.css",
-      "sourceSha256": "b29ff9c70e31245eb3dc8b3e3e92d1ed1e5052dd6e8be6457d5e2192305d7089"
-    },
-    "styles/app-identity.module.css": {
-      "source": "web/src/components/apps/app-identity-editor.module.css",
-      "sourceSha256": "08699e820cd6e7ece5bc5c8816061e4f30afaf24b68c8082d5c62d2f844b9113"
-    },
     "styles/mounted-app.css": {
       "source": "web/src/components/apps/mounted-app-workbench.css",
       "sourceSha256": "14aa3d789b0e52ab7968369e14b44c9ca89de96a00363d13fac990e796a74030"

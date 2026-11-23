@@ -65,15 +65,6 @@ export async function checkBrowser(url) {
       "profile",
       "A new person",
     ]);
-    await page.getByRole("button", { name: "create", exact: true }).click();
-    await page
-      .getByLabel("App name", { exact: true })
-      .fill("Separate application");
-    await page.getByRole("button", { name: "Create app", exact: true }).click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "app",
-      "Separate application",
-    ]);
     await page.getByRole("button", { name: "builder", exact: true }).click();
     await page.getByPlaceholder("Sample Workbench").fill("Disabled builder");
     const source = page.locator(".app-create-source-field input");
