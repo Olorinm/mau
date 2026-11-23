@@ -1,0 +1,20 @@
+{
+  "stateDirectory": "/home/user/.agent-host-service/state",
+  "workspaceFiles": true,
+  "runtimes": [
+    {"id": "personal", "kernel": "codex", "cwd": "/home/user/workspace"},
+    {
+      "id": "agy",
+      "kernel": "agy",
+      "cwd": "/home/user/workspace",
+      "command": "sh",
+      "args": ["-c", "GEMINI_API_KEY=\"$(cat /home/user/.gemini/api-key)\" AGY_CLI_DISABLE_AUTO_UPDATE=true exec agy acp --dangerously-skip-permissions --disable-telemetry"],
+      "model": "EXAMPLE-MODEL-ID",
+      "effort": "medium",
+      "allowedSettings": {
+        "model": {"values": ["EXAMPLE-MODEL-ID"]},
+        "effort": {"values": ["low", "medium", "high"]}
+      }
+    }
+  ]
+}

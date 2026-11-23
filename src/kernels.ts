@@ -6,6 +6,9 @@ const kernels = {
   /** Codex reports the shell commands it runs to its Host, which is what a connector CLI in the shell relays through. */
   codex: { modelService: "openai", shellRelay: true },
   claude: { modelService: "anthropic", shellRelay: false },
+  /** Google Antigravity (`agy acp`), signed in with a Google account: Gemini through the Cloud Code backend. */
+  agy: { modelService: "google", shellRelay: false },
+  dsh: { modelService: "deepseek", shellRelay: false },
 } as const;
 export type PartnerKernel = keyof typeof kernels;
 export const PARTNER_KERNELS = Object.keys(kernels) as [PartnerKernel, ...PartnerKernel[]];

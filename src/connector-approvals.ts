@@ -21,6 +21,7 @@ export interface ApprovalDesk {
    * has only its text. `choices` are the answers offered when they are not the desk's own approve and deny.
    */
   open(card: { id: string; summary: string; deadlineAt: string; connection?: string; arguments?: unknown; choices?: Array<{ id: string; label: string }> }): Promise<void>;
+  choice?(id: string): Promise<string | undefined>;
   status(id: string): Promise<"pending" | "approved" | "denied" | "expired">;
   withdraw(id: string): Promise<void>;
 }
@@ -171,7 +172,7 @@ export class ConnectorApprovals {
     const callId = syntheticId.slice(APPROVAL_PREFIX.length), id = this.key(runId, callId);
     const choice = z.object({ choice: z.enum(["once", "deny"]) }).passthrough().safeParse(result).data?.choice ?? "deny";
     const record = this.store.get<ApprovalRecord>(collection, id);
-    if (!record) throw new Error("approval_not_found");
+    if (!record || record.desk) throw new Error("approval_not_found");
     if (record.status === "pending")
       this.transition(id, "pending", Date.parse(record.deadlineAt) <= Date.now() ? "expired" : choice === "once" ? "approved" : "denied");
     // Settlement runs outside Router's input handling; calls() awaits it on the next poll.

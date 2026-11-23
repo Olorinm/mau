@@ -27,7 +27,7 @@ const scheduleAdmission = { kind: "schedule" as const, ...principal, reference: 
 const temp = () => { const dir = mkdtempSync(join(tmpdir(), "mau-approvals-")); cleanup.push(() => rmSync(dir, { recursive: true, force: true })); return dir; };
 
 /** Real connector service and token verifier; only HTTP transport is replaced by direct calls. */
-async function fixture(options: { deadlineMs?: number; files?: boolean; partner?: PartnerTools } = {}) {
+async function fixture(options: { deadlineMs?: number; files?: boolean; partner?: PartnerTools; employeeDesk?: ApprovalDesk } = {}) {
   const dir = temp();
   const caller = await generateSigningKey("caller"), authority = await generateSigningKey("authority");
   privateFile(join(dir, "authority.json"), authority.privateJwk);
@@ -123,7 +123,7 @@ async function fixture(options: { deadlineMs?: number; files?: boolean; partner?
       throw new Error("unexpected_request " + path);
     }
   }("https://host.fixture", "host-secret");
-  const hosting = { connections: () => ["browser"], browser: () => ["browser"], approvals: accounts, ...(options.files === false ? {} : { files: async () => files }) };
+  const hosting = { ...(options.employeeDesk ? { employeePermissions: true, employeeDesk: () => options.employeeDesk } : {}), connections: () => ["browser"], browser: () => ["browser"], approvals: accounts, ...(options.files === false ? {} : { files: async () => files }) };
   const make = () => new BusinessHost(http, undefined, store, "agent:binding", reader, principal, options.partner, undefined, hosting);
   const host = make();
   const call = (name: string, args: Record<string, unknown>, id = "call-1") => {
@@ -409,7 +409,7 @@ function desk() {
   };
   const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
     authority: admission => admission.reference === "pm-1" ? { write: true, approvals: value, tool: "partners" } : undefined };
-  return { partner, cards, withdrawn, only: () => [...cards.values()][0]!, answer: (state: "approved" | "denied") => { [...cards.values()][0]!.state = state; }, close: () => { unavailable = true; } };
+  return { partner, value, cards, withdrawn, only: () => [...cards.values()][0]!, answer: (state: "approved" | "denied") => { [...cards.values()][0]!.state = state; }, close: () => { unavailable = true; } };
 }
 
 it("asks the owner where a partner's message came from and runs the write once it is approved there", async () => {
@@ -515,4 +515,18 @@ it("a turn that hands results to their sender asks with a card of its own run, a
   g.call("browser__click", { site: "https://shop.example", ref: "buy" });
   expect(await g.host.calls("run")).toEqual([]);
   expect(g.readerCalls[0]!.options).toBeUndefined(); expect(g.executed).toEqual([]);
+});
+
+it("an employee schedule asks at the lead desk and a denial never reaches the provider", async () => {
+  const lead = desk(), f = await fixture({ employeeDesk: lead.value });
+  await f.start(scheduleAdmission);
+  f.call("browser__click", { site: "https://work.example", ref: "send" });
+  expect(await f.host.calls("run")).toEqual([]);
+  expect(lead.only().card.arguments).toEqual({ site: "https://work.example", ref: "send" });
+  expect(f.executed).toEqual([]);
+  await expect(f.host.resolve("run", "mau-approval:call-1", { choice: "once" })).rejects.toThrow("approval_not_found");
+  lead.answer("denied");
+  await f.host.calls("run"); await f.host.settled("run");
+  expect(f.text()).toMatchObject({ status: "failed", error: "owner_denied" });
+  expect(f.executed).toEqual([]);
 });

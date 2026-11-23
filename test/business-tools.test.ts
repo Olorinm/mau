@@ -57,9 +57,20 @@ it("injects the reviewed tool only with trusted owner admission and resolves it 
   expect(f.submitted().admission).toBeUndefined();
 });
 
+it("prepares the local browser in a sandbox with no connected apps or partner tools before normal native submission", async () => {
+  const f = fixture();
+  const business = new BusinessTools([], tmpdir(), f.store);
+  const sync = vi.fn(async () => undefined);
+  business.setSkills(sync);
+  await business.host("agent", "owner", "binding", f.http).start(input);
+  expect(sync).toHaveBeenCalledWith("agent", "owner", "binding");
+  expect(f.submitted()).toMatchObject({ input: input.input, instructions: input.instructions });
+  expect(f.submitted().tools).toBeUndefined();
+});
+
 it("adds the connector guides to the catalog of an Agent whose kernel has none installed, and to no other", async () => {
   const f = fixture(), read = vi.fn(async (input: { action: string }) => input.action === "tools" ? { status: "completed", tools: [{ name: "mail__gws_read" }, { name: "mail__gws_write" }] } : { status: "completed", result: { output: "ok" } });
-  const apps = { reader: () => read, connections: () => ["mail"], browser: () => [], writable: false } as unknown as ConstructorParameters<typeof BusinessTools>[3];
+  const apps = { reader: () => read, connections: () => ["mail"], browser: () => [], sharedEmployee: () => false, writable: false } as unknown as ConstructorParameters<typeof BusinessTools>[3];
   const business = new BusinessTools([], tmpdir(), f.store, apps);
   const sync = vi.fn(async () => undefined);
   business.setSkills(sync);
@@ -379,4 +390,24 @@ it("admits owner-identity connections only in the owner's private conversation, 
   expect(JSON.parse(g.resolved.at(-1).contentItems[0].text)).toMatchObject({ status: "failed", error: "connected_app_owner_private_only", connection: "alice-feishu",
     message: expect.stringContaining("伙伴之间的消息") });
   expect(read).not.toHaveBeenCalled(); expect(asked).toEqual(["delegation"]);
+});
+
+it("uses the employee assignment on a partner return and preserves explicit grants on a restricted review", async () => {
+  const f = fixture(), read = vi.fn(async () => ({ status: "completed", tools: [{ name: "personal__read" }] }));
+  const partner: PartnerTools = { definitions: [], context: () => undefined, execute: async () => ({}),
+    authority: turn => turn.reference === "pr-result" ? { write: true, tool: "partners" } : undefined };
+  const host = new BusinessHost(f.http, undefined, f.store, "lead", read, principal, partner, undefined,
+    { employeePermissions: true, connections: () => ["personal"], browser: () => [],
+      ownerPrivate: { connections: async () => new Set(["personal"]), admitted: async () => false } });
+  const start = (reference: string) => host.start({ ...input, sessionId: reference === "pr-result" ? "session" : "review", tools, admission: { ...admission, kind: "delegation", reference,
+    toolGrants: { connectedApps: { connections: [], operations: [] } } } });
+  await start("pr-result");
+  f.setCalls("connected_apps", "", { action: "tools" }, "partner-catalog");
+  await host.calls("run");
+  expect(read).toHaveBeenCalledWith({ action: "tools" });
+  read.mockClear();
+  await start("memory-review");
+  f.setCalls("connected_apps", "", { action: "tools" }, "review-catalog", "child-run");
+  await host.calls("child-run");
+  expect(read).toHaveBeenCalledWith({ action: "tools" }, { connections: [], operations: [] });
 });

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { incomingText, returnText, GUIDE, NEXT } from "../src/partner-text.js";
+import { incomingText, returnText, partnerGuide, NEXT } from "../src/partner-text.js";
 import { alice } from "./fixtures/mau.js";
 import { partnersFixture, type Turn } from "./fixtures/partners.js";
 
@@ -30,7 +30,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(hub.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   const trip = await f.until(() => f.partner("korea-trip"), "recruit");
   const work = await f.turnOf(trip.id);
-  expect(seen.roster).toMatchObject({ you: { name: "helper", duty: null }, partners: [], waitingForReplies: [], guide: GUIDE, limits: { waitingMessages: 4 },
+  expect(seen.roster).toMatchObject({ you: { name: "helper", duty: null }, partners: [], waitingForReplies: [], guide: partnerGuide(), limits: { waitingMessages: 4 },
     recruit: { kernels: ["codex"], efforts: ["low", "high"], yours: { kernel: "codex", model: "large", effort: "default" },
       models: [{ id: "large", label: "Large", efforts: ["low", "high"] }, { id: "small", label: "Small", efforts: ["low"] }] } });
   expect(seen.recruit).toMatchObject({ status: "recruited", partner: { name: "korea-trip", duty, kernel: "codex", model: "default", effort: "default" },

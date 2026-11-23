@@ -1,0 +1,36 @@
+{
+  "stateDirectory": "/home/user/.agent-host-service/state",
+  "workspaceFiles": true,
+  "sessionRelayTools": [
+    "connected_apps"
+  ],
+  "runtimes": [
+    {
+      "id": "lead",
+      "kernel": "claude",
+      "cwd": "/home/user/workspace"
+    },
+    {
+      "id": "implementation",
+      "kernel": "codex",
+      "cwd": "/home/user/workspace",
+      "thread": {
+        "approvalPolicy": "on-request",
+        "sandbox": "workspace-write",
+        "config": {
+          "sandbox_workspace_write.network_access": true
+        }
+      }
+    },
+    {
+      "id": "advice",
+      "kernel": "agy",
+      "cwd": "/home/user/workspace",
+      "command": "sh",
+      "args": [
+        "-c",
+        "GEMINI_API_KEY=\"$(cat /home/user/.gemini/api-key)\" AGY_CLI_DISABLE_AUTO_UPDATE=true exec agy acp --dangerously-skip-permissions --disable-telemetry"
+      ]
+    }
+  ]
+}

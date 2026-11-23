@@ -1,0 +1,111 @@
+{
+  "environments": {
+    "configFile": "providers.json",
+    "profiles": [
+      {
+        "id": "shared-team",
+        "label": "Shared team",
+        "owners": [
+          "@owner:mau.example.com"
+        ],
+        "provider": "cloudflare",
+        "template": "node24",
+        "kernel": "claude",
+        "runtimeId": "lead",
+        "hostConfigFile": "cloud/host-four-partners.json",
+        "directory": "/home/user/.agent-host-service",
+        "port": 37420,
+        "lifetimeSeconds": 1800,
+        "onTimeout": "pause",
+        "idlePauseSeconds": 600,
+        "files": [
+          {
+            "source": "cloud/agent-host.tgz",
+            "destination": "/opt/agent-environment/agent-host.tgz"
+          },
+          {
+            "source": "cloud/agent-host.sha256",
+            "destination": "/opt/agent-environment/agent-host.sha256"
+          },
+          {
+            "source": "cloud/mau-sandbox/SKILL.md",
+            "destination": "/opt/agent-environment/mau-sandbox/SKILL.md"
+          },
+          {
+            "source": "cloud/official-skills.tgz",
+            "destination": "/opt/agent-environment/official-skills.tgz"
+          },
+          {
+            "source": "cloud/start-host.sh",
+            "destination": "/opt/agent-environment/start.sh"
+          }
+        ],
+        "anthropicCredentialFile": "private/anthropic-api-key",
+        "githubCredentialFile": "private/github-token",
+        "otherKernels": [
+          {
+            "kernel": "codex",
+            "runtimeId": "implementation",
+            "files": [
+              {
+                "source": "cloud/codex-auth.json",
+                "destination": "/home/user/.codex/auth.json"
+              }
+            ]
+          },
+          {
+            "kernel": "agy",
+            "runtimeId": "advice",
+            "files": [
+              {
+                "source": "cloud/agy-settings.json",
+                "destination": "/home/user/.gemini/antigravity-cli/settings.json"
+              },
+              {
+                "source": "private/gemini-api-key",
+                "destination": "/home/user/.gemini/api-key"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "nativeWork": {
+    "partnerTools": true
+  },
+  "edgeIdentity": {
+    "provider": "cloudflare-access",
+    "teamDomain": "https://example-team.cloudflareaccess.com",
+    "audiences": [
+      "ACCESS_APPLICATION_AUDIENCE_TAG"
+    ],
+    "owners": {
+      "owner@example.com": "@owner:mau.example.com"
+    }
+  },
+  "connectorAccounts": {
+    "url": "http://127.0.0.1:18100",
+    "issuer": "https://router.example.test",
+    "audience": "agent-connectors",
+    "authorityKeyFile": "private/connectors-authority.jwk.json",
+    "consentOrigins": [
+      "https://accounts.google.com",
+      "https://accounts.feishu.cn"
+    ],
+    "runtimeConfigFile": "private/connectors.json"
+  },
+  "connectedApps": {
+    "url": "http://127.0.0.1:18100",
+    "issuer": "https://router.example.test",
+    "audience": "agent-connectors",
+    "callerKeyFile": "private/connectors-caller.jwk.json",
+    "authorization": "employee",
+    "ownerPrivateConnections": [
+      "personal-gmail"
+    ],
+    "browserConnections": [
+      "team-browser"
+    ]
+  }
+}

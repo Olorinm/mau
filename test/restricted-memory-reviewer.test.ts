@@ -5,8 +5,8 @@ import type { MemoryReviewSubmission } from "../src/memory-review.js";
 
 const scope = { owner: "alice", agentId: "original-partner" };
 const signal = () => AbortSignal.timeout(1000);
-function fixture() {
-  const profile = codexReviewProfile({ id: "memory-review", cwd: "/srv/review/workspace", command: "/opt/codex-0.165.0/codex",
+function fixture(version: "0.165.0" | "0.171.0" = "0.171.0") {
+  const profile = codexReviewProfile({ id: "memory-review", cwd: "/srv/review/workspace", command: `/opt/codex-${version}/codex`,
     home: "/srv/review/home", codexHome: "/srv/review/codex" });
   const effective = { config: { model_provider: "review-provider", model_providers: {
     "review-provider": { name: "Dedicated Responses provider", requires_openai_auth: false, wire_api: "responses" },
@@ -14,11 +14,11 @@ function fixture() {
   const sessions = { owner: "alice", agentId: "review-worker", runtimeId: "memory-review",
     submit: vi.fn(async input => ({ eventId: input.eventId, sessionId: input.sessionId, status: "submitted", taskId: "task", answer: "", outcomeUnknown: false })),
     lookup: vi.fn(async () => null), cancel: vi.fn(async () => ({ status: "cancelled" })),
-    discover: vi.fn(async () => ({ native: { initialize: { userAgent: "fixture/0.165.0 (test)" } } })),
+    discover: vi.fn(async () => ({ native: { initialize: { userAgent: `fixture/${version} (test)` } } })),
     host: { nativeRequest: vi.fn(async () => structuredClone(effective)) },
   };
   const binding: ReviewRuntimeBinding = { partner: scope, profile, sessions: sessions as unknown as ReviewRuntimeBinding["sessions"],
-    installed: { profileDigest: reviewProfileDigest(profile), homeIsolation: "dedicated-private", modelCatalog: "bundled-0.165.0",
+    installed: { profileDigest: reviewProfileDigest(profile), homeIsolation: "dedicated-private", modelCatalog: `bundled-${version}`,
       toolBinding: { enforcement: "server-dispatch-allowlist", memory: { scope, tool: "memory", origin: "review", destructiveWrites: "stage-for-owner-approval" },
         skills: { mode: "unavailable" }, allowedTools: ["memory"], otherTools: "denied", delivery: "disabled", recursion: "disabled" } } };
   const resolve = vi.fn(async () => binding), adapter = new CodexRestrictedMemoryReviewer({ resolve });
@@ -33,7 +33,7 @@ async function submission(f: ReturnType<typeof fixture>): Promise<MemoryReviewSu
 }
 
 it("generates a public Host CLI profile with frozen thread policy and no per-turn model permission", () => {
-  const f = fixture(); expect(f.profile).toMatchObject({ command: "/opt/codex-0.165.0/codex", env: { HOME: "/srv/review/home" },
+  const f = fixture(); expect(f.profile).toMatchObject({ command: "/opt/codex-0.171.0/codex", env: { HOME: "/srv/review/home" },
     nativeAccess: { methods: ["config/read"], notifications: [] }, thread: { sandbox: "read-only", approvalPolicy: "never", environments: [] } });
   expect(f.profile).not.toHaveProperty("options"); expect(f.profile).not.toHaveProperty("allowedSettings");
   expect(() => { (CODEX_REVIEW_THREAD.config as any)["features.shell_tool"] = true; }).toThrow();
@@ -77,6 +77,22 @@ it("refuses custom or changing catalogs and unaudited OAuth provider paths", asy
   ]) {
     const f = fixture(); alter(f); expect(await f.adapter.capabilities(scope, signal())).toMatchObject({ status: "unsupported" }); expect(f.sessions.submit).not.toHaveBeenCalled();
   }
+});
+
+it("accepts each audited binary only with its matching bundled model catalog", async () => {
+  const old = fixture("0.165.0"), current = fixture("0.171.0");
+  expect(await old.adapter.capabilities(scope, signal())).toMatchObject({ status: "available" });
+  expect(await current.adapter.capabilities(scope, signal())).toMatchObject({ status: "available" });
+  // Even if the path and configuration are identical, an in-place binary upgrade requires a new proof.
+  old.profile.command = current.profile.command;
+  old.binding.installed.profileDigest = reviewProfileDigest(old.profile);
+  const before = await old.adapter.capabilities(scope, signal());
+  const after = await current.adapter.capabilities(scope, signal());
+  expect(before.status === "available" && after.status === "available" && before.policyId !== after.policyId).toBe(true);
+  current.binding.installed.modelCatalog = "bundled-0.165.0";
+  expect(await current.adapter.capabilities(scope, signal())).toEqual({ status: "unsupported", reason: "review_codex_version_not_audited" });
+  old.binding.installed.modelCatalog = "bundled-0.171.0";
+  expect(await old.adapter.capabilities(scope, signal())).toEqual({ status: "unsupported", reason: "review_codex_version_not_audited" });
 });
 
 it("requires explicit original-partner scope even when the execution worker has a different agent ID", async () => {

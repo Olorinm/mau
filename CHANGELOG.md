@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.64] - 2026-11-23
+
+- Run Claude, Codex and Antigravity employees in one workspace with their own connector assignments and approval routing. DeepSeek Harness is available as another native runtime.
+- Select official Lark and Google skills according to the workspace's connections. Keep the browser skill available for localhost pages and preserve user-authored skills when assignments change.
+- Use gateway-held credentials for Git, GitHub CLI, Claude and DeepSeek. The sandbox browser can test local applications with Chromium.
+- Pin Agent Kit 0.11.0-alpha.14 and include a repeatable native audit for the updated restricted memory reviewer.
+
 ## [0.1.0-alpha.63] - 2026-11-23
 
 - Keep the conversation list beside the active chat on desktop, with last-message previews and unread indicators. On phones, the list, chat and partner profile each get their own screen.

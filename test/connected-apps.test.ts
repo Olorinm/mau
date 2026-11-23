@@ -73,6 +73,16 @@ it("a partner in a shared environment uses the connections of the partner that h
     sharedBy: (agentId: string) => agentId === holder ? [sharer, configured] : [] };
   const apps = new ConnectedApps(options, directory, store, false, sharing);
   assign(apps);
+  expect(apps.environmentAssignments(holder, "alice")).toEqual([
+    { agentId: holder, connections: ["alice-gmail", "alice-browser", "alice-feishu"] },
+    { agentId: sharer, connections: ["alice-gmail", "alice-browser", "alice-feishu"] },
+    { agentId: configured, connections: ["alice-gmail"] },
+  ]);
+  expect(apps.environmentAssignments(holder, "bob")).toEqual([]);
+  const employeeApps = new ConnectedApps({ ...options, authorization: "employee" }, directory, store, false, sharing);
+  employeeApps.assign("alice", foreign, ["outside"]);
+  expect(employeeApps.environmentAssignments(holder, "alice").map(a => a.agentId)).toEqual([holder, configured]);
+  expect(employeeApps.environmentAssignments(holder, "alice").flatMap(a => a.connections)).not.toContain("outside");
   expect(apps.inheritedFrom(sharer, "alice")).toBe(holder);
   expect(apps.inheritedFrom(configured, "alice")).toBeUndefined(); expect(apps.inheritedFrom(holder, "alice")).toBeUndefined();
   expect(apps.inheritedFrom(foreign, "bob")).toBeUndefined();

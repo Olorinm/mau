@@ -47,6 +47,7 @@ export class Source {
   }
   /** `examples/start-host.sh` of the pinned environment package, as `npm ci` installed it. */
   get startHost() { return this.path("node_modules", "@olorinm", "agent-environment", "cloudflare", "examples", "start-host.sh"); }
+  get officialSkills() { return join(this.startHost, "..", "official-skills.tgz"); }
   pin(): Pin { return JSON.parse(readFileSync(this.path("components.json"), "utf8")) as Pin; }
   /** The components whose archive is absent or is not the pinned bytes. */
   staleArchives(pin: Pin) {
