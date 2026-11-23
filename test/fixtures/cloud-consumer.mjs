@@ -222,7 +222,7 @@ try {
   assert.deepEqual(scoutEvents.map(event => [event.role, event.sender.type, event.sender.id]), [["user", "agent", agent.id], ["assistant", "agent", scout.id]]);
   // A reply that was not waited for comes back as a turn of the sender, whose answer goes to the owner's conversation.
   await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-2", text: "partner-orchestrate-later" });
-  const returned = await answered('"results":[');
+  const returned = await answered("later fixture work");
   assert.ok(returned, "the partner's reply did not come back to the owner's conversation");
   assert.match(returned.text, /^Delegated fixture: \{"from":\{"partner":"scout"\},"results":\[\{/);
   assert.match(returned.text, /"to":"scout"/); assert.match(returned.text, /"answer":"Delegated fixture: [^"]*later fixture work"/);
