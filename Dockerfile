@@ -7,7 +7,8 @@ COPY .packages/ .packages/
 RUN npm ci --ignore-scripts --no-audit --no-fund
 RUN npm rebuild @larksuite/cli --ignore-scripts=false
 # npm selects the native browser package for the image platform. Verify the bundled guides offline.
-RUN ./node_modules/.bin/agent-browser --version && ./node_modules/.bin/agent-browser skills get core >/dev/null
+RUN node node_modules/agent-browser/bin/agent-browser.js --version \
+    && node node_modules/agent-browser/bin/agent-browser.js skills get core >/dev/null
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
