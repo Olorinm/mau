@@ -38,7 +38,7 @@ it("deploys everything from two flags, and a second run changes nothing", async 
 
   expect(inventory(f.cloud)).toEqual({
     buckets: ["mau-access-logs", "mau-attachments", "mau-config", "mau-environment-backups", "mau-state"],
-    objects: ["cloud/agent-host.sha256", "cloud/agent-host.tgz", "cloud/codex-auth.json", "cloud/host-profile.json", "cloud/start-host.sh", "gateway-key", "mau.env", "mau.json",
+    objects: ["cloud/agent-host.sha256", "cloud/agent-host.tgz", "cloud/codex-auth.json", "cloud/host-profile.json", "cloud/mau-sandbox/SKILL.md", "cloud/official-skills.tgz", "cloud/start-host.sh", "gateway-key", "mau.env", "mau.json",
       "providers.json", "r2-access-key-id", "r2-secret-access-key"].map((key) => `mau-config/${key}`).concat("mau-environment-backups/artifacts/age-v1.3.2-linux-amd64").sort(),
     tokens: ["mau-container-r2"], policies: ["mau host link enroll", "mau host link socket", "mau liveness", "mau owner"],
     // Beside the owner's login, three paths need none: the liveness probe, and where a computer's Host enrolls and connects.
@@ -56,6 +56,7 @@ it("deploys everything from two flags, and a second run changes nothing", async 
   // The Host archive's manifest names the path the sandbox verifies it at.
   const objects = f.cloud.buckets.get("mau-config")!;
   expect(objects.get("cloud/agent-host.sha256")!.bytes.toString()).toBe(`${sha256(objects.get("cloud/agent-host.tgz")!.bytes)}  /opt/agent-environment/agent-host.tgz\n`);
+  expect(objects.get("cloud/official-skills.tgz")!.bytes.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
   expect(objects.get("cloud/start-host.sh")!.bytes.toString()).toContain("agent-host serve");
 
   const writes = f.cloud.writes.length;

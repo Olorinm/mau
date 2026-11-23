@@ -60,7 +60,7 @@ it("installs skills and relay commands, keeps unmanaged files, removes stale man
   writeFileSync(join(box.bin, "lark-cli"), "#!/bin/sh\necho the owner's own CLI\n");
   const manager = new skills.AgentSkills(apps, () => connections);
   const first = await manager.sync("agent", "owner", "binding", async () => box.files);
-  expect(first).toMatchObject({ skills: ["google-gmail", "feishu"], commands: ["gws", "lark-cli:kept-unmanaged"] });
+  expect(first).toMatchObject({ skills: ["google-gmail", "feishu"], commands: ["gws", "lark-cli:kept-unmanaged", "agent-browser"] });
   const gws = readFileSync(join(box.bin, "gws"), "utf8");
   expect(gws).toContain(`exec node ${JSON.stringify(join(box.root, "relay-cli.js"))} gws "$@"`);
   expect(statSync(join(box.bin, "gws")).mode & 0o777).toBe(0o755);
@@ -83,7 +83,7 @@ it("leaves commands out when the environment's Agent Host has no relay client", 
     connections: () => ["google-gmail"] } as unknown as ConnectedApps;
   const box = sandbox(false);
   const result = await new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "binding", async () => box.files);
-  expect(result).toMatchObject({ skills: ["google-gmail"], commands: [], relay: "relay_client_missing" });
+  expect(result).toMatchObject({ skills: ["google-gmail"], commands: ["agent-browser"], relay: "relay_client_missing" });
   expect(existsSync(join(box.bin, "gws"))).toBe(false);
 });
 
@@ -103,11 +103,11 @@ it("installs the agent-browser guide and Mau's browser client for an assigned br
   expect(readFileSync(join(box.bin, "agent-browser"), "utf8")).toBe(skills.BROWSER_CLIENT);
   expect(statSync(join(box.bin, "agent-browser")).mode & 0o777).toBe(0o755);
   expect(readFileSync(join(box.codex, "skills/agent-browser/SKILL.md"), "utf8")).toContain("Installed by Mau");
-  // Unassigned later: the managed command and guide are removed.
+  // Unassigned later: the guide is removed. The command stays, for the pages the environment serves.
   tools = [];
   const later = await new skills.AgentSkills(apps, () => connections, browserGuide).sync("agent", "owner", "binding", async () => box.files);
-  expect(later).toMatchObject({ removed: ["agent-browser", "agent-browser"] });
-  expect(existsSync(join(box.bin, "agent-browser"))).toBe(false);
+  expect(later).toMatchObject({ commands: ["agent-browser"], removed: ["agent-browser"] });
+  expect(readFileSync(join(box.bin, "agent-browser"), "utf8")).toBe(skills.BROWSER_CLIENT);
 });
 
 it("the browser client forwards the shell's arguments and directory, retries uploads on the write tool and prints saved files", async () => {
@@ -130,7 +130,7 @@ it("the browser client forwards the shell's arguments and directory, retries upl
   try {
     const port = (server.address() as { port: number }).port;
     const run = (args: string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>(done => {
-      execFile(process.execPath, [client, ...args], { cwd: root, env: { PATH: process.env.PATH, AGENT_HOST_RELAY_URL: `http://127.0.0.1:${port}`, CODEX_THREAD_ID: "thread", CODEX_TOOL_CALL_ID: "call" } },
+      execFile(process.execPath, [client, ...args], { cwd: root, env: { PATH: process.env.PATH, HOME: root, AGENT_HOST_RELAY_URL: `http://127.0.0.1:${port}`, CODEX_THREAD_ID: "thread", CODEX_TOOL_CALL_ID: "call" } },
         (error, stdout, stderr) => done({ code: error ? (error as any).code ?? 1 : 0, stdout, stderr }));
     });
     expect(await run(["screenshot", "page.png"])).toEqual({ code: 0, stdout: "✓ Screenshot saved to page.png\nsaved: /workspace/browser_downloads/1234abcd-page.png\n", stderr: "" });
@@ -143,15 +143,87 @@ it("the browser client forwards the shell's arguments and directory, retries upl
   } finally { server.close(); }
 });
 
+it("the browser client opens pages of the environment in the environment's own browser and everything else in the owner's", async () => {
+  const root = mkdtempSync(join(tmpdir(), "mau-browser-route-")); roots.push(root);
+  const client = join(root, "agent-browser"); writeFileSync(client, skills.BROWSER_CLIENT, { mode: 0o755 });
+  // A stand-in for the official CLI: records its arguments and session, and fails where asked to.
+  const local = join(root, "local"), log = join(root, "local.log");
+  writeFileSync(local, `#!/bin/sh\necho "$AGENT_BROWSER_SESSION $*" >> ${JSON.stringify(log)}\necho "local: $*"\n[ "$1" = click ] && exit 3\ncase "$*" in *fail*) exit 3;; esac\nexit 0\n`, { mode: 0o755 });
+  const remote: string[][] = [];
+  const server = createServer((req, res) => {
+    let body = ""; req.on("data", chunk => body += chunk); req.on("end", () => {
+      const input = JSON.parse(body).input, reply = (value: unknown) => res.end(JSON.stringify({ result: { success: true, contentItems: [{ type: "inputText", text: JSON.stringify(value) }] } }));
+      if (input.action === "tools") return reply({ status: "completed", tools: [{ name: "coco_browser__agent_browser_read" }] });
+      if (input.arguments.args.includes("https://refused.example/")) return reply({ status: "failed", error: "browser_site_denied" });
+      remote.push(input.arguments.args); reply({ status: "completed", result: { exitCode: 0, output: "remote: " + input.arguments.args.join(" ") } });
+    });
+  });
+  await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
+  try {
+    const port = (server.address() as { port: number }).port;
+    const exec = (args: string[], env: Record<string, string>) => new Promise<{ code: number | null; stdout: string; stderr: string }>(done => {
+      execFile(process.execPath, [client, ...args], { cwd: root, env: { PATH: process.env.PATH, HOME: root, ...env } },
+        (error, stdout, stderr) => done({ code: error ? (error as any).code ?? 1 : 0, stdout, stderr }));
+    });
+    const run = async (args: string[], env: Record<string, string> = { CODEX_THREAD_ID: "thread-1", CODEX_TOOL_CALL_ID: "call" }) => {
+      const { code, stdout } = await exec(args, { AGENT_HOST_RELAY_URL: `http://127.0.0.1:${port}`, MAU_LOCAL_BROWSER: local, ...env });
+      return { code, stdout };
+    };
+    // Nothing opened yet: the owner's browser, as before.
+    expect(await run(["snapshot", "-i"])).toEqual({ code: 0, stdout: "remote: snapshot -i\n" });
+    // A page served here goes to the environment's browser with the same arguments, and the commands after it follow.
+    expect(await run(["open", "http://localhost:3000/pricing"])).toEqual({ code: 0, stdout: "local: open http://localhost:3000/pricing\n" });
+    expect(await run(["snapshot", "-i"])).toEqual({ code: 0, stdout: "local: snapshot -i\n" });
+    expect(await run(["click", "@e2"])).toMatchObject({ code: 3 });
+    for (const target of ["localhost:5173", "http://127.0.0.1:8080/", "http://[::1]:3000/", "http://app.localhost/", "http://0.0.0.0:3000/"])
+      expect(await (await run(["--json", "open", target])).stdout, target).toBe(`local: --json open ${target}\n`);
+    expect((await run(["tab", "new", "http://localhost:3000/b"])).stdout).toBe("local: tab new http://localhost:3000/b\n");
+    // A page that did not open moves nothing: the commands after it stay with the page that is open.
+    expect((await run(["open", "https://refused.example/"])).code).toBe(1);
+    expect((await run(["snapshot"])).stdout).toBe("local: snapshot\n");
+    expect((await run(["open", "https://example.com/"])).stdout).toBe("remote: open https://example.com/\n");
+    expect((await run(["open", "http://localhost:9/fail"])).code).toBe(3);
+    expect((await run(["snapshot"])).stdout).toBe("remote: snapshot\n");
+    // Another site switches back, and so does closing the environment's browser.
+    for (const target of ["https://example.com/", "example.com", "https://localhost.example.com/", "https://notlocalhost/", "https://127.example.test/", "http://10.0.0.5/", "file:///etc/passwd"]) {
+      expect((await run(["open", "http://localhost:3000/"])).stdout).toContain("local:");
+      expect((await run(["open", target])).stdout, target).toBe(`remote: open ${target}\n`);
+      expect((await run(["snapshot"])).stdout).toBe("remote: snapshot\n");
+    }
+    expect((await run(["open", "http://localhost:3000/"])).stdout).toContain("local:");
+    expect((await run(["close"])).stdout).toBe("local: close\n");
+    expect((await run(["snapshot"])).stdout).toBe("remote: snapshot\n");
+    expect(remote.at(-1)).toEqual(["snapshot"]);
+    // Each Codex conversation has its own session there; a partner whose kernel does not relay shares one and needs no relay.
+    expect(await run(["open", "http://localhost:3000/"], {})).toEqual({ code: 0, stdout: "local: open http://localhost:3000/\n" });
+    expect(await run(["get", "title"], {})).toEqual({ code: 0, stdout: "local: get title\n" });
+    expect((await run(["snapshot"])).stdout).toBe("remote: snapshot\n");
+    const sessionNames = new Set(readFileSync(log, "utf8").trim().split("\n").map(line => line.split(" ")[0]));
+    expect(sessionNames.size).toBe(2);
+    for (const name of sessionNames) expect(name).toMatch(/^mau-[a-f0-9]{32}$/);
+    expect((await run(["skills", "get", "core"], {})).stdout).toBe("local: skills get core\n");
+    // The browser is installed in the background after an environment's first start.
+    const early = await exec(["open", "http://localhost:3000/"], { MAU_LOCAL_BROWSER: join(root, "missing") });
+    expect([early.code, early.stderr]).toEqual([75, expect.stringContaining("try again in a few minutes")]);
+  } finally { server.close(); }
+});
+
 it("installs nothing for a kernel whose shell does not relay, and gives it the same guides with the tool", async () => {
   let calls = 0;
   const apps = { reader: () => async () => { calls++; return { status: "completed", tools: [{ name: "google_gmail__gws_read" }] }; },
     connections: () => ["google-gmail", "work-feishu"] } as unknown as ConnectedApps;
   const box = sandbox(true), manager = new skills.AgentSkills(apps, () => connections);
   // A run on such a kernel reads no catalog and writes no file: the commands in the shell would not work for it.
-  expect(await manager.install("claude", "agent", "owner", "binding", async () => box.files)).toBeUndefined();
+  // What a Codex partner of the same environment has there stays as it is.
+  mkdirSync(join(box.codex, "skills/google-gmail"), { recursive: true });
+  writeFileSync(join(box.codex, "skills/google-gmail/SKILL.md"), "Installed by Mau\n"); writeFileSync(join(box.bin, "gws"), "#!/bin/sh\n# Installed by Mau\n");
+  expect(await manager.install("claude", "agent", "owner", "binding", async () => box.files)).toMatchObject({ commands: ["agent-browser"], skills: [], removed: [] });
+  // Once per environment: a later run, also of another such kernel, writes nothing again.
+  expect(await manager.install("agy", "agent", "owner", "binding", async () => box.files)).toBeUndefined();
   expect(await manager.install(undefined, "agent", "owner", "binding", async () => box.files)).toBeUndefined();
-  expect([calls, existsSync(join(box.codex, "skills")), existsSync(join(box.bin, "gws"))]).toEqual([0, false, false]);
+  // No catalog is read. Only the command for the environment's own pages is installed, which needs no connection.
+  expect([calls, existsSync(join(box.codex, "skills/google-gmail/SKILL.md")), existsSync(join(box.bin, "gws"))]).toEqual([0, true, true]);
+  expect(readFileSync(join(box.bin, "agent-browser"), "utf8")).toBe(skills.BROWSER_CLIENT);
   // Its catalog carries the guide of each connection whose CLI tools it lists, with the tools that run the command.
   const guides = manager.toolGuides("claude")!;
   expect(guides(["google_gmail__gws_read", "google_gmail__gws_write", "google_gmail__get_thread", "work_feishu__cli_read", "coco_browser__handoff_start", "drive__gws_read"])).toEqual({
@@ -162,10 +234,12 @@ it("installs nothing for a kernel whose shell does not relay, and gives it the s
   expect(skills.TOOL_GUIDES).toBe("Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
     "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
     "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. " +
-    "Where a guide says to run something in your shell, it means this.");
+    "Where a guide says to run something in your shell, it means this. " +
+    "One exception: a page your own environment serves (localhost) is not reachable through this tool. Open it in your shell with `agent-browser open http://localhost:PORT`; " +
+    "it opens in a browser inside the environment, and `agent-browser snapshot`, `click` and the rest follow there as usual.");
   // A kernel whose shell relays is installed for, as before, and its catalog carries no guides.
   expect(manager.toolGuides("codex")).toBeUndefined();
-  expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toMatchObject({ skills: ["google-gmail"], commands: ["gws"] });
+  expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toMatchObject({ skills: ["google-gmail"], commands: ["gws", "agent-browser"] });
   expect(existsSync(join(box.bin, "gws"))).toBe(true);
   expect(box.writes()).toBe(0);
 });
@@ -189,4 +263,17 @@ it("refuses symlinks for .codex, skills directory, skill subdirectories and SKIL
   symlinkSync(secret, join(box3.codex, "skills/google-gmail/SKILL.md"));
   await expect(new skills.AgentSkills(apps, () => connections).sync("agent", "owner", "b3", async () => box3.files)).rejects.toThrow("agent_skills_install_failed");
   expect(readFileSync(secret, "utf8")).toBe("keep-me");
+});
+
+it("installs the same commands once for a shared employee sandbox independently of account assignment", async () => {
+  const box = sandbox(true);
+  const apps = { employeePermissions: true, reader: () => { throw new Error("no assignment needed for command installation"); } } as unknown as ConnectedApps;
+  const manager = new skills.AgentSkills(apps, () => []);
+  expect(await manager.install("claude", "lead", "binding-owner", "shared", async () => box.files)).toMatchObject({
+    commands: ["gws", "lark-cli", "agent-browser"],
+  });
+  for (const kernel of ["codex", "agy", "dsh"]) {
+    expect(manager.toolGuides(kernel)).toBeUndefined();
+    expect(await manager.install(kernel, "employee", "binding-owner", "shared", async () => box.files)).toBeUndefined();
+  }
 });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { connectorGuide, type ConnectorGuide } from "@olorinm/agent-connectors/guides";
 import type { ConnectedApps } from "./connected-apps.js";
 import type { SandboxFiles } from "./browser-relay.js";
-import { shellRelay } from "./kernels.js";
+import { sessionShell, shellRelay } from "./kernels.js";
 
 /**
  * How an Agent learns the connectors assigned to it. Each connector ships a guide written around its official CLI.
@@ -19,38 +19,99 @@ const MARKER = "Installed by Mau";
 // Connector tool prefix behind each CLI command (`<prefix>_read` / `<prefix>_write`; see agent-host-relay).
 const prefixes: Record<string, string> = { gws: "gws", "lark-cli": "cli", "agent-browser": "agent_browser" };
 const COMMANDS = Object.keys(prefixes);
+/** Installed in every environment: it also opens the pages the environment serves, which needs no connection. */
+const ALWAYS = ["agent-browser"];
 
 /**
  * `agent-browser` in the sandbox. Like agent-host-relay it forwards the shell command's arguments to the connector
  * through Agent Host's /v1/relay, retrying a command the connector classifies as a write on the write tool, which
  * asks the owner. It also passes its directory, so upload paths resolve as in a shell, and prints saved file paths.
+ *
+ * The owner's browser runs outside the environment and cannot reach what the environment serves. A page of the
+ * environment itself (localhost) therefore goes to the unmodified agent-browser CLI the environment's start script
+ * installs with its own Chromium, with the same arguments: the command that opens a page decides by its address, and
+ * the commands after it follow until another page has opened. That browser needs no connection and no relay, so the
+ * command is installed in every environment, whatever the kernel and whether or not a browser is connected.
  */
 export const BROWSER_CLIENT = `#!/usr/bin/env node
-// ${MARKER}: runs agent-browser in the owner's remote browser through Mau (Agent Host relay).
+// ${MARKER}: agent-browser for pages of this environment (its own browser) and for other sites (the owner's remote browser, through Agent Host's relay).
 "use strict";
+const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
 const fail = (message, code = 2) => { process.stderr.write(message + "\\n"); process.exit(code); };
 const url = process.env.AGENT_HOST_RELAY_URL || "http://127.0.0.1:37420";
+// Pages this environment serves open in the environment's own browser: the official CLI, installed by its start script.
+const LOCAL = process.env.MAU_LOCAL_BROWSER || "/opt/local-browser/agent-browser";
+// Relay identities are defined by the installed Host, shared with lark-cli and gws.
+const hostRequire = require("node:module").createRequire(${JSON.stringify(RELAY_CLIENT)});
+let identity;
+try {
+  const { relayIdentity } = hostRequire("@olorinm/agent-host/relay-session");
+  identity = relayIdentity(process.env);
+} catch (error) {
+  if (!["MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED"].includes(error.code)) fail(error.message);
+  if (process.env.CODEX_THREAD_ID && process.env.CODEX_TOOL_CALL_ID)
+    identity = { threadId: process.env.CODEX_THREAD_ID, callId: process.env.CODEX_TOOL_CALL_ID };
+}
+const args = process.argv.slice(2);
+const valueFlags = new Set("--session --namespace --idle-timeout --headers --executable-path --extension --init-script --enable --cdp --cdp-headers --profile --state --proxy --proxy-bypass --args --user-agent -p --provider --ca-cert --device --session-name --color-scheme --download-path --max-output --allowed-domains --action-policy --confirm-actions --engine --input-mode --screenshot-dir --screenshot-quality --screenshot-format --model --config --restore-check-url --restore-check-text --restore-check-fn".split(" "));
+const words = [];
+let label = process.env.AGENT_BROWSER_SESSION || "";
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (valueFlags.has(arg)) { const value = args[++i]; if (arg === "--session") label = value || ""; }
+  else if (!arg.startsWith("-")) words.push(arg);
+}
+const key = identity ? [identity.kernel || "codex", identity.threadId, label] : ["local", label];
+const session = "mau-" + require("node:crypto").createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 32);
+const mark = path.join(os.homedir(), ".agent-browser", "local-" + session);
+function served(value) {
+  try {
+    const target = new URL(/^[a-z][a-z0-9+.-]*:\\/\\//i.test(value) ? value : "http://" + value), host = target.hostname.toLowerCase();
+    return /^https?:$/.test(target.protocol) && (host === "localhost" || host.endsWith(".localhost") || (require("node:net").isIPv4(host) && host.startsWith("127.")) || host === "[::1]" || host === "0.0.0.0");
+  } catch { return false; }
+}
+function opened() {
+  return ["open", "goto", "navigate"].includes(words[0]) ? words[1] : words[0] === "tab" && words[1] === "new" ? words[2] : undefined;
+}
+/** Where the commands that name no page go from now on. Only a page that did open moves them. */
+function remember(local) {
+  try {
+    if (local) { fs.mkdirSync(path.dirname(mark), { recursive: true }); fs.writeFileSync(mark, ""); } else fs.rmSync(mark, { force: true });
+  } catch {}
+}
+function runHere(args, target) {
+  if (!fs.existsSync(LOCAL)) fail("The browser for pages of this environment is not installed here. It is installed in the background after the environment's first start; try again in a few minutes.", 75);
+  const run = require("node:child_process").spawnSync(LOCAL, args, { stdio: "inherit", env: { ...process.env, AGENT_BROWSER_SESSION: session } });
+  if (run.error) fail(run.error.message, 1);
+  if (run.status === 0 && target !== undefined) remember(true);
+  if (run.status === 0 && words[0] === "close") remember(false);
+  process.exit(run.status === null ? 1 : run.status);
+}
 async function relay(input) {
   const response = await fetch(new URL("/v1/relay", url), { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ threadId: process.env.CODEX_THREAD_ID, callId: process.env.CODEX_TOOL_CALL_ID, tool: "connected_apps", input }) });
+    body: JSON.stringify({ ...identity, tool: "connected_apps", input }) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) fail("relay refused: " + (body.error || response.status));
+  if (!body.result?.success) fail(body.result?.contentItems?.map(item => item.text).join(" ") || "connector call failed", 1);
   const text = ((body.result && body.result.contentItems) || []).map((item) => item.text || "").join("");
   try { return JSON.parse(text); } catch { return text; }
 }
 async function main() {
-  const args = process.argv.slice(2);
   if (!args.length) fail("usage: agent-browser <command> [args...]; start with: agent-browser skills get core");
-  if (!process.env.CODEX_THREAD_ID || !process.env.CODEX_TOOL_CALL_ID) fail("agent-browser runs through the owner's browser connection in Mau; call it from the Agent's shell.");
+  const target = opened();
+  if (words[0] === "skills" || args.includes("--help") || args.includes("--version")) runHere(args);
+  if (target === undefined ? fs.existsSync(mark) : served(target)) runHere(args, target);
+  const LOCAL_HINT = " A page this environment serves opens here without it: agent-browser open http://localhost:PORT";
+  if (!identity) fail("Other sites open in the owner's browser in Mau, which this shell does not reach: use the connected_apps tool for them." + LOCAL_HINT);
   const catalog = JSON.stringify(await relay({ action: "tools" }));
   const names = [...new Set([...catalog.matchAll(/"name":"([A-Za-z0-9_-]+__agent_browser)_read"/g)].map((match) => match[1]))];
-  if (!names.length) fail("agent-browser is not connected for this Agent here. Ask the owner to connect a browser in Mau.");
+  if (!names.length) fail("No browser for other sites is connected for this Agent. Ask the owner to connect a browser in Mau." + LOCAL_HINT);
   if (names.length > 1) fail("agent-browser has several browser connections (" + names.join(", ") + "); this command supports one.");
   const call = (mode) => relay({ action: "call", name: names[0] + "_" + mode, arguments: { args, cwd: process.cwd() } });
   let outcome = await call("read");
   // upload is a write: the connector refuses it on the read tool and the owner approves it on the write tool.
-  if (/_command_requires_write_tool\\b/.test(JSON.stringify(outcome))) outcome = await call("write");
-  if (typeof outcome === "string") { process.stdout.write(outcome.endsWith("\\n") ? outcome : outcome + "\\n"); return; }
+  if (outcome?.status === "failed" && outcome.error === "agent_browser_command_requires_write_tool") outcome = await call("write");
+  if (typeof outcome === "string") { if (target !== undefined) remember(false); process.stdout.write(outcome.endsWith("\\n") ? outcome : outcome + "\\n"); return; }
   if (outcome && outcome.status && outcome.status !== "completed") {
     const detail = outcome.detail && typeof outcome.detail === "object" ? outcome.detail : undefined;
     if (detail && typeof detail.output === "string") process.stderr.write(detail.output + "\\n");
@@ -58,6 +119,7 @@ async function main() {
     process.exitCode = detail && Number.isInteger(detail.exitCode) && detail.exitCode > 0 ? detail.exitCode : 1;
     return;
   }
+  if (target !== undefined) remember(false);
   const result = (outcome && outcome.result) || outcome || {};
   const output = typeof result.output === "string" ? result.output : JSON.stringify(result, null, 2);
   if (output) process.stdout.write(output.endsWith("\\n") ? output : output + "\\n");
@@ -93,7 +155,8 @@ export function planSkills(connections: ConnectionSummary[], assigned: string[],
 /** What the `connected_apps` catalog says above the guides it carries. */
 export const TOOL_GUIDES = "Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
   "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
-  "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this.";
+  "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this. " +
+  "One exception: a page your own environment serves (localhost) is not reachable through this tool. Open it in your shell with `agent-browser open http://localhost:PORT`; it opens in a browser inside the environment, and `agent-browser snapshot`, `click` and the rest follow there as usual.";
 /**
  * The guides of the connections whose CLI tools a catalog offers, for a turn whose kernel has no relay commands: each
  * with the tools that run its command.
@@ -142,29 +205,33 @@ const writeAtomic = (file, content, mode) => {
     throw error;
   }
 };
-let owner;
-try { owner = fs.lstatSync(home); } catch (error) {
-  if (error && error.code === "ENOENT") { console.log(JSON.stringify({ skipped: "codex_home_missing" })); process.exit(0); }
-  throw error;
-}
-if (!owner.isDirectory()) throw new Error("codex_home_not_directory");
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-if (isRoot && owner.uid === 0) throw new Error("codex_home_owned_by_root");
 const result = { skills: [], commands: [], removed: [] };
-// Step 1: manage relay commands in binDirectory before dropping privileges.
+// Step 1: manage the commands in binDirectory before dropping privileges. A command of plan.always needs no relay
+// client and no connection, and is there whatever the kernel.
 if (!fs.lstatSync(plan.binDirectory).isDirectory()) throw new Error("bin_directory_invalid");
 const relay = plan.relayClient, available = fs.existsSync(relay);
 for (const command of plan.known) {
   if (!safeName(command)) throw new Error("command_name_invalid");
   const file = path.join(plan.binDirectory, command), existing = readNoFollow(file);
   const managed = existing !== undefined && existing.includes(marker);
-  if (plan.commands.includes(command) && available) {
+  const always = plan.always.includes(command);
+  if (always || (plan.commands.includes(command) && available)) {
     if (existing !== undefined && !managed) { result.commands.push(command + ":kept-unmanaged"); continue; }
     const script = plan.clients[command] ?? "#!/bin/sh\\n# " + marker + ": runs " + command + " through the owner's connector in Mau (agent-host-relay).\\nexec node " + JSON.stringify(relay) + " " + command + " \\"$@\\"\\n";
-    writeAtomic(file, script, 0o755); result.commands.push(command);
-  } else if (managed) { fs.unlinkSync(file); result.removed.push(command); }
+    if (existing !== script) writeAtomic(file, script, 0o755);
+    result.commands.push(command);
+  } else if (managed && !plan.commandsOnly) { fs.unlinkSync(file); result.removed.push(command); }
 }
 if (!available) result.relay = "relay_client_missing";
+if (plan.commandsOnly) { console.log(JSON.stringify(result)); process.exit(0); }
+let owner;
+try { owner = fs.lstatSync(home); } catch (error) {
+  if (error && error.code === "ENOENT") { console.log(JSON.stringify({ ...result, skipped: "codex_home_missing" })); process.exit(0); }
+  throw error;
+}
+if (!owner.isDirectory()) throw new Error("codex_home_not_directory");
+if (isRoot && owner.uid === 0) throw new Error("codex_home_owned_by_root");
 // Step 2: permanently drop privileges to the .codex owner before touching any user-controlled path.
 if (isRoot) {
   if (typeof process.setgroups === "function") process.setgroups([owner.gid]);
@@ -210,32 +277,45 @@ export class AgentSkills {
    * `agentId` (the partner that has the environment) are installed in it. For another kernel nothing is installed.
    */
   async install(kernel: string | undefined, agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
-    return shellRelay(kernel) ? this.sync(agentId, owner, binding, files) : undefined;
+    // In a shared sandbox the commands are common files. Host and the connector resolve the
+    // employee and their current assignment separately on every invocation.
+    if (this.apps.employeePermissions) return this.run(`shared:${binding}`, { skills: [], commands: COMMANDS }, true, files);
+    return shellRelay(kernel) ? this.sync(agentId, owner, binding, files) : this.run(`${agentId}:${binding}:commands`, { skills: [], commands: [] }, true, files);
   }
   /** For an Agent on a kernel without relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
   toolGuides(kernel: string | undefined) {
-    return shellRelay(kernel) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
+    return (this.apps.employeePermissions ? sessionShell(kernel) : shellRelay(kernel)) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
   }
   /** Idempotent; repeats only when the plan for this environment binding changes. */
   async sync(agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
-    const reader = this.apps.reader(agentId, owner);
-    if (!reader) return undefined;
+    const reader = this.apps.reader(agentId, owner), key = `${agentId}:${binding}`;
+    // No connection at all: the commands every environment has, and the skills left as they are.
+    if (!reader) return this.run(`${key}:commands`, { skills: [], commands: [] }, true, files);
     // The catalog read is cheap but not free; check each environment at most every ten minutes.
-    const key = `${agentId}:${binding}`, now = Date.now();
+    const now = Date.now();
     if (now - (this.checked.get(key) ?? 0) < 600_000) return undefined;
     this.checked.set(key, now);
     const catalog = await reader({ action: "tools" }) as { status?: string; tools?: Array<{ name?: unknown }> };
     if (catalog?.status !== "completed") return undefined;
     const tools = (catalog.tools ?? []).map(tool => String(tool.name ?? ""));
     const plan = planSkills(this.connections(), this.apps.connections(agentId, owner), tools, this.guides);
-    const payload = JSON.stringify({ ...plan, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT,
-      known: COMMANDS, clients: { "agent-browser": BROWSER_CLIENT } });
+    try { return await this.run(key, plan, false, files); }
+    catch (error) { this.checked.delete(key); throw error; }
+  }
+  /**
+   * Writes a plan into the environment, once per plan. `commandsOnly` installs the commands every environment has
+   * (`agent-browser`, for the pages the environment serves) and touches neither the skills nor the other commands,
+   * which belong to the plan of a Codex partner there.
+   */
+  private async run(key: string, plan: SkillPlan, commandsOnly: boolean, files: () => Promise<SandboxFiles>) {
+    const payload = JSON.stringify({ ...plan, commandsOnly, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT,
+      known: COMMANDS, always: ALWAYS, clients: { "agent-browser": BROWSER_CLIENT } });
     const digest = createHash("sha256").update(payload).digest("hex");
     if (this.synced.get(key) === digest) return undefined;
     const sandbox = await files(), encoded = Buffer.from(payload, "utf8").toString("base64"), chunks: string[] = [];
     for (let offset = 0; offset < encoded.length; offset += 32_768) chunks.push(encoded.slice(offset, offset + 32_768));
     const run = await sandbox.exec(["node", "-e", installer, "--", ...chunks]);
-    if (run.exitCode !== 0) { this.checked.delete(key); throw new Error("agent_skills_install_failed"); }
+    if (run.exitCode !== 0) throw new Error("agent_skills_install_failed");
     this.synced.set(key, digest);
     return JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
   }

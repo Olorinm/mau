@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DurableStore } from "../src/store.js";
@@ -528,3 +528,181 @@ it("fails before creating a managed environment when a configured login cannot b
   expect(f.creates).toBe(0);
   expect(f.provider.putModelCredential).not.toHaveBeenCalled();
 });
+
+/** A fixture whose profile offers Antigravity with its settings file and a Gemini API key file among that kernel's files. */
+const agyFixture = async (key = "AIza-fixture-owner-key\n") => {
+  const f = await mauFixture(cleanup, { runtimes: { agy: { kernel: "agy" } }, profile: { otherKernels: [{ kernel: "agy", runtimeId: "agy" }] } });
+  const keyFile = join(f.directory, "gemini-api-key"), settings = join(f.directory, "agy-settings.json");
+  writeFileSync(keyFile, key, { mode: 0o600 }); writeFileSync(settings, JSON.stringify({ modelProvider: "gemini" }), { mode: 0o600 });
+  f.mau.environments.options.profiles[0]!.otherKernels[0]!.files.push(
+    { source: settings, destination: "/home/user/.gemini/antigravity-cli/settings.json" }, { source: keyFile, destination: "/home/user/.gemini/api-key" });
+  const created: unknown[] = [], resumed: unknown[] = [];
+  const create = f.provider.create.bind(f.provider), resume = f.provider.resume.bind(f.provider);
+  f.provider.create = (input) => { created.push(input); return create(input); };
+  f.provider.resume = (id, seconds, options) => { resumed.push(options); return resume(id, seconds, options); };
+  const text = (value: string | Uint8Array | undefined) => value === undefined ? undefined : Buffer.from(value).toString();
+  const guest = () => [...f.cloud.values()][0]!.files;
+  return { f, keyFile, settings, created, resumed, text, guest, id: "gemini-" + createHash("sha256").update(keyFile).digest("hex") };
+};
+/** A provider gateway that holds model credentials: what was stored, in order. */
+const holding = (f: Awaited<ReturnType<typeof fixture>>) => {
+  const stored: Array<{ id: string; input: unknown; options: unknown }> = [];
+  f.provider.putModelCredential = async (id, input, options) => {
+    stored.push({ id, input, options });
+    return { id, service: input.service, mode: input.mode, renewable: false, updatedAt: new Date().toISOString() };
+  };
+  return stored;
+};
+
+it("hands the Gemini API key of an Antigravity kernel to the gateway and leaves a placeholder in the sandbox", async () => {
+  const { f, keyFile, settings, created, resumed, text, guest, id } = await agyFixture();
+  const stored = holding(f);
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  // Stored under the key file's ID, the surrounding whitespace of the file removed, replacing what was there.
+  expect(stored).toEqual([{ id, input: { service: "google", mode: "api_key", apiKey: "AIza-fixture-owner-key" }, options: undefined }]);
+  expect(created[0]).toMatchObject({ modelServices: ["openai", "google"], modelCredentials: { google: id } });
+  expect(created[0]).not.toHaveProperty("codexAuthUsers");
+  expect(created[0]).not.toHaveProperty("modelAccounts");
+  // The file the runtime's command reads holds a placeholder; the kernel's other files arrive as they are.
+  expect(text(guest().get("/home/user/.gemini/api-key"))).toBe("gateway-managed\n");
+  expect(text(guest().get("/home/user/.gemini/antigravity-cli/settings.json"))).toBe(readFileSync(settings, "utf8"));
+  expect([...guest().values()].some(value => text(value)!.includes("AIza-fixture-owner-key"))).toBe(false);
+
+  // A rotated key reaches the gateway at the next resume, under the same ID. An environment made before the gateway
+  // held the key still has it in its files: the resume replaces it.
+  writeFileSync(keyFile, "AIza-fixture-rotated-key\n");
+  guest().set("/home/user/.gemini/api-key", "AIza-fixture-owner-key\n");
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(stored).toHaveLength(2);
+  expect(stored[1]).toEqual({ id, input: { service: "google", mode: "api_key", apiKey: "AIza-fixture-rotated-key" }, options: undefined });
+  expect(resumed[0]).toMatchObject({ modelServices: ["openai", "google"], modelCredentials: { google: id } });
+  expect(resumed[0]).not.toHaveProperty("codexAuthUsers");
+  expect(text(guest().get("/home/user/.gemini/api-key"))).toBe("gateway-managed\n");
+  expect([...guest().values()].some(value => /AIza-fixture-(owner|rotated)-key/.test(text(value)!))).toBe(false);
+}, 60_000);
+
+it("holds a Codex sign-in and a Gemini API key of one profile side by side", async () => {
+  const { f, created, text, guest, id } = await agyFixture();
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const accessToken = `${b64({ alg: "RS256" })}.${b64({ exp: 2_000_000_000, "https://api.openai.com/auth": { chatgpt_account_id: "acct-owner-1" } })}.real-sig`;
+  const authPath = join(f.directory, "codex-auth.json");
+  writeFileSync(authPath, JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: accessToken, refresh_token: "rt_super_secret", account_id: "acct-owner-1" } }), { mode: 0o600 });
+  f.mau.environments.options.profiles[0]!.files.push({ source: authPath, destination: "/home/user/.codex/auth.json" });
+  const stored = holding(f), codexId = "codex-" + createHash("sha256").update(authPath).digest("hex");
+  const put = f.provider.putModelCredential!;
+  f.provider.putModelCredential = async (key, input, options) => ({ ...await put(key, input, options), ...(input.service === "openai" ? { accountId: "acct-owner-1" } : {}) });
+  f.provider.getModelCredential = async () => null;
+  f.provider.prepareCodexAuth = async () => {};
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  // Each under its own service and ID; only the sign-in, which the gateway renews, is kept when it is already there.
+  expect(stored.map(({ id, input, options }) => [id, (input as { service: string }).service, options])).toEqual([[codexId, "openai", { ifAbsent: true }], [id, "google", undefined]]);
+  expect(created[0]).toMatchObject({ modelServices: ["openai", "google"], modelAccounts: { openai: ["acct-owner-1"] },
+    modelCredentials: { openai: codexId, google: id }, codexAuthUsers: ["user"] });
+  expect(guest().has("/home/user/.codex/auth.json")).toBe(false);
+  expect(text(guest().get("/home/user/.gemini/api-key"))).toBe("gateway-managed\n");
+}, 60_000);
+
+it("uploads the Gemini API key file as it is when the provider holds no credentials", async () => {
+  const { f, keyFile, created, resumed, text, guest } = await agyFixture();
+  expect(f.provider.putModelCredential).toBeUndefined();
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  expect(created[0]).toMatchObject({ modelServices: ["openai", "google"] });
+  expect(created[0]).not.toHaveProperty("modelCredentials");
+  expect(text(guest().get("/home/user/.gemini/api-key"))).toBe(readFileSync(keyFile, "utf8"));
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resumed[0]).not.toHaveProperty("modelCredentials");
+  expect(text(guest().get("/home/user/.gemini/api-key"))).toBe("AIza-fixture-owner-key\n");
+}, 60_000);
+
+it("creates nothing when a Gemini API key the gateway is to hold cannot be read as one key", async () => {
+  for (const key of ["", "\n", "two words\n", "first-key\nsecond-key\n"]) {
+    const { f } = await agyFixture(key);
+    const stored = holding(f);
+    await f.api(f.path, { profileId: "cloud" });
+    expect((await f.settled()).state, JSON.stringify(key)).toBe("needs_action");
+    expect(f.creates).toBe(0); expect(stored).toEqual([]);
+  }
+  // One environment has one Google credential, and the key file may not also be uploaded under another name.
+  for (const extra of [(other: string) => ({ source: other, destination: "/home/other/.gemini/api-key" }), (_: string, key: string) => ({ source: key, destination: "/home/user/workspace/key-copy" })]) {
+    const { f, keyFile } = await agyFixture();
+    const other = join(f.directory, "second-gemini-api-key"); writeFileSync(other, "AIza-fixture-second-key\n");
+    f.mau.environments.options.profiles[0]!.otherKernels[0]!.files.push(extra(other, keyFile));
+    const stored = holding(f);
+    await f.api(f.path, { profileId: "cloud" });
+    expect((await f.settled()).state).toBe("needs_action");
+    expect(f.creates).toBe(0); expect(stored).toEqual([]);
+  }
+}, 120_000);
+
+it("provisions and rotates an operator-held DeepSeek key without uploading it to the sandbox", async () => {
+  const f = await mauFixture(cleanup, { runtimes: { dsh: { kernel: "dsh" } }, profile: { otherKernels: [{ kernel: "dsh", runtimeId: "dsh" }] } });
+  const keyFile = join(f.directory, "deepseek-key");
+  f.mau.environments.options.profiles[0]!.deepseekCredentialFile = keyFile;
+  writeFileSync(keyFile, "fixture-deepseek-first\n");
+  const stored = holding(f), create = vi.spyOn(f.provider, "create"), resume = vi.spyOn(f.provider, "resume");
+  const id = "deepseek-" + createHash("sha256").update(keyFile).digest("hex");
+  const selection = { modelServices: ["openai", "deepseek"], modelCredentials: { deepseek: id } };
+  await f.api(f.path, { profileId: "cloud" });
+  expect((await f.settled()).state).toBe("ready");
+  expect(create.mock.calls[0]?.[0]).toMatchObject(selection);
+  await f.api(f.path + "/pause", {});
+  expect((await f.settled()).state).toBe("paused");
+  writeFileSync(keyFile, "fixture-deepseek-rotated\n");
+  await f.api(f.path + "/resume", {});
+  expect((await f.settled()).state).toBe("ready");
+  expect(resume.mock.calls[0]?.[2]).toMatchObject(selection);
+  expect(stored.map(entry => entry.input)).toEqual([
+    { service: "deepseek", mode: "api_key", apiKey: "fixture-deepseek-first" },
+    { service: "deepseek", mode: "api_key", apiKey: "fixture-deepseek-rotated" },
+  ]);
+  for (const bytes of [...f.cloud.values()][0]!.files.values())
+    expect(Buffer.from(bytes).toString()).not.toContain("fixture-deepseek-");
+}, 60_000);
+
+it("rejects a DeepSeek profile whose provider cannot hold its key or whose files expose it", async () => {
+  for (const upload of [false, true]) {
+    const f = await fixture();
+    const profile = f.mau.environments.options.profiles[0]!, source = join(f.directory, "deepseek-key");
+    writeFileSync(source, "fixture-deepseek-test");
+    profile.deepseekCredentialFile = source;
+    if (upload) {
+      holding(f);
+      profile.files.push({ source, destination: "/home/user/workspace/key" });
+    }
+    await f.api(f.path, { profileId: "cloud" });
+    expect((await f.settled()).state).toBe("needs_action");
+    expect(f.creates).toBe(0);
+  }
+}, 60_000);
+
+it("holds GitHub and Claude credentials in the gateway and removes their selections when the profile changes", async () => {
+  const f = await mauFixture(cleanup, { runtimes: { claude: { kernel: "claude" } }, profile: { otherKernels: [{ kernel: "claude", runtimeId: "claude" }] } });
+  const profile = f.mau.environments.options.profiles[0]!;
+  const github = join(f.directory, "github-key"), anthropic = join(f.directory, "claude-key");
+  profile.githubCredentialFile = github;
+  profile.anthropicCredentialFile = anthropic;
+  writeFileSync(github, "only-at-github-one\n", { mode: 0o600 });
+  writeFileSync(anthropic, "only-at-anthropic\n", { mode: 0o600 });
+  const stored = holding(f), create = vi.spyOn(f.provider, "create"), resume = vi.spyOn(f.provider, "resume");
+  const id = (service: string, file: string) => service + "-" + createHash("sha256").update(file).digest("hex");
+  const selection = { modelServices: ["openai", "anthropic"], modelCredentials: { github: id("github", github), anthropic: id("anthropic", anthropic) } };
+  await f.api(f.path, { profileId: "cloud" });
+  expect((await f.settled()).state).toBe("ready");
+  expect(create.mock.calls[0]?.[0]).toMatchObject(selection);
+  expect(stored.map(entry => entry.input)).toContainEqual({ service: "github", mode: "token", accessToken: "only-at-github-one" });
+  expect(stored.map(entry => entry.input)).toContainEqual({ service: "anthropic", mode: "api_key", apiKey: "only-at-anthropic" });
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  writeFileSync(github, "only-at-github-two");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resume.mock.calls[0]?.[2]).toMatchObject(selection);
+  expect(stored.map(entry => entry.input)).toContainEqual({ service: "github", mode: "token", accessToken: "only-at-github-two" });
+  for (const bytes of [...f.cloud.values()][0]!.files.values()) expect(Buffer.from(bytes).toString()).not.toContain("only-at-");
+  expect(JSON.stringify([create.mock.calls, resume.mock.calls])).not.toContain("only-at-");
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  delete profile.githubCredentialFile;
+  delete profile.anthropicCredentialFile;
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resume.mock.calls.at(-1)?.[2]?.modelCredentials).toEqual({});
+}, 60_000);

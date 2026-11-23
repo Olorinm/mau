@@ -46,7 +46,7 @@ async function prepare(options: Invocation["options"], runtime: Runtime, note: I
   const port = Number(text(options.port) ?? "8790");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new DeployError("invalid_port", "--port is a TCP port number");
   source.assertCheckout("local");
-  if (source.staleArchives(source.pin()).length || !existsSync(source.startHost))
+  if (source.staleArchives(source.pin()).length || !existsSync(source.startHost) || !existsSync(source.officialSkills))
     throw new DeployError("platform_archives_missing", "the pinned Agent Kit packages are not installed in this checkout", "node scripts/bootstrap.mjs && npm run build");
   const docker = await effects.run("docker", ["info", "--format", "{{.ServerVersion}}"], { timeoutMs: 30_000 });
   if (docker.code !== 0) throw new DeployError("docker_engine_unreachable", docker.stderr.trim().slice(-300), "Start Docker (or another Docker-compatible engine); each partner's environment is a container.");
@@ -68,7 +68,7 @@ async function prepare(options: Invocation["options"], runtime: Runtime, note: I
   if (!proxy && hostProxy) note(`This machine uses a proxy (${hostProxy}) and partner environments were given none: if they cannot reach the internet, start with --sandbox-proxy URL.`);
   for (const made of [path, directory.config, state]) { mkdirSync(made, { recursive: true, mode: 0o700 }); chmodSync(made, 0o700); }
   const owner = `@owner:${LOCAL_SERVER}`;
-  const rendered = renderProduct(source, { owner, provider: { id: "local", kind: "docker" }, startHost: readFileSync(source.startHost),
+  const rendered = renderProduct(source, { owner, provider: { id: "local", kind: "docker" }, startHost: readFileSync(source.startHost), officialSkills: readFileSync(source.officialSkills),
     ...(proxy ? { env: { ...Object.fromEntries(PROXY_VARIABLES.map((name) => [name, proxy])), NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1" } } : {}) }, existing);
   for (const [key, bytes] of [["mau.json", Buffer.from(JSON.stringify(rendered.mau, null, 2) + "\n")] as const, ...rendered.files, ...(signIn ? [["cloud/codex-auth.json", signIn] as const] : [])])
     if (!existing.get(key)?.equals(bytes)) privateFile(join(directory.config, ...key.split("/")), bytes);

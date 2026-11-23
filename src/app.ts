@@ -157,8 +157,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     connectorAccounts.configured ? () => connectorAccounts.usage() : undefined);
   business.setOwnerPrivate({ connections: () => ownerPrivate.ids(),
     admitted: async admission => ownerPrivateAdmission(admission, await router.service.runtime(admission.agentId).then(r => r.extension, () => undefined)) });
-  if (connectorRuntime) {
-    const skills = new AgentSkills(connectedApps, () => connectorRuntime.connections());
+  if (connectorRuntime || connectedApps.employeePermissions) {
+    const skills = new AgentSkills(connectedApps, () => connectorRuntime?.connections() ?? []);
     // Guides and commands are files of the environment: partners sharing one install those of the partner that has it.
     // The commands relay through what a kernel reports about its shell, so they are installed by the runs of a
     // kernel that does; a partner on another kernel is given the guides with the tool itself.
@@ -172,6 +172,32 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     if (!value) throw new RouterError("host_sessions_unavailable", 409);
     return value;
   };
+  if (connectedApps.employeePermissions) business.setEmployeeDesk((agentId, owner, scheduled) => {
+    const lead = environments.sharedFrom(agentId);
+    if (!lead && !scheduled) return undefined;
+    const destination = lead ?? agentId;
+    const work = () => sessions(owner, destination);
+    return {
+      open: async card => {
+        const employee = router.service.owned(agentId, owner);
+        (await work()).request({ eventId: card.id, kind: "approval", title: `伙伴「${employee.name}」请求批准`,
+          text: [card.summary, ...(card.connection ? [`连接：${card.connection}`, JSON.stringify(card.arguments)] : [])].join("\n"),
+          choices: card.choices ?? [{ id: "allow", label: "批准这次操作" }, { id: "deny", label: "拒绝这次操作", style: "danger" }],
+          expiresAt: card.deadlineAt });
+      },
+      choice: async id => {
+        const result = (await work()).lookupRequest(id);
+        return result?.status === "pending" ? undefined : result?.choice ?? "deny";
+      },
+      status: async id => {
+        const result = (await work()).lookupRequest(id);
+        if (!result || result.status === "expired") return "expired";
+        if (result.status === "pending") return "pending";
+        return result.status === "answered" && result.choice === "allow" ? "approved" : "denied";
+      },
+      withdraw: async id => { (await work()).withdrawRequest(id); },
+    };
+  });
   const assertOwned = (owner: string, agentId: string) => { router.service.owned(agentId, owner); };
   const modelSettings = new ModelSettings(businessStore, sessions);
   /** What a kernel of the environment an Agent runs in offers, whether or not a partner runs on it yet. */
@@ -563,6 +589,10 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const { connections } = connectorAssignmentInput.parse(req.body), owner = res.locals.owner as string;
     const id = router.service.owned(String(req.params.id), owner).id, known = (await connectorAccounts.list(owner)).data.map(account => account.id);
     if (connections.some(connection => !known.includes(connection))) throw new RouterError("connector_not_found", 400);
+    if (connections.length && connectedApps.sharedEmployee(id)) {
+      const privateIds = await ownerPrivate.ids();
+      if (!privateIds || connections.some(connection => privateIds.has(connection))) throw new RouterError("personal_connection_requires_environment_owner", 403);
+    }
     connectedApps.assign(owner, id, connections);
     res.json(connectors(owner, id));
   });

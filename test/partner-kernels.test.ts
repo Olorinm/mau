@@ -285,6 +285,50 @@ it("names the model endpoints of a profile that offers other kernels to the prov
   expect(requests.at(-1)).toEqual({ call: "resume", modelServices: ["openai", "anthropic"] });
 }, 60_000);
 
+it("offers Antigravity beside Codex: its Google model service, its owner's model list, and a partner on the agy runtime", async () => {
+  // What Agent Host describes for an agy runtime: an ACP kernel that takes no native tool output and reports no model catalog.
+  const agy = { kernel: "agy", model: "gemini-4-neon", capabilities: { features: { "input.nativeItems": { status: "unsupported" } } } };
+  const agyDiscovery = { id: "agy", kernel: "agy", model: "gemini-4-neon",
+    allowedSettings: { model: { values: ["gemini-4-neon", "gemini-3.8-flash"] }, effort: { values: ["low", "high"] } },
+    native: { loadSession: true, sessionCapabilities: { resume: {}, list: {} }, initialization: { agentInfo: { name: "Antigravity ACP Server", version: "1.5.15" } } } };
+  const requests: unknown[] = [], seen: Record<string, any> = {};
+  const f = await partnersFixture(cleanup, { runtimes: { agy }, profile: { otherKernels: [{ kernel: "agy", runtimeId: "agy" }] } });
+  f.discovery("agy", agyDiscovery);
+  const { resume } = f.provider;
+  f.provider.resume = async (id, seconds, options) => { requests.push(options?.modelServices); return resume(id, seconds, options); };
+  f.respond(async (turn: Turn) => {
+    if (f.name(turn.agentId) === "gemini") return "Checked with Gemini.";
+    if (turn.text.includes("[Partner results")) return "Gemini checked it.";
+    seen.roster = await turn.call("partners", { action: "roster" });
+    seen.refused = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "large" });
+    seen.recruit = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "gemini-3.8-flash", effort: "low",
+      intent: "relay", message: "Review notes/plan.md." });
+    return "I asked gemini.";
+  });
+  await f.say(f.agent.id, "Get a second opinion");
+  const partner = await f.until(() => f.partner("gemini"), "recruit"), work = await f.turnOf(partner.id);
+  expect(seen.roster.recruit).toMatchObject({ kernels: ["codex", "agy"],
+    otherKernels: [{ kernel: "agy", models: [{ id: "gemini-4-neon", label: "gemini-4-neon", efforts: ["low", "high"] }, { id: "gemini-3.8-flash", label: "gemini-3.8-flash", efforts: ["low", "high"] }],
+      efforts: ["low", "high"], default: { model: "gemini-4-neon", effort: "default" } }] });
+  expect(seen.refused).toMatchObject({ isError: true, error: "partner_model_not_available", allowed: ["gemini-4-neon", "gemini-3.8-flash"] });
+  expect(seen.recruit).toMatchObject({ status: "recruited", partner: { name: "gemini", kernel: "agy", model: "gemini-3.8-flash", effort: "low" }, message: { status: "sent" } });
+  // The same sandbox and Host, the agy runtime; the message arrives as text, as for any runtime without native tool output.
+  expect([f.creates, f.cloud.size]).toEqual([1, 1]);
+  expect(work.body.runtimeId).toBe("agy");
+  expect(work.body.toolOutput).toBeUndefined();
+  expect(work.body.input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
+  expect(work.body.settings).toEqual({ model: "gemini-3.8-flash", effort: "low" });
+  expect((await f.api(`/agents/${partner.id}`)).data).toMatchObject({ kernel: "agy", host: { runtimeId: "agy" }, environment: { sharedFrom: f.agent.id } });
+  expect((await f.api("/options")).data.environments).toEqual([{ id: "cloud", label: "Cloud", kernel: "codex", kernels: ["codex", "agy"] }]);
+  await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
+  // The provider is told the model services of both kernels when the environment next starts.
+  expect((await f.api(f.path + "/pause", {})).status).toBe(202);
+  expect((await f.settled()).state).toBe("paused");
+  expect((await f.api(f.path + "/resume", {})).status).toBe(202);
+  expect((await f.settled()).state).toBe("ready");
+  expect(requests.at(-1)).toEqual(["openai", "google"]);
+}, 90_000);
+
 it("holds an environment to the ChatGPT account of its Codex sign-in file on create and resume, with an override and an opt-out", async () => {
   const jwt = (account?: string) => `e30.${Buffer.from(JSON.stringify(account ? { "https://api.openai.com/auth": { chatgpt_account_id: account } } : {})).toString("base64url")}.c2ln`;
   expect(codexAccount(JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: jwt("account-access"), id_token: jwt("account-id"), account_id: "account-recorded" } }))).toBe("account-access");

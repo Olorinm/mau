@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync, realpathSync } from "node:fs";
 import { join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -46,6 +46,12 @@ export const environmentOptionsSchema = z
              */
             otherKernels: z.array(z.object({ kernel: z.enum(PARTNER_KERNELS), runtimeId, files }).strict()).max(4).default([]),
             hostConfigFile: z.string().min(1),
+            /** Operator-local Anthropic API key for the model gateway. */
+            anthropicCredentialFile: z.string().min(1).optional(),
+            /** Operator-local DeepSeek API key for the model gateway. */
+            deepseekCredentialFile: z.string().min(1).optional(),
+            /** A scoped GitHub token the operator sends to the egress gateway for HTTPS Git and gh. */
+            githubCredentialFile: z.string().min(1).optional(),
             instructions: z.string().max(200_000).optional(),
             directory: remotePath.default("/home/user/.agent-host-service"),
             port: z.number().int().min(1).max(65535).default(37420),
@@ -101,6 +107,8 @@ interface Binding {
   error?: string;
   updatedAt: string;
   tokenPerOperation?: boolean;
+  /** Clear the previous operator key selection when the profile removes its last key. */
+  managedProfileKeys?: boolean;
   previous?: Binding;
 }
 /** A partner that runs in another partner's environment instead of having its own; stored under its own Agent ID. */
@@ -139,14 +147,18 @@ const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, 
  * profile with one kernel names none, so its requests to the provider are what they always were and the provider's
  * default decides; so does one with a kernel that is not known here.
  */
-const admitted = (p: Profile, managed?: GatewayCodexCredential) => {
-  const services = p.otherKernels.length ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
-  return services || accounts || managed
-    ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}), ...(managed ? { modelCredentials: { openai: managed.credentialId }, codexAuthUsers: managed.users } : {}) }
+const admitted = (p: Profile, managed?: GatewayCredentials) => {
+  const services = p.otherKernels.length || p.deepseekCredentialFile || p.anthropicCredentialFile ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
+  const codex = managed?.codex, gemini = managed?.gemini, anthropic = managed?.anthropic, deepseek = managed?.deepseek, github = managed?.github;
+  return services || accounts || codex || gemini || anthropic || deepseek || github
+    ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}),
+      ...(codex || gemini || anthropic || deepseek || github ? { modelCredentials: { ...(codex ? { openai: codex.credentialId } : {}),
+        ...(gemini ? { google: gemini.credentialId } : {}), ...(anthropic ? { anthropic } : {}), ...(deepseek ? { deepseek } : {}), ...(github ? { github } : {}) } } : {}),
+      ...(codex ? { codexAuthUsers: codex.users } : {}) }
     : undefined;
 };
 /** What the provider is asked to create for one operation of a profile. */
-const creation = (p: Profile, operationId: string, managed?: GatewayCodexCredential) => ({ template: p.template, timeoutSeconds: p.lifetimeSeconds, onTimeout: p.onTimeout,
+const creation = (p: Profile, operationId: string, managed?: GatewayCredentials) => ({ template: p.template, timeoutSeconds: p.lifetimeSeconds, onTimeout: p.onTimeout,
   metadata: { "mau-operation": operationId }, ...(p.env ? { env: p.env } : {}), ...admitted(p, managed) });
 /** The private files of a profile: its own, then those of its other kernels. */
 const privateFiles = (p: Profile) => [...p.files, ...p.otherKernels.flatMap((kernel) => kernel.files)];
@@ -214,6 +226,74 @@ async function syncGatewayCodexCredential(provider: EnvironmentProvider, profile
       (input.mode === "chatgpt" && saved.accountId !== input.accountId))
     throw new WorkError("managed_codex_credential_mismatch", 409);
   return { credentialId, users: [...new Set(users)].sort(), destinations };
+}
+/** Where a profile's files put the Gemini API key that Antigravity (`agy`) is started with. */
+const geminiKeyFile = (destination: string) => destination.endsWith("/.gemini/api-key");
+/** What the sandbox gets in place of a gateway-held Gemini API key: Antigravity only needs the variable not to be empty. */
+const GEMINI_KEY_PLACEHOLDER = "gateway-managed\n";
+interface GatewayGeminiCredential {
+  credentialId: string;
+  destinations: Set<string>;
+}
+/**
+ * Hands the Gemini API key among a profile's files to the provider's gateway, so the sandbox gets a placeholder and
+ * the key is added to its requests outside it. `undefined` when the provider holds no credentials or the profile has
+ * no such file: the file is then uploaded as it is.
+ */
+async function syncGatewayGeminiCredential(provider: EnvironmentProvider, profile: Profile): Promise<GatewayGeminiCredential | undefined> {
+  if (!provider.putModelCredential) return undefined;
+  const allFiles = privateFiles(profile);
+  const files = allFiles.filter(file => geminiKeyFile(file.destination));
+  if (!files.length) return undefined;
+  const source = files[0]!.source;
+  const destinations = new Set(files.map(file => file.destination));
+  // An environment has one Google credential, and the key may not reach the sandbox under another name.
+  if (files.some(file => file.source !== source) || allFiles.some(file => file.source === source && !destinations.has(file.destination)))
+    throw new WorkError("ambiguous_gemini_credential_source", 409);
+  const apiKey = readFileSync(source, "utf8").trim();
+  if (!/^[^\s\x00-\x1f\x7f]{1,4096}$/.test(apiKey)) throw new WorkError("invalid_managed_gemini_credential", 409);
+  // Profiles pointing to the same key file share one credential. Unlike a Codex sign-in, which the gateway renews
+  // and Mau therefore never overwrites, an API key only changes in this file: it is stored again on every create and
+  // resume, so a rotated key takes effect at the gateway at once, for environments that are running too.
+  const credentialId = "gemini-" + hash(source);
+  const saved = await provider.putModelCredential(credentialId, { service: "google", mode: "api_key", apiKey });
+  if (saved.id !== credentialId || saved.service !== "google" || saved.mode !== "api_key")
+    throw new WorkError("managed_gemini_credential_mismatch", 409);
+  return { credentialId, destinations };
+}
+/** The model credentials of a profile that the provider's gateway holds in place of the sandbox. */
+interface GatewayCredentials {
+  codex?: GatewayCodexCredential;
+  gemini?: GatewayGeminiCredential;
+  deepseek?: string;
+  github?: string;
+  anthropic?: string;
+}
+async function syncOperatorKey(provider: EnvironmentProvider, profile: Profile, service: "github" | "deepseek" | "anthropic", source?: string) {
+  if (!source) return undefined;
+  if (!provider.putModelCredential) throw new WorkError(`managed_${service}_provider_required`, 409);
+  const path = realpathSync(source);
+  if (privateFiles(profile).some(file => realpathSync(file.source) === path))
+    throw new WorkError(`ambiguous_${service}_credential_source`, 409);
+  const secret = readFileSync(path, "utf8").trim();
+  if (!/^[!-~]{1,4096}$/.test(secret)) throw new WorkError(`invalid_managed_${service}_credential`, 409);
+  const id = service + "-" + hash(source);
+  const input: ModelCredentialInput = service === "github"
+    ? { service, mode: "token", accessToken: secret } : { service, mode: "api_key", apiKey: secret };
+  const saved = await provider.putModelCredential(id, input);
+  if (saved.id !== id || saved.service !== service || saved.mode !== input.mode)
+    throw new WorkError(`managed_${service}_credential_mismatch`, 409);
+  return id;
+}
+async function syncGatewayCredentials(provider: EnvironmentProvider, profile: Profile): Promise<GatewayCredentials> {
+  const paths = [profile.githubCredentialFile, profile.deepseekCredentialFile, profile.anthropicCredentialFile]
+    .flatMap(file => file ? [realpathSync(file)] : []);
+  if (new Set(paths).size !== paths.length) throw new WorkError("ambiguous_gateway_credential_source", 409);
+  const anthropic = await syncOperatorKey(provider, profile, "anthropic", profile.anthropicCredentialFile);
+  const github = await syncOperatorKey(provider, profile, "github", profile.githubCredentialFile);
+  const deepseek = await syncOperatorKey(provider, profile, "deepseek", profile.deepseekCredentialFile);
+  const codex = await syncGatewayCodexCredential(provider, profile), gemini = await syncGatewayGeminiCredential(provider, profile);
+  return { ...(codex ? { codex } : {}), ...(gemini ? { gemini } : {}), ...(anthropic ? { anthropic } : {}), ...(deepseek ? { deepseek } : {}), ...(github ? { github } : {}) };
 }
 /**
  * The ChatGPT account of a Codex sign-in file (`auth.json`): the one its access token names, which is what the
@@ -293,6 +373,9 @@ export class EnvironmentManager {
       if (new Set(runtimes(p).map((r) => r.kernel)).size !== runtimes(p).length || new Set(runtimes(p).map((r) => r.runtimeId)).size !== runtimes(p).length)
         throw new Error("duplicate_environment_kernel");
       p.hostConfigFile = resolve(base, p.hostConfigFile);
+      if (p.deepseekCredentialFile) p.deepseekCredentialFile = resolve(base, p.deepseekCredentialFile);
+      if (p.anthropicCredentialFile) p.anthropicCredentialFile = resolve(base, p.anthropicCredentialFile);
+      if (p.githubCredentialFile) p.githubCredentialFile = resolve(base, p.githubCredentialFile);
       for (const f of privateFiles(p)) f.source = resolve(base, f.source);
     }
     this.store = new DurableStore(
@@ -537,10 +620,11 @@ export class EnvironmentManager {
       return this.view(winner);
     }
     this.launch(record, async () => {
-      const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
-      record.ref = await provider.create(creation(profile, record.operationId, gatewayCodex));
+      const managed = await syncGatewayCredentials(provider, profile);
+      record.managedProfileKeys = Boolean(managed.github || managed.deepseek || managed.anthropic);
+      record.ref = await provider.create(creation(profile, record.operationId, managed));
       this.save(record); // durable ID precedes bootstrap or further network work
-      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
+      await this.bootstrap(owner, record, provider, profile, managed);
     });
     return this.view(record);
   }
@@ -606,10 +690,11 @@ export class EnvironmentManager {
     this.save(record);
     this.launch(record, async () => {
       const provider = await this.provider(record);
-      const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
-      record.ref = await provider.create(creation(profile, record.operationId, gatewayCodex));
+      const managed = await syncGatewayCredentials(provider, profile);
+      record.managedProfileKeys = Boolean(managed.github || managed.deepseek || managed.anthropic);
+      record.ref = await provider.create(creation(profile, record.operationId, managed));
       this.save(record);
-      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
+      await this.bootstrap(owner, record, provider, profile, managed);
     });
     return this.view(record);
   }
@@ -711,6 +796,13 @@ export class EnvironmentManager {
     if (exit !== 0)
       throw new WorkError("environment_bootstrap_command_failed", 502);
   }
+  /** Writes one private file for the environment's user alone, in a directory nobody else can enter. */
+  private async privateUpload(provider: EnvironmentProvider, id: string, destination: string, content: string | Uint8Array) {
+    await this.exec(provider, id, ["mkdir", "-p", "--", posix.dirname(destination)]);
+    await this.exec(provider, id, ["chmod", "--", "700", posix.dirname(destination)]);
+    await provider.writeFile(id, destination, content);
+    await this.exec(provider, id, ["chmod", "--", "600", destination]);
+  }
   private token(record: Binding) {
     if (record.tokenPerOperation) return join(this.directory, "agents", record.agentId, "environments", record.operationId, "environment-token");
     return join(
@@ -723,8 +815,9 @@ export class EnvironmentManager {
     record: Binding,
     provider: EnvironmentProvider,
     profile: Profile,
-    gatewayCodex?: GatewayCodexCredential,
+    managed?: GatewayCredentials,
   ) {
+    const gatewayCodex = managed?.codex;
     const id = record.ref!.id;
     record.phase = "starting";
     delete record.error;
@@ -744,20 +837,9 @@ export class EnvironmentManager {
     // The image's entrypoint is already waiting. Publish readiness only after all private files.
     for (const file of privateFiles(profile)) {
       if (gatewayCodex?.destinations.has(file.destination)) continue;
-      await this.exec(provider, id, [
-        "mkdir",
-        "-p",
-        "--",
-        posix.dirname(file.destination),
-      ]);
-      await this.exec(provider, id, [
-        "chmod",
-        "--",
-        "700",
-        posix.dirname(file.destination),
-      ]);
-      await provider.writeFile(id, file.destination, readFileSync(file.source));
-      await this.exec(provider, id, ["chmod", "--", "600", file.destination]);
+      // A key the gateway holds stays out of the sandbox: the file the kernel reads gets a placeholder.
+      await this.privateUpload(provider, id, file.destination,
+        managed?.gemini?.destinations.has(file.destination) ? GEMINI_KEY_PLACEHOLDER : readFileSync(file.source));
     }
     const dir = profile.directory;
     await provider.writeFile(id, posix.join(dir, "host.json.upload"), config);
@@ -1104,19 +1186,25 @@ export class EnvironmentManager {
     record.phase = "resuming";
     delete record.error;
     this.save(record);
-    const gatewayCodex = await syncGatewayCodexCredential(provider, profile);
-    const resumeOptions = admitted(profile, gatewayCodex);
+    const managed = await syncGatewayCredentials(provider, profile);
+    const selection = admitted(profile, managed);
+    const resumeOptions = record.managedProfileKeys && !selection?.modelCredentials
+      ? { ...selection, modelCredentials: {} } : selection;
     if (
       (await provider.resume(id, profile.lifetimeSeconds, ...(resumeOptions ? [resumeOptions] : []))).state !== "running"
     )
       throw new WorkError("environment_resume_pending", 409);
+    record.managedProfileKeys = Boolean(managed.github || managed.deepseek || managed.anthropic);
     const config = this.configuration.configuration(
       this.service.agent(agentId),
     );
     if (config?.host?.binding !== record.operationId)
-      await this.bootstrap(owner, record, provider, profile, gatewayCodex);
+      await this.bootstrap(owner, record, provider, profile, managed);
     else {
       // The provider has installed the placeholder before starting the restored workload.
+      // An environment made before the gateway held its Gemini key still has the key in its files: replace it.
+      for (const destination of managed.gemini?.destinations ?? [])
+        await this.privateUpload(provider, id, destination, GEMINI_KEY_PLACEHOLDER);
       await this.ready(record, profile);
       record.phase = "ready";
       delete record.error;

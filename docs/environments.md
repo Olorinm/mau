@@ -122,8 +122,9 @@ must be isolated.
 ```
 
 - `otherKernels` (at most four) lists only the kernels that are installed in the template, have
-  credentials and are meant to be used. Accepted kernels: `codex`, `claude`. Kernels that bring
-  their own gateway are not offered this way. A kernel may appear once in a profile and every
+  credentials and are meant to be used. Accepted kernels: `codex`, `claude`, `agy` (Google
+  Antigravity, [below](#an-antigravity-partner)), and `dsh` (DeepSeek Harness). Kernels that bring their own gateway are not
+  offered this way. A kernel may appear once in a profile and every
   runtime ID once (`duplicate_environment_kernel` at start).
 - The Host configuration must have a runtime with that `id` and `kernel` for each entry, with the
   same `cwd` as the main runtime; otherwise creating an environment is refused with
@@ -135,7 +136,7 @@ must be isolated.
   each partner, can read the other kernels' credential files. Use an environment of its own where
   that is not acceptable. No credential belongs in this repository or in the Host configuration.
 - A profile that offers other kernels tells the provider which model endpoints the environment
-  needs: `openai` for `codex`, `anthropic` for `claude`, for all its kernels, with every create
+  needs: `openai` for `codex`, `anthropic` for `claude`, `google` for `agy`, and `deepseek` for `dsh`, for all its kernels, with every create
   and resume (`modelServices` of
   [Environment](https://github.com/Olorinm/agent-kit/tree/main/packages/environment)). The gateway
   admits only reviewed endpoints of those services; a private model gateway or another provider is
@@ -178,6 +179,102 @@ a non-interactive permission setting in its runtime profile to work there. Partn
 kernels share files, not native context: they exchange what they know as
 [messages](native-work.md#partners). See [native work](native-work.md#partners-on-another-kernel)
 for what a partner on another kernel can and cannot use.
+
+### Four partners in one workspace
+
+The [four-partner Mau options](../examples/mau-four-partners.json) and [Host configuration](../examples/cloud/host-four-partners.json) use one Claude runtime for the lead, one Codex runtime for two independent partner sessions, and Antigravity for the advisor. Each partner has its own conversation and connection assignments. Replace `personal-gmail` and `team-browser` with the actual connection IDs.
+
+1. Copy the sample options to your private Mau configuration directory, keep the referenced `cloud/` and `private/` paths relative to it, and set the Router owner ID and service endpoints. Supply the verified Host archive and its SHA-256 manifest alongside the matching Agent Kit Cloudflare `start-host.sh` and its `official-skills.tgz`. With the updated gateway's `node24` template, this script installs Codex and the checksum-verified Linux Antigravity release. The Host package includes Claude Agent SDK.
+2. Put the operator's Anthropic, Gemini and scoped GitHub credentials at the configured paths. Supply the Codex authentication JSON and the sample [Gemini provider selection](../examples/cloud/agy-settings.json). The gateway holds the keys and supplies guest placeholders or native login handles. The connector authority and caller signing keys stay with Mau. The sample expects the [ConnectorService setup](connector-accounts.md#operator-configuration).
+3. Create a partner named `lead` and select the `shared-team` environment for it. In the owner's private conversation, ask lead to check `partners` with `action=roster`, then use `action=recruit` for the three entries below. A second Codex recruit gets its own native session on the existing runtime. Check `action=roster` again for all four names and their kernels.
+
+   | Name | Kernel | Duty |
+   | --- | --- | --- |
+   | `backend` | `codex` | Implement changes and run targeted tests. |
+   | `reviewer` | `codex` | Review the changes independently and report defects. |
+   | `advisor` | `agy` | Review designs and trade-offs for lead. |
+
+4. In Mau's Connectors settings, assign personal connections only to lead. Give each subordinate the work connections it needs and set each operation to allow, ask or deny. The sample enables employee authorization and permits only the `connected_apps` tool through the shell relay. Partner approval cards go to the lead's conversation when work is delegated by lead. Connectors and the model gateway have separate authorization settings.
+
+Codex uses the native Auto preset, with workspace writes and on-request approvals. Its workspace network flag is enabled for the loopback relay, local web tests and outbound requests permitted by the gateway. Only the advisor's Antigravity command receives `--dangerously-skip-permissions`; Mau still enforces connected-app policies. Ordinary work and acceptance are coordinated in lead's private conversation. [Codex approval and sandbox settings](https://developers.openai.com/codex/agent-approvals-security/)
+
+### Git, GitHub CLI and Claude credentials
+
+For a Cloudflare environment, set `githubCredentialFile` to the path of an operator-local file containing a GitHub access token.
+Select its repositories and permissions on GitHub. Mau registers that token with the gateway at creation and resume. Use normal HTTPS Git remotes and
+`gh` commands for pulls, pushes and pull requests. All partners in this environment share the selected GitHub permissions. Git and `gh` contact GitHub
+directly through the gateway and these commands have no Mau connector approval cards. Rotating the file and resuming updates the gateway. Removing the
+selection and resuming revokes access for that environment.
+
+Set `anthropicCredentialFile` the same way for a Claude partner using the official Anthropic API. Claude receives a placeholder in
+`ANTHROPIC_API_KEY`. The gateway replaces it on the allowed Anthropic inference and model-listing paths. Keep these operator files outside the profile's
+guest `files` mappings. The starter ships the connector skills from the pinned official releases and installs them offline beside the Mau sandbox addendum.
+
+### A DeepSeek Harness partner
+
+Add `{"kernel":"dsh","runtimeId":"dsh"}` to `otherKernels` and the corresponding runtime to the Host configuration. DSH can also be the main runtime. Set the profile's `deepseekCredentialFile` to an operator-local file containing its API key. Mau imports the key into the gateway on creation and resume. The sandbox receives a placeholder in `DEEPSEEK_API_KEY`. The Cloudflare starter installs the pinned official CLI for a DSH runtime. Other templates need `dsh` on the Host's path. See the [Host configuration example](../examples/cloud/host-dsh-partner.json).
+
+### An Antigravity partner
+
+`agy` is Google's Antigravity CLI, which Agent Host runs through its ACP server (`agy acp`). It
+gives the environment a partner on Gemini. It needs Agent Host with the `agy` kernel and an
+Environment gateway with the `google` model service. With an Agent Kit release that has neither,
+the gateway refuses the environment (`invalid_model_services`) and the Host does not start with
+this configuration.
+
+```json
+"otherKernels": [
+  { "kernel": "agy", "runtimeId": "agy", "files": [
+    { "source": "/private/alice/agy-settings.json", "destination": "/home/user/.gemini/antigravity-cli/settings.json" },
+    { "source": "/private/alice/gemini-api-key", "destination": "/home/user/.gemini/api-key" }
+  ] }
+],
+"hostConfigFile": "cloud/host-agy-partner.json"
+```
+
+- **Runtime.** See [host-agy-partner.json](../examples/cloud/host-agy-partner.json). `model` and the
+  values of `allowedSettings.model` are IDs of Antigravity's model selector, as `agy models` prints
+  them without the thinking level; `effort` is its thinking level. List only the efforts every
+  listed model offers: Antigravity reports no per-model list that Mau reads, and a level a model
+  does not offer fails the turn.
+- **Permissions.** Antigravity asks before commands, and those requests become approval cards in the
+  owner's conversation. A turn a partner's message started cannot ask, so the partner's runtime needs
+  `"args": ["acp", "--dangerously-skip-permissions"]`. Its `auto` mode (`"config": {"mode": "auto"}`)
+  is not enough: it runs edits and safe commands unasked, and still asks before every tool of Mau
+  (`partners`, `memory`, `connected_apps`), which such a turn then waits on until the Host's deadline.
+  With the flag the sandbox and the gateway are what holds the partner; Mau's own approvals, such as
+  a connector write, are unchanged.
+- **The command.** The template must have `agy` on the `PATH` of the Host's user (or name it with
+  `command`). The Cloudflare startup script installs the pinned Linux release when the profile includes Antigravity.
+- **Credential.** Use a Gemini API key. Antigravity needs two things for it, and one alone does
+  nothing: `{"modelProvider": "gemini"}` in `/home/user/.gemini/antigravity-cli/settings.json` (a
+  file of the entry's `files`) and `GEMINI_API_KEY` in the environment of the `agy` process. The key
+  is a credential and does not belong in the Host configuration: supply it as a 0600 file through
+  `files` with a destination that ends in `/.gemini/api-key`, and have the runtime's `command` read
+  it, as the example does. Antigravity's Google sign-in is not supported here: it is kept in a
+  desktop keyring a sandbox does not have, and the `google` service does not admit its hosts.
+  - **A gateway that holds credentials** (Cloudflare) gets the key from Mau, and the key never
+    enters the sandbox: the file there contains the placeholder `gateway-managed`, which is all
+    Antigravity checks for, and the gateway replaces whatever key or token a request to
+    `generativelanguage.googleapis.com` carries with the owner's. Mau stores the key at the gateway
+    again on every create and resume, so after rotating it replace the file's content and resume
+    one environment of the profile: the gateway uses the new key at once, for every environment
+    that shares the file. An environment made before the gateway held the key has the real key
+    replaced by the placeholder at its next resume. The file is one key on one line; a profile has
+    one such file.
+  - **A provider that holds none** gets the file as it is, and like every kernel's credential it is
+    readable by all partners of the environment. The same Host configuration serves both cases.
+- **Network.** What the `google` service admits on `generativelanguage.googleapis.com` depends on
+  who holds the key. When the gateway holds it, the whole Gemini API there is open, any path and
+  method (model listing, files, caches, the other generation methods): a partner can only use the
+  owner's key, so nothing it sends reaches another account. When the key is in the sandbox, only
+  the one request a turn makes is admitted, `POST /v1beta/models/<model>:streamGenerateContent`:
+  the gateway cannot tell whose key a request carries (`modelAccounts` covers `openai` only), and
+  with more admitted a partner that is talked into it could use someone else's key to upload the
+  owner's files into that person's project. With an API key Antigravity offers Gemini models only;
+  the runtime's `allowedSettings` decides which a partner may select.
+- **Instructions.** Antigravity reads its rule files (`AGENTS.md`, `GEMINI.md`) by its own rules; Mau
+  writes neither.
 
 ## Partners sharing an environment
 
@@ -247,6 +344,37 @@ Rules:
 
 Partners in one environment see the same files, native kernel homes and logins. Give a partner an
 environment of its own when its work must be isolated.
+
+## A browser inside the environment
+
+The [remote browser](connector-accounts.md#connector-clis-and-guides-in-the-agents-environment) runs outside
+the environment and refuses loopback and private addresses, so it cannot open a page the Agent serves at
+`http://localhost:PORT`. For those pages the environment carries a browser of its own, from Environment's
+[start script](https://github.com/Olorinm/agent-kit/blob/main/packages/environment/cloudflare/examples/start-host.sh)
+(`cloud/start-host.sh` of a deployment):
+
+- Debian's `chromium-headless-shell` with Latin, Chinese/Japanese/Korean and emoji fonts, and the official
+  [agent-browser](https://github.com/vercel-labs/agent-browser) CLI, unmodified, from npm at the version
+  Agent Connectors pins, under `/opt/local-browser` with only this machine's binary kept. About 285 MB to
+  download and 670 MB on disk. Chromium is the version Debian ships and updates; nothing is downloaded
+  from a browser vendor, and none of this touches the Playwright pin of this repository's CI.
+- Run the CLI as `/opt/local-browser/agent-browser`. That file is a few lines of shell that set
+  `AGENT_BROWSER_EXECUTABLE_PATH` to that Chromium, `AGENT_BROWSER_ARGS` to what Chromium needs in a
+  container as a user other than root (`--no-sandbox`: the environment is the isolation boundary;
+  `--disable-dev-shm-usage`: `/dev/shm` is small) and `AGENT_BROWSER_NO_VERSION_CHECK=1` (the CLI's check
+  for a newer Chrome asks a site on the internet), then pass every argument to the CLI. It is not on
+  `PATH`: `/usr/local/bin/agent-browser` remains Mau's client of the remote browser.
+- The installation runs in the background after an environment's first start, so Host is ready as
+  before, and is kept by the environment's snapshot. `/opt/local-browser/agent-browser` appears when it
+  has finished, a few minutes later; `/var/log/local-browser-install.log` has its output.
+- The CLI keeps a daemon with the browser between commands, as the user that ran it, with its socket and
+  session files in `/home/user/.agent-browser`. It ends with `close`, after an hour without commands, or
+  when the environment pauses.
+- This browser has no internet access: the environment's outbound network admits no websites.
+- Mau uploads the script when it creates an environment, and a resumed environment runs the copy in its
+  snapshot. An environment created before the script had this therefore stays without the browser until
+  it is [replaced](environment-replacement.md).
+- An image of your own that does not run this script needs the same packages and file.
 
 ## SSH access
 
