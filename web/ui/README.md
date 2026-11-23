@@ -16,7 +16,7 @@ stores, backend startup or credential discovery in this package.
 | `./agent-host` | Agent Host adapter: `AgentInteraction`, `projectHostMessage`, `projectHostInteraction`, run views |
 | `./app` | Application primitives and design-system components: buttons, dialogs, confirm, toasts, avatars, settings pages and rows |
 | `./app.css` | Design tokens, base and application component styles (plain CSS on `:root`) |
-| `./pages` | Page components: `AppShell`, `Navigation`, `ListDetailLayout`, `Conversation`, `RunMessage`, `Catalog`, `AppCreateDialog`, `ProfileDialog`, `CreateGroupForm`, `FileEditor` |
+| `./pages` | Page components: `AppShell`, `ListDetailLayout`, `Conversation`, `RunMessage`, `AppCreateDialog`, `ProfileDialog`, `CreateGroupForm`, `FileEditor` |
 | `./pages.css` | One complete stylesheet for the page components, scoped under `.af-scope` at build time |
 
 The console imports `./pages.css` and then `./app.css`.
@@ -26,7 +26,7 @@ The console imports `./pages.css` and then `./app.css`.
 - `src/` — chat components (`index.ts`), the Host adapter (`agent-host.tsx`) and the chat
   stylesheets (`styles.css`, `thread.css`, `disclosure.css`), which the page stylesheet includes.
 - `src/app/` — application primitives, design tokens and their stylesheets.
-- `src/pages/` — page layouts and the conversation, run, catalog, app-creation, group and editor
+- `src/pages/` — page layouts and the conversation, run, app-creation, group and editor
   components; `style.css` lists the shared page stylesheets, CSS modules sit next to their component,
   and `presentation/labels.ts` holds the display text in English and Chinese.
 - `test/` — unit tests and browser fixtures; `scripts/` — build steps and the browser test runners.
@@ -70,13 +70,13 @@ native approvals, questions, forms and URL requests without renaming IDs or addi
 
 ## Page components
 
-- `AppShell`, `Navigation`: titlebar, brand slot and caller-defined navigation entries and account menu.
-- `ListDetailLayout`, `ItemList`, `PageHeader`, `SearchField`, `CollectionEmptyState`, `LoadingSurface`,
+- `AppShell`: the frame. A mark and the caller's destinations as one capsule: in the middle of a row at the
+  top of a wide window, at the foot of a narrow one, where a page marked `data-app-page` puts it away.
+- `ListDetailLayout`, `SearchField`, `CollectionEmptyState`, `LoadingSurface`,
   `InlineNotice`: list/detail layout with compact back navigation, an inspector slot and empty states.
 - `Conversation`, `RoomHeaderActions`, `MessageFileCard`: room stream, message bubbles, attachments
   and the IME-aware composer. `RunMessage` renders a run's process, approvals, questions and answer.
-- `Catalog`, `AppCreateDialog`: cards for caller-supplied items and the app-creation dialog; creating
-  or installing anything is a callback.
+- `AppCreateDialog`: the app-creation dialog; creating anything is a callback.
 - `ProfileDialog`, `CreateGroupForm`: a one-page form dialog and the group-creation form, with caller-owned data.
 - `FileEditor`: the Markdown editor (Milkdown), falling back to the source editor (CodeMirror) when the
   rich editor cannot start. `value` and changes are caller-owned; reading and saving stay outside.

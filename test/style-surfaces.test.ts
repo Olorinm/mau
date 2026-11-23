@@ -61,56 +61,40 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
       { id: "work-gmail", kind: "google", label: "Gmail", state: "authorization_required", verification: "none", scopes: [], assignedAgents: [f.agent.id], permission: "read-only" },
     ] } }));
     await page.goto(f.base);
-    await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+    await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
     const composer = page.getByPlaceholder("发送消息…"); await see(composer).toBeVisible();
     const prefix = `${mode}-${width}`;
     await capture(page, `${prefix}-chat`);
     if (width === 1440) {
-      // The brand sits above the navigation, so the conversation card starts at the top of the window.
-      const top = await page.evaluate(() => ({ bar: document.querySelector(".app-titlebar")!.getBoundingClientRect().width,
-        card: document.querySelector(".room-main-panel")!.getBoundingClientRect().top }));
-      expect(top.bar).toBeLessThan(200); expect(top.card).toBeLessThan(16);
-      // The navigation and the page behind the conversation card are one surface: the card is the only other layer.
-      const surfaces = await page.evaluate(() => [".app-shell", ".app-titlebar", ".app-rail"].map(selector => getComputedStyle(document.querySelector(selector)!).backgroundColor));
-      expect(surfaces[1]).toBe(surfaces[0]); expect(surfaces[2]).toBe("rgba(0, 0, 0, 0)");
-      // The navigation toggle takes the logo's place while the pointer is on the logo.
-      const toggle = page.locator(".app-titlebar-control"), mark = page.locator(".app-titlebar-brand-mark");
-      await see(toggle).toHaveCSS("opacity", "0"); await see(mark).toHaveCSS("opacity", "1");
-      await toggle.hover(); await see(toggle).toHaveCSS("opacity", "1"); await see(mark).toHaveCSS("opacity", "0");
-      await page.mouse.move(0, 0);
-      // The people panel floats inside the conversation's card and does not move or resize it.
-      const card = () => page.evaluate(() => { const r = document.querySelector(".room-main-panel")!.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; });
-      const before = await card();
-      await page.locator(".mau-chip-more").click();
+      // One row at the top: the mark at its left, the destinations in its middle. The list and the conversation are below it.
+      const box = (selector: string) => page.evaluate(q => { const r = document.querySelector(q)!.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }, selector);
+      const [mark, bar, list, card] = [await box(".app-mark"), await box(".app-switch"), await box(".mau-roster"), await box(".room-main-panel")];
+      expect(mark[0]!).toBeLessThan(40); expect(Math.abs((bar[0]! + bar[2]!) / 2 - 720)).toBeLessThan(2); expect(bar[3]!).toBeLessThan(list[1]!);
+      // The list is beside the conversation, never over it.
+      expect(list[2]!).toBeLessThanOrEqual(card[0]!); expect(list[1]!).toBe(card[1]!);
       const roster = page.locator(".mau-roster"); await see(roster).toBeVisible();
-      await see.poll(() => roster.evaluate(el => getComputedStyle(el).transform)).toBe("none");
-      expect(await card()).toEqual(before);
-      const inside = async () => { const r = await roster.evaluate(el => { const b = el.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; });
-        expect(r[0]!).toBeGreaterThan(before[0]!); expect(r[1]!).toBeGreaterThan(before[1]!); expect(r[2]!).toBeLessThan(before[2]!); expect(r[3]!).toBeLessThan(before[3]!); return r[2]! - r[0]!; };
-      expect(await inside()).toBeLessThan(260);
       await capture(page, `${prefix}-roster`);
-      // A partner's profile opens in the same panel, which widens for it; back returns to the list.
-      await roster.getByRole("button", { name: /^伙伴资料/ }).first().click();
+      // A partner's profile stands in place of the list and leaves the conversation where it is; back returns to the list.
+      await page.locator("button.mau-chat-title").click();
       const profile = page.getByRole("complementary", { name: "伙伴资料" }); await see(profile).toBeVisible();
-      await see.poll(inside).toBeGreaterThan(330);
-      expect(await card()).toEqual(before);
+      expect(await box(".room-main-panel")).toEqual(card); expect(await box(".mau-roster")).toEqual(list);
       await capture(page, `${prefix}-profile`);
       await profile.getByRole("button", { name: "全部对话" }).click();
-      await see(page.getByRole("complementary", { name: "全部对话" })).toBeVisible();
-      // A press on the conversation puts the panel away.
-      await composer.click(); await see(roster).toBeHidden();
+      await see(page.getByRole("complementary", { name: "全部对话" })).toBeVisible(); await see(composer).toBeVisible();
     }
     if (width === 390) {
-      // The current partner's figure opens the profile; on a phone the panel covers the card and can be closed.
-      await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
-      const profile = page.getByRole("complementary", { name: "伙伴资料" }); await see(profile).toBeVisible();
-      expect(await profile.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);
+      // A phone shows one page at a time. In a conversation the destinations are put away and the name opens the profile.
+      const dock = page.getByRole("navigation", { name: "主导航" }), roster = page.locator(".mau-roster");
+      await see(dock).toBeHidden(); await see(roster).toBeHidden();
+      await page.locator("button.mau-chat-title").click();
+      const profile = page.getByRole("complementary", { name: "伙伴资料" }); await see(profile).toBeVisible(); await see(composer).toBeHidden();
+      expect(await profile.evaluate(el => el.getBoundingClientRect().width)).toBe(390);
       await capture(page, `${prefix}-profile`);
-      await profile.getByRole("button", { name: "收起" }).click(); await see(profile).toBeHidden();
-      // The list covers the card too, and picking a conversation brings the conversation back.
-      await page.locator(".mau-chip-more").click();
-      const roster = page.locator(".mau-roster"); await see(roster).toBeVisible(); await capture(page, `${prefix}-roster`);
-      expect(await roster.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(300);
+      // Back from the profile is the conversation; back from the conversation is the list, with the destinations at its foot.
+      await profile.getByRole("button", { name: "全部对话" }).click(); await see(composer).toBeVisible();
+      await page.getByRole("button", { name: "返回", exact: true }).click();
+      await see(roster).toBeVisible(); await see(dock).toBeVisible(); await capture(page, `${prefix}-roster`);
+      await see(dock.getByRole("button")).toHaveText(["对话", "应用"]);
       await roster.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
       await see(roster).toBeHidden(); await see(composer).toBeVisible();
     }

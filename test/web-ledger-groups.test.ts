@@ -111,7 +111,7 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
 
   // "新建群聊" replaces Matrix group creation and reuses the OpenGrove group form. It is the "+" of the 群聊
   // section in the full list of conversations.
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   const roster = page.getByRole("complementary", { name: "全部对话" });
   await roster.getByRole("button", { name: "新建群聊", exact: true }).click();
   await see(roster).toHaveCount(0);
@@ -124,7 +124,7 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   expect(create.body).toMatchObject({ title: "周报小组", agentIds: [helper.id, writer.id] });
   expect(create.body.idempotencyKey).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
   // The new group is the current conversation: its figure in the header row carries the name.
-  const currentChip = page.locator(".mau-chip[aria-selected='true']");
+  const currentChip = page.locator(".mau-chat-title");
   await see(currentChip).toHaveAttribute("data-chat-key", "chat:" + chatId);
   await see(currentChip).toHaveAttribute("title", "周报小组");
   await see(currentChip.locator("strong")).toHaveText("周报小组");
@@ -172,7 +172,7 @@ it.skipIf(!built)("creates a Router group, sends resolved mentions, shows addres
   await panel.getByRole("button", { name: "关闭", exact: true }).first().click();
 
   // Matrix group creation is gone and no Matrix room was created.
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await see(roster.getByRole("region", { name: "群聊" }).getByRole("button", { name: "新建群聊", exact: true })).toBeVisible();
   await see(page.getByRole("button", { name: "发起群聊" })).toHaveCount(0);
   await see(page.getByRole("menuitem", { name: "发起群聊" })).toHaveCount(0);

@@ -19,12 +19,10 @@ try {
 }
 
 export function applyTheme() {
-  document.documentElement.dataset.theme =
-    current === "system"
-      ? matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : current;
+  const theme = current === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : current;
+  document.documentElement.dataset.theme = theme;
+  // The bar a phone or an installed app draws around the page has the page's colour.
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#1f1f1d" : "#f9f9fa");
 }
 
 export function watchSystemTheme() {

@@ -127,6 +127,7 @@ export const mauApiReference: ApiRoute[] = [
   route("GET", agent + "/work-sessions/:sessionId/memory", "The kernel's memory setting of one work session."),
   route("POST", agent + "/work-sessions/:sessionId/memory", "Enable or disable the kernel's memory for one work session.", apiInput.sessionMemoryMode, "manage"),
 
+  route("GET", "/apps", "The owner's apps from the deployment's app service, and whether it has one."),
   route("GET", "/connector-accounts", "The owner's connector connections with their authorization state and the partners that can use each."),
   route("POST", account + "/feishu-application", "Give the app of a partner's Feishu chat channel to the owner's Feishu connection.", apiInput.feishuApplication, "manage"),
   route("GET", account + "/policy", "The connection's operations with the owner's setting for each: allow, ask or deny."),

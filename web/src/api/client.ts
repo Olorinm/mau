@@ -70,6 +70,8 @@ export interface MemoryMutation {
   changes: MemoryChange[]; undoOf?: string; undoneAt?: string; unseen: boolean;
 }
 export type MemoryOperation = { action: "add"; content: string } | { action: "remove"; old_text: string } | { action: "replace"; old_text: string; content: string };
+/** An app the owner can open: `url` and `icon` are https addresses or paths of this origin. */
+export interface AppSummary { id: string; name: string; url: string; icon?: string }
 export interface ConnectorAccountState {
   state: "connected" | "authorization_required" | "authorization_pending" | "expired" | "disconnected" | "needs_setup" | "needs_attention";
   verification: "oauth" | "provider" | "none";
@@ -140,6 +142,8 @@ const agent = (id: string) => `/agents/${encodeURIComponent(id)}`;
 export function mauApi(token: string) {
   return {
     account: () => request<{ owner: string }>(mau + "/account", { token }),
+    /** The owner's apps. `configured` is false while the deployment has no app service. */
+    apps: () => request<{ configured: boolean; data: AppSummary[] }>(mau + "/apps", { token }),
     connectorAccounts: () => request<{ configured: boolean; data: ConnectorAccount[] }>(mau + "/connector-accounts", { token, timeoutMs: 95_000 }),
     /** Unified 飞书 entry: give the Agent's Feishu chat app to the owner's Feishu connection (no second app or QR). */
     feishuApplication: (id: string, agentId: string) => request<ConnectorAccountState>(mau + "/connector-accounts/" + encodeURIComponent(id) + "/feishu-application", { token, body: { agentId }, timeoutMs: 150_000 }),

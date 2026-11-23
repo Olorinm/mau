@@ -52,47 +52,6 @@ export async function checkBrowser(url) {
       await page.getByPlaceholder("Write a message").inputValue(),
       "An independent UI",
     );
-    await page.getByRole("button", { name: "catalog", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Choose template", exact: true })
-      .click();
-    const catalogCard = page.locator(".app-store-app-card");
-    await catalogCard.focus();
-    await catalogCard.press("Enter");
-    const catalogDialog = page.getByRole("dialog", {
-      name: "Template",
-      exact: true,
-    });
-    await catalogDialog.waitFor();
-    const catalogClose = catalogDialog.getByRole("button", {
-      name: "Close",
-      exact: true,
-    });
-    await expect(catalogClose).toBeFocused();
-    assert.equal(
-      await catalogDialog.evaluate((element) =>
-        element.closest(".af-scope")?.getAttribute("data-resolved-theme"),
-      ),
-      "light",
-      "catalog portal keeps the caller's theme scope",
-    );
-    await page.keyboard.press("Shift+Tab");
-    await expect(
-      catalogDialog.getByRole("button", {
-        name: "Choose template",
-        exact: true,
-      }),
-    ).toBeFocused();
-    await page.keyboard.press("Tab");
-    await expect(catalogClose).toBeFocused();
-    await page.keyboard.press("Escape");
-    await catalogDialog.waitFor({ state: "hidden" });
-    await expect(catalogCard).toBeFocused();
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await page.getByRole("menuitem", { name: "Account action" }).click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "account",
-    ]);
     await page.getByRole("button", { name: "profile", exact: true }).click();
     await page
       .getByRole("button", { name: "Edit person", exact: true })
@@ -105,15 +64,6 @@ export async function checkBrowser(url) {
     assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
       "profile",
       "A new person",
-    ]);
-    await page.getByRole("button", { name: "create", exact: true }).click();
-    await page
-      .getByLabel("App name", { exact: true })
-      .fill("Separate application");
-    await page.getByRole("button", { name: "Create app", exact: true }).click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "app",
-      "Separate application",
     ]);
     await page.getByRole("button", { name: "builder", exact: true }).click();
     await page.getByPlaceholder("Sample Workbench").fill("Disabled builder");
@@ -172,23 +122,13 @@ export async function checkBrowser(url) {
     await page.getByRole("button", { name: "messages", exact: true }).click();
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-desktop.png" });
+    // The destinations are one capsule in the middle of the row at the top.
     assert.ok(
       await page
-        .locator(".app-user-button")
-        .evaluate(
-          (el) =>
-            Math.abs(innerHeight - el.getBoundingClientRect().bottom) < 32,
-        ),
-      "account remains at the bottom of the original rail",
+        .getByRole("navigation", { name: "Workbench" })
+        .evaluate((el) => { const r = el.getBoundingClientRect(); return r.top < 16 && Math.abs((r.left + r.right) / 2 - innerWidth / 2) < 2; }),
+      "the destinations sit in the middle of the top row",
     );
-    const separator = page.getByRole("separator", {
-      name: "Resize main navigation",
-    });
-    await separator.focus();
-    await page.keyboard.press("Home");
-    assert.equal(await separator.getAttribute("aria-valuenow"), "0");
-    await page.getByRole("button", { name: "Expand main navigation" }).click();
-    assert.equal(await separator.getAttribute("aria-valuenow"), "126");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await page

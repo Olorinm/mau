@@ -6,22 +6,10 @@ export {
   type FrontendLabelKey,
   type FrontendTranslate,
 } from "./provider";
+export { AppShell, type Destination } from "./shell";
 export {
-  AppShell,
-  Navigation,
-  type NavigationItem,
-  type NavigationGroup,
-  type MenuAction,
-} from "./shell";
-export {
-  ItemList,
   ListDetailLayout,
-  PageHeader,
-  DetailPanel,
-  type ListItem,
   CollectionEmptyState,
-  CollaborationTabs,
-  SidebarHeader,
   SearchField,
   LoadingSurface,
   InlineNotice,
@@ -34,7 +22,6 @@ export {
   type ComposerMention,
   type ComposerCommand,
 } from "./conversation";
-export { Catalog, type CatalogItem } from "./catalog";
 export {
   FileEditor,
   type FileEditorProps,
@@ -42,12 +29,7 @@ export {
 } from "./files/editor";
 export { type MarkdownEditorSelection } from "./files/code-editor";
 export { MotionMenu, MotionMenuItem } from "./ui/menu";
-export {
-  ProfileDialog,
-  AppCreateForm,
-  AppIdentityEditor,
-  AppSettingsDialog,
-} from "./forms";
+export { ProfileDialog } from "./forms";
 
 export { RoomComposer, type MentionOption } from "./presentation/room-composer";
 export { RoomChatSurface } from "./presentation/room-chat-surface";

@@ -98,8 +98,7 @@ test("independent components can render with two different products and no brows
           ...["Notebook", "Studio"].map((brand) =>
             React.createElement(
               ui.AppShell,
-              { brand, key: brand },
-              React.createElement(ui.Catalog, { items: [] }),
+              { label: brand, key: brand, destinations: [], onSelect() {} },
             ),
           ),
         ),
