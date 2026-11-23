@@ -71,7 +71,7 @@ mau env resume helper
 
 backend 和 reviewer 共用 `implementation` 运行时的沙箱和审批配置。两人的会话 ID 和 Mau 员工 ID 各自独立，撤掉其中一人的飞书连接不会改变另一人的分配。两人分到同一个连接时，适用该连接的同一套操作规则。沙箱内的进程共用系统账号，可以读取彼此的会话 ID；此模式适合互相信任的伙伴。
 
-官方技能安装在 `/home/user/.agents/skills`。用同一套 Linux 目录实测，默认的 Codex 0.171.0 和可选的 DSH 0.2.2-rc.5 各自在模型请求中列出全部 38 个官方技能，另有一项 `mau-sandbox`。DSH 通过原生技能工具逐项加载时也从这个目录读取。无需把同一批文件再复制到 `.codex/skills`。
+Codex 和可选的 DSH 都会从 `/home/user/.agents/skills` 发现官方技能。共享环境保留用于本地网页的浏览器技能，并按员工获配的连接安装飞书和 Google 技能。实际调用 CLI 时仍会核对调用员工的分配。把同名技能再复制到 `.codex/skills` 会在 Codex 中产生重复条目。
 
 两名 Codex 伙伴都用原生 Auto，即允许在工作区写入，越界时按需申请。样例额外开启工作区网络，使它们能访问本机转发端口、验收网页及网关放行的外部服务。只有 advisor 的启动命令带 Antigravity 的跳过审批参数。连接器的允许、询问、拒绝仍由 Mau 和连接器服务执行。[Codex 官方审批说明](https://developers.openai.com/codex/agent-approvals-security/)
 
@@ -126,7 +126,7 @@ Claude 使用官方 Anthropic API 时，方案中同样可设置 `anthropicCrede
 [云端浏览器](connector-accounts.md#connector-clis-and-guides-in-the-agents-environment)运行在环境之外，拒绝回环和内网地址，打不开伙伴在 `http://localhost:端口` 上跑起来的页面。为此环境自带一个浏览器，来自 Environment 的[启动脚本](https://github.com/Olorinm/agent-kit/blob/main/packages/environment/cloudflare/examples/start-host.sh)（部署里的 `cloud/start-host.sh`）：
 
 - Debian 的 `chromium-headless-shell` 和西文、中日韩、表情字体，以及未经改动的官方 [agent-browser](https://github.com/vercel-labs/agent-browser) CLI：从 npm 安装到 `/opt/local-browser`，版本与 Agent Connectors 锁定的一致，只保留本机架构的可执行文件。下载约 285 MB，占磁盘约 670 MB。Chromium 的版本跟随 Debian 的发布和更新，不从浏览器厂商下载，与本仓库 CI 锁定的 Playwright 无关。
-- 用 `/opt/local-browser/agent-browser` 运行这个 CLI。这个文件只有几行 shell：把 `AGENT_BROWSER_EXECUTABLE_PATH` 设为上述 Chromium，把 `AGENT_BROWSER_ARGS` 设为容器里以非 root 用户运行 Chromium 所需的参数（`--no-sandbox`：隔离边界是环境本身；`--disable-dev-shm-usage`：`/dev/shm` 很小），设 `AGENT_BROWSER_NO_VERSION_CHECK=1`（CLI 对 Chrome 新版本的检查要访问外网），然后把全部参数交给 CLI。它不在 `PATH` 上：`/usr/local/bin/agent-browser` 仍是 Mau 的云端浏览器客户端。
+- 在终端运行 `agent-browser open http://localhost:端口` 即可。Mau 通过 `/opt/local-browser/agent-browser` 启动沙箱里的 Chromium，并设置可执行文件、容器启动参数和版本检查。打开外部地址时使用已分配的云端浏览器。后续的 `snapshot`、`click` 等命令跟随此次成功打开页面的浏览器。
 - 安装在环境首次启动后于后台进行，Host 就绪时间不变，结果保存在环境快照里。几分钟后装完时 `/opt/local-browser/agent-browser` 才出现；安装输出在 `/var/log/local-browser-install.log`。
 - CLI 在两次命令之间保留一个带着浏览器的常驻进程，以运行它的用户身份运行，socket 和会话文件在 `/home/user/.agent-browser`。`close`、一小时没有命令或环境暂停时结束。
 - 这个浏览器不能访问外网：环境的出口网络不放行任何网站。

@@ -198,7 +198,7 @@ The [four-partner Mau options](../examples/mau-four-partners.json) and [Host con
 
 Backend and reviewer share the sandbox and approval configuration of the `implementation` runtime. They have independent native sessions and Mau employee IDs. Removing one employee’s connection leaves the other’s assignments intact. Employees assigned the same connection use its common operation policy. Processes under this shared OS account can read each other’s session IDs and claim them, so this profile assumes trusted coworkers.
 
-The official skills are installed in `/home/user/.agents/skills`. With the same Linux home and workspace layout, the model-facing catalogs of Codex 0.171.0 and the optional DSH 0.2.2-rc.5 runtime each list all 38 upstream skills plus `mau-sandbox`. The DSH skill tool resolves all 38 to that directory. Installing another copy under `.codex/skills` would duplicate entries in Codex. [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
+Codex and the optional DSH runtime discover the official skills in `/home/user/.agents/skills`. The shared workspace retains the browser skill for local pages, and adds the Lark and Google groups when employees have those connections. Each CLI still checks the calling employee's assignment. Installing a second copy under `.codex/skills` would duplicate entries in Codex. [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
 
 Codex uses the native Auto preset, with workspace writes and on-request approvals. Its workspace network flag is enabled for the loopback relay, local web tests and outbound requests permitted by the gateway. Only the advisor's Antigravity command receives `--dangerously-skip-permissions`; Mau still enforces connected-app policies. Ordinary work and acceptance are coordinated in lead's private conversation. [Codex approval and sandbox settings](https://developers.openai.com/codex/agent-approvals-security/)
 
@@ -362,12 +362,13 @@ the environment and refuses loopback and private addresses, so it cannot open a 
   Agent Connectors pins, under `/opt/local-browser` with only this machine's binary kept. About 285 MB to
   download and 670 MB on disk. Chromium is the version Debian ships and updates; nothing is downloaded
   from a browser vendor, and none of this touches the Playwright pin of this repository's CI.
-- Run the CLI as `/opt/local-browser/agent-browser`. That file is a few lines of shell that set
+- Use `agent-browser open http://localhost:PORT` in the terminal. Mau runs loopback pages through
+  `/opt/local-browser/agent-browser`. The local launcher sets
   `AGENT_BROWSER_EXECUTABLE_PATH` to that Chromium, `AGENT_BROWSER_ARGS` to what Chromium needs in a
   container as a user other than root (`--no-sandbox`: the environment is the isolation boundary;
   `--disable-dev-shm-usage`: `/dev/shm` is small) and `AGENT_BROWSER_NO_VERSION_CHECK=1` (the CLI's check
-  for a newer Chrome asks a site on the internet), then pass every argument to the CLI. It is not on
-  `PATH`: `/usr/local/bin/agent-browser` remains Mau's client of the remote browser.
+  for a newer Chrome asks a site on the internet), then passes the arguments to the official CLI. When an external address opens through the assigned cloud
+  browser, subsequent commands such as `snapshot` and `click` follow that browser session.
 - The installation runs in the background after an environment's first start, so Host is ready as
   before, and is kept by the environment's snapshot. `/opt/local-browser/agent-browser` appears when it
   has finished, a few minutes later; `/var/log/local-browser-install.log` has its output.
