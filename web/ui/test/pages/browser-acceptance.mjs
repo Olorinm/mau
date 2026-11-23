@@ -126,8 +126,11 @@ export async function checkBrowser(url) {
     const mark = await page.locator(".app-mark").boundingBox();
     const content = await page.locator("main.workspace").boundingBox();
     assert.ok(rail && mark && content, "the desktop rail, mark and content are visible");
-    assert.ok(rail.height > rail.width && rail.x < 40 && rail.y >= mark.y + mark.height,
-      "the desktop destinations form a vertical rail below the mark at the left");
+    const firstDestination = await page.locator(".app-switch-item").first().boundingBox();
+    assert.ok(rail.height > rail.width && rail.x < 40, "desktop navigation forms a vertical rail at the left");
+    assert.ok(firstDestination && mark.x >= rail.x && mark.x + mark.width <= rail.x + rail.width
+      && mark.y >= rail.y && mark.y + mark.height <= firstDestination.y,
+      "the mark sits inside the rail above the first destination");
     assert.ok(content.x >= rail.x + rail.width, "the page starts to the right of the rail");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Back", exact: true }).click();
