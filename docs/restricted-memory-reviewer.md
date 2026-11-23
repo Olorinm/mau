@@ -20,12 +20,32 @@ This adapter does not provision the worker or assert that an arbitrary existing 
 
 The default binding must use `skills: { mode: "unavailable" }`; capabilities then report `skills: false`. Codex's `skills/config/write` enables or disables a discovered skill; it is not a general skill-content authoring API. This change adds no parallel skill filesystem manager. A trusted integration may advertise `native-managed` skills only when an actual scoped skill dispatcher exists, with exactly its tool names in the dispatch allowlist. Merely naming a tool `skill_manage` is not evidence that such a dispatcher exists.
 
-## Verification performed
+## Native audit evidence
 
-- 14 coordinator tests cover cadence, non-owner exclusion, runtime capability refusal, scope, history copying, lost-response recovery, cross-session non-reentrancy, cancellation, restart and a competing coordinator.
-- 9 adapter tests cover public profile shape, mutable-policy rejection, native-version and effective-config checks, original-partner versus worker identity, submission provenance and budgets, skills unavailable by default, policy revocation, snapshot binding and cancellation.
-- An isolated actual Codex 0.165.0 executable was run with the **exact exported profile**, an empty temporary HOME/CODEX_HOME, and a deterministic loopback Responses provider. The profile parsed with Host's public `configSchema`; the adapter accepted the actual native version and effective config. The model tool list contained only `memory_probe`, and that dynamic tool completed successfully. Forced calls to `exec_command`, `apply_patch`, `collaboration.spawn_agent`, code-mode `exec`, `list_mcp_resources`, `view_image` and `send_message_to_user_async` each returned an unsupported-call result. A further check loaded the generated JSON using public `createConfiguredRuntimes`, started the Host HTTP server, and completed a managed run with the same single-tool surface. Ten scenarios used 18 local provider requests.
+Each row describes a separate execution. The scripted provider ran on loopback and saw the catalog the real binary presented on every request. Each eight-scenario run used one synthetic memory read and seven empty-argument checks for unavailable tools. All seven returned a native unsupported-call result. Only the memory read reached the application dispatcher.
 
-- Actual Codex 0.171.0 loaded the exported profile via Host's public configuration and HTTP run APIs in a private HOME, CODEX_HOME and workspace with a loopback Responses provider. Across eight independent runs and 16 provider requests the native model saw exactly `memory_probe`. One managed call succeeded. Each of the seven unconfigured calls listed above returned an unsupported-call result before product dispatch. The reviewer accepted the matching version, bundled catalog and effective provider configuration. Repeating all eight runs against the official 0.165.0 binary after the update produced the same tool catalog and dispatch results and an available capability.
+| Audit | Official Codex CLI | Scenarios | Local provider requests | Advertised tool | Reviewer capability |
+| --- | --- | ---: | ---: | --- | --- |
+| Original audit recorded before the upgrade | 0.165.0 | 10 | 18 | `memory_probe` | available |
+| New release audit | 0.171.0 | 8 | 16 | `memory_probe` | available |
+| Compatibility rerun on the updated adapter | 0.165.0 | 8 | 16 | `memory_probe` | available |
 
-These are protocol/dispatch checks with a local provider, not an external-model quality evaluation, OAuth acceptance test, cloud deployment or proof against a trusted operator changing the runtime. No production partner, account or session was touched. The locally generated probe and report are under `.local/memory-review-audit/`; the exact baseline and portable fixtures are in the source and tests named above.
+The original audit also checked configuration parsing and a managed run through the public Host HTTP service. Its ten scenarios belong to that earlier procedure. The checked-in audit runs eight independent Host sessions on either supported version. It checks the installed version and matching bundled catalog, the effective dedicated Responses provider and MCP configuration, every model-facing tool catalog, and the result and dispatch count of each call. The application's separate automated suites cover the coordinator and adapter with 14 and nine tests respectively. [Coordinator tests](../test/memory-review.test.ts) · [Adapter tests](../test/restricted-memory-reviewer.test.ts)
+
+### Reproduce the eight-scenario audit
+
+Use Node 24, a POSIX environment, and a checkout with Mau's pinned component archives, root dependencies and `web` dependencies installed. The script starts the pinned public Host CLI from `web/node_modules`. Use an absolute path to an official Codex executable of the version being checked. The checker takes no account credentials. It creates private temporary directories for the worker's home, state and workspace, starts a local Responses fixture and removes its state on exit. [Audit script](../scripts/audit-restricted-reviewer.mjs)
+
+```sh
+npm run build
+node scripts/audit-restricted-reviewer.mjs /absolute/path/to/codex-0.171.0 0.171.0
+node scripts/audit-restricted-reviewer.mjs /absolute/path/to/codex-0.165.0 0.165.0
+```
+
+A passing run prints one summary line and exits with status zero. The expected counts for 0.171.0 are shown below. The compatibility run prints the same counts with `0.165.0` in the version field.
+
+```json
+{"version":"0.171.0","scenarios":8,"providerRequests":16,"advertisedTools":["memory_probe"],"managedCalls":1,"nativeRefusals":7,"capabilities":"available"}
+```
+
+The evidence covers native protocol behavior and product dispatch in this dedicated configuration. Cloud deployment, external model quality and OAuth use require separate evidence. The checked-in files contain the deterministic fixture and these aggregate results.

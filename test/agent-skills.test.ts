@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { execFile, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { chmodSync, chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as skills from "../src/agent-skills.js";
@@ -43,8 +43,8 @@ function sandbox(relay: boolean) {
       expect(argv[0]).toBe("node"); expect(argv[1]).toBe("-e"); expect(argv[3]).toBe("--");
       const plan = JSON.parse(Buffer.from(argv.slice(4).join(""), "base64").toString("utf8"));
       const rewritten = Buffer.from(JSON.stringify({ ...plan, skillsDirectory: join(codex, "skills"), binDirectory: bin, relayClient: client }), "utf8").toString("base64");
-      const out = spawnSync(process.execPath, ["-e", argv[2]!, "--", rewritten], { encoding: "utf8" });
-      return { exitCode: out.status, stdout: out.stdout ?? "" };
+      return new Promise<{ exitCode: number; stdout: string }>(resolve =>
+        execFile(process.execPath, ["-e", argv[2]!, "--", rewritten], (error, stdout) => resolve({ exitCode: error ? 1 : 0, stdout })));
     },
     readFile: async () => new Uint8Array(),
   };
@@ -277,4 +277,53 @@ it("installs the same commands once for a shared employee sandbox independently 
     expect(manager.toolGuides(kernel)).toBeUndefined();
     expect(await manager.install(kernel, "employee", "binding-owner", "shared", async () => box.files)).toBeUndefined();
   }
+});
+
+it("retires unedited Mau guides only after the official skills arrive and preserves neighboring assets and local edits", async () => {
+  const box = sandbox(true), ids = ["coco-browser", "work-feishu", "google-gmail"];
+  const old = { reader: () => async () => ({ status: "completed", tools: ["coco_browser__agent_browser_read", "work_feishu__cli_read", "google_gmail__gws_read"].map(name => ({ name })) }),
+    connections: () => ids } as unknown as ConnectedApps;
+  await new skills.AgentSkills(old, () => connections).sync("agent", "owner", "shared", async () => box.files);
+  const dir = (name: string) => join(box.codex, "skills", name);
+  const file = (name: string) => join(dir(name), "SKILL.md");
+  const original = readFileSync(file("agent-browser"), "utf8");
+  const edited = readFileSync(file("feishu"), "utf8") + "Owner's instructions.\n";
+  writeFileSync(file("feishu"), edited); writeFileSync(join(dir("agent-browser"), "my-notes.md"), "notes");
+  const make = () => new skills.AgentSkills({ employeePermissions: true } as ConnectedApps, () => []);
+  const manager = make(), install = (m: skills.AgentSkills) => m.install("codex", "agent", "owner", "shared", async () => box.files);
+  expect(await install(manager)).toMatchObject({ awaitingOfficialSkills: true, removed: [] });
+  expect(readFileSync(file("agent-browser"), "utf8")).toBe(original);
+  for (const name of ["agent-browser", "gws-gmail", "lark-shared"]) {
+    const official = join(box.codex, "..", ".agents", "skills", name);
+    mkdirSync(official, { recursive: true }); writeFileSync(join(official, ".agent-environment-version"), "release");
+    writeFileSync(join(official, "SKILL.md"), "upstream");
+  }
+  await Promise.all([install(manager), install(make())]);
+  expect(await install(manager)).toBeUndefined();
+  expect(await install(make())).toMatchObject({ removed: [] });
+  expect(existsSync(file("agent-browser"))).toBe(false); expect(existsSync(file("google-gmail"))).toBe(false);
+  expect(readFileSync(file("feishu"), "utf8")).toBe(edited);
+  expect(readFileSync(join(dir("agent-browser"), "my-notes.md"), "utf8")).toBe("notes");
+  const backups = readdirSync(dir("agent-browser")).filter(name => name.startsWith(".mau-retired-"));
+  expect(backups).toHaveLength(1); expect(readFileSync(join(dir("agent-browser"), backups[0]!, "guide.md"), "utf8")).toBe(original);
+});
+
+it("keeps user skills and skips symlinks at the Codex root, named directory and skill file during employee migration", async () => {
+  const box = sandbox(true), root = join(box.codex, "skills"), victim = join(box.root, "custom");
+  mkdirSync(victim); writeFileSync(join(victim, "SKILL.md"), "my skill");
+  const apps = { employeePermissions: true } as ConnectedApps;
+  const install = () => new skills.AgentSkills(apps, () => []).install("codex", "agent", "owner", "shared", async () => box.files);
+  symlinkSync(victim, root);
+  expect(await install()).toMatchObject({ removed: [] }); expect(lstatSync(root).isSymbolicLink()).toBe(true);
+  rmSync(root); mkdirSync(root);
+  symlinkSync(victim, join(root, "agent-browser"));
+  mkdirSync(join(root, "feishu")); symlinkSync(join(victim, "SKILL.md"), join(root, "feishu/SKILL.md"));
+  mkdirSync(join(root, "google-gmail")); writeFileSync(join(root, "google-gmail/SKILL.md"), "custom gmail");
+  expect(await install()).toMatchObject({ removed: [] });
+  expect(lstatSync(join(root, "agent-browser")).isSymbolicLink()).toBe(true);
+  expect(lstatSync(join(root, "feishu/SKILL.md")).isSymbolicLink()).toBe(true);
+  expect(readFileSync(join(root, "google-gmail/SKILL.md"), "utf8")).toBe("custom gmail");
+  renameSync(box.codex, box.codex + "-saved"); symlinkSync(box.codex + "-saved", box.codex);
+  expect(await install()).toMatchObject({ removed: [] }); expect(lstatSync(box.codex).isSymbolicLink()).toBe(true);
+  expect(readFileSync(join(victim, "SKILL.md"), "utf8")).toBe("my skill");
 });

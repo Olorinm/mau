@@ -16,6 +16,22 @@ import { shellRelay } from "./kernels.js";
 const SKILLS_DIRECTORY = "/home/user/.codex/skills";
 const RELAY_CLIENT = "/opt/agent-host/node_modules/@olorinm/agent-host/dist/service/relay-cli.js";
 const MARKER = "Installed by Mau";
+// SHA-256 of exact SKILL.md files produced by skillDocument from released connector guides.
+// A previous version or a local edit we don't recognize stays in the user's catalog.
+const retiredGuides = {
+  "agent-browser": { replacement: "agent-browser", hashes: [
+    "0d96ab36689d3ffaea82c321dd0cd4a2995675c21c55e71d538fda4800ca1764", "5a2acb297ffdcb3c6ec2deaf0edcbb106d5ba07784b8ef28485be9b3fc57eb4b",
+    "72f5899e8ea2494b83fcf5953e3457e0a5d620073fec88d7ee8daaf91ffa9d7a", "b817b40e1634fea44a68e96b7dff0ae56c1b7bc20b1bf7149ae110c5314f67f5",
+  ] },
+  feishu: { replacement: "lark-shared", hashes: [
+    "6260faa6798b36a5c5ab2d2ff57ea74adcfc3b3ac0cb2700e72e6c57aeb816b6", "15003c07911c628af6637482acf815f7c28fe72aad94592336fcafc437582b5e",
+    "3aab8362cd060f71cadc95bd8531f9739974f86e57c0a5afa16fb8079c00726c",
+  ] },
+  "google-gmail": { replacement: "gws-gmail", hashes: [
+    "41b53f058ad554ac4302c31c3f0b88864a6553bca9d85c9b6d7424fd24245375", "4e7692b0f69e85c888d59b82b2e9203bff2d725f8e5df48c927f0d584138e320",
+    "24fc0b9bff2834112512429ea3aa8a490b7a7dddeb862f3350a39d209b4aa216",
+  ] },
+};
 // Connector tool prefix behind each CLI command (`<prefix>_read` / `<prefix>_write`; see agent-host-relay).
 const prefixes: Record<string, string> = { gws: "gws", "lark-cli": "cli", "agent-browser": "agent_browser" };
 const COMMANDS = Object.keys(prefixes);
@@ -224,12 +240,13 @@ for (const command of plan.known) {
   } else if (managed && !plan.commandsOnly) { fs.unlinkSync(file); result.removed.push(command); }
 }
 if (!available) result.relay = "relay_client_missing";
-if (plan.commandsOnly) { console.log(JSON.stringify(result)); process.exit(0); }
+if (plan.commandsOnly && !plan.retiredGuides) { console.log(JSON.stringify(result)); process.exit(0); }
 let owner;
 try { owner = fs.lstatSync(home); } catch (error) {
   if (error && error.code === "ENOENT") { console.log(JSON.stringify({ ...result, skipped: "codex_home_missing" })); process.exit(0); }
   throw error;
 }
+if (plan.retiredGuides && (!owner.isDirectory() || (isRoot && owner.uid === 0))) { console.log(JSON.stringify(result)); process.exit(0); }
 if (!owner.isDirectory()) throw new Error("codex_home_not_directory");
 if (isRoot && owner.uid === 0) throw new Error("codex_home_owned_by_root");
 // Step 2: permanently drop privileges to the .codex owner before touching any user-controlled path.
@@ -237,6 +254,44 @@ if (isRoot) {
   if (typeof process.setgroups === "function") process.setgroups([owner.gid]);
   process.setgid(owner.gid);
   process.setuid(owner.uid);
+}
+if (plan.retiredGuides) {
+  // Use the verified directory as the working directory so renaming a parent cannot redirect a write.
+  const enter = (parts) => {
+    process.chdir(path.dirname(home));
+    for (const part of parts) {
+      const before = fs.lstatSync(part, { throwIfNoEntry: false });
+      if (!before?.isDirectory()) return false;
+      try { process.chdir(part); } catch (error) { if (error.code === "ENOENT") return false; throw error; }
+      const after = fs.statSync(".");
+      if (before.dev !== after.dev || before.ino !== after.ino) return false;
+    }
+    return true;
+  };
+  const fingerprint = (file) => {
+    if (!fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) return;
+    try {
+      const fd = fs.openSync(file, O_RDONLY | O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      try { if (fs.fstatSync(fd).isFile()) return crypto.createHash("sha256").update(fs.readFileSync(fd)).digest("hex"); }
+      finally { fs.closeSync(fd); }
+    } catch (error) { if (!["ENOENT", "ELOOP"].includes(error.code)) throw error; }
+  };
+  for (const [name, { replacement, hashes }] of Object.entries(plan.retiredGuides)) {
+    const ready = enter([".agents", "skills", replacement]) &&
+      ["SKILL.md", ".agent-environment-version"].every(file => fs.lstatSync(file, { throwIfNoEntry: false })?.isFile());
+    if (!enter([path.basename(home), path.basename(root), name])) continue;
+    const file = "SKILL.md", hash = fingerprint(file);
+    if (!hashes.includes(hash)) continue;
+    if (!ready) { result.awaitingOfficialSkills = true; continue; }
+    // Archive only the guide, leaving any neighboring assets intact. Atomic rename accepts exactly one winner.
+    const archive = fs.mkdtempSync(".mau-retired-"), saved = path.join(archive, "guide.md");
+    try { fs.renameSync(file, saved); }
+    catch (error) { fs.rmdirSync(archive); if (error.code === "ENOENT") continue; throw error; }
+    if (fingerprint(saved) === hash) { result.removed.push(name); continue; }
+    // A writer replaced the guide between verification and rename. Restore it without overwriting a later edit.
+    try { fs.linkSync(saved, file); } catch (error) { if (error.code !== "EEXIST") throw error; }
+  }
+  console.log(JSON.stringify(result)); process.exit(0);
 }
 try {
   if (!fs.lstatSync(root).isDirectory()) throw new Error("skills_directory_not_directory");
@@ -309,6 +364,7 @@ export class AgentSkills {
    */
   private async run(key: string, plan: SkillPlan, commandsOnly: boolean, files: () => Promise<SandboxFiles>) {
     const payload = JSON.stringify({ ...plan, commandsOnly, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT,
+      ...(this.apps.employeePermissions ? { retiredGuides } : {}),
       known: COMMANDS, always: ALWAYS, clients: { "agent-browser": BROWSER_CLIENT } });
     const digest = createHash("sha256").update(payload).digest("hex");
     if (this.synced.get(key) === digest) return undefined;
@@ -316,7 +372,8 @@ export class AgentSkills {
     for (let offset = 0; offset < encoded.length; offset += 32_768) chunks.push(encoded.slice(offset, offset + 32_768));
     const run = await sandbox.exec(["node", "-e", installer, "--", ...chunks]);
     if (run.exitCode !== 0) throw new Error("agent_skills_install_failed");
-    this.synced.set(key, digest);
-    return JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+    const result = JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+    if (!result.awaitingOfficialSkills) this.synced.set(key, digest);
+    return result;
   }
 }

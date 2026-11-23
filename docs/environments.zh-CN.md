@@ -62,12 +62,16 @@ mau env resume helper
 
 ### 四个伙伴共用一个工作区
 
-使用[四伙伴 Mau 配置](../examples/mau-four-partners.json)和[Host 配置](../examples/cloud/host-four-partners.json)。lead 用 Claude，backend 和 reviewer 各自开一个 Codex 会话，advisor 用 Antigravity。四人都在 `/home/user/workspace` 工作。 样例中的 `personal-gmail` 和 `team-browser` 要换成连接器实际使用的 ID。
+使用[四伙伴 Mau 配置](../examples/mau-four-partners.json)和[Host 配置](../examples/cloud/host-four-partners.json)。lead 用 Claude，backend 和 reviewer 各自开一个 Codex 会话，advisor 用 Antigravity。四人都在 `/home/user/workspace` 工作。样例中的 `personal-gmail` 和 `team-browser` 要换成连接器实际使用的 ID。
 
 1. 将样例复制到 Mau 私有配置目录，填好所有者、服务地址和 `private/` 下的凭据路径。按示例放好已验证的 Host 包、校验清单、同版本 Agent Kit 的 Cloudflare 启动脚本及 `official-skills.tgz`。`node24` 会安装 Codex 和带摘要校验的 Linux 版 Antigravity。Host 包自带 Claude Agent SDK。
-2. 在运营端提供 Anthropic API key、Gemini API key、Codex 登录文件和限定作用域的 GitHub token。Gemini 使用[样例设置文件](../examples/cloud/agy-settings.json)。Mau 将模型和 GitHub 的凭据交给网关，连接器签名私钥保存在 Mau 端。
+2. 在运营端提供 Anthropic API key、Gemini API key、Codex 登录文件和限定作用域的 GitHub token。Gemini 使用[样例设置文件](../examples/cloud/agy-settings.json)。样例中的 `anthropicCredentialFile` 和 `githubCredentialFile` 按 Mau 配置目录解析。保留字段时，文件须在创建或恢复环境前存在且可读。无需 GitHub 访问时可移除 `githubCredentialFile`；更换 Claude 的认证方式时需同时配置可用的提供方。Mau 将模型和 GitHub 的凭据交给网关，连接器签名私钥保存在 Mau 端。
 3. 创建名为 `lead` 的伙伴，选择 `shared-team` 环境。在和 lead 的私聊里让它先用 `partners` 的 `action=roster` 检查环境，再用 `action=recruit` 招募三人。backend（`codex`）负责实现和测试；reviewer（`codex`）独立审查代码；advisor（`agy`）评审方案。招募后再查一次 roster，核对四个人的名字和内核。
-4. 打开 Mau 连接器设置，把个人飞书、个人邮箱只分给 lead，再分别给下属分配工作连接和操作权限。样例启用 `employee` 权限模式，终端可转发的工具限定为 `connected_apps`。lead 派活时，下属的连接器审批卡回到 lead 的会话。
+4. 打开 Mau 连接器设置，把个人飞书、个人邮箱只分给 lead，再分别给下属分配工作连接。每项操作的允许、询问或拒绝设置保存在连接上。样例启用 `employee` 权限模式，终端可转发的工具限定为 `connected_apps`。lead 派活时，下属的连接器审批卡回到 lead 的会话。
+
+backend 和 reviewer 共用 `implementation` 运行时的沙箱和审批配置。两人的会话 ID 和 Mau 员工 ID 各自独立，撤掉其中一人的飞书连接不会改变另一人的分配。两人分到同一个连接时，适用该连接的同一套操作规则。沙箱内的进程共用系统账号，可以读取彼此的会话 ID；此模式适合互相信任的伙伴。
+
+官方技能安装在 `/home/user/.agents/skills`。用同一套 Linux 目录实测，默认的 Codex 0.171.0 和可选的 DSH 0.2.2-rc.5 各自在模型请求中列出全部 38 个官方技能，另有一项 `mau-sandbox`。DSH 通过原生技能工具逐项加载时也从这个目录读取。无需把同一批文件再复制到 `.codex/skills`。
 
 两名 Codex 伙伴都用原生 Auto，即允许在工作区写入，越界时按需申请。样例额外开启工作区网络，使它们能访问本机转发端口、验收网页及网关放行的外部服务。只有 advisor 的启动命令带 Antigravity 的跳过审批参数。连接器的允许、询问、拒绝仍由 Mau 和连接器服务执行。[Codex 官方审批说明](https://developers.openai.com/codex/agent-approvals-security/)
 
