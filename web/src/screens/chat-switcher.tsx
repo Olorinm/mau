@@ -64,7 +64,7 @@ export function ChatRoster({ sections, current, onPick, label, searchLabel, empt
     </div>
   );
   if (profile) return (
-    <aside className="mau-roster" data-view="profile" aria-label={profile.label}>
+    <aside className="mau-roster agent-page-surface" data-view="profile" aria-label={profile.label}>
       <div className="mau-roster-top">
         <button type="button" className="mau-roster-back" onClick={onBack}><ProductIcon name="back" size={18} /><span>{profile.backLabel}</span></button>
       </div>

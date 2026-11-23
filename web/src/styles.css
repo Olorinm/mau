@@ -459,7 +459,9 @@ button.mau-chat-title:enabled:hover {
   box-shadow: var(--shadow-glass);
   padding: 8px 8px 12px;
 }
+/* A profile is a page: grey, with its sections as cards. */
 .mau-roster[data-view="profile"] {
+  background: var(--c-page);
   padding: 8px 0 0;
 }
 /* The profile: the partner, a row of section icons, and the open section in the settings pages' own components. */

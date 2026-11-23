@@ -30,11 +30,12 @@
   min-height: 20px;
   padding: 0 2px;
 }
+/* A section's title is plain and strong, as on a system settings page. */
 .agent-settings-section-header h3 {
   margin: 0;
-  color: var(--c-text-secondary);
+  color: var(--c-text);
   font-size: var(--fs-body);
-  font-weight: var(--fw-medium);
+  font-weight: var(--fw-semibold);
   line-height: var(--lh-ui);
 }
 .agent-settings-section-note {
@@ -50,7 +51,7 @@
   min-width: 0;
   overflow: hidden;
   border-radius: var(--r-panel);
-  background: var(--c-panel);
+  background: var(--c-card);
   padding: var(--space-panel-y) 0;
 }
 
@@ -709,14 +710,19 @@ button.agent-list-row-main:focus-visible {
   text-align: left;
 }
 .agent-settings-nav-item:hover {
-  background: color-mix(in srgb, var(--c-panel) 60%, transparent);
+  background: var(--c-page-fill);
 }
+/* The current page of the navigation is filled with the accent, as a system sidebar's selection is. */
 .agent-settings-nav-item[aria-current="page"] {
-  background: var(--c-panel);
+  background: var(--c-accent-solid);
+  color: var(--c-on-accent);
 }
 .agent-settings-nav-icon {
   display: inline-flex;
   color: var(--c-text-strong);
+}
+.agent-settings-nav-item[aria-current="page"] :is(.agent-settings-nav-icon, .agent-settings-nav-chevron) {
+  color: inherit;
 }
 .agent-settings-nav-icon svg {
   width: 17px;
@@ -820,7 +826,7 @@ button.agent-list-row-main:focus-visible {
     overflow: hidden;
     gap: 0;
     border-radius: var(--r-panel);
-    background: var(--c-panel);
+    background: var(--c-card);
   }
   .agent-settings-nav-footer {
     margin-top: 24px;
@@ -876,4 +882,14 @@ button.agent-list-row-main:focus-visible {
   .agent-modal-overlay {
     animation: none;
   }
+}
+
+/* On a page (a dialog, the settings, a partner's profile) the filled controls use the page's fill, so they show
+   on its grey as they do on white elsewhere. */
+.agent-modal,
+.agent-settings-dialog,
+.modal-card,
+.agent-page-surface {
+  --c-panel: var(--c-page-fill);
+  --c-panel-hover: var(--c-page-fill-hover);
 }

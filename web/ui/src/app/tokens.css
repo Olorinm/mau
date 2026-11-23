@@ -265,8 +265,12 @@
 /* Design system: type scale, spacing, radii and surfaces shared by settings, connectors, chat and
    compact operational views. Brand colors (accent, success, error) stay those above. */
 :root {
-  /* Settings dialogs and pages: near white, above the grey app background. */
-  --c-page: oklch(99.107% 0 0);
+  /* Settings dialogs and pages: a grey page with white cards on it, as in the system's own settings.
+     On the page, a card is --c-card and what is filled (a selected control, a hovered row) is --c-page-fill. */
+  --c-page: oklch(96.4% 0.003 286);
+  --c-card: oklch(100% 0 0);
+  --c-page-fill: oklch(91.5% 0.003 286);
+  --c-page-fill-hover: oklch(89% 0.003 286);
   --c-panel: oklch(95.213% 0 0);
   --c-panel-hover: oklch(92.797% 0 0);
   --c-panel-line: oklch(92.191% 0 0);
@@ -341,6 +345,9 @@
   --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
   --shadow-modal: 0 0 0 1px oklch(100% 0 0 / 0.14), 0 24px 64px oklch(0% 0 0 / 0.6);
   --c-page: oklch(23.852% 0.0037 106.68);
+  --c-card: oklch(28.019% 0.0036 106.63);
+  --c-page-fill: oklch(31.708% 0.0054 91.55);
+  --c-page-fill-hover: oklch(33.640% 0.0070 95.27);
 }
 
 /* Compact density for run details, events, approvals and logs. */
