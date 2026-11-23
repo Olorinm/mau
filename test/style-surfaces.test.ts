@@ -66,10 +66,10 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
     const prefix = `${mode}-${width}`;
     await capture(page, `${prefix}-chat`);
     if (width === 1440) {
-      // One row at the top: the mark at its left, the destinations in its middle. The list and the conversation are below it.
+      // The mark at the top left with the destinations standing under it, down the left edge; the page beside them.
       const box = (selector: string) => page.evaluate(q => { const r = document.querySelector(q)!.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }, selector);
       const [mark, bar, list, card] = [await box(".app-mark"), await box(".app-switch"), await box(".mau-roster"), await box(".room-main-panel")];
-      expect(mark[0]!).toBeLessThan(40); expect(Math.abs((bar[0]! + bar[2]!) / 2 - 720)).toBeLessThan(2); expect(bar[3]!).toBeLessThan(list[1]!);
+      expect(mark[0]!).toBeLessThan(40); expect(bar[0]!).toBeLessThan(40); expect(bar[1]!).toBeGreaterThan(mark[3]!); expect(bar[2]!).toBeLessThan(list[0]!);
       // The list is beside the conversation, never over it.
       expect(list[2]!).toBeLessThanOrEqual(card[0]!); expect(list[1]!).toBe(card[1]!);
       const roster = page.locator(".mau-roster"); await see(roster).toBeVisible();

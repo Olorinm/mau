@@ -325,7 +325,7 @@ body {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 0 var(--app-page-inline-inset, 0px) var(--app-page-bottom-inset, 0px);
+  padding: var(--app-page-top-inset, 0px) var(--app-page-inline-inset, 0px) var(--app-page-bottom-inset, 0px);
 }
 .mau-stage > .rooms-view {
   position: relative;
@@ -923,6 +923,12 @@ button.mau-chat-title:enabled:hover {
   box-shadow: var(--shadow-glass), var(--shadow-modal);
   padding: 16px 12px 14px;
   animation: scale-in var(--motion-normal) var(--motion-ease-out);
+}
+/* Wide: the apps open beside the rail, under its top, rather than in the middle of the window. */
+.app-shell[data-compact="false"] .mau-apps-grid {
+  top: 60px;
+  left: calc(2 * var(--app-rail-margin) + var(--app-rail-width));
+  translate: none;
 }
 .mau-apps-grid > header {
   display: flex;
