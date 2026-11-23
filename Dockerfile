@@ -6,12 +6,8 @@ COPY package.json package-lock.json ./
 COPY .packages/ .packages/
 RUN npm ci --ignore-scripts --no-audit --no-fund
 RUN npm rebuild @larksuite/cli --ignore-scripts=false
-# Agent Connectors' browser connection runs agent-browser, whose package carries every platform's binary (~116 MB).
-# Keep only this image's, executable; its install script stays denied in allowScripts.
-ARG TARGETARCH
-RUN arch=$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \
-    && find node_modules -path '*/agent-browser/bin/agent-browser-*' ! -name "agent-browser-linux-$arch" ! -name '*.js' -delete \
-    && find node_modules -path "*/agent-browser/bin/agent-browser-linux-$arch" -exec chmod 0755 {} +
+# npm selects the native browser package for the image platform. Verify the bundled guides offline.
+RUN ./node_modules/.bin/agent-browser --version && ./node_modules/.bin/agent-browser skills get core >/dev/null
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build

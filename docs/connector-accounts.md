@@ -98,12 +98,9 @@ under `browser_downloads/`) are the same as through the commands. In an environm
 commands exist in the shell; outside a Codex command they refuse to run and say so.
 
 The Mau image includes the official Google Workspace CLI release (`/opt/gws/gws`, `AGENT_CONNECTORS_GWS_BINARY`), which
-ConnectorService runs for `gws_read`/`gws_write`. The browser connector's agent-browser CLI comes with Agent Connectors'
-npm dependencies; its install script is denied in `allowScripts` and is not needed. The npm package carries every
-platform's binary (about 116 MB); the Dockerfile keeps only the image's (`agent-browser-linux-x64`, about 18 MB) and marks
-it executable. An image assembled by replacing layers must do the same with
-`find node_modules -path '*/agent-browser/bin/agent-browser-*' ! -name agent-browser-linux-x64 ! -name '*.js' -delete`
-and `chmod 0755` on the kept binary; otherwise the connector copies the binary into its private directory at first use.
+ConnectorService runs for `gws_read`/`gws_write`. Agent Connectors installs the official agent-browser CLI and its native optional package for the target platform.
+Keep npm optional dependencies enabled when assembling an image. The Docker build checks the CLI version and reads its
+bundled core guide with the package install script disabled.
 
 Browser handoffs show on Mau's private card the live-view link, the host of the page the tab shows, and the Agent's
 instructions with every link removed. The console takes the link it frames from the card's structured `handoff`
