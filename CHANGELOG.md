@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.62] - 2026-11-23
+
+- Show Conversations and Create app in a single navigation list on desktop and mobile. Remove the App Store placeholder.
+- Open Settings from the account menu, including from the mobile navigation drawer.
+
 ## [0.1.0-alpha.61] - 2026-11-22
 
 - Import shared Codex credentials once at the environment gateway and keep real model sign-in files out of managed sandboxes.
