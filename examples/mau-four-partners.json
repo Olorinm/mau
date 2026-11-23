@@ -28,16 +28,16 @@
             "destination": "/opt/agent-environment/agent-host.sha256"
           },
           {
+            "source": "cloud/mau-sandbox/SKILL.md",
+            "destination": "/opt/agent-environment/mau-sandbox/SKILL.md"
+          },
+          {
             "source": "cloud/official-skills.tgz",
             "destination": "/opt/agent-environment/official-skills.tgz"
           },
           {
             "source": "cloud/start-host.sh",
             "destination": "/opt/agent-environment/start.sh"
-          },
-          {
-            "source": "cloud/mau-sandbox/SKILL.md",
-            "destination": "/opt/agent-environment/mau-sandbox/SKILL.md"
           }
         ],
         "anthropicCredentialFile": "private/anthropic-api-key",
