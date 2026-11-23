@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import type { OwnerRequestResult, ServiceExtension, WorkEventResult, WorkPendingCard, WorkSessions } from "@agent-router/server";
@@ -8,12 +8,14 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { CARRIED_NOTES, EXTERNAL_PARTNERS, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, PARTNERS_DESCRIPTION, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncoming, incoming, noticeText, resultView, returned, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards",
   /** The roster text each session was last shown, so a turn repeats it only when it changed. */
-  SENT_ROSTER = "partner_sent_roster";
+  SENT_ROSTER = "partner_sent_roster",
+  /** The partners whose conversation still runs in a session that began with another definition of the tool (`rotate`). */
+  ROTATIONS = "partner_rotations";
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
 /** A turn started by a result may message again; this many generations may follow one owner message. */
@@ -119,8 +121,6 @@ interface ReturnBatch {
   id: string; owner: string; agentId: string; messageIds: string[]; status: "submitted" | "completed" | "failed";
   origin: Omit<Origin, "taskId">; authorization: Authorization; attempt: number; createdAt: string;
   reply: { connectionId?: string };
-  /** Marks where each answer begins and ends in the turn's input. Chosen after the answers were written. */
-  boundary: string;
   /** Since when the outcome of the hand-over's turn has been unknown. */
   unknownSince?: string;
 }
@@ -137,6 +137,8 @@ type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input
 export interface PartnersPort {
   employeePermissions?: boolean;
   agents(owner: string): Array<{ id: string; name: string; status: string }>;
+  /** Every agent of every owner, for work that is not one owner's (`rotate`). */
+  everyone?(): Array<{ id: string; owner: string }>;
   create(owner: string, name: string): Promise<{ id: string; name: string }>;
   sessions(owner: string, agentId: string): Promise<WorkSessions>;
   conversations(agentId: string): Promise<Conversations | undefined>;
@@ -475,8 +477,8 @@ export class Partners {
       ...(restored && input.kernel !== undefined && input.kernel !== kernel ? { kernelKept: KERNEL_KEPT } : {}),
       ...(selection.dropped && !restored ? { effortNote: `Your effort "${selection.dropped}" is not offered for this model, so the partner uses the model's default.` } : {}),
       ...(sent ? { message: sent } : {}),
-      next: [restored ? NEXT.restored(partner.name) : NEXT.recruited(partner.name),
-        sent && !("isError" in sent) ? sent.next : sent ? NEXT.firstMessageFailed : NEXT.noFirstMessage].join(" ") };
+      ...(restored || !sent || "isError" in sent ? { next: [...(restored ? [NEXT.restored(partner.name)] : []),
+        ...(sent && !("isError" in sent) ? [] : [sent ? NEXT.firstMessageFailed : NEXT.noFirstMessage])].join(" ") } : {}) };
   }
   /**
    * kernel, model and effort of a recruit, and only values the roster lists. On the recruiter's kernel what is left
@@ -527,7 +529,7 @@ export class Partners {
     if (!input.name || !found) throw new PartnerError("partner_not_found", { partners: partners.filter(agent => agent.id !== admission.agentId).map(agent => agent.name) });
     if (found.id === admission.agentId) throw new PartnerError("partner_is_self", { instruction: "A partner cannot dismiss itself." });
     await this.archive(admission.owner, found.id, this.self(admission).name);
-    return { status: "dismissed", name: found.name, next: NEXT.dismissed };
+    return { status: "dismissed", name: found.name };
   }
   /** Dismiss: archive. The partner keeps everything and is hidden from the roster; `restore` or a recruit of its name brings it back. */
   async archive(owner: string, agentId: string, by: string) {
@@ -589,8 +591,8 @@ export class Partners {
   private receipt(message: PartnerMessage) {
     const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent };
     const presence = this.port.presence(message.owner, message.to.agentId);
-    if (message.intent === "inform") return { ...base, expectsReply: false, next: presence?.external ? NEXT.informedExternal(message.to.name) : NEXT.informed(message.to.name) };
-    return { ...base, expectsReply: true, next: presence?.external ? NEXT.sentExternal(message.to.name, presence.state === "ready") : NEXT.sent(message.to.name) };
+    if (message.intent === "inform") return { ...base, expectsReply: false };
+    return { ...base, expectsReply: true, ...(presence?.external && presence.state !== "ready" ? { next: NEXT.offline } : {}) };
   }
   private async wait(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
     const owner = admission.owner, self = admission.agentId, task = await this.task(admission, turn);
@@ -621,7 +623,7 @@ export class Partners {
     return { results, pending: waiting.map(message => ({ messageId: message.id, to: message.to.name, sentAt: message.createdAt,
         ...(approval.has(message.id) ? { waitingFor: "owner_approval" } : {}) })),
       ...(waiting.some(message => approval.has(message.id)) ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
-      next: [results.length ? NEXT.results : "", waiting.length ? NEXT.stillWaiting : "", !results.length && !waiting.length ? NEXT.nothingWaiting : ""].filter(Boolean).join(" ") };
+      ...(!results.length && !waiting.length ? { next: NEXT.nothingWaiting } : {}) };
   }
   /** The answer of a partners call has reached the Host: what that call's wait returned to the sending turn counts as read. */
   delivered(admission: RunAdmission, callId: string) {
@@ -717,9 +719,8 @@ export class Partners {
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId,
-      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message, this.port.employeePermissions),
+      input: JSON.stringify(this.external(message.owner, message.to.agentId) ? externalIncoming(message, this.carried(message)) : incoming(message)), json: true,
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
-      notice: "brief",
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
@@ -745,10 +746,42 @@ export class Partners {
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
+    for (const step of [() => this.rotate(), () => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
+  }
+  /**
+   * A session keeps the tool definitions it began with, so a session that began before the `partners` tool's
+   * description or input changed would never read the current one, which says what a delivered turn is. Each partner
+   * with such a session has its conversation with the owner continued in a new window, once, when nothing runs in it:
+   * the next turn opens a session with the current tools. Nothing is cancelled; a busy conversation is tried again on
+   * the next cycle. The owner sees the divider of a new conversation, and the transcript, memory and files stay.
+   */
+  private async rotate() {
+    const current = { description: PARTNERS_DESCRIPTION, input: JSON.stringify(z.toJSONSchema(partnersInput)) }, definition = digest(current);
+    let plan = this.store.get<{ definition: string; agents: Array<{ owner: string; agentId: string }> }>(ROTATIONS, "partners");
+    if (plan?.definition !== definition) {
+      // What each session began with is Mau's record of its tools (`business_session_catalog`, keyed by agent first).
+      const stale = new Set<string>();
+      for (const { id, value } of this.store.entries<Array<{ name?: string; description?: string; inputSchema?: unknown }>>("business_session_catalog"))
+        if (Array.isArray(value) && value.some(tool => tool.name === "partners" && (tool.description !== current.description || JSON.stringify(tool.inputSchema) !== current.input)))
+          stale.add(id.split(":")[0]!);
+      plan = { definition, agents: (this.port.everyone?.() ?? []).filter(agent => stale.has(agent.id)).map(agent => ({ owner: agent.owner, agentId: agent.id })) };
+      this.store.set(ROTATIONS, "partners", plan);
+    }
+    if (!plan.agents.length) return;
+    const waiting: typeof plan.agents = [];
+    for (const agent of plan.agents) {
+      try { (await this.port.sessions(agent.owner, agent.agentId)).resetOwnerConversation(); }
+      catch (error) {
+        // A partner that was deleted since has nothing left to move.
+        if (!this.port.everyone?.().some(known => known.id === agent.agentId)) continue;
+        if (code(error, "") !== "session_busy") report("partner_session_not_rotated", error);
+        waiting.push(agent);
+      }
+    }
+    if (waiting.length !== plan.agents.length) this.store.set(ROTATIONS, "partners", { ...plan, agents: waiting });
   }
   /**
    * Records are not kept for ever either: a message that reached its end, and a hand-over that did, is removed 30
@@ -974,7 +1007,7 @@ export class Partners {
           const taken = ready.filter(message => this.transition(message.id, ["settled"], current => ({ ...current, status: "returning" }))).map(message => message.id);
           if (!taken.length) return undefined;
           const record: ReturnBatch = { id: `pr-${digest([taken, attempt]).slice(0, 32)}`, owner, agentId: from.agentId, messageIds: taken, status: "submitted", origin, authorization,
-            attempt, createdAt: iso(), reply: connected ? { connectionId: origin.connectionId } : {}, boundary: randomBytes(6).toString("hex") };
+            attempt, createdAt: iso(), reply: connected ? { connectionId: origin.connectionId } : {} };
           for (const id of taken) this.transition(id, ["returning"], current => ({ ...current, delivery: { ...current.delivery!, batchId: record.id } }));
           this.store.set(RETURNS, record.id, record);
           return record;
@@ -997,7 +1030,7 @@ export class Partners {
     const messages = batch.messageIds.map(id => this.store.get<PartnerMessage>(MESSAGES, id)).filter((message): message is PartnerMessage => !!message);
     const senders = new Map(messages.map(message => [message.to.agentId, message.to.name])), authorization = batch.authorization;
     const share = Math.floor(SHOWN_ANSWER_BYTES / Math.max(1, messages.length));
-    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary, this.port.employeePermissions),
+    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: JSON.stringify(returned(messages)), json: true,
       // What the owner is shown in the sender's conversation: each partner's result, apart from the lines written for the model.
       display: { partnerResults: messages.map(message => {
         const result = message.result!, answer = shortened(result.answer.trim(), share);

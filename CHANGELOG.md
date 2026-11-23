@@ -4,6 +4,18 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.66] - 2026-11-24
+
+- Collapse or reopen the desktop navigation with the Mau mark at the left edge. The console remembers the choice on this device.
+
+- Deliver a partner's message as one JSON object: who sent it (`from.partner`), when (`sent`) and the message. The fixed lines around it are gone: the header, the sender's duty, the intent, the rules of the turn, the permission sentences that the `connected_apps` description already states, and both boundary lines. A Codex partner and a partner on a text-only kernel read the same object.
+- Deliver results to their sender as one JSON object with `results`. `action=wait` returns the same members for a result; `sentTo` is now `requested: { kernel, model, effort }`, and `intent` is no longer part of a result.
+- Say what a partner's message or a hand-over is once, in the `partners` tool's description, instead of in every message.
+- Continue a partner's conversation in a new window, once and when nothing runs in it, when its session began with another description of the `partners` tool. This happens for every existing partner after the upgrade: the owner sees the divider of a new conversation in each partner's chat, the model starts that conversation without its earlier context, and the transcript, memory and files stay.
+- Leave the `next` sentence out of the result of `recruit`, `message`, `wait` and `dismiss` where it repeated the description or the guide. It remains for what one call adds: a computer that is offline, a restored partner, a first message that was not sent.
+- Tell an agent on the owner's computer why a partner's message arrives and where its answer goes, in the message's `about`, and carry earlier notes as `notes`. It is no longer told that the message grants no approval.
+- Pin Agent Kit 0.11.0-alpha.16 for structured partner deliveries and idle owner-conversation resets.
+
 ## [0.1.0-alpha.65] - 2026-11-23
 
 - Move desktop navigation to a left rail and open the app grid beside it. The phone layout keeps its bottom bar.

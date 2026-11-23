@@ -58,5 +58,5 @@ createInterface({ input: process.stdin }).on("line", async line => {
   if (params.toolOutput.name === "proactive_work") return complete(threadId, turnId, JSON.stringify({
     decision: "notify", reason: "fixture-check-completed", summary: "Scheduled fixture report", findings: [], sources: [], approvalProposals: [],
   }));
-  complete(threadId, turnId, `Delegated fixture: ${input.message}`);
+  complete(threadId, turnId, `Delegated fixture: ${input.message ?? JSON.stringify(input)}`);
 });

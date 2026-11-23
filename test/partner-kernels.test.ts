@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DurableStore } from "../src/store.js";
 import { privateFile } from "../src/files.js";
-import { KERNEL_KEPT, OTHER_KERNELS, incomingText } from "../src/partner-text.js";
+import { KERNEL_KEPT, OTHER_KERNELS, incoming } from "../src/partner-text.js";
 import { codexAccount } from "../src/environments.js";
 import { alice, mauFixture } from "./fixtures/mau.js";
 import { partnersFixture, type PartnersFixture, type Turn } from "./fixtures/partners.js";
@@ -43,7 +43,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   const f = await mixed(), seen: Record<string, any> = {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "writer") return "The draft is in notes/letter.md.";
-    if (turn.text.includes("[Partner results")) return "The writer drafted the letter.";
+    if (turn.delivered?.results) return "The writer drafted the letter.";
     seen.roster = await turn.call("partners", { action: "roster" });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "writer", duty: "Writes the weekly letter", kernel: "claude", model: "claude-small",
       intent: "relay", message: "Draft this week's letter in notes/letter.md." });
@@ -71,8 +71,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   // model selection, the product tools and its memory, and Mau records the input as delivered, not as a person's.
   const record = f.record(seen.recruit.message.messageId);
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
-  expect(work.body.input.endsWith("\n\n" + incomingText(record))).toBe(true);
+  expect(work.body.input).toBe(JSON.stringify({ from: { partner: "helper" }, ...incoming(record) }));
   expect(work.body.settings).toEqual({ model: "claude-small" });
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: writer\nDuty: Writes the weekly letter"); expect(work.body.instructions).toContain("<MEMORY.md>");
@@ -81,7 +80,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   const back = await f.turnOf(f.agent.id, 1);
   expect(back.body.runtimeId).toBe("personal");
   expect(back.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners" });
-  expect(back.text).toContain("Sent to: kernel claude, model claude-small, effort default\n" + f.answer(record.id, "The draft is in notes/letter.md."));
+  expect(back.delivered!.results![0]).toMatchObject({ requested: { kernel: "claude", model: "claude-small", effort: "default" }, answer: "The draft is in notes/letter.md." });
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   // What the owner's console is given beside the text written for the models.
   const shown = async (agentId: string) => (await f.events(agentId)).flatMap((event: any) => event.display ? [event.display] : []);
@@ -298,7 +297,7 @@ it("offers Antigravity beside Codex: its Google model service, its owner's model
   f.provider.resume = async (id, seconds, options) => { requests.push(options?.modelServices); return resume(id, seconds, options); };
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "gemini") return "Checked with Gemini.";
-    if (turn.text.includes("[Partner results")) return "Gemini checked it.";
+    if (turn.delivered?.results) return "Gemini checked it.";
     seen.roster = await turn.call("partners", { action: "roster" });
     seen.refused = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "large" });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "gemini-3.8-flash", effort: "low",
@@ -316,7 +315,7 @@ it("offers Antigravity beside Codex: its Google model service, its owner's model
   expect([f.creates, f.cloud.size]).toEqual([1, 1]);
   expect(work.body.runtimeId).toBe("agy");
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
+  expect(JSON.parse(work.body.input).from).toEqual({ partner: "helper" });
   expect(work.body.settings).toEqual({ model: "gemini-3.8-flash", effort: "low" });
   expect((await f.api(`/agents/${partner.id}`)).data).toMatchObject({ kernel: "agy", host: { runtimeId: "agy" }, environment: { sharedFrom: f.agent.id } });
   expect((await f.api("/options")).data.environments).toEqual([{ id: "cloud", label: "Cloud", kernel: "codex", kernels: ["codex", "agy"] }]);

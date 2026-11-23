@@ -12,8 +12,10 @@ export interface Turn {
   runId: string; agentId: string;
   /** The Host request as Mau sent it. */
   body: any;
-  /** What the turn was given: the owner's text, or the message of a delivery (tool output or text). */
+  /** What the turn was given: the owner's text, or what a delivery (tool output or text) carried as JSON. */
   text: string;
+  /** The object of a delivery: `from` and what the product delivered beside it. Absent for the owner's own turn. */
+  delivered?: { from: unknown; message?: string; results?: any[]; [member: string]: unknown };
   /** What Mau told the turn beside its input. */
   told: Record<string, unknown>;
   /** Call a tool of the run and wait for Mau's answer. */
@@ -41,8 +43,9 @@ export function scriptedHost() {
       runs.set(id, run);
       // What the model is told beside its input: the per-turn context itself. Routing facts stay on the run.
       const context = typeof body.context === "object" && body.context ? body.context : {};
-      const delivered = body.toolOutput ? JSON.parse(body.toolOutput.output).message : undefined;
-      const turn: Turn = { runId: id, agentId: identify(body) ?? "", body, text: delivered ?? body.input, told: context,
+      const raw: string = body.toolOutput ? body.toolOutput.output : body.input;
+      const delivered = body.toolOutput || raw.startsWith('{"from":') ? JSON.parse(raw) : undefined;
+      const turn: Turn = { runId: id, agentId: identify(body) ?? "", body, text: raw, ...(delivered ? { delivered } : {}), told: context,
         call: (name, input) => new Promise(resolve => {
           const callId = `${id}-call-${run.calls.length + 1}`;
           run.events.push({ type: "tool.started", runId: id, callId, tool: name, input });
@@ -143,19 +146,8 @@ export async function partnersFixture(cleanup: Array<() => unknown>, options: { 
       try { return read(store); } finally { store.close(); }
     },
     messages: () => f.mau.partners.messages("@alice:example.test"),
-    /** The lines that enclose an answer in the turn that handed a message's result over. */
-    answer: (messageId: string, text: string) => {
-      const store = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test");
-      try {
-        const batch = store.entries<{ messageIds: string[]; boundary: string }>("partner_returns").map(entry => entry.value).reverse().find(value => value.messageIds.includes(messageId))!;
-        return `----- answer ${batch.boundary} -----\n${text}\n----- end of answer ${batch.boundary} -----`;
-      } finally { store.close(); }
-    },
-    boundary: (messageId: string) => {
-      const store = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test");
-      try { return store.entries<{ messageIds: string[]; boundary: string }>("partner_returns").map(entry => entry.value).reverse().find(value => value.messageIds.includes(messageId))!.boundary; }
-      finally { store.close(); }
-    },
+    /** An answer as the turn that hands results over carries it. */
+    answer: (_messageId: string, text: string) => `"answer":${JSON.stringify(text)}`,
     /** The admission Router gave the owner's turn the Host is running, for calling the partners tool as that turn. */
     admission: async (turn: Turn) => {
       const sessions = (await f.service.runtime(turn.agentId)).extension!.sessions!;

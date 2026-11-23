@@ -291,6 +291,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   const partners = new Partners(businessStore, {
     employeePermissions: connectedApps.employeePermissions,
     agents: owner => router.service.agents(owner),
+    everyone: () => router.service.agents().map(agent => ({ id: agent.id, owner: agent.owner })),
     create: (owner, name) => router.service.create(owner, name),
     sessions,
     conversations: async agentId => (await routerOf(agentId))?.communication,

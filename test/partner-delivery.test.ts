@@ -10,7 +10,7 @@ afterEach(async () => {
   vi.unstubAllGlobals(); vi.restoreAllMocks();
 });
 const duty = "Plans the Korea trip and tracks its bookings";
-const results = (f: PartnersFixture) => f.turns.filter(turn => turn.text.includes("[Partner results"));
+const results = (f: PartnersFixture) => f.turns.filter(turn => turn.delivered?.results);
 /** Rewrite a message's record as if time had passed. */
 const rewrite = (f: PartnersFixture, id: string, change: (message: PartnerMessage) => PartnerMessage) =>
   f.store(store => store.set("partner_messages", id, change(store.get<PartnerMessage>("partner_messages", id)!)));
@@ -21,7 +21,7 @@ it("tries eight times to hand a result over, waiting longer each time, then drop
   vi.spyOn(console, "warn").mockImplementation(() => {});
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return "The answer is 42.";
-    if (turn.text.includes("[Partner results")) throw new Error("model_unavailable");
+    if (turn.delivered?.results) throw new Error("model_unavailable");
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "What is the answer?", intent: "ask" });
     return "Asked.";
   });
@@ -92,7 +92,7 @@ it("wakes a sender three times in a row for failures, then leaves the owner a no
   const f = await partnersFixture(cleanup);
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") throw new Error("tool_crashed");
-    if (!turn.text.includes("[Partner results")) await turn.call("partners", { action: "recruit", name: "trip", duty });
+    if (!turn.delivered?.results) await turn.call("partners", { action: "recruit", name: "trip", duty });
     await turn.call("partners", { action: "message", to: "trip", text: "Try the booking", intent: "relay" });
     return "Trying.";
   });
@@ -103,7 +103,7 @@ it("wakes a sender three times in a row for failures, then leaves the owner a no
   expect(results(f)).toHaveLength(3); expect(f.turns.filter(turn => turn.agentId === f.agent.id)).toHaveLength(4);
   const records = f.messages().map(message => f.record(message.id)).sort((a, b) => a.origin.chain - b.origin.chain);
   expect(records.map(record => [record.result!.status, record.delivery!.via])).toEqual([["failed", "turn"], ["failed", "turn"], ["failed", "turn"], ["failed", "notice"]]);
-  expect(results(f)[0]!.text).toContain("Status: failed (tool_crashed)"); expect(results(f)[0]!.text).toContain(f.answer(records[0]!.id, "(no answer)"));
+  expect(results(f)[0]!.text).toContain('"status":"failed","error":"tool_crashed"'); expect(results(f)[0]!.text).toContain(f.answer(records[0]!.id, "(no answer)"));
   expect(records[3]!.delivery).toMatchObject({ reason: "failure_wake_limit" });
   const notices = (await f.events(f.agent.id)).filter(event => event.kind === "notice").map(event => event.text);
   expect(notices).toEqual([noticeText([records[3]!])]);
@@ -117,7 +117,7 @@ it("tells the sender when the outcome of a partner's turn is unknown, and that a
   const f = await partnersFixture(cleanup);
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") throw Object.assign(new Error("connection_lost"), { outcomeUnknown: true });
-    if (turn.text.includes("[Partner results")) return "Reported.";
+    if (turn.delivered?.results) return "Reported.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "Pay the deposit.", intent: "relay" });
     return "Asked.";
   });
@@ -131,14 +131,14 @@ it("tells the sender when the outcome of a partner's turn is unknown, and that a
   rewrite(f, id, message => ({ ...message, unknownSince: new Date(Date.now() - 121_000).toISOString() }));
   const back = await f.until(() => results(f)[0], "unknown outcome", 3000);
   // Nothing is done again in the partner's place; the sender decides with the owner.
-  expect(back.text).toContain("Status: unknown (host_outcome_unknown)");
+  expect(back.text).toContain('"status":"unknown","error":"host_outcome_unknown"');
   expect(f.record(id).result).toMatchObject({ status: "unknown", answer: "" });
   expect(f.turns.filter(turn => f.name(turn.agentId) === "trip")).toHaveLength(1);
   await f.until(() => f.record(id).status === "returned", "returned");
   // A partner that is deleted while a message waits for it: the sender gets a failure, not silence.
   let hold = () => {};
   f.respond(async (turn: Turn) => {
-    if (turn.text.includes("[Partner results")) return "Reported.";
+    if (turn.delivered?.results) return "Reported.";
     const sent = await turn.call("partners", { action: "recruit", name: "second", duty: "Second partner", message: "Wait for me.", intent: "ask" });
     await new Promise<void>(resolve => { hold = resolve; });
     return sent.message.messageId;
@@ -149,7 +149,7 @@ it("tells the sender when the outcome of a partner's turn is unknown, and that a
   expect(f.record(second.id)).toMatchObject({ status: "settled", result: { status: "failed", error: "partner_deleted" } });
   hold();
   const failure = await f.until(() => results(f)[1], "failure handed over");
-  expect(failure.text).toContain("Status: failed (partner_deleted)");
+  expect(failure.text).toContain('"status":"failed","error":"partner_deleted"');
 }, 90_000);
 
 it("settles a message whose turn ended without an entry in the settlement feed", async () => {
@@ -159,7 +159,7 @@ it("settles a message whose turn ended without an entry in the settlement feed",
   let release = () => {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") { await new Promise<void>(resolve => { release = resolve; }); return "Done meanwhile."; }
-    if (turn.text.includes("[Partner results")) return "Reported.";
+    if (turn.delivered?.results) return "Reported.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "Do it.", intent: "relay" });
     return "Asked.";
   });
@@ -179,7 +179,7 @@ it("gives up after 48 hours on a message nobody answered and on a hand-over that
   let holdReturn = false;
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") { if (turn.text.includes("never")) await new Promise(() => {}); return "Answered."; }
-    if (turn.text.includes("[Partner results")) { if (holdReturn) await new Promise(() => {}); return "Reported."; }
+    if (turn.delivered?.results) { if (holdReturn) await new Promise(() => {}); return "Reported."; }
     if (!f.partner("trip")) await turn.call("partners", { action: "recruit", name: "trip", duty });
     await turn.call("partners", { action: "message", to: "trip", text: turn.text.includes("never") ? "This is never answered." : "Answer this.", intent: "ask" });
     return "Asked.";
@@ -195,7 +195,7 @@ it("gives up after 48 hours on a message nobody answered and on a hand-over that
   expect(f.record(stuck).status).toBe("running");
   rewrite(f, stuck, message => ({ ...message, createdAt: new Date(Date.now() - 48 * 3_600_000 - 1000).toISOString() }));
   const failure = await f.until(() => results(f)[0], "failure handed over");
-  expect(failure.text).toContain("Status: failed (no_answer_after_48_hours)");
+  expect(failure.text).toContain('"status":"failed","error":"no_answer_after_48_hours"');
   // The partner's turn was cancelled, and its admission ended with the message.
   await f.until(() => f.runs.get(work.runId)!.record.status === "cancelled", "partner turn cancelled");
   expect(f.mau.partners.allows({ kind: "delegation", owner: "@alice:example.test", agentId: trip.id, reference: stuck, toolGrants: {} })).toBe(false);

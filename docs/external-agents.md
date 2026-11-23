@@ -68,9 +68,11 @@ is replaced by the next one. One partner has one computer. Dismissing or deletin
   same request also appears in the conversation that message was sent from, naming the partner; your choice there
   answers it, and that copy is withdrawn when the request is answered elsewhere, expires or its turn ends. Only you
   can answer either card. The partner that sent the message is told that it waits for your approval.
-- **What reaches it.** Text. Your message arrives as you wrote it. A partner's message arrives marked as delivered
-  by the system, naming the partner that wrote it, saying that its answer goes back to that partner, and that it is
-  not from you and authorizes nothing new. No instructions and no tools of Mau or of Router are sent: the
+- **What reaches it.** Text. Your message arrives as you wrote it. A partner's message arrives as one JSON
+  object: `from.partner` names the partner that wrote it, `about` says that you paired this computer so that your
+  agents can send it work and that its answer goes back to the sender, `notes` carries what partners left for it
+  earlier, and `message` is the message. It is not told that the message authorizes nothing: an agent told so
+  declines to act, and its own permissions on your computer apply either way. No instructions and no tools of Mau or of Router are sent: the
   computer's Host refuses a turn that carries any.
 - **Not for it.** Mau's memory document and its change record, conversation search, background memory review,
   connectors, skills, model settings, environments, SSH and scheduled rules. Those routes answer
