@@ -56,7 +56,7 @@ body {
   height: 30px;
 }
 
-/* Wide windows: the mark sits at the top left and the destinations stand under it, down the left edge.
+/* Wide windows: one capsule down the left edge, the mark at its head and the destinations under it.
    The page starts beside them, so the rail's height costs the page nothing. */
 .app-shell[data-compact="false"] {
   --app-rail-width: 52px;
@@ -74,13 +74,130 @@ body {
   width: var(--app-rail-width);
   flex-direction: column;
   justify-content: flex-start;
-  gap: 14px;
-  padding: 6px 0;
+  padding: 0;
+}
+
+button.app-mark {
+  border: 0;
+  background: none;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+/* The mark is the head of the capsule: it lies over the room the capsule keeps at its top, drawn quieter than the
+   destinations and without a pressed or pointed-at look, so it reads as the product's mark rather than one of them. */
+.app-shell[data-compact="false"] {
+  transition: padding-left var(--app-rail-motion);
+  --app-rail-motion: 320ms var(--motion-ease-entrance);
 }
 
 .app-shell[data-compact="false"] .app-mark {
-  position: static;
+  position: absolute;
+  z-index: 1;
+  top: 11px;
+  left: 11px;
+  opacity: 0.6;
   translate: none;
+  transition: translate var(--app-rail-motion), rotate var(--app-rail-motion), width var(--app-rail-motion), height var(--app-rail-motion),
+    opacity var(--app-rail-motion);
+}
+
+.app-mark-logo {
+  display: grid;
+}
+
+.app-shell[data-compact="false"] .app-mark-logo,
+.app-shell[data-compact="false"] .app-mark-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Pointing at the capsule turns the mark into an arrow toward the edge: pressing it puts the capsule away. */
+.app-mark .app-mark-arrow {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+  color: var(--c-text);
+  translate: 4px 0;
+}
+
+.app-mark-logo,
+.app-mark-arrow {
+  transition: opacity var(--motion-normal) var(--motion-ease), translate var(--motion-normal) var(--motion-ease);
+}
+
+.app-shell[data-compact="false"]:not([data-collapsed]) .app-topbar:has(.app-switch:hover, .app-mark:hover, .app-mark:focus-visible) .app-mark {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.app-shell[data-compact="false"]:not([data-collapsed]) .app-topbar:has(.app-switch:hover, .app-mark:hover, .app-mark:focus-visible) .app-mark-logo {
+  opacity: 0;
+  translate: -4px 0;
+}
+
+.app-shell[data-compact="false"]:not([data-collapsed]) .app-topbar:has(.app-switch:hover, .app-mark:hover, .app-mark:focus-visible) .app-mark-arrow {
+  opacity: 1;
+  translate: none;
+}
+
+.app-shell[data-compact="false"] .app-switch {
+  transition: translate var(--app-rail-motion), opacity var(--app-rail-motion), visibility 0s, scale var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+/* Put away: the capsule slides out past the edge and the mark stays, leaning out from behind it with its ears and
+   one eye showing, like a cat watching from the side of the screen. Pointing at it brings it further out.
+   It grows by its real size, not a scale, so its pixels stay sharp. */
+.app-shell[data-collapsed="true"] {
+  padding-left: 24px;
+}
+
+.app-shell[data-collapsed="true"] .app-topbar {
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.app-shell[data-collapsed="true"] .app-mark {
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  opacity: 1;
+  pointer-events: auto;
+  translate: -38px 0;
+  rotate: 64deg;
+}
+
+.app-shell[data-collapsed="true"] .app-mark-logo svg {
+  shape-rendering: geometricPrecision;
+}
+
+/* The part of the mark behind the edge still takes the press. */
+.app-shell[data-collapsed="true"] .app-mark::before {
+  position: absolute;
+  content: "";
+  inset: -6px;
+}
+
+.app-shell[data-collapsed="true"] .app-mark:is(:hover, :focus-visible) {
+  translate: -27px -2px;
+  rotate: 46deg;
+}
+
+.app-shell[data-collapsed="true"] .app-switch {
+  visibility: hidden;
+  opacity: 0;
+  translate: -76px 0;
+  transition: translate var(--app-rail-motion), opacity var(--app-rail-motion), visibility 0s 320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-compact="false"] {
+    --app-rail-motion: 0s;
+  }
 }
 
 /* The destinations: one glass capsule. The current one carries its name beside its icon. */
@@ -145,7 +262,8 @@ body {
 .app-shell[data-compact="false"] .app-switch {
   flex-direction: column;
   gap: 4px;
-  padding: 4px;
+  /* Room at the top for the mark. */
+  padding: 48px 4px 4px;
   border-radius: 26px;
 }
 
