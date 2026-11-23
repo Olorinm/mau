@@ -22,7 +22,7 @@ The default binding must use `skills: { mode: "unavailable" }`; capabilities the
 
 ## Verification performed
 
-- 13 coordinator tests cover cadence, non-owner exclusion, runtime capability refusal, scope, history copying, lost-response recovery, cross-session non-reentrancy, cancellation, restart and a competing coordinator.
+- 14 coordinator tests cover cadence, non-owner exclusion, runtime capability refusal, scope, history copying, lost-response recovery, cross-session non-reentrancy, cancellation, restart and a competing coordinator.
 - 9 adapter tests cover public profile shape, mutable-policy rejection, native-version and effective-config checks, original-partner versus worker identity, submission provenance and budgets, skills unavailable by default, policy revocation, snapshot binding and cancellation.
 - An isolated actual Codex 0.165.0 executable was run with the **exact exported profile**, an empty temporary HOME/CODEX_HOME, and a deterministic loopback Responses provider. The profile parsed with Host's public `configSchema`; the adapter accepted the actual native version and effective config. The model tool list contained only `memory_probe`, and that dynamic tool completed successfully. Forced calls to `exec_command`, `apply_patch`, `collaboration.spawn_agent`, code-mode `exec`, `list_mcp_resources`, `view_image` and `send_message_to_user_async` each returned an unsupported-call result. A further check loaded the generated JSON using public `createConfiguredRuntimes`, started the Host HTTP server, and completed a managed run with the same single-tool surface. Ten scenarios used 18 local provider requests.
 

@@ -273,7 +273,7 @@ it("installs the same commands once for a shared employee sandbox independently 
   expect(await manager.install("claude", "lead", "binding-owner", "shared", async () => box.files)).toMatchObject({
     commands: ["gws", "lark-cli", "agent-browser"],
   });
-  for (const kernel of ["codex", "agy", "dsh"]) {
+  for (const kernel of ["codex", "agy", "dsh", "openclaw"]) {
     expect(manager.toolGuides(kernel)).toBeUndefined();
     expect(await manager.install(kernel, "employee", "binding-owner", "shared", async () => box.files)).toBeUndefined();
   }

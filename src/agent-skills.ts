@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { connectorGuide, type ConnectorGuide } from "@olorinm/agent-connectors/guides";
 import type { ConnectedApps } from "./connected-apps.js";
 import type { SandboxFiles } from "./browser-relay.js";
-import { sessionShell, shellRelay } from "./kernels.js";
+import { shellRelay } from "./kernels.js";
 
 /**
  * How an Agent learns the connectors assigned to it. Each connector ships a guide written around its official CLI.
@@ -284,7 +284,7 @@ export class AgentSkills {
   }
   /** For an Agent on a kernel without relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
   toolGuides(kernel: string | undefined) {
-    return (this.apps.employeePermissions ? sessionShell(kernel) : shellRelay(kernel)) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
+    return (this.apps.employeePermissions || shellRelay(kernel)) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
   }
   /** Idempotent; repeats only when the plan for this environment binding changes. */
   async sync(agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {

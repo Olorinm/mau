@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { PARTNER_KERNELS, modelServices, sessionShell, shellRelay } from "../src/kernels.js";
+import { PARTNER_KERNELS, modelServices, shellRelay } from "../src/kernels.js";
 import { connectedAppsSchema } from "../src/connected-apps.js";
 import { connectorAccountsSchema } from "../src/connector-accounts.js";
 import { environmentOptionsSchema } from "../src/environments.js";
@@ -19,10 +19,8 @@ it("offers codex, claude, agy and dsh as other kernels, each with its model serv
   expect(modelServices(["agy", "constructor"])).toBeUndefined();
 });
 
-it("uses Codex command receipts on the default Host and native session IDs on the shared Host", () => {
+it("uses Codex command receipts on the default Host", () => {
   expect(shellRelay("codex")).toBe(true);
-  for (const kernel of ["codex", "claude", "agy", "dsh", "opencode", "kimi", "hermes", "pi"]) expect(sessionShell(kernel)).toBe(true);
-  expect(sessionShell("openclaw")).toBe(false);
   for (const kernel of ["claude", "agy", "hermes", "constructor", undefined]) expect(shellRelay(kernel), String(kernel)).toBe(false);
 });
 

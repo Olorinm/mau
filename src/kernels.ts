@@ -1,5 +1,3 @@
-export { supportsSessionRelay as sessionShell } from "@olorinm/agent-host/relay-session";
-
 /**
  * What Mau knows about the kernels a partner can run on. An environment has one main kernel, which may be any kernel
  * its Host runs; the kernels it offers beside that one are of this list.
