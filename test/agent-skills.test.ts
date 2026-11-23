@@ -36,10 +36,13 @@ function sandbox(relay: boolean) {
   }
   if (relay) writeFileSync(client, "");
   let writes = 0;
+  const official: string[] = [];
   const files = {
     directory: root,
     writeFile: async () => { writes++; throw new Error("unexpected_write_file"); },
     exec: async (argv: string[]) => {
+      // The start script's own installer, asked again for the groups this environment's connections cover.
+      if (argv[0] === "sh") { official.push(argv[2]!); return { exitCode: 0, stdout: "" }; }
       expect(argv[0]).toBe("node"); expect(argv[1]).toBe("-e"); expect(argv[3]).toBe("--");
       const plan = JSON.parse(Buffer.from(argv.slice(4).join(""), "base64").toString("utf8"));
       const rewritten = Buffer.from(JSON.stringify({ ...plan, skillsDirectory: join(codex, "skills"), binDirectory: bin, relayClient: client }), "utf8").toString("base64");
@@ -48,7 +51,7 @@ function sandbox(relay: boolean) {
     },
     readFile: async () => new Uint8Array(),
   };
-  return { root, codex, bin, files, writes: () => writes };
+  return { root, codex, bin, files, official, writes: () => writes };
 }
 
 it("installs skills and relay commands, keeps unmanaged files, removes stale managed ones and repeats only on change", async () => {
@@ -76,6 +79,18 @@ it("installs skills and relay commands, keeps unmanaged files, removes stale man
   expect(second).toMatchObject({ skills: ["google-gmail"], removed: ["feishu"] });
   expect(existsSync(join(box.codex, "skills/feishu"))).toBe(false);
   expect(existsSync(join(box.bin, "gws"))).toBe(true);
+});
+
+it("asks the start script's installer for only the official skill groups this environment has connections for", async () => {
+  const apps = { reader: () => async () => ({ status: "completed", tools: [] }), connections: () => ["google-gmail", "work-feishu"] } as unknown as ConnectedApps;
+  const box = sandbox(true);
+  const manager = new skills.AgentSkills(apps, () => connections);
+  await manager.install("claude", "agent", "owner", "binding", async () => box.files);
+  // agent-browser needs no connection; lark and gws do. --prune removes the groups that are not in it.
+  expect(box.official.at(-1)).toContain("--prune --only agent-browser gws lark");
+  // The same connection set asks once.
+  await manager.install("claude", "agent", "owner", "binding", async () => box.files);
+  expect(box.official).toHaveLength(1);
 });
 
 it("leaves commands out when the environment's Agent Host has no relay client", async () => {
@@ -235,9 +250,7 @@ it("installs nothing for a kernel whose shell does not relay, and gives it the s
   expect(skills.TOOL_GUIDES).toBe("Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
     "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
     "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. " +
-    "Where a guide says to run something in your shell, it means this. " +
-    "One exception: a page your own environment serves (localhost) is not reachable through this tool. Open it in your shell with `agent-browser open http://localhost:PORT`; " +
-    "it opens in a browser inside the environment, and `agent-browser snapshot`, `click` and the rest follow there as usual.");
+    "Where a guide says to run something in your shell, it means this.");
   // A kernel whose shell relays is installed for, as before, and its catalog carries no guides.
   expect(manager.toolGuides("codex")).toBeUndefined();
   expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toMatchObject({ skills: ["google-gmail"], commands: ["gws", "agent-browser"] });

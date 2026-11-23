@@ -153,6 +153,26 @@ function skillDocument(guide: ConnectorGuide) {
 
 type GuideLookup = (kind: string, product?: string) => ConnectorGuide | undefined;
 
+/**
+ * The official skill groups this environment's connections make useful, by the bundle's naming: `lark` covers
+ * `lark-*`, `gws` covers `gws-*`, and `agent-browser` needs no connection because it also opens the pages the
+ * environment serves itself.
+ */
+export function officialGroups(connections: ConnectionSummary[], guides: GuideLookup = connectorGuide) {
+  const groups = new Set(["agent-browser"]);
+  for (const connection of connections) {
+    const product = typeof connection.settings?.product === "string" ? connection.settings.product : undefined;
+    const command = guides(connection.kind, product)?.command;
+    if (command === "lark-cli") groups.add("lark");
+    if (command === "gws") groups.add("gws");
+  }
+  return [...groups].sort();
+}
+
+/** Runs the start script's installer again with the groups this environment has; exit 0 having done it. */
+const OFFICIAL_INSTALL = 'store=/opt/agent-environment-skills; digest=$(cat "$store/digest" 2>/dev/null) || exit 0; ' +
+  '[ -f "$store/$digest/install.sh" ] || exit 0; exec runuser -u user -- sh "$store/$digest/install.sh" /home/user "$digest" --prune';
+
 /** Guides of the Agent's connections whose CLI tools the connector actually offers right now. */
 export function planSkills(connections: ConnectionSummary[], assigned: string[], tools: string[], guides: GuideLookup = connectorGuide): SkillPlan {
   const skills: SkillPlan["skills"] = [], commands = new Set<string>();
@@ -171,8 +191,7 @@ export function planSkills(connections: ConnectionSummary[], assigned: string[],
 /** What the `connected_apps` catalog says above the guides it carries. */
 export const TOOL_GUIDES = "Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
   "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
-  "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this. " +
-  "One exception: a page your own environment serves (localhost) is not reachable through this tool. Open it in your shell with `agent-browser open http://localhost:PORT`; it opens in a browser inside the environment, and `agent-browser snapshot`, `click` and the rest follow there as usual.";
+  "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this.";
 /**
  * The guides of the connections whose CLI tools a catalog offers, for a turn whose kernel has no relay commands: each
  * with the tools that run its command.
@@ -334,8 +353,27 @@ export class AgentSkills {
   async install(kernel: string | undefined, agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
     // In a shared sandbox the commands are common files. Host and the connector resolve the
     // employee and their current assignment separately on every invocation.
-    if (this.apps.employeePermissions) return this.run(`shared:${binding}`, { skills: [], commands: COMMANDS }, true, files);
-    return shellRelay(kernel) ? this.sync(agentId, owner, binding, files) : this.run(`${agentId}:${binding}:commands`, { skills: [], commands: [] }, true, files);
+    const result = this.apps.employeePermissions ? await this.run(`shared:${binding}`, { skills: [], commands: COMMANDS }, true, files)
+      : shellRelay(kernel) ? await this.sync(agentId, owner, binding, files)
+      : await this.run(`${agentId}:${binding}:commands`, { skills: [], commands: [] }, true, files);
+    // A skill the environment has no connection for is context the model pays for and cannot use.
+    await this.official(binding, files).catch((error: unknown) =>
+      console.warn(JSON.stringify({ event: "official_skills_install_failed", message: String((error as Error)?.message ?? error) })));
+    return result;
+  }
+  /**
+   * Installs the official skills of the connections this environment has and removes the ones it does not, once per
+   * connection set. The start script extracted the bundle and installed every group; this narrows the set to what the
+   * environment can do, and leaves user-authored skills alone.
+   */
+  private async official(binding: string, files: () => Promise<SandboxFiles>) {
+    const groups = officialGroups(this.connections(), this.guides), key = `official:${binding}`;
+    const digest = createHash("sha256").update(groups.join(",")).digest("hex");
+    if (this.synced.get(key) === digest) return;
+    const run = await (await files()).exec(["sh", "-c", `${OFFICIAL_INSTALL} --only ${groups.join(" ")}`]);
+    // An environment whose start script installed no bundle keeps the skills it has.
+    if (run.exitCode !== 0) return;
+    this.synced.set(key, digest);
   }
   /** For an Agent on a kernel without relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
   toolGuides(kernel: string | undefined) {
