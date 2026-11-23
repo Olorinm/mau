@@ -4,7 +4,9 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
-## [Unreleased]
+## [0.1.0-alpha.66] - 2026-11-24
+
+- Collapse or reopen the desktop navigation with the Mau mark at the left edge. The console remembers the choice on this device.
 
 - Deliver a partner's message as one JSON object: who sent it (`from.partner`), when (`sent`) and the message. The fixed lines around it are gone: the header, the sender's duty, the intent, the rules of the turn, the permission sentences that the `connected_apps` description already states, and both boundary lines. A Codex partner and a partner on a text-only kernel read the same object.
 - Deliver results to their sender as one JSON object with `results`. `action=wait` returns the same members for a result; `sentTo` is now `requested: { kernel, model, effort }`, and `intent` is no longer part of a result.
