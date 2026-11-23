@@ -1,3 +1,5 @@
+export { supportsSessionRelay as sessionShell } from "@olorinm/agent-host/relay-session";
+
 /**
  * What Mau knows about the kernels a partner can run on. An environment has one main kernel, which may be any kernel
  * its Host runs; the kernels it offers beside that one are of this list.
@@ -16,10 +18,6 @@ const known = (kernel: string | undefined): kernel is PartnerKernel => kernel !=
 
 /** Whether the connector CLIs installed in the environment's shell work for partners on this kernel. */
 export const shellRelay = (kernel: string | undefined) => known(kernel) && kernels[kernel].shellRelay;
-
-/** Kernels whose terminal can send its registered session ID to a Host with sessionRelayTools enabled. */
-const sessionKernels = new Set(["codex", "claude", "agy", "dsh", "opencode", "kimi", "hermes", "pi"]);
-export const sessionShell = (kernel: string | undefined) => kernel !== undefined && sessionKernels.has(kernel);
 
 /**
  * The model endpoints the kernels of an environment need, as its provider names them. Nothing when one of the

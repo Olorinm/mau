@@ -3,7 +3,8 @@ import { isAbsolute } from "node:path";
 import type { WorkSessions } from "@agent-router/server";
 import type { MemoryReviewScope, MemoryReviewSubmission, RestrictedMemoryReviewer, ReviewCapabilities, ReviewWork } from "./memory-review.js";
 
-const CODEX_REVIEW_VERSION = "0.165.0";
+const auditedCatalogs = ["bundled-0.165.0", "bundled-0.171.0"] as const;
+type AuditedCatalog = typeof auditedCatalogs[number];
 const disabledFeatures = ["apps", "connectors", "code_mode", "code_mode_only", "code_mode_host", "context_management",
   "current_time_reminder", "deferred_executor", "enable_fanout", "goals", "hooks", "codex_hooks", "plugin_hooks",
   "image_generation", "imagegenext", "memories", "memory_tool", "multi_agent", "multi_agent_v2", "multi_agent_v2_dynamic_tools",
@@ -78,7 +79,7 @@ export interface ReviewRuntimeBinding {
   profile: CodexReviewProfile;
   /** The launcher must derive this from the installed profile, and verify private
    * empty HOME/cwd plus the live dispatcher mapping. A config boolean is not proof. */
-  installed: { profileDigest: string; homeIsolation: "dedicated-private"; modelCatalog: "bundled-0.165.0"; toolBinding: ReviewToolBinding };
+  installed: { profileDigest: string; homeIsolation: "dedicated-private"; modelCatalog: AuditedCatalog; toolBinding: ReviewToolBinding };
 }
 export interface CodexRestrictedReviewerDependencies {
   /** Resolve and attest the currently installed runtime, not a requested future
@@ -134,7 +135,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
   }
   private async verified(scope: MemoryReviewScope, signal: AbortSignal): Promise<ReviewRuntimeBinding> {
     const binding = await this.bound(scope, signal); validateProfile(binding.profile);
-    if (binding.installed.profileDigest !== reviewProfileDigest(binding.profile) || binding.installed.homeIsolation !== "dedicated-private" || binding.installed.modelCatalog !== "bundled-0.165.0")
+    if (binding.installed.profileDigest !== reviewProfileDigest(binding.profile) || binding.installed.homeIsolation !== "dedicated-private" || !auditedCatalogs.includes(binding.installed.modelCatalog))
       throw new Error("review_installed_profile_unverified");
     const policy = binding.installed.toolBinding;
     const skills = policy.skills.mode === "native-managed" ? policy.skills.tools : [];
@@ -146,7 +147,8 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
       throw new Error("review_dispatch_policy_unverified");
     const discovery = object(await binding.sessions.discover()), native = object(discovery.native);
     const userAgent = object(native.initialize).userAgent;
-    if (typeof userAgent !== "string" || !/(?:\/|\s)0\.165\.0(?:\s|$)/.test(userAgent)) throw new Error("review_codex_version_not_audited");
+    const nativeVersion = typeof userAgent === "string" ? /^(?:[^/\s]+[ /])(\d+\.\d+\.\d+)(?:\s|$)/.exec(userAgent)?.[1] : undefined;
+    if (!nativeVersion || `bundled-${nativeVersion}` !== binding.installed.modelCatalog) throw new Error("review_codex_version_not_audited");
     signal.throwIfAborted();
     if (!binding.sessions.host.nativeRequest) throw new Error("review_effective_config_unavailable");
     const result = object(await binding.sessions.host.nativeRequest(binding.sessions.runtimeId, "config/read", { includeLayers: false, cwd: binding.profile.cwd }));
@@ -167,7 +169,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
   }
   private proof(binding: ReviewRuntimeBinding): ReviewCapabilities {
     return { ...binding.partner, status: "available", runtimeId: binding.profile.id,
-      policyId: createHash("sha256").update(JSON.stringify(canonical({ version: CODEX_REVIEW_VERSION, profile: binding.installed.profileDigest, tools: binding.installed.toolBinding }))).digest("hex"),
+      policyId: createHash("sha256").update(JSON.stringify(canonical({ version: binding.installed.modelCatalog.slice("bundled-".length), profile: binding.installed.profileDigest, tools: binding.installed.toolBinding }))).digest("hex"),
       isolation: "dedicated-runtime", enforcement: "runtime-tool-allowlist", otherTools: "denied",
       contextAccess: "copied-session-and-managed-memory-skills", sideEffects: "managed-memory-skills-only",
       unattendedDestructiveWrites: "stage-for-owner-approval", delivery: "disabled", recursion: "disabled",

@@ -7,7 +7,7 @@
       "id": "memory-review",
       "kernel": "codex",
       "cwd": "/srv/mau-review/workspace",
-      "command": "/opt/codex-0.165.0/codex",
+      "command": "/opt/codex-0.171.0/codex",
       "args": [
         "app-server",
         "--listen",

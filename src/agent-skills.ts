@@ -76,8 +76,8 @@ function opened() {
 /** Where the commands that name no page go from now on. Only a page that did open moves them. */
 function remember(local) {
   try {
-    if (local) { fs.mkdirSync(path.dirname(mark), { recursive: true }); fs.writeFileSync(mark, ""); } else fs.rmSync(mark, { force: true });
-  } catch {}
+    if (local) { fs.mkdirSync(path.dirname(mark), { recursive: true }); try { fs.writeFileSync(mark, "", { flag: "wx" }); } catch (error) { if (error.code !== "EEXIST") throw error; } } else fs.rmSync(mark, { force: true });
+  } catch (error) { fail("Could not save browser selection: " + error.message, 1); }
 }
 function runHere(args, target) {
   if (!fs.existsSync(LOCAL)) fail("The browser for pages of this environment is not installed here. It is installed in the background after the environment's first start; try again in a few minutes.", 75);

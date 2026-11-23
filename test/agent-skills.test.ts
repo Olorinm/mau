@@ -201,6 +201,7 @@ it("the browser client opens pages of the environment in the environment's own b
     const sessionNames = new Set(readFileSync(log, "utf8").trim().split("\n").map(line => line.split(" ")[0]));
     expect(sessionNames.size).toBe(2);
     for (const name of sessionNames) expect(name).toMatch(/^mau-[a-f0-9]{32}$/);
+    expect((await run(["--profile", "test-profile", "open", "http://localhost:3000/"])).stdout).toBe("local: --profile test-profile open http://localhost:3000/\n");
     expect((await run(["skills", "get", "core"], {})).stdout).toBe("local: skills get core\n");
     // The browser is installed in the background after an environment's first start.
     const early = await exec(["open", "http://localhost:3000/"], { MAU_LOCAL_BROWSER: join(root, "missing") });

@@ -201,8 +201,8 @@ export class BusinessHost extends HttpAgentHost {
       const granted = (kind: "feishu" | "connectedApps") => admission &&
         (admission.kind === "owner" && !admission.toolGrants || Boolean(partnerTurn) || Boolean(admission.toolGrants?.[kind]));
       const proposed = [...(granted("feishu") && this.bot ? [feishuDefinition] : []),
-        // A session gets `connected_apps` when the Agent has a connection at its first turn; what the tool reaches is read on every call.
-        ...(granted("connectedApps") && this.appReader && this.apps?.connections().length !== 0 ? [this.apps?.employeePermissions ? employeeAppDefinition : connectedAppDefinition] : []),
+        // The employee's first session can predate an assignment. Register its stable tool and resolve access on each call.
+        ...(granted("connectedApps") && this.appReader && (this.apps?.employeePermissions || this.apps?.connections().length !== 0) ? [this.apps?.employeePermissions ? employeeAppDefinition : connectedAppDefinition] : []),
         ...(admission && admission.kind !== "schedule" ? this.partner?.definitions ?? [] : [])];
       return this.store.get<typeof proposed>("business_session_catalog", sessionKey) ?? proposed;
     };
