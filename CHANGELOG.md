@@ -12,7 +12,7 @@ copied from it.
 - Continue a partner's conversation in a new window, once and when nothing runs in it, when its session began with another description of the `partners` tool. This happens for every existing partner after the upgrade: the owner sees the divider of a new conversation in each partner's chat, the model starts that conversation without its earlier context, and the transcript, memory and files stay.
 - Leave the `next` sentence out of the result of `recruit`, `message`, `wait` and `dismiss` where it repeated the description or the guide. It remains for what one call adds: a computer that is offline, a restored partner, a first message that was not sent.
 - Tell an agent on the owner's computer why a partner's message arrives and where its answer goes, in the message's `about`, and carry earlier notes as `notes`. It is no longer told that the message grants no approval.
-- Needs the Agent Kit release that delivers `{ from, message }` (after 0.11.0-alpha.15); `components.json` is not moved yet.
+- Pin Agent Kit 0.11.0-alpha.16 for structured partner deliveries and idle owner-conversation resets.
 
 ## [0.1.0-alpha.65] - 2026-11-23
 
