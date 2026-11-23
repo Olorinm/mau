@@ -89,6 +89,37 @@ body {
   stroke-width: 1.8;
 }
 
+/* On the desktop layout the toggle shares the logo's place: the logo shows until the pointer is on it or the
+   toggle has keyboard focus. Touch screens and the compact layout keep the toggle beside the logo. */
+@media (hover: hover) {
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo] {
+    position: relative;
+  }
+
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo] > .app-titlebar-control {
+    position: absolute;
+    top: 50%;
+    left: -1px;
+    z-index: 1;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--motion-ease);
+  }
+
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo] > .app-titlebar-control:hover,
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo] > .app-titlebar-control:focus-visible {
+    opacity: 1;
+  }
+
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo] .app-titlebar-brand-mark {
+    transition: opacity var(--motion-fast) var(--motion-ease);
+  }
+
+  .app-shell[data-compact="false"] .app-titlebar-left[data-toggle-on-logo]:has(> .app-titlebar-control:is(:hover, :focus-visible)) .app-titlebar-brand-mark {
+    opacity: 0;
+  }
+}
+
 .app-titlebar-brand {
   display: inline-flex;
   align-items: center;

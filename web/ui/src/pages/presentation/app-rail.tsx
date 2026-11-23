@@ -163,12 +163,14 @@ function RailSection(props: {
       className={clsx("app-rail-section", styles.section)}
       aria-label={props.title}
     >
-      <h2
-        className={clsx("app-rail-section-title", styles.sectionTitle)}
-        title={props.title}
-      >
-        {props.compactTitle ?? props.title}
-      </h2>
+      {props.title ? (
+        <h2
+          className={clsx("app-rail-section-title", styles.sectionTitle)}
+          title={props.title}
+        >
+          {props.compactTitle ?? props.title}
+        </h2>
+      ) : null}
       <div className={clsx("app-rail-section-items", styles.sectionItems)}>
         {props.children}
       </div>

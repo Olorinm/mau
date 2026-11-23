@@ -827,9 +827,9 @@ it.skipIf(!built)(
           path.includes("/auth/session"),
       ),
     ).toBe(false);
-    await page.getByRole("button", { name: "App 商店", exact: true }).click();
-    await see(page.getByText("尚未接入", { exact: true })).toBeVisible();
-    for (const name of ["钱包", "提现", "直接内核聊天"])
+    // The navigation is one flat list without section titles; Settings is in the account menu.
+    await see(page.locator(".app-rail-section-title")).toHaveCount(0);
+    for (const name of ["App 商店", "设置", "钱包", "提现", "直接内核聊天"])
       await see(page.getByRole("button", { name, exact: true })).toHaveCount(0);
     expect(errors).toEqual([]);
   },
@@ -842,7 +842,8 @@ it.skipIf(!built)(
     const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     await page.reload();
-    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", {name:"账号", exact:true}).click();
+    await page.getByRole("menuitem", {name:"设置", exact:true}).click();
     const settings = page.getByRole("dialog", { name: "设置" });
     await see(settings.getByRole("heading", { name: "通用" })).toBeVisible();
     await settings.getByRole("combobox", { name: "外观" }).click();
@@ -992,7 +993,8 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
   await page.reload();
   // One 设置 entry replaces 连接器 / 扩展 / 设置 in the main navigation.
   for (const name of ["连接器", "扩展"]) await see(page.getByRole("button", {name, exact:true})).toHaveCount(0);
-  await page.getByRole("button", {name:"设置", exact:true}).click();
+  await page.getByRole("button", {name:"账号", exact:true}).click();
+  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
   const settings = page.getByRole("dialog", {name:"设置"});
   await see(settings.getByRole("heading", {name:"通用"})).toBeVisible();
   await see(page).toHaveURL(/#\/settings\/general$/);
@@ -1023,7 +1025,8 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
   // Mobile: full screen, the navigation is the first page and each page has a back button.
   await page.setViewportSize({width:390, height:844});
   await page.locator(".app-titlebar-control").click();
-  await page.getByRole("button", {name:"设置", exact:true}).click();
+  await page.getByRole("button", {name:"账号", exact:true}).click();
+  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
   const mobile = page.getByRole("dialog", {name:"设置"});
   await see(mobile.getByRole("navigation", {name:"设置"})).toBeVisible();
   await expect.poll(() => mobile.boundingBox()).toEqual({x:0, y:0, width:390, height:844});
@@ -1068,7 +1071,8 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
     return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
   });
   await page.reload();
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", {name:"账号", exact:true}).click();
+  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
   const settings = page.getByRole("dialog", { name: "设置" });
   await settings.getByRole("button", { name: "连接器", exact: true }).click();
   // Coming-soon apps are hidden; there are no featured cards, and each row shows its status.
@@ -1143,9 +1147,9 @@ it.skipIf(!built)(
     await see(page.getByLabel("密码")).toHaveCount(0);
     // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
     await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
-    // Returning to the conversation page reads the partners again.
-    await page.getByRole("button", { name: "App 商店", exact: true }).click();
-    await page.getByRole("button", { name: "对话", exact: true }).click();
+    // The channels page of the settings reads the partners again.
+    await page.evaluate(() => { location.hash = "#/settings/channels"; });
+    await page.getByRole("button", { name: "关闭设置" }).click();
     await see(page.getByText("登录已过期")).toBeVisible();
     await page.unroute("**/_mau/v1/agents");
     await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
@@ -1168,9 +1172,9 @@ it.skipIf(!built)(
     const past = Math.floor(Date.now() / 1000) - 3600;
     await context.setExtraHTTPHeaders(f.edgeHeaders({ iat: past - 600, exp: past }));
     const refused = page.waitForResponse((response) => new URL(response.url()).pathname === "/_mau/v1/agents" && response.status() === 401);
-    await page.getByRole("button", { name: "App 商店", exact: true }).click();
-    await page.getByRole("button", { name: "对话", exact: true }).click();
+    await page.evaluate(() => { location.hash = "#/settings/channels"; });
     await refused;
+    await page.getByRole("button", { name: "关闭设置" }).click();
     await see(page.getByRole("alert").filter({ hasText: "登录已过期" })).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
     // "重新登录" reloads; with a renewed Access session the console is back without the banner.

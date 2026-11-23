@@ -14,7 +14,7 @@ import {
 import { accessExpiredEvent } from "./api/http";
 import { errorMessage, useI18n } from "./i18n";
 import { MessagesScreen } from "./screens/messages";
-import { AppsScreen, CreateAppScreen } from "./screens/product-pages";
+import { CreateAppScreen } from "./screens/product-pages";
 import { SettingsModal } from "./settings/settings-modal";
 import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/route";
 import {
@@ -45,7 +45,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     });
     return () => { active = false; };
   }, []);
-  const [view, setView] = useState("messages");
   const settingsRoute = useSettingsRoute();
   // Landing parameters (the OAuth callback's ?view=connectors&oauth=…) apply once: they reopen the settings page the
   // owner started from, and are removed so a reload does not repeat them.
@@ -117,48 +116,13 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     open: "打开",
     empty: "暂无内容",
   };
+  // One flat list: the entries are few enough to need no section titles. Settings is in the account menu.
   const groups = [
     {
-      id: "native",
-      label: zh ? "原生应用" : "Native apps",
+      id: "main",
       items: [
-        {
-          id: "messages",
-          label: zh ? "对话" : "Conversations",
-          icon: <ProductIcon name="rooms" />,
-        },
-      ],
-    },
-    {
-      id: "my-apps",
-      label: zh ? "我的 App" : "My apps",
-      items: [
-        {
-          id: "create-app",
-          label: zh ? "新建应用" : "Create app",
-          icon: <ProductIcon name="add" />,
-        },
-      ],
-    },
-    {
-      id: "resources",
-      label: zh ? "资源" : "Resources",
-      items: [
-        {
-          id: "apps",
-          label: zh ? "App 商店" : "App Store",
-          icon: <ProductIcon name="store" />,
-        },
-      ],
-    },
-    {
-      id: "settings",
-      items: [
-        {
-          id: "settings",
-          label: zh ? "设置" : "Settings",
-          icon: <ProductIcon name="settings" />,
-        },
+        { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
+        { id: "create-app", label: zh ? "新建应用" : "Create app", icon: <ProductIcon name="add" /> },
       ],
     },
   ];
@@ -177,12 +141,8 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
         navigation={
           <Navigation
             groups={groups}
-            selectedId={view}
-            onSelect={(id) =>
-              id === "create-app" ? setCreateOpen(true)
-                : id === "settings" ? openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" })
-                : setView(id)
-            }
+            selectedId="messages"
+            onSelect={(id) => { if (id === "create-app") setCreateOpen(true); }}
             account={{
               name: session.edge?.email ?? session.owner,
               avatar: (
@@ -195,6 +155,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
               ),
               label: zh ? "账号" : "Account",
               actions: [
+                {
+                  id: "settings",
+                  label: zh ? "设置" : "Settings",
+                  onSelect: () => openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" }),
+                },
                 {
                   id: "language",
                   label: t("language.toggle"),
@@ -216,23 +181,15 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
             <Button variant="primary" onClick={reloadForAccess}>{t("access.relogin")}</Button>
           </div>
         ) : null}
-        {view === "messages" ? (
-          <MessagesScreen
-            session={session}
-            initialAgentId={conversationTarget}
-            onStartHandled={() => setConversationTarget(undefined)}
-          />
-        ) : (
-          <AppsScreen />
-        )}
+        <MessagesScreen
+          session={session}
+          initialAgentId={conversationTarget}
+          onStartHandled={() => setConversationTarget(undefined)}
+        />
         {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={signOut} /> : null}
         <CreateAppScreen
           open={createOpen}
           onCancel={() => setCreateOpen(false)}
-          onStore={() => {
-            setCreateOpen(false);
-            setView("apps");
-          }}
         />
       </AppShell>
       </PartnerAvatarAppearanceProvider>

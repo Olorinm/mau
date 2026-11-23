@@ -24,7 +24,10 @@ export function AppTitlebar(props: {
       data-desktop-fullscreen={props.desktopFullscreen ? "true" : undefined}
       aria-label={typeof props.brand === "string" ? props.brand : undefined}
     >
-      <div className="app-titlebar-left">
+      <div
+        className="app-titlebar-left"
+        data-toggle-on-logo={props.onToggleRail && props.logo ? "" : undefined}
+      >
         {props.onToggleRail ? (
           <button
             id={props.toggleId}

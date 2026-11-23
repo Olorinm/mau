@@ -70,6 +70,14 @@ for (const mode of ["light", "dark", "system"] as const) for (const width of [39
       const top = await page.evaluate(() => ({ bar: document.querySelector(".app-titlebar")!.getBoundingClientRect().width,
         card: document.querySelector(".room-main-panel")!.getBoundingClientRect().top }));
       expect(top.bar).toBeLessThan(200); expect(top.card).toBeLessThan(16);
+      // The navigation and the page behind the conversation card are one surface: the card is the only other layer.
+      const surfaces = await page.evaluate(() => [".app-shell", ".app-titlebar", ".app-rail"].map(selector => getComputedStyle(document.querySelector(selector)!).backgroundColor));
+      expect(surfaces[1]).toBe(surfaces[0]); expect(surfaces[2]).toBe("rgba(0, 0, 0, 0)");
+      // The navigation toggle takes the logo's place while the pointer is on the logo.
+      const toggle = page.locator(".app-titlebar-control"), mark = page.locator(".app-titlebar-brand-mark");
+      await see(toggle).toHaveCSS("opacity", "0"); await see(mark).toHaveCSS("opacity", "1");
+      await toggle.hover(); await see(toggle).toHaveCSS("opacity", "1"); await see(mark).toHaveCSS("opacity", "0");
+      await page.mouse.move(0, 0);
       // The people panel floats inside the conversation's card and does not move or resize it.
       const card = () => page.evaluate(() => { const r = document.querySelector(".room-main-panel")!.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; });
       const before = await card();

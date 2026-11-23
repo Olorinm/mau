@@ -50,6 +50,16 @@ export function Navigation({
   return (
     <AppRail
       {...props}
+      account={props.account && {
+        ...props.account,
+        actions: props.account.actions.map((action) => ({
+          ...action,
+          onSelect: () => {
+            action.onSelect();
+            close();
+          },
+        })),
+      }}
       onSelect={(id) => {
         props.onSelect(id);
         close();
