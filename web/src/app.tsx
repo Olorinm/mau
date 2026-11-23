@@ -19,7 +19,6 @@ import { SettingsModal } from "./settings/settings-modal";
 import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/route";
 import {
   AppShell,
-  Navigation,
   FrontendProvider,
   frontendLabels,
   type FrontendLabelKey,
@@ -27,7 +26,7 @@ import {
 import { ProductIcon } from "@olorinm/agent-ui/app";
 
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {
-  const { t, language, setLanguage } = useI18n();
+  const { t, language } = useI18n();
   const [theme] = useThemePreference();
   const [avatarAppearance] = useAvatarAppearance();
   const { toast } = useToast();
@@ -78,9 +77,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     queries.clear();
     setSession(null);
   };
-  const toggleLanguage = () =>
-    setLanguage(language === "zh-CN" ? "en" : "zh-CN");
-
   if (!boot) return null;
   if (boot.mode === "edge-denied" || boot.mode === "edge-failed")
     return (
@@ -96,8 +92,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   if (!session) return null;
   const zh = language === "zh-CN";
   const labels: Partial<Record<FrontendLabelKey, string>> = {
-    navigation: "主导航",
-    toggleNavigation: "展开或收起导航",
     back: "返回",
     loading: "加载中…",
     search: "搜索",
@@ -107,7 +101,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     attachments: "附件",
     mention: "提及",
     close: "关闭",
-    resizeNavigation: "调整主导航宽度",
     connected: "已连接",
     unavailable: "尚未接入",
     download: "下载",
@@ -116,15 +109,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     open: "打开",
     empty: "暂无内容",
   };
-  // One flat list: the entries are few enough to need no section titles. Settings is in the account menu.
-  const groups = [
-    {
-      id: "main",
-      items: [
-        { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
-        { id: "create-app", label: zh ? "新建应用" : "Create app", icon: <ProductIcon name="add" /> },
-      ],
-    },
+  // Where the owner can go: the conversations, the apps, and their own settings.
+  const destinations = [
+    { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
+    { id: "apps", label: zh ? "应用" : "Apps", icon: <ProductIcon name="store" /> },
+    { id: "me", label: zh ? "我" : "Me", icon: <PartnerAvatar seed={session.owner} fallbackName={session.owner} size={24} appearance="illustrated" /> },
   ];
   return (
     <FrontendProvider
@@ -136,44 +125,15 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     >
       <PartnerAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
-        brand={t("app.name")}
         logo={<MauMark />}
-        navigation={
-          <Navigation
-            groups={groups}
-            selectedId="messages"
-            onSelect={(id) => { if (id === "create-app") setCreateOpen(true); }}
-            account={{
-              name: session.edge?.email ?? session.owner,
-              avatar: (
-                <PartnerAvatar
-                  seed={session.owner}
-                  fallbackName={session.owner}
-                  size={28}
-                  appearance="illustrated"
-                />
-              ),
-              label: zh ? "账号" : "Account",
-              actions: [
-                {
-                  id: "settings",
-                  label: zh ? "设置" : "Settings",
-                  onSelect: () => openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" }),
-                },
-                {
-                  id: "language",
-                  label: t("language.toggle"),
-                  onSelect: toggleLanguage,
-                },
-                {
-                  id: "logout",
-                  label: t("account.logout"),
-                  onSelect: signOut,
-                },
-              ],
-            }}
-          />
-        }
+        label={zh ? "主导航" : "Navigation"}
+        destinations={destinations}
+        selectedId="messages"
+        // No app service is connected yet, so the apps destination leads straight to making one.
+        onSelect={(id) => {
+          if (id === "apps") setCreateOpen(true);
+          else if (id === "me") openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" });
+        }}
       >
         {accessExpired ? (
           <div className="mau-access-banner" role="alert">

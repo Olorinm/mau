@@ -6,13 +6,7 @@ export {
   type FrontendLabelKey,
   type FrontendTranslate,
 } from "./provider";
-export {
-  AppShell,
-  Navigation,
-  type NavigationItem,
-  type NavigationGroup,
-  type MenuAction,
-} from "./shell";
+export { AppShell, type Destination } from "./shell";
 export {
   ItemList,
   ListDetailLayout,

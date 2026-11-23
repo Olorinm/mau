@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CollectionEmptyState,
@@ -11,7 +11,7 @@ import {
   type MessageView,
   type PartnerLinkResolver,
 } from "@olorinm/agent-ui/pages";
-import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, StatusLine, TextButton, useToast } from "@olorinm/agent-ui/app";
+import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, StatusLine, TextButton, useCompactLayout, useToast } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
 import { mauApi } from "../api/client";
@@ -31,7 +31,9 @@ import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
 import { liveViewUrl } from "../api/live-view";
 import { BrowserSideView, DocumentSideView, type PartnerDocument, FileSideView } from "./side-views";
-import { ChatRoster, ChatStrip, figureRect, slideFigure, useChatStrip, type ChatEntry, type ChatSection } from "./chat-switcher";
+import { ChatRoster, type ChatEntry, type ChatSection } from "./chat-switcher";
+import { MauMark } from "../mau-mark";
+import { openSettings } from "../settings/route";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
 const channelNames: Record<string, [string, string]> = {
@@ -237,10 +239,10 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const names = new Map(agents.data?.map(({ agent }) => [agent.id, agent.name]) ?? []);
 
   const [selected, setSelected] = useState<string>();
-  // The people panel over the left of the chat (the full list of conversations, or one partner's profile opened
-  // from it) and the new-partner dialog.
-  const [rosterOpen, setRosterOpen] = useState(false);
+  // The partner whose profile stands in place of the list of conversations, and the new-partner dialog.
   const [profile, setProfile] = useState<string>();
+  // A narrow screen shows one thing at a time: the list, then a conversation, then a profile on top of either.
+  const compact = useCompactLayout();
   const [creating, setCreating] = useState(false);
   // On the right of the conversation: a message's file, or the browser a partner handed over.
   const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }
@@ -406,50 +408,24 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   // Sessions on other channels (a Feishu group, a chat with a partner that no longer exists) can be read here.
   const otherEntries = list.filter((chat) => chat.kind !== "group" && !(chat.kind === "dm" && known.has(chat.agentIds[0] ?? ""))
     && !observedKey(chat)?.startsWith("work:")).map(chatEntry);
-  const latest = (entry: Entry) => entry.chat?.lastEvent?.at ?? "";
-  const recent = (entries: Entry[]) => [...entries].sort((a, b) => latest(b).localeCompare(latest(a)));
   const allEntries = [...agentEntries, ...groupEntries, ...otherEntries];
   const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
-  // The header row holds partners first, then groups. Another channel's session is listed in the full list only,
-  // and joins the row while it is the one being read.
-  const strip = useChatStrip([...recent(agentEntries), ...recent(groupEntries),
-    ...[...otherEntries, ...dismissedEntries].filter((entry) => entry.key === currentKey)], currentKey);
   // The profile card follows the conversation; it closes on one that has no single partner.
   const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
   useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
   const profileSummary = profile ? agents.data?.find(({ agent }) => agent.id === profile) : undefined;
-  // The current conversation's figure slides between the header row and its row in the full list.
-  const moved = useRef<{ key: string | undefined; from: DOMRect | undefined }>(undefined);
-  const remember = (key: string | undefined) => { moved.current = { key, from: figureRect(key) }; };
-  useLayoutEffect(() => { const move = moved.current; moved.current = undefined; if (move) slideFigure(move.key, move.from); }, [rosterOpen, currentKey]);
-  const panelOpen = rosterOpen || profileSummary !== undefined;
-  const closePanel = () => { remember(currentKey); setRosterOpen(false); setProfile(undefined); };
-  useEffect(() => {
-    if (!panelOpen) return;
-    // The panel floats over the conversation, so a press anywhere else puts it away. Dialogs, menus and toasts the
-    // profile opens are outside it too, and do not.
-    const outside = (event: PointerEvent) => {
-      if (!(event.target as Element).closest?.(".mau-roster, .mau-chip, .mau-side-document, [role='dialog'], [role='menu'], [role='listbox'], [role='alertdialog'], .toast-viewport")) closePanel();
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [panelOpen, currentKey]);
   const show = (entry: Entry) => {
-    remember(entry.key);
-    setRosterOpen(false);
     setProfile(undefined);
     if (entry.chat) setSelected(entry.chat.chatId);
     else if (entry.agentId) start.mutate(entry.agentId);
   };
-  const pick = (entry: Entry) => {
-    // The current one again: its profile (a group: its members).
-    if (entry.key === currentKey && !rosterOpen) {
-      if (entry.chat?.kind === "group") setMembersOpen(true);
-      else if (entry.agentId && known.has(entry.agentId)) setProfile((open) => open === entry.agentId ? undefined : entry.agentId);
-      return;
-    }
-    show(entry);
-  };
+  // The name in a conversation's header leads to who is in it: the partner's profile, or the members of a group.
+  const currentEntry = [...allEntries, ...dismissedEntries].find((entry) => entry.key === currentKey);
+  const about = !current ? undefined : current.kind === "group" ? () => setMembersOpen(true)
+    : currentAgent && known.has(currentAgent) ? () => setProfile((open) => open === currentAgent ? undefined : currentAgent) : undefined;
+  // The current conversation's row again does the same.
+  const pick = (entry: Entry) => entry.key === currentKey && about ? about() : show(entry);
+  const page = !compact ? undefined : profileSummary ? "profile" : selected ? "chat" : "list";
   // Another partner named in a conversation (the sender of a message, a recruit, the one that asks for approval)
   // leads to the conversation with it.
   const openPartner = (agentId: string | undefined) => {
@@ -694,18 +670,21 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
 
   const sections: ChatSection[] = [
     { id: "agents", title: zh ? "伙伴" : "Partners", entries: agentEntries,
-      action: { label: t("agents.create"), onSelect: () => { setRosterOpen(false); setCreating(true); } },
+      action: { label: t("agents.create"), onSelect: () => setCreating(true) },
       ...(dismissedEntries.length ? { archived: { label: t("partners.dismissedState"), entries: dismissedEntries,
         action: { label: t("partners.restoreShort"), pending: restore.isPending, onSelect: (entry: Entry) => restore.mutate(entry) } } } : {}) },
     { id: "groups", title: zh ? "群聊" : "Groups", entries: groupEntries,
-      action: { label: zh ? "新建群聊" : "New group", onSelect: () => { setRosterOpen(false); setGrouping(true); } } },
+      action: { label: zh ? "新建群聊" : "New group", onSelect: () => setGrouping(true) } },
     { id: "others", title: zh ? "其他渠道" : "Other channels", entries: otherEntries },
   ];
   const header = (
-    <header className="room-header mau-strip-header">
-      <ChatStrip entries={strip} current={currentKey} rest={allEntries.filter((entry) => !strip.includes(entry)).length} expanded={panelOpen}
-        onPick={pick} onToggleAll={() => { remember(currentKey); setProfile(undefined); setRosterOpen(true); }}
-        label={zh ? "对话" : "Conversations"} allLabel={zh ? "全部对话" : "All conversations"} />
+    <header className="room-header mau-chat-header">
+      {compact ? <button type="button" className="mau-header-button" aria-label={zh ? "返回" : "Back"} title={zh ? "返回" : "Back"}
+        onClick={() => { setProfile(undefined); setSelected(undefined); }}><ProductIcon name="back" /></button> : null}
+      {currentEntry ? <button type="button" className="mau-chat-title" data-chat-key={currentEntry.key} title={currentEntry.title} disabled={!about} onClick={about}>
+        {currentEntry.avatar(32)}
+        <span><strong>{currentEntry.title}</strong>{currentEntry.status ? <small>{currentEntry.status}</small> : null}</span>
+      </button> : <span className="mau-chat-title" />}
       {current ? <div className="room-header-actions">
         {handoffCard && handoffUrl && sideView?.kind !== "browser" ? <button type="button" className="mau-header-button" aria-label={zh ? "接管浏览器" : "Browser handoff"}
           title={zh ? "接管浏览器" : "Browser handoff"} onClick={() => { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }}><ProductIcon name="globe" /></button> : null}
@@ -728,18 +707,24 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
           actions={[{ label: t("agents.create"), variant: "primary", onClick: () => setCreating(true) }]}
           notice={failure} />
       ) : (
-        <div className="mau-stage" data-roster-open={panelOpen || undefined} data-read-only={current && !canSend ? "" : undefined}>
-          {panelOpen ? <ChatRoster sections={sections} current={currentKey} onPick={pick} onClose={closePanel}
-            label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} closeLabel={zh ? "收起" : "Close"}
-            emptyLabel={zh ? "没有找到" : "Nothing found"}
+        <div className="mau-stage" data-page={page} data-read-only={current && !canSend ? "" : undefined}
+          {...(page === "chat" || page === "profile" ? { "data-app-page": "" } : {})}>
+          <ChatRoster sections={sections} current={currentKey} onPick={pick}
+            label={zh ? "全部对话" : "All conversations"} searchLabel={zh ? "搜索" : "Search"} emptyLabel={zh ? "没有找到" : "Nothing found"}
+            {...(compact ? { lead: <div className="mau-roster-lead">
+              <MauMark size={30} />
+              <button type="button" className="mau-roster-account" aria-label={zh ? "设置" : "Settings"} title={zh ? "设置" : "Settings"} onClick={() => openSettings({ section: null })}>
+                <PartnerAvatar seed={session.owner} fallbackName={session.owner} size={32} appearance="illustrated" />
+              </button>
+            </div> } : {})}
             onProfile={{ label: zh ? "伙伴资料" : "Partner profile", available: (entry) => entry.key.startsWith("agent:") && known.has(entry.key.slice(6)),
-              open: (entry) => { setRosterOpen(true); setProfile(entry.key.slice(6)); } }}
-            onBack={() => { setProfile(undefined); setRosterOpen(true); }}
+              open: (entry) => setProfile(entry.key.slice(6)) }}
+            onBack={() => setProfile(undefined)}
             profile={profileSummary ? { label: zh ? "伙伴资料" : "Partner profile", backLabel: zh ? "全部对话" : "All conversations",
               content: <AgentDetail key={profileSummary.agent.id} session={session} summary={profileSummary}
                 partners={agents.data ?? []} partner={views.get(profileSummary.agent.id)} onPartner={setProfile}
                 document={sideView?.kind === "document" && sideView.agentId === profileSummary.agent.id ? sideView.name : undefined}
-                onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} /> : null}
+                onDocument={(name) => setSideView(name ? { kind: "document", agentId: profileSummary.agent.id, name } : undefined)} /> } : undefined} />
           <ListDetailLayout list={null} detailOpen onBack={() => undefined}
             {...(sideView?.kind === "browser" && handoffUrl ? { inspector: (
               <BrowserSideView url={handoffUrl} onClose={() => { dismissedHandoff.current = sideView.cardId; setSideView(undefined); }} />

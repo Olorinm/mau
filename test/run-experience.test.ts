@@ -118,7 +118,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page, f.base);
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…"); await see(composer).toBeVisible();
   await composer.fill("测试执行过程"); await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.locator(".mau-run")).toContainText("第一段", { timeout: 12000 });

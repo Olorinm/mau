@@ -314,6 +314,10 @@
   --r-tile: 10px;
 
   --shadow-float: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 14px oklch(0% 0 0 / 0.08);
+  /* Glass, for the controls that float over content: the destinations, bar buttons, search, the composer, sheets. */
+  --c-glass: oklch(100% 0 0 / 0.66);
+  --glass-filter: blur(20px) saturate(180%);
+  --shadow-glass: inset 0 0 0 1px oklch(100% 0 0 / 0.5), inset 0 1.5px 0 oklch(100% 0 0 / 0.95), 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 4px 16px oklch(0% 0 0 / 0.1);
   --shadow-tile: 0 0 0 0.5px oklch(0% 0 0 / 0.08), 0 1px 3px oklch(0% 0 0 / 0.06);
   --shadow-modal: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 24px 64px oklch(0% 0 0 / 0.16), 0 2px 8px oklch(0% 0 0 / 0.06);
 }
@@ -330,6 +334,8 @@
   --c-scrim: oklch(0% 0 0 / 0.6);
   --modal-overlay-bg: var(--c-scrim);
   --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
+  --c-glass: oklch(38% 0.004 100 / 0.6);
+  --shadow-glass: inset 0 0 0 1px oklch(100% 0 0 / 0.1), inset 0 1.5px 0 oklch(100% 0 0 / 0.22), 0 4px 16px oklch(0% 0 0 / 0.4);
   --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
   --shadow-modal: 0 0 0 1px oklch(100% 0 0 / 0.14), 0 24px 64px oklch(0% 0 0 / 0.6);
   --c-page: oklch(23.852% 0.0037 106.68);

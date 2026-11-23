@@ -88,11 +88,6 @@ export async function checkBrowser(url) {
     await page.keyboard.press("Escape");
     await catalogDialog.waitFor({ state: "hidden" });
     await expect(catalogCard).toBeFocused();
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await page.getByRole("menuitem", { name: "Account action" }).click();
-    assert.deepEqual((await page.evaluate(() => window.actions)).at(-1), [
-      "account",
-    ]);
     await page.getByRole("button", { name: "profile", exact: true }).click();
     await page
       .getByRole("button", { name: "Edit person", exact: true })
@@ -172,23 +167,13 @@ export async function checkBrowser(url) {
     await page.getByRole("button", { name: "messages", exact: true }).click();
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-desktop.png" });
+    // The destinations are one capsule in the middle of the row at the top.
     assert.ok(
       await page
-        .locator(".app-user-button")
-        .evaluate(
-          (el) =>
-            Math.abs(innerHeight - el.getBoundingClientRect().bottom) < 32,
-        ),
-      "account remains at the bottom of the original rail",
+        .getByRole("navigation", { name: "Workbench" })
+        .evaluate((el) => { const r = el.getBoundingClientRect(); return r.top < 16 && Math.abs((r.left + r.right) / 2 - innerWidth / 2) < 2; }),
+      "the destinations sit in the middle of the top row",
     );
-    const separator = page.getByRole("separator", {
-      name: "Resize main navigation",
-    });
-    await separator.focus();
-    await page.keyboard.press("Home");
-    assert.equal(await separator.getAttribute("aria-valuenow"), "0");
-    await page.getByRole("button", { name: "Expand main navigation" }).click();
-    assert.equal(await separator.getAttribute("aria-valuenow"), "126");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await page

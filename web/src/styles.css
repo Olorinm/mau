@@ -316,41 +316,22 @@ body {
 }
 .mau-status-extra::before { content: "·"; margin: 0 6px; }
 
-/* The selected navigation entry is a white tile on the grey page. */
-:root .af-scope nav [data-expanded="true"] [data-active="true"],
-:root .af-scope [data-expanded="true"] nav [data-active="true"] {
-  background: var(--c-surface);
-  box-shadow: var(--shadow-xs);
-}
-
-/* The brand sits above the navigation and pages start at the top of the window, with no empty row across it.
-   When the navigation is narrowed to icons or hidden, the brand keeps its own row so it and the toggle still fit. */
-.af-shell.app-shell[data-compact="false"]:has(> .app-navigation-slot[data-mode="full"]) > .app-titlebar {
-  grid-column: 1;
-}
-.af-shell.app-shell[data-compact="false"]:has(> .app-navigation-slot[data-mode="full"]) > .af-workspace {
-  grid-row: 1 / -1;
-  padding-top: 6px;
-}
-
-/* Chat: one column. The people panel (the full list of conversations, or one partner's profile) floats inside the
-   conversation's card, on its left, without moving it. Content opened from the conversation or the profile (a file,
-   a document, the handed-over browser) is a card beside the conversation, at the same level as it. */
+/* Chat: the list of conversations beside the conversation. A partner's profile stands in place of the list, with the
+   way back. Content opened from the conversation or the profile (a file, a document, the handed-over browser) is a
+   card on the other side of the conversation. On a narrow screen each of them is a page of its own. */
 .mau-stage {
-  position: relative;
-  --mau-float-inset: 8px;
-  --mau-float-shadow: var(--shadow-float), 0 10px 28px oklch(0% 0 0 / 0.1);
   display: flex;
+  gap: 12px;
   height: 100%;
   min-width: 0;
   min-height: 0;
-}
-.mau-stage > .rooms-view {
-  flex: 1;
-  grid-template-columns: minmax(0, 1fr);
+  padding: 0 var(--app-page-inline-inset, 0px) var(--app-page-bottom-inset, 0px);
 }
 .mau-stage > .rooms-view {
   position: relative;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
 }
 .mau-stage > .rooms-view[data-members-open="true"] {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
@@ -378,91 +359,53 @@ body {
   text-align: center;
 }
 
-/* The header row of figures. */
-.room-header.mau-strip-header {
+/* The conversation's header: who it is with, and what can be done with it. */
+.room-header.mau-chat-header {
   gap: var(--space-label);
   min-height: 60px;
   border-bottom-color: transparent;
   padding: 8px 14px 8px 12px;
 }
-.mau-strip {
+.mau-chat-title {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   min-width: 0;
   min-height: 44px;
-}
-.mau-chip {
-  position: relative;
-  display: flex;
-  flex: none;
-  align-items: center;
-  height: 44px;
   border: 0;
   border-radius: 22px;
   background: none;
   color: inherit;
-  cursor: pointer;
   font: inherit;
-  padding: 5px;
-  transition: background 0.2s, padding 0.25s;
+  padding: 0 6px;
+  text-align: left;
 }
-.mau-chip:hover {
-  background: var(--c-fill);
-}
-.mau-chip[aria-selected="true"] {
-  background: var(--c-panel);
+button.mau-chat-title:enabled {
+  flex: 0 1 auto;
+  cursor: pointer;
+  margin-right: auto;
   padding-right: 16px;
 }
-.mau-chip-avatar {
-  position: relative;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
+button.mau-chat-title:enabled:hover {
+  background: var(--c-fill);
 }
-.mau-chip-avatar .mau-badge {
-  position: absolute;
-  top: -4px;
-  right: -7px;
-  box-shadow: 0 0 0 2px var(--c-surface);
-}
-.mau-chip-label {
+.mau-chat-title > span {
   display: grid;
-  max-width: 0;
+  min-width: 0;
+}
+.mau-chat-title strong {
   overflow: hidden;
-  opacity: 0;
-  text-align: left;
-  white-space: nowrap;
-  transition: max-width 0.28s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.2s, margin 0.28s;
-}
-.mau-chip[aria-selected="true"] .mau-chip-label {
-  max-width: 240px;
-  margin-left: 9px;
-  opacity: 1;
-}
-.mau-chip-label strong {
   font-size: var(--fs-emphasis);
   font-weight: 600;
   line-height: var(--lh-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.mau-chip-label small {
+.mau-chat-title small {
   color: var(--c-text-secondary);
   font-size: var(--fs-caption);
   line-height: var(--lh-title);
-}
-/* "+N": a grey pixel blob the size of a figure. */
-.mau-chip-rest {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  background: var(--c-panel-hover);
-  clip-path: polygon(20% 0, 80% 0, 80% 10%, 90% 10%, 90% 20%, 100% 20%, 100% 80%, 90% 80%, 90% 90%, 80% 90%, 80% 100%, 20% 100%, 20% 90%, 10% 90%, 10% 80%, 0 80%, 0 20%, 10% 20%, 10% 10%, 20% 10%);
-  color: var(--c-text-2);
-  font-size: 11.5px;
-  font-weight: 700;
-  place-items: center;
 }
 .mau-badge {
   display: inline-grid;
@@ -493,26 +436,19 @@ body {
   color: var(--c-text);
 }
 
-/* The full list: a small card on the page, as tall as its rows. */
+/* The list of conversations: a glass panel beside the conversation. */
 .mau-roster {
-  position: absolute;
-  z-index: 20;
-  top: calc(var(--app-page-top-inset, 0px) + var(--mau-float-inset));
-  bottom: calc(var(--app-page-bottom-inset, 0px) + var(--mau-float-inset));
-  left: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
-  width: 244px;
-  max-width: calc(100% - 2 * (var(--app-page-inline-inset, 0px) + var(--mau-float-inset)));
+  flex: none;
+  width: 340px;
   overflow: auto;
-  border-radius: 14px;
-  background: var(--c-panel-raised);
-  box-shadow: var(--mau-float-shadow);
-  padding: 8px 6px 10px;
-  transition: width 0.18s ease;
-  animation: mau-roster-in 0.2s ease-out;
+  border-radius: var(--r-card);
+  background: var(--c-glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass);
+  padding: 8px 8px 12px;
 }
-/* A partner's profile needs more room than the list. */
 .mau-roster[data-view="profile"] {
-  width: 400px;
   padding: 8px 0 0;
 }
 /* The profile: the partner, a row of section icons, and the open section in the settings pages' own components. */
@@ -565,9 +501,8 @@ body {
 .mau-roster-back {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  height: 30px;
+  gap: 2px;
+  height: 36px;
   border: 0;
   border-radius: var(--r-pill);
   background: none;
@@ -575,9 +510,10 @@ body {
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-note);
-  padding: 0 10px;
+  padding: 0 12px 0 6px;
 }
 .mau-roster-back:hover {
+  background: var(--c-fill);
   color: var(--c-text);
 }
 /* A row and, for a partner, the button that opens the profile; it takes the place of the time on hover. */
@@ -614,9 +550,6 @@ body {
 .mau-roster-row[aria-current="true"]:has(+ .mau-roster-info) .mau-roster-meta {
   visibility: hidden;
 }
-@keyframes mau-roster-in {
-  from { opacity: 0; transform: translateX(-10px); }
-}
 .mau-roster-top {
   display: flex;
   align-items: center;
@@ -626,7 +559,6 @@ body {
   flex: 1;
   min-width: 0;
 }
-.mau-roster-close,
 .mau-side-close,
 .mau-roster[data-view="list"] h3 button {
   display: grid;
@@ -639,14 +571,12 @@ body {
   line-height: 1;
   place-items: center;
 }
-.mau-roster-close,
 .mau-side-close {
   width: 30px;
   height: 30px;
   border-radius: 50%;
   font-size: 18px;
 }
-.mau-roster-close:hover,
 .mau-side-close:hover,
 .mau-roster[data-view="list"] h3 button:hover {
   background: var(--c-fill);
@@ -670,42 +600,72 @@ body {
 .mau-roster-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   border: 0;
-  border-radius: var(--r-nav-item);
+  border-radius: var(--r-panel);
   background: none;
   color: inherit;
   cursor: pointer;
   font: inherit;
-  padding: 5px 8px;
+  padding: 9px 10px;
   text-align: left;
 }
 .mau-roster-row:hover {
   background: var(--c-fill);
 }
 .mau-roster-row[aria-current="true"] {
-  background: var(--c-panel);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-tile);
 }
-.mau-roster-name {
+.mau-roster-text {
+  display: grid;
   flex: 1;
+  gap: 1px;
   min-width: 0;
+}
+.mau-roster-name,
+.mau-roster-preview {
   overflow: hidden;
-  font-size: var(--fs-body);
-  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mau-roster-row[aria-current="true"] .mau-roster-name {
+.mau-roster-name {
+  font-size: var(--fs-body);
   font-weight: 600;
 }
+.mau-roster-preview {
+  min-height: 1.35em;
+  color: var(--c-text-secondary);
+  font-size: var(--fs-note);
+}
+.mau-roster-note {
+  color: var(--c-action);
+}
 .mau-roster-meta {
-  display: inline-flex;
+  display: grid;
   flex: none;
-  align-items: center;
-  gap: 6px;
+  justify-items: end;
+  gap: 4px;
   color: var(--c-text-tertiary);
   font-size: 11.5px;
+}
+/* The mark and the account, above the list on a narrow screen. */
+.mau-roster-lead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 6px 0 8px;
+  color: var(--og-text-strong);
+}
+.mau-roster-account {
+  display: grid;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  padding: 0;
 }
 /* Dismissed partners: one quiet row at the end of the section opens them; each can be brought back from its row. */
 .mau-roster-archive {
@@ -856,12 +816,31 @@ body {
   line-height: var(--lh-body);
 }
 
-/* Phones: the people panel covers the whole card. */
-@media (max-width: 640px) {
-  .mau-roster,
-  .mau-roster[data-view="profile"] {
-    right: calc(var(--app-page-inline-inset, 0px) + var(--mau-float-inset));
+/* Narrow screens: the list, a conversation and a profile are pages, one at a time. The destinations float over the
+   foot of the list, so its last rows scroll clear of them. */
+@media (max-width: 900px) {
+  .mau-stage {
+    gap: 0;
+  }
+  .mau-roster {
+    flex: 1;
     width: auto;
+    border-radius: 0;
+    background: var(--c-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .mau-roster[data-view="list"] {
+    padding-bottom: 96px;
+  }
+  .mau-stage[data-page="chat"] > .mau-roster,
+  .mau-stage:is([data-page="list"], [data-page="profile"]) > .rooms-view {
+    display: none;
+  }
+  /* The account is beside the mark here, not among the destinations. */
+  .app-shell[data-compact="true"] .app-switch-item[data-id="me"] {
+    display: none;
   }
 }
 

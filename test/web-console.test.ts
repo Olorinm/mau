@@ -47,7 +47,7 @@ async function browser(f: Fixture, claims: Record<string, unknown> = {}) {
 // Conversations are served by Router's owner ledger; without these flags the console has no conversation page.
 /** A partner's figure in the header row of the conversation page. */
 const agentChip = (page: Page, agentId: string) =>
-  page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
+  page.locator(`.mau-roster-row[data-chat-key="agent:${agentId}"]`);
 /** The partner profile in the people panel (the former contacts detail); the current partner's figure opens it. */
 const profileCard = (page: Page) =>
   page.getByRole("complementary", { name: "伙伴资料" });
@@ -91,9 +91,9 @@ it.skipIf(!built)(
     const { page, matrix, authorization, errors } = await browser(f);
 
     // No sign-in step: the account is the Access identity.
-    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
-    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    await page.getByRole("button", { name: "应用", exact: true }).click();
     const createApp = page.getByRole("dialog", {
       name: "新建应用",
       exact: true,
@@ -108,9 +108,9 @@ it.skipIf(!built)(
     await createApp.getByRole("button", { name: "取消", exact: true }).click();
     await see(createApp).toBeHidden();
     await see(
-      page.getByRole("button", { name: "新建应用", exact: true }),
+      page.getByRole("button", { name: "应用", exact: true }),
     ).toBeFocused();
-    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    await page.getByRole("button", { name: "应用", exact: true }).click();
     await see(
       createApp.getByRole("textbox", { name: "App 名称", exact: true }),
     ).toHaveValue("");
@@ -123,7 +123,7 @@ it.skipIf(!built)(
     await see(helper).toHaveAttribute("title", "helper");
     await see(helper.locator(".agent-pixel-avatar")).toBeVisible();
     await helper.click();
-    await see(helper).toHaveAttribute("aria-selected", "true");
+    await see(helper).toHaveAttribute("aria-current", "true");
     await helper.click();
     const profile = profileCard(page);
     await see(profile.getByRole("heading", { name: "helper" })).toBeVisible();
@@ -132,7 +132,7 @@ it.skipIf(!built)(
     );
 
     // A new partner is created from the "+" of the 伙伴 section in the full list of conversations.
-    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
     await page
       .getByRole("complementary", { name: "全部对话" })
       .getByRole("button", { name: "新建伙伴", exact: true })
@@ -150,7 +150,7 @@ it.skipIf(!built)(
     expect(await cloud.evaluate((option) => [...option.children].every((part) => part.scrollWidth <= part.clientWidth && part.clientWidth > 30))).toBe(true);
     await dialog.getByRole("button", { name: "创建" }).click();
     // The new partner's conversation opens; its figure opens its profile.
-    const writer = page.locator(".mau-chip[aria-selected='true']");
+    const writer = page.locator(".mau-chat-title");
     await see(writer).toHaveAttribute("title", "writer");
     expect(await writer.getAttribute("data-chat-key")).toMatch(/^agent:.+/);
     await writer.click();
@@ -224,20 +224,22 @@ it.skipIf(!built)(
     );
     expect(f.cloud.size).toBe(0);
 
-    await page.getByRole("button", { name: "账号", exact: true }).click();
-    await page.getByRole("menuitem", { name: "English" }).click();
+    await page.getByRole("button", { name: "我", exact: true }).click();
+    await page.getByRole("combobox", { name: "语言" }).click();
+    await page.getByRole("option", { name: "English", exact: true }).click();
+    await page.getByRole("button", { name: "Close settings" }).click();
     await see(
       page.getByRole("button", { name: "Conversations", exact: true }),
     ).toBeVisible();
     await see(
       page.getByRole("button", { name: "Contacts", exact: true }),
     ).toHaveCount(0);
-    await page.getByRole("button", { name: "Account", exact: true }).click();
+    await page.getByRole("button", { name: "Me", exact: true }).click();
     // Sign-out ends the Access session: the console navigates to the logout URL `/info` names, and nowhere else.
     await page.route("**/cdn-cgi/access/logout", (route) =>
       route.fulfill({ contentType: "text/html", body: "<title>signed out</title>" }),
     );
-    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
     await page.waitForURL(f.base + "/cdn-cgi/access/logout");
     await see(page).toHaveTitle("signed out");
     expect(matrix).toEqual([]);
@@ -275,7 +277,7 @@ it.skipIf(!built).each(["server", "network", "rate-limit"])(
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that partner; its channels are in the profile card.
-    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
     await profileCard(page)
@@ -352,7 +354,7 @@ it.skipIf(!built)(
     for (const content of tricky) await f.api(memory, { action: "add", content });
     const { page, errors } = await browser(f);
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "文档");
     const profile = profileCard(page);
@@ -411,7 +413,7 @@ it.skipIf(!built)(
 /** The new-partner dialog, opened from the "+" of the 伙伴 section in the full list of conversations. */
 async function newPartnerDialog(page: Page) {
   if (!(await page.getByRole("complementary", { name: "全部对话" }).isVisible()))
-    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await page.getByRole("complementary", { name: "全部对话" }).getByRole("button", { name: "新建伙伴", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新建伙伴" });
   return { dialog, kind: (name: string) => dialog.getByRole("group", { name: "环境类型" }).getByRole("button", { name, exact: true }),
@@ -466,7 +468,7 @@ it.skipIf(!built)(
     await form.create.click();
     expect(posted).toEqual([{ name: "trip", shareWith: f.agent.id, duty: "Plans the Korea trip" }]);
     // No environment is created: the conversation opens and the partner is ready, with no time spent preparing.
-    const chip = page.locator(".mau-chip[aria-selected='true']");
+    const chip = page.locator(".mau-chat-title");
     await see(chip).toHaveAttribute("title", "trip");
     await see(chip.locator("small")).toHaveText("可用");
     await see(page.getByPlaceholder("发送消息…")).toBeEnabled();
@@ -541,7 +543,7 @@ it.skipIf(!built)(
     await form.dialog.getByRole("button", { name: "取消" }).click();
 
     // Deleting the sharing partner says the environment stays, and leaves it and its partner as they were.
-    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
     await page.getByRole("complementary", { name: "全部对话" }).getByRole("button", { name: "伙伴资料 · trip" }).click();
     await profileTab(page, "配置");
     await profile.getByRole("button", { name: "删除伙伴" }).click();
@@ -563,7 +565,7 @@ it.skipIf(!built)(
     await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
     const { page, errors } = await browser(f);
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
     // The page keeps the list it read before another partner began to share helper's environment, so the server refuses.
     const list = await (await fetch(f.base + "/_mau/v1/agents", { headers: f.edgeHeaders() })).json();
     await page.route("**/_mau/v1/agents", (route) => route.request().method() === "GET" ? route.fulfill({ json: list }) : route.fallback());
@@ -633,7 +635,7 @@ it.skipIf(!built)(
     });
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that partner; its channels are in the profile card.
-    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
     await profileCard(page)
@@ -699,7 +701,7 @@ it.skipIf(!built)(
     );
     await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
     // `?agent=` opens the conversation with that partner; its channels are in the profile card.
-    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+    await see(agentChip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
     await agentChip(page, f.agent.id).click();
     await profileTab(page, "消息渠道");
     await profileCard(page)
@@ -793,7 +795,7 @@ it.skipIf(!built)(
     await see(page.getByPlaceholder("发送消息…")).toHaveValue("");
     await page.screenshot({ path: "/tmp/mau-neutral-messages.png" });
     // Groups are Router groups created with the OpenGrove dialog, and send intentional mentions.
-    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
     await page
       .getByRole("complementary", { name: "全部对话" })
       .getByRole("button", { name: "新建群聊", exact: true })
@@ -802,7 +804,7 @@ it.skipIf(!built)(
     await group.getByRole("textbox").fill("发布组");
     await group.getByRole("checkbox").first().check();
     await group.getByRole("button", { name: "创建", exact: true }).click();
-    const current = page.locator(".mau-chip[aria-selected='true']");
+    const current = page.locator(".mau-chat-title");
     await see(current).toHaveAttribute("title", "发布组");
     expect(await current.getAttribute("data-chat-key")).toMatch(/^chat:/);
     expect(groupBodies).toHaveLength(1);
@@ -827,8 +829,8 @@ it.skipIf(!built)(
           path.includes("/auth/session"),
       ),
     ).toBe(false);
-    // The navigation is one flat list without section titles; Settings is in the account menu.
-    await see(page.locator(".app-rail-section-title")).toHaveCount(0);
+    // The destinations are the conversations, the apps and the account, and nothing else.
+    await see(page.getByRole("navigation", { name: "主导航" }).getByRole("button")).toHaveText(["对话", "应用", "我"]);
     for (const name of ["App 商店", "设置", "钱包", "提现", "直接内核聊天"])
       await see(page.getByRole("button", { name, exact: true })).toHaveCount(0);
     expect(errors).toEqual([]);
@@ -842,8 +844,7 @@ it.skipIf(!built)(
     const f = await mauFixture(cleanup, { webRoot });
     const { page, errors } = await browser(f);
     await page.reload();
-    await page.getByRole("button", {name:"账号", exact:true}).click();
-    await page.getByRole("menuitem", {name:"设置", exact:true}).click();
+    await page.getByRole("button", { name: "我", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "设置" });
     await see(settings.getByRole("heading", { name: "通用" })).toBeVisible();
     await settings.getByRole("combobox", { name: "外观" }).click();
@@ -863,7 +864,7 @@ it.skipIf(!built)(
     await page.keyboard.press("Escape");
     await settings.getByRole("button", { name: "关闭设置" }).click();
     await see(settings).toBeHidden();
-    await page.getByRole("button", { name: "新建应用", exact: true }).click();
+    await page.getByRole("button", { name: "应用", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "新建应用", exact: true });
     await see(dialog).toBeVisible();
     expect(
@@ -876,7 +877,7 @@ it.skipIf(!built)(
     ).toBeDisabled();
     await dialog.getByRole("button", { name: "取消", exact: true }).click();
     await see(
-      page.getByRole("button", { name: "新建应用", exact: true }),
+      page.getByRole("button", { name: "应用", exact: true }),
     ).toBeFocused();
     await page.setViewportSize({ width: 390, height: 844 });
     for (const language of ["zh-CN", "en"]) {
@@ -886,10 +887,9 @@ it.skipIf(!built)(
         await page.getByRole("option", { name: "English", exact: true }).click();
         await page.getByRole("button", { name: "Close settings" }).click();
       }
-      await page.locator(".app-titlebar-control").click();
       await page
         .getByRole("button", {
-          name: language === "en" ? "Create app" : "新建应用",
+          name: language === "en" ? "Apps" : "应用",
           exact: true,
         })
         .click();
@@ -993,8 +993,7 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
   await page.reload();
   // One 设置 entry replaces 连接器 / 扩展 / 设置 in the main navigation.
   for (const name of ["连接器", "扩展"]) await see(page.getByRole("button", {name, exact:true})).toHaveCount(0);
-  await page.getByRole("button", {name:"账号", exact:true}).click();
-  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
+  await page.getByRole("button", { name: "我", exact: true }).click();
   const settings = page.getByRole("dialog", {name:"设置"});
   await see(settings.getByRole("heading", {name:"通用"})).toBeVisible();
   await see(page).toHaveURL(/#\/settings\/general$/);
@@ -1024,9 +1023,8 @@ it.skipIf(!built)("opens settings as a deep-linkable modal with messaging channe
   await see(page).toHaveURL(f.base + "/");
   // Mobile: full screen, the navigation is the first page and each page has a back button.
   await page.setViewportSize({width:390, height:844});
-  await page.locator(".app-titlebar-control").click();
-  await page.getByRole("button", {name:"账号", exact:true}).click();
-  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
+  // On a phone the account is beside the mark, above the list of conversations.
+  await page.locator(".mau-roster-account").click();
   const mobile = page.getByRole("dialog", {name:"设置"});
   await see(mobile.getByRole("navigation", {name:"设置"})).toBeVisible();
   await expect.poll(() => mobile.boundingBox()).toEqual({x:0, y:0, width:390, height:844});
@@ -1071,8 +1069,7 @@ it.skipIf(!built)("connects Gmail after consent, returns to its page, edits perm
     return route.fulfill({ json: { state, verification: state === "connected" ? "oauth" : "none", scopes: state === "connected" ? ["gmail.readonly"] : [] } });
   });
   await page.reload();
-  await page.getByRole("button", {name:"账号", exact:true}).click();
-  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
+  await page.getByRole("button", { name: "我", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "设置" });
   await settings.getByRole("button", { name: "连接器", exact: true }).click();
   // Coming-soon apps are hidden; there are no featured cards, and each row shows its status.
@@ -1143,7 +1140,7 @@ it.skipIf(!built)(
   async () => {
     const f = await mauFixture(cleanup, { webRoot });
     const { page, authorization } = await browser(f);
-    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
     await see(page.getByLabel("密码")).toHaveCount(0);
     // An expired Access session turns API calls into redirects: the banner offers a re-login reload.
     await page.route("**/_mau/v1/agents", (route) => route.fulfill({ status: 302, headers: { Location: "https://example-team.cloudflareaccess.com/" } }));
@@ -1167,7 +1164,7 @@ it.skipIf(!built)(
   async () => {
     const f = await mauFixture(cleanup, { webRoot });
     const { page, context, errors } = await browser(f);
-    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
     // From now on the edge header carries an expired JWT: Router refuses the next API call itself.
     const past = Math.floor(Date.now() / 1000) - 3600;
     await context.setExtraHTTPHeaders(f.edgeHeaders({ iat: past - 600, exp: past }));
@@ -1180,7 +1177,7 @@ it.skipIf(!built)(
     // "重新登录" reloads; with a renewed Access session the console is back without the banner.
     await context.setExtraHTTPHeaders(f.edgeHeaders());
     await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "重新登录" }).click()]);
-    await see(page.getByText("alice@example.test").first()).toBeVisible();
+    await see(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
     await see(page.getByText("登录已过期")).toHaveCount(0);
     expect(errors).toEqual([]);
   },
