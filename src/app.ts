@@ -161,15 +161,15 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     connectorAccounts.configured ? () => connectorAccounts.usage() : undefined);
   business.setOwnerPrivate({ connections: () => ownerPrivate.ids(),
     admitted: async admission => ownerPrivateAdmission(admission, await router.service.runtime(admission.agentId).then(r => r.extension, () => undefined)) });
-  if (connectorRuntime || connectedApps.employeePermissions) {
-    const skills = new AgentSkills(connectedApps, () => connectorRuntime?.connections() ?? []);
-    // Guides and commands are files of the environment: partners sharing one install those of the partner that has it.
-    // The commands relay through what a kernel reports about its shell, so they are installed by the runs of a
-    // kernel that does; a partner on another kernel is given the guides with the tool itself.
-    business.setSkills((agentId, owner, binding) => skills.install(environments.kernel(agentId), environments.sharedFrom(agentId) ?? agentId, owner, binding,
-      () => environments.files(agentId, binding)));
-    business.setGuides(agentId => skills.toolGuides(environments.kernel(agentId)));
-  }
+  const skills = new AgentSkills(connectedApps, connectorRuntime ? owner => connectorRuntime.connections(owner) : undefined,
+    undefined, connectorAccounts.configured ? async owner => (await connectorAccounts.list(owner)).data : undefined);
+  business.setSkills(async (agentId, owner, binding) => {
+    const installation = environments.skillInstallation(agentId, binding);
+    if (!installation || (!options.connectedApps && !installation.bundled)) return;
+    return skills.install(environments.kernel(agentId), environments.sharedFrom(agentId) ?? agentId, owner, binding,
+      () => environments.files(agentId, binding), installation.revision);
+  });
+  business.setGuides(agentId => skills.toolGuides(environments.kernel(agentId)));
   const sessions = async (owner: string, agentId: string) => {
     router.service.owned(agentId, owner);
     const value = (await router.service.runtime(agentId)).extension?.sessions;

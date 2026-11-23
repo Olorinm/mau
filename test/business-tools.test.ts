@@ -57,6 +57,17 @@ it("injects the reviewed tool only with trusted owner admission and resolves it 
   expect(f.submitted().admission).toBeUndefined();
 });
 
+it("prepares the local browser in a sandbox with no connected apps or partner tools before normal native submission", async () => {
+  const f = fixture();
+  const business = new BusinessTools([], tmpdir(), f.store);
+  const sync = vi.fn(async () => undefined);
+  business.setSkills(sync);
+  await business.host("agent", "owner", "binding", f.http).start(input);
+  expect(sync).toHaveBeenCalledWith("agent", "owner", "binding");
+  expect(f.submitted()).toMatchObject({ input: input.input, instructions: input.instructions });
+  expect(f.submitted().tools).toBeUndefined();
+});
+
 it("adds the connector guides to the catalog of an Agent whose kernel has none installed, and to no other", async () => {
   const f = fixture(), read = vi.fn(async (input: { action: string }) => input.action === "tools" ? { status: "completed", tools: [{ name: "mail__gws_read" }, { name: "mail__gws_write" }] } : { status: "completed", result: { output: "ok" } });
   const apps = { reader: () => read, connections: () => ["mail"], browser: () => [], sharedEmployee: () => false, writable: false } as unknown as ConstructorParameters<typeof BusinessTools>[3];

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -36,13 +36,13 @@ function sandbox(relay: boolean) {
   }
   if (relay) writeFileSync(client, "");
   let writes = 0;
-  const official: string[] = [];
+  const official: string[][] = [];
   const files = {
     directory: root,
     writeFile: async () => { writes++; throw new Error("unexpected_write_file"); },
     exec: async (argv: string[]) => {
       // The start script's own installer, asked again for the groups this environment's connections cover.
-      if (argv[0] === "sh") { official.push(argv[2]!); return { exitCode: 0, stdout: "" }; }
+      if (argv[0] === "sh") { official.push(argv.slice(4)); return { exitCode: 0, stdout: "installed\n" }; }
       expect(argv[0]).toBe("node"); expect(argv[1]).toBe("-e"); expect(argv[3]).toBe("--");
       const plan = JSON.parse(Buffer.from(argv.slice(4).join(""), "base64").toString("utf8"));
       const rewritten = Buffer.from(JSON.stringify({ ...plan, skillsDirectory: join(codex, "skills"), binDirectory: bin, relayClient: client }), "utf8").toString("base64");
@@ -81,16 +81,103 @@ it("installs skills and relay commands, keeps unmanaged files, removes stale man
   expect(existsSync(join(box.bin, "gws"))).toBe(true);
 });
 
-it("asks the start script's installer for only the official skill groups this environment has connections for", async () => {
-  const apps = { reader: () => async () => ({ status: "completed", tools: [] }), connections: () => ["google-gmail", "work-feishu"] } as unknown as ConnectedApps;
-  const box = sandbox(true);
+it("selects the union of a shared environment's assignments, reconciles changes in order, and repeats after restore", async () => {
+  const box = sandbox(true), first = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const assignments = new Map([["lead", ["work-feishu"]], ["backend", ["drive"]], ["elsewhere", ["google-gmail"]]]);
+  const apps = { employeePermissions: true, environmentAssignments: (holder: string) =>
+    (holder === "lead" ? ["lead", "backend"] : [holder]).map(agentId => ({ agentId, connections: assignments.get(agentId) ?? [] })) } as unknown as ConnectedApps;
   const manager = new skills.AgentSkills(apps, () => connections);
-  await manager.install("claude", "agent", "owner", "binding", async () => box.files);
-  // agent-browser needs no connection; lark and gws do. --prune removes the groups that are not in it.
-  expect(box.official.at(-1)).toContain("--prune --only agent-browser gws lark");
-  // The same connection set asks once.
-  await manager.install("claude", "agent", "owner", "binding", async () => box.files);
-  expect(box.official).toHaveLength(1);
+  const running: string[][] = [];
+  const files = { ...box.files, exec: async (argv: string[]) => {
+    if (argv[0] === "sh") {
+      running.push(argv.slice(4));
+      if (running.length === 1) { first.resolve(); await release.promise; }
+    }
+    return box.files.exec(argv);
+  } };
+  const start = (revision = "created") => manager.install("claude", "lead", "owner", "shared", async () => files, revision);
+  const firstRun = start();
+  await first.promise;
+  assignments.set("lead", []);
+  assignments.set("backend", []);
+  const next = start(), same = start();
+  expect(running).toEqual([["agent-browser", "gws", "lark"]]);
+  release.resolve();
+  await Promise.all([firstRun, next, same]);
+  expect(box.official).toEqual([["agent-browser", "gws", "lark"], ["agent-browser"]]);
+  await start("restored");
+  expect(box.official.at(-1)).toEqual(["agent-browser"]);
+  expect(box.official).toHaveLength(3);
+  const other = sandbox(true);
+  await manager.install("codex", "elsewhere", "owner", "independent", async () => other.files);
+  expect(other.official).toEqual([["agent-browser", "gws"]]);
+});
+
+it("installs just the local browser command in the default environment with no connector service", async () => {
+  const apps = { reader: () => undefined, environmentAssignments: () => [] } as unknown as ConnectedApps;
+  const box = sandbox(false);
+  const manager = new skills.AgentSkills(apps);
+  const first = await manager.install("codex", "agent", "owner", "binding", async () => box.files);
+  expect(first).toMatchObject({ commands: ["agent-browser"] });
+  expect(box.official).toEqual([["agent-browser"]]);
+  const command = readFileSync(join(box.bin, "agent-browser"), "utf8");
+  expect(command).toBe(skills.BROWSER_CLIENT);
+  expect(await manager.install("codex", "agent", "owner", "binding", async () => box.files)).toBeUndefined();
+});
+
+it("retries missing bundles and failed installs, even when the assignment stays the same", async () => {
+  const box = sandbox(true);
+  const manager = new skills.AgentSkills({ employeePermissions: true, environmentAssignments: () => [] } as unknown as ConnectedApps, () => []);
+  let attempts = 0;
+  const files = { ...box.files, exec: (argv: string[]) => {
+    if (argv[0] === "sh") {
+      attempts++;
+      if (attempts === 1) return Promise.resolve({ exitCode: 0, stdout: "" });
+      if (attempts === 2) return Promise.resolve({ exitCode: 1, stdout: "" });
+    }
+    return box.files.exec(argv);
+  } };
+  for (let run = 0; run < 4; run++) await manager.install("codex", "agent", "owner", "shared", async () => files);
+  expect(attempts).toBe(3);
+  expect(box.official).toEqual([["agent-browser"]]);
+});
+
+it("reapplies the previous selection after an interrupted reconciliation", async () => {
+  const box = sandbox(true);
+  let ids = ["work-feishu"], applied: string[][] = [];
+  const manager = new skills.AgentSkills({ employeePermissions: true,
+    environmentAssignments: () => [{ agentId: "agent", connections: ids }] } as unknown as ConnectedApps, () => connections);
+  const files = { ...box.files, exec: async (argv: string[]) => {
+    if (argv[0] === "sh") {
+      applied.push(argv.slice(4));
+      if (applied.length === 2) return { exitCode: 1, stdout: "" };
+    }
+    return box.files.exec(argv);
+  } };
+  const start = () => manager.install("claude", "agent", "owner", "shared", async () => files);
+  await start();
+  ids = ["drive"]; await start();
+  ids = ["work-feishu"]; await start();
+  expect(applied).toEqual([["agent-browser", "lark"], ["agent-browser", "gws"], ["agent-browser", "lark"]]);
+});
+
+it("uses the external account directory or the employees' caller catalogs when the connector runs separately", async () => {
+  const assigned = [{ agentId: "agent", connections: ["custom-id"] }];
+  const reader = vi.fn(async () => ({ status: "completed", tools: [{ name: "custom_id__cli_read" }, { name: "other__gws_read" }] }));
+  const apps = { employeePermissions: true, environmentAssignments: () => assigned, reader: () => reader } as unknown as ConnectedApps;
+  const directory = vi.fn(async () => [{ id: "custom-id", kind: "google" }, { id: "other", kind: "feishu" }]);
+  const managed = new skills.AgentSkills(apps, undefined, undefined, directory), box = sandbox(true);
+  await managed.install("codex", "agent", "owner", "binding", async () => box.files);
+  expect(directory).toHaveBeenCalledWith("owner");
+  expect(box.official).toEqual([["agent-browser", "gws"]]);
+  const caller = new skills.AgentSkills(apps);
+  await caller.install("codex", "agent", "owner", "binding", async () => box.files);
+  await caller.install("claude", "agent", "owner", "binding", async () => box.files);
+  expect(reader).toHaveBeenCalledTimes(1);
+  expect(box.official.at(-1)).toEqual(["agent-browser", "lark"]);
+  assigned[0]!.connections = ["other"];
+  await caller.install("claude", "agent", "owner", "binding", async () => box.files);
+  expect(box.official.at(-1)).toEqual(["agent-browser", "gws"]);
 });
 
 it("leaves commands out when the environment's Agent Host has no relay client", async () => {
@@ -226,7 +313,7 @@ it("the browser client opens pages of the environment in the environment's own b
 
 it("installs nothing for a kernel whose shell does not relay, and gives it the same guides with the tool", async () => {
   let calls = 0;
-  const apps = { reader: () => async () => { calls++; return { status: "completed", tools: [{ name: "google_gmail__gws_read" }] }; },
+  const apps = { environmentAssignments: () => [{ agentId: "agent", connections: ["google-gmail", "work-feishu"] }], reader: () => async () => { calls++; return { status: "completed", tools: [{ name: "google_gmail__gws_read" }] }; },
     connections: () => ["google-gmail", "work-feishu"] } as unknown as ConnectedApps;
   const box = sandbox(true), manager = new skills.AgentSkills(apps, () => connections);
   // A run on such a kernel reads no catalog and writes no file: the commands in the shell would not work for it.
@@ -247,7 +334,7 @@ it("installs nothing for a kernel whose shell does not relay, and gives it the s
     guides: [{ connection: "google-gmail", command: "gws", read: "google_gmail__gws_read", write: "google_gmail__gws_write", guide: expect.stringContaining("gws gmail +triage") },
       { connection: "work-feishu", command: "lark-cli", read: "work_feishu__cli_read", guide: expect.stringContaining("lark-cli skills read lark-shared") }] });
   expect(guides(["google_gmail__get_thread"])).toEqual({});
-  expect(skills.TOOL_GUIDES).toBe("Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
+  expect(skills.TOOL_GUIDES).toBe("Each guide describes the official CLI for a connected account. Run commands for that account through this tool. " +
     "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
     "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. " +
     "Where a guide says to run something in your shell, it means this.");
@@ -281,7 +368,7 @@ it("refuses symlinks for .codex, skills directory, skill subdirectories and SKIL
 
 it("installs the same commands once for a shared employee sandbox independently of account assignment", async () => {
   const box = sandbox(true);
-  const apps = { employeePermissions: true, reader: () => { throw new Error("no assignment needed for command installation"); } } as unknown as ConnectedApps;
+  const apps = { employeePermissions: true, environmentAssignments: () => [], reader: () => { throw new Error("no assignment needed for command installation"); } } as unknown as ConnectedApps;
   const manager = new skills.AgentSkills(apps, () => []);
   expect(await manager.install("claude", "lead", "binding-owner", "shared", async () => box.files)).toMatchObject({
     commands: ["gws", "lark-cli", "agent-browser"],
@@ -302,7 +389,7 @@ it("retires unedited Mau guides only after the official skills arrive and preser
   const original = readFileSync(file("agent-browser"), "utf8");
   const edited = readFileSync(file("feishu"), "utf8") + "Owner's instructions.\n";
   writeFileSync(file("feishu"), edited); writeFileSync(join(dir("agent-browser"), "my-notes.md"), "notes");
-  const make = () => new skills.AgentSkills({ employeePermissions: true } as ConnectedApps, () => []);
+  const make = () => new skills.AgentSkills({ employeePermissions: true, environmentAssignments: () => [{ agentId: "agent", connections: ids }] } as unknown as ConnectedApps, () => connections);
   const manager = make(), install = (m: skills.AgentSkills) => m.install("codex", "agent", "owner", "shared", async () => box.files);
   expect(await install(manager)).toMatchObject({ awaitingOfficialSkills: true, removed: [] });
   expect(readFileSync(file("agent-browser"), "utf8")).toBe(original);
@@ -321,10 +408,24 @@ it("retires unedited Mau guides only after the official skills arrive and preser
   expect(backups).toHaveLength(1); expect(readFileSync(join(dir("agent-browser"), backups[0]!, "guide.md"), "utf8")).toBe(original);
 });
 
+it("retires an unassigned generated guide only after the official selection succeeds", async () => {
+  const box = sandbox(true);
+  const previous = { reader: () => async () => ({ status: "completed", tools: [{ name: "work_feishu__cli_read" }] }),
+    connections: () => ["work-feishu"] } as unknown as ConnectedApps;
+  await new skills.AgentSkills(previous, () => connections).sync("lead", "owner", "binding", async () => box.files);
+  const guide = join(box.codex, "skills/feishu/SKILL.md");
+  const manager = new skills.AgentSkills({ employeePermissions: true, environmentAssignments: () => [] } as unknown as ConnectedApps, () => connections);
+  const missing = { ...box.files, exec: (args: string[]) => args[0] === "sh" ? Promise.resolve({ exitCode: 0, stdout: "" }) : box.files.exec(args) };
+  await manager.install("claude", "lead", "owner", "binding", async () => missing);
+  expect(existsSync(guide)).toBe(true);
+  await manager.install("claude", "lead", "owner", "binding", async () => box.files);
+  expect(existsSync(guide)).toBe(false);
+});
+
 it("keeps user skills and skips symlinks at the Codex root, named directory and skill file during employee migration", async () => {
   const box = sandbox(true), root = join(box.codex, "skills"), victim = join(box.root, "custom");
   mkdirSync(victim); writeFileSync(join(victim, "SKILL.md"), "my skill");
-  const apps = { employeePermissions: true } as ConnectedApps;
+  const apps = { employeePermissions: true, environmentAssignments: () => [] } as unknown as ConnectedApps;
   const install = () => new skills.AgentSkills(apps, () => []).install("codex", "agent", "owner", "shared", async () => box.files);
   symlinkSync(victim, root);
   expect(await install()).toMatchObject({ removed: [] }); expect(lstatSync(root).isSymbolicLink()).toBe(true);

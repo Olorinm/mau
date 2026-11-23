@@ -446,6 +446,13 @@ export class EnvironmentManager {
     const record = this.binding(this.sharedBinding(agentId)?.sharedFrom ?? agentId);
     return record?.operationId === operationId ? record : undefined;
   }
+  /** A restore keeps the binding ID but publishes a new ready state, invalidating cached guest installations. */
+  skillInstallation(agentId: string, operationId: string) {
+    const record = this.bound(agentId, operationId);
+    if (record?.phase !== "ready") return undefined;
+    return { revision: record.updatedAt, bundled: privateFiles(this.profile(record)).some(file =>
+      file.destination === "/opt/agent-environment/official-skills.tgz") };
+  }
   /** The partners running in this Agent's environment, as far as Router still has them. */
   private sharers(agentId: string) {
     return this.store.entries<SharedBinding>(shared).flatMap(({ value }) => {

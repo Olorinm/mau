@@ -102,8 +102,13 @@ export class BusinessTools {
     const entry = this.readers.get(agentId);
     const bot = entry?.owner === owner ? entry.reader : undefined, appReader = this.apps?.reader(agentId, owner);
     const partner = this.partnerTools?.(agentId, owner);
-    if (!bot && !appReader && !partner) return new HttpAgentHost(http);
-    const files = this.files, skills = this.skills, guides = appReader ? this.guides?.(agentId) : undefined;
+    const skills = this.skills, prepare = skills && (() => skills(agentId, owner, binding));
+    if (!bot && !appReader && !partner) {
+      const host = new SandboxHost(http);
+      if (prepare) host.beforeStart = prepare;
+      return host;
+    }
+    const files = this.files, guides = appReader ? this.guides?.(agentId) : undefined;
     const host = new BusinessHost(http, bot, this.store, `${agentId}:${binding}`, appReader,
       { agentId, owner, validate: admission => this.admissionValidator?.(admission) ?? true }, partner, this.completed,
       appReader ? { employeePermissions: this.apps!.employeePermissions, sharedEmployee: this.apps!.sharedEmployee(agentId),
@@ -114,7 +119,7 @@ export class BusinessTools {
         ...(this.ownerPrivate ? { ownerPrivate: this.ownerPrivate } : {}),
         ...(guides ? { guides } : {}),
         ...(files ? { files: () => files(agentId, binding) } : {}) } : undefined);
-    if (appReader && skills) host.beforeStart = () => skills(agentId, owner, binding);
+    if (prepare) host.beforeStart = prepare;
     return host;
   }
 }
@@ -165,11 +170,19 @@ const approvalUnavailableHere = (refusal: Record<string, unknown>) => {
 };
 const approvalRequired = z.object({ status: z.literal("approval_required"), operationId: z.string().min(1).max(64),
   expiresAt: z.string().optional() }).passthrough();
-export class BusinessHost extends HttpAgentHost {
+class SandboxHost extends HttpAgentHost {
+  beforeStart?: () => Promise<unknown>;
+  override async start(input: Parameters<HostPort["start"]>[0]) {
+    await this.beforeStart?.().catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_skills_sync_failed",
+      error: error instanceof Error ? error.message : "unknown" })));
+    return super.start(input);
+  }
+}
+
+export class BusinessHost extends SandboxHost {
   private readonly pending = new Map<string, Promise<void>>();
   private readonly siteWork = new Map<string, Promise<void>>();
   private readonly approvals?: ConnectorApprovals;
-  beforeStart?: () => Promise<unknown>;
   constructor(http: ServiceHttp, private readonly bot: BotReader | undefined,
     private readonly store: DurableStore, private readonly scope: string, private readonly appReader?: ConnectedAppReader,
     private readonly principal?: { agentId: string; owner: string; validate?: AdmissionValidator }, private readonly partner?: PartnerTools,
@@ -186,9 +199,6 @@ export class BusinessHost extends HttpAgentHost {
   }
   override async start(input: Parameters<HostPort["start"]>[0] & { admission?: RunAdmission }) {
     const { admission: supplied, ...request } = input;
-    // Installing guides must never block or fail a run.
-    await this.beforeStart?.().catch((error: unknown) => console.warn(JSON.stringify({ event: "agent_skills_sync_failed",
-      error: error instanceof Error ? error.message : "unknown" })));
     const admission = this.admission(supplied);
     if (supplied && !admission) throw new RouterError("business_run_admission_invalid", 403);
     const requestId = input.requestKey ? `${this.scope}:${input.runtimeId}:${input.requestKey}` : undefined;

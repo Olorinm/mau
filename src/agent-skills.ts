@@ -158,20 +158,18 @@ type GuideLookup = (kind: string, product?: string) => ConnectorGuide | undefine
  * `lark-*`, `gws` covers `gws-*`, and `agent-browser` needs no connection because it also opens the pages the
  * environment serves itself.
  */
-export function officialGroups(connections: ConnectionSummary[], guides: GuideLookup = connectorGuide) {
+function officialGroups(connections: ConnectionSummary[]) {
   const groups = new Set(["agent-browser"]);
   for (const connection of connections) {
-    const product = typeof connection.settings?.product === "string" ? connection.settings.product : undefined;
-    const command = guides(connection.kind, product)?.command;
-    if (command === "lark-cli") groups.add("lark");
-    if (command === "gws") groups.add("gws");
+    if (connection.kind === "feishu") groups.add("lark");
+    if (connection.kind === "google") groups.add("gws");
   }
   return [...groups].sort();
 }
 
-/** Runs the start script's installer again with the groups this environment has; exit 0 having done it. */
 const OFFICIAL_INSTALL = 'store=/opt/agent-environment-skills; digest=$(cat "$store/digest" 2>/dev/null) || exit 0; ' +
-  '[ -f "$store/$digest/install.sh" ] || exit 0; exec runuser -u user -- sh "$store/$digest/install.sh" /home/user "$digest" --prune';
+  '[ -f "$store/$digest/install.sh" ] || exit 0; ' +
+  'runuser -u user -- sh "$store/$digest/install.sh" /home/user "$digest" --prune --only "$@" && echo installed';
 
 /** Guides of the Agent's connections whose CLI tools the connector actually offers right now. */
 export function planSkills(connections: ConnectionSummary[], assigned: string[], tools: string[], guides: GuideLookup = connectorGuide): SkillPlan {
@@ -189,7 +187,7 @@ export function planSkills(connections: ConnectionSummary[], assigned: string[],
 }
 
 /** What the `connected_apps` catalog says above the guides it carries. */
-export const TOOL_GUIDES = "Each guide describes a connection's official command line. That command does not run in your shell here: run it through this tool. " +
+export const TOOL_GUIDES = "Each guide describes the official CLI for a connected account. Run commands for that account through this tool. " +
   "Take a command from the guide, leave out the command's name, and pass the rest as arguments.args (one string per argument) with action=call and the tool named in read. " +
   "A command the connector classifies as a write is refused there with an error ending in _command_requires_write_tool: call the tool named in write with the same args. Where a guide says to run something in your shell, it means this.";
 /**
@@ -301,7 +299,7 @@ if (plan.retiredGuides) {
     if (!enter([path.basename(home), path.basename(root), name])) continue;
     const file = "SKILL.md", hash = fingerprint(file);
     if (!hashes.includes(hash)) continue;
-    if (!ready) { result.awaitingOfficialSkills = true; continue; }
+    if (!ready && !plan.retireUnassigned.includes(name)) { result.awaitingOfficialSkills = true; continue; }
     // Archive only the guide, leaving any neighboring assets intact. Atomic rename accepts exactly one winner.
     const archive = fs.mkdtempSync(".mau-retired-"), saved = path.join(archive, "guide.md");
     try { fs.renameSync(file, saved); }
@@ -345,39 +343,75 @@ console.log(JSON.stringify(result));
 export class AgentSkills {
   private readonly synced = new Map<string, string>();
   private readonly checked = new Map<string, number>();
-  constructor(private readonly apps: ConnectedApps, private readonly connections: () => ConnectionSummary[], private readonly guides: GuideLookup = connectorGuide) {}
-  /**
-   * Before a run of an Agent on `kernel`: where the kernel's shell commands relay, the guides and commands of
-   * `agentId` (the partner that has the environment) are installed in it. For another kernel nothing is installed.
-   */
-  async install(kernel: string | undefined, agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
-    // In a shared sandbox the commands are common files. Host and the connector resolve the
-    // employee and their current assignment separately on every invocation.
-    const result = this.apps.employeePermissions ? await this.run(`shared:${binding}`, { skills: [], commands: COMMANDS }, true, files)
-      : shellRelay(kernel) ? await this.sync(agentId, owner, binding, files)
-      : await this.run(`${agentId}:${binding}:commands`, { skills: [], commands: [] }, true, files);
-    // A skill the environment has no connection for is context the model pays for and cannot use.
-    await this.official(binding, files).catch((error: unknown) =>
-      console.warn(JSON.stringify({ event: "official_skills_install_failed", message: String((error as Error)?.message ?? error) })));
-    return result;
+  private readonly pending = new Map<string, Promise<unknown>>();
+  private readonly remoteGroups = new Map<string, { assignments: string; at: number; groups: string[] }>();
+  constructor(private readonly apps: ConnectedApps, private readonly connections?: (owner?: string) => ConnectionSummary[],
+    private readonly guides: GuideLookup = connectorGuide, private readonly remoteConnections?: (owner: string) => Promise<ConnectionSummary[]>) {}
+  /** All partners in a binding share the same files. Serialize updates, reading assignments only after earlier work finishes. */
+  async install(kernel: string | undefined, holder: string, owner: string, binding: string, files: () => Promise<SandboxFiles>, revision = "") {
+    const previous = this.pending.get(binding);
+    const installing = (previous ?? Promise.resolve()).catch(() => {}).then(async () => {
+      const key = `${holder}:${binding}`;
+      const selected = await this.official(holder, owner, binding, revision, files).catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "official_skills_install_failed", message: String((error as Error)?.message ?? error) }));
+        return undefined;
+      });
+      if (this.apps.employeePermissions) {
+        const retireUnassigned = selected ? Object.entries(retiredGuides).filter(([, guide]) =>
+          !selected.some(group => guide.replacement === group || guide.replacement.startsWith(group + "-"))).map(([name]) => name) : [];
+        return this.run(`shared:${binding}`, { skills: [], commands: COMMANDS }, true, files, revision, retireUnassigned);
+      }
+      if (shellRelay(kernel) && this.connections) return this.sync(holder, owner, binding, files);
+      return this.run(`${key}:commands`, { skills: [], commands: shellRelay(kernel) && this.apps.reader(holder, owner) ? COMMANDS : [] }, true, files, revision);
+    });
+    this.pending.set(binding, installing);
+    try { return await installing; }
+    finally { if (this.pending.get(binding) === installing) this.pending.delete(binding); }
   }
-  /**
-   * Installs the official skills of the connections this environment has and removes the ones it does not, once per
-   * connection set. The start script extracted the bundle and installed every group; this narrows the set to what the
-   * environment can do, and leaves user-authored skills alone.
-   */
-  private async official(binding: string, files: () => Promise<SandboxFiles>) {
-    const groups = officialGroups(this.connections(), this.guides), key = `official:${binding}`;
-    const digest = createHash("sha256").update(groups.join(",")).digest("hex");
-    if (this.synced.get(key) === digest) return;
-    const run = await (await files()).exec(["sh", "-c", `${OFFICIAL_INSTALL} --only ${groups.join(" ")}`]);
-    // An environment whose start script installed no bundle keeps the skills it has.
-    if (run.exitCode !== 0) return;
-    this.synced.set(key, digest);
+  private async externalGroups(owner: string, binding: string, assignments: ReturnType<ConnectedApps["environmentAssignments"]>, ids: Set<string>) {
+    const signature = JSON.stringify(assignments), cached = this.remoteGroups.get(binding);
+    if (cached?.assignments === signature && Date.now() - cached.at < 60_000) return cached.groups;
+    let groups: string[];
+    if (this.remoteConnections) {
+      groups = officialGroups((await this.remoteConnections(owner)).filter(connection => ids.has(connection.id)));
+    } else {
+      // A caller-only deployment can inspect only an employee's own connection catalog.
+      const found = new Set(["agent-browser"]);
+      for (const { agentId, connections } of assignments) {
+        const catalog = await this.apps.reader(agentId, owner)?.({ action: "tools" }) as { status?: string; tools?: { name: string }[] } | undefined;
+        if (catalog?.status !== "completed" || !Array.isArray(catalog.tools)) throw new Error("connector_catalog_unavailable");
+        const tools = new Set(catalog.tools.map(tool => tool.name));
+        for (const id of connections) {
+          const prefix = id.replaceAll("-", "_") + "__";
+          if (tools.has(prefix + "gws_read")) found.add("gws");
+          if (tools.has(prefix + "cli_read")) found.add("lark");
+        }
+      }
+      groups = [...found].sort();
+    }
+    this.remoteGroups.set(binding, { assignments: signature, at: Date.now(), groups });
+    return groups;
+  }
+  private async official(holder: string, owner: string, binding: string, revision: string, files: () => Promise<SandboxFiles>) {
+    const assignments = this.apps.environmentAssignments(holder, owner);
+    const ids = new Set(assignments.flatMap(assignment => assignment.connections));
+    let groups = ["agent-browser"];
+    if (ids.size) groups = this.connections ? officialGroups(this.connections(owner).filter(connection => ids.has(connection.id)))
+      : await this.externalGroups(owner, binding, assignments, ids);
+    const key = `official:${binding}`, selection = JSON.stringify([revision, groups]);
+    if (this.synced.get(key) === selection) return groups;
+    this.synced.delete(key);
+    const run = await (await files()).exec(["sh", "-c", OFFICIAL_INSTALL, "mau-skills", ...groups]);
+    if (run.exitCode !== 0) throw new Error("official_skills_installer_failed");
+    // Missing bundles leave no receipt, so a later run retries after provisioning or an upgrade.
+    if (run.stdout.trim().split("\n").at(-1) === "installed") {
+      this.synced.set(key, selection);
+      return groups;
+    }
   }
   /** For an Agent on a kernel without relay commands: the guides its `connected_apps` catalog carries, for the tools it lists. */
   toolGuides(kernel: string | undefined) {
-    return (this.apps.employeePermissions || shellRelay(kernel)) ? undefined : (tools: string[]) => toolGuides(this.connections(), tools, this.guides);
+    return (this.apps.employeePermissions || shellRelay(kernel)) ? undefined : (tools: string[]) => toolGuides(this.connections?.() ?? [], tools, this.guides);
   }
   /** Idempotent; repeats only when the plan for this environment binding changes. */
   async sync(agentId: string, owner: string, binding: string, files: () => Promise<SandboxFiles>) {
@@ -391,7 +425,7 @@ export class AgentSkills {
     const catalog = await reader({ action: "tools" }) as { status?: string; tools?: Array<{ name?: unknown }> };
     if (catalog?.status !== "completed") return undefined;
     const tools = (catalog.tools ?? []).map(tool => String(tool.name ?? ""));
-    const plan = planSkills(this.connections(), this.apps.connections(agentId, owner), tools, this.guides);
+    const plan = planSkills(this.connections?.(owner) ?? [], this.apps.connections(agentId, owner), tools, this.guides);
     try { return await this.run(key, plan, false, files); }
     catch (error) { this.checked.delete(key); throw error; }
   }
@@ -400,18 +434,18 @@ export class AgentSkills {
    * (`agent-browser`, for the pages the environment serves) and touches neither the skills nor the other commands,
    * which belong to the plan of a Codex partner there.
    */
-  private async run(key: string, plan: SkillPlan, commandsOnly: boolean, files: () => Promise<SandboxFiles>) {
+  private async run(key: string, plan: SkillPlan, commandsOnly: boolean, files: () => Promise<SandboxFiles>, revision = "", retireUnassigned: string[] = []) {
     const payload = JSON.stringify({ ...plan, commandsOnly, skillsDirectory: SKILLS_DIRECTORY, binDirectory: "/usr/local/bin", relayClient: RELAY_CLIENT,
-      ...(this.apps.employeePermissions ? { retiredGuides } : {}),
+      ...(this.apps.employeePermissions ? { retiredGuides, retireUnassigned } : {}),
       known: COMMANDS, always: ALWAYS, clients: { "agent-browser": BROWSER_CLIENT } });
-    const digest = createHash("sha256").update(payload).digest("hex");
+    const digest = createHash("sha256").update(revision).update(payload).digest("hex");
     if (this.synced.get(key) === digest) return undefined;
     const sandbox = await files(), encoded = Buffer.from(payload, "utf8").toString("base64"), chunks: string[] = [];
     for (let offset = 0; offset < encoded.length; offset += 32_768) chunks.push(encoded.slice(offset, offset + 32_768));
     const run = await sandbox.exec(["node", "-e", installer, "--", ...chunks]);
     if (run.exitCode !== 0) throw new Error("agent_skills_install_failed");
     const result = JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
-    if (!result.awaitingOfficialSkills) this.synced.set(key, digest);
+    if (!result.awaitingOfficialSkills && (!plan.commands.length || !result.relay)) this.synced.set(key, digest);
     return result;
   }
 }

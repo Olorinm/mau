@@ -89,6 +89,13 @@ export class ConnectedApps {
   connections(agentId: string, owner: string): string[] {
     return [...(this.principal(agentId, owner)?.connections ?? [])];
   }
+  /** Everyone sharing the same skill directories; the connector still authorizes each agent independently. */
+  environmentAssignments(holder: string, owner: string) {
+    return [holder, ...(this.sharing?.sharedBy(holder) ?? [])].flatMap(agentId => {
+      const connections = this.connections(agentId, owner);
+      return connections.length ? [{ agentId, connections }] : [];
+    });
+  }
   /** Browser connections assigned to this Agent, by their tool-name prefix. */
   browser(agentId: string, owner: string): string[] {
     const browser = this.config?.browserConnections ?? [];
