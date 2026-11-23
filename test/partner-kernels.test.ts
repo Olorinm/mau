@@ -71,7 +71,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   // model selection, the product tools and its memory, and Mau records the input as delivered, not as a person's.
   const record = f.record(seen.recruit.message.messageId);
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
+  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
   expect(work.body.input.endsWith("\n\n" + incomingText(record))).toBe(true);
   expect(work.body.settings).toEqual({ model: "claude-small" });
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
@@ -316,7 +316,7 @@ it("offers Antigravity beside Codex: its Google model service, its owner's model
   expect([f.creates, f.cloud.size]).toEqual([1, 1]);
   expect(work.body.runtimeId).toBe("agy");
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("[Automated delivery: this input is not a message from a human user]")).toBe(true);
+  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
   expect(work.body.settings).toEqual({ model: "gemini-3.8-flash", effort: "low" });
   expect((await f.api(`/agents/${partner.id}`)).data).toMatchObject({ kernel: "agy", host: { runtimeId: "agy" }, environment: { sharedFrom: f.agent.id } });
   expect((await f.api("/options")).data.environments).toEqual([{ id: "cloud", label: "Cloud", kernel: "codex", kernels: ["codex", "agy"] }]);

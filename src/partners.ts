@@ -719,10 +719,7 @@ export class Partners {
     await work.submit({ eventId: message.id, sessionId,
       input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message, this.port.employeePermissions),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
-      // The text above says who sent the message and where the answer goes; Router's own provenance notice would be a
-      // second statement of the same facts, and the two can disagree about what the turn may do. Router reads `notice`
-      // from the release after the pinned one; until then it is ignored and both statements are sent.
-      ...({ notice: false } as object),
+      notice: "brief",
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
