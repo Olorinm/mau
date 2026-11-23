@@ -122,13 +122,13 @@ export async function checkBrowser(url) {
     await page.getByRole("button", { name: "messages", exact: true }).click();
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.screenshot({ path: "/tmp/agent-frontend-neutral-desktop.png" });
-    // The destinations are one capsule in the middle of the row at the top.
-    assert.ok(
-      await page
-        .getByRole("navigation", { name: "Workbench" })
-        .evaluate((el) => { const r = el.getBoundingClientRect(); return r.top < 16 && Math.abs((r.left + r.right) / 2 - innerWidth / 2) < 2; }),
-      "the destinations sit in the middle of the top row",
-    );
+    const rail = await page.getByRole("navigation", { name: "Workbench" }).boundingBox();
+    const mark = await page.locator(".app-mark").boundingBox();
+    const content = await page.locator("main.workspace").boundingBox();
+    assert.ok(rail && mark && content, "the desktop rail, mark and content are visible");
+    assert.ok(rail.height > rail.width && rail.x < 40 && rail.y >= mark.y + mark.height,
+      "the desktop destinations form a vertical rail below the mark at the left");
+    assert.ok(content.x >= rail.x + rail.width, "the page starts to the right of the rail");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await page
