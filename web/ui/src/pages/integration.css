@@ -3,7 +3,7 @@
 .agent-app button,.agent-app input,.agent-app textarea,.agent-app select { font:inherit; letter-spacing:inherit; }
 .agent-app h1,.agent-app h2,.agent-app h3,.agent-app p { margin-top:0; }
 .af-shell .af-workspace { grid-column:1; grid-row:2; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; background:transparent; }
-.af-shell[data-compact="true"] .af-workspace { grid-row:1; }
+.af-shell[data-compact="true"] .af-workspace, .af-shell[data-compact="false"] .af-workspace { grid-row:1; }
 .af-workspace>.view-panel { grid-row:1; }
 .af-list-detail { min-height:0; }
 .af-compact-back { display:flex; align-items:center; gap:6px; border:0; background:transparent; color:var(--c-text); padding:12px 16px; cursor:pointer; font:inherit; }
