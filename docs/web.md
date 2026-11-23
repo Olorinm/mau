@@ -87,8 +87,9 @@ Chats are served by Router's owner ledger (`/_agent-router/v1/web`); the console
 Router advertises in `GET /web/me`. Without `history` the console reports that chat history is unavailable;
 without `send` conversations are read-only.
 
-- Each owned Agent has one direct chat. A few conversations stay in the header row; the people panel lists
-  all of them and opens an Agent's profile: environment state and checks, channels, connectors, documents,
+- Each owned Agent has one direct chat. The list of conversations stands beside the conversation (on a phone it
+  is the first page), each row with its last message and what is unread. The name in a conversation's header, or
+  the row's own button, opens the Agent's profile in the list's place: environment state and checks, channels, connectors, documents,
   and configuration (kernel, model and reasoning effort where the runtime allows a choice, environment profile,
   destroy the environment, delete the Agent).
 - A new partner takes a name, an optional duty (one line of at most 200 characters, shown under its name on the
@@ -158,7 +159,7 @@ console shows that work in the conversations it belongs to.
   too. A card recorded without those members shows the server's text and choices. A card is answered once, and then
   shows whether it was approved, declined, expired, withdrawn or answered elsewhere. A partner that waits for an
   approval says so in the list of conversations.
-- **Dismissed partners** leave the header row and the list. A row at the end of the partners opens them, each with
+- **Dismissed partners** leave the list. A row at the end of the partners opens them, each with
   its restore, and a search finds them by name. A profile's configuration dismisses and restores a partner, apart
   from deleting it; a dismissed partner keeps its conversation and memory. Settings leave it out as well: 消息渠道
   does not list its channels, and a connector's page does not name it among the partners using the connection.
@@ -172,10 +173,10 @@ console shows that work in the conversations it belongs to.
 
 ## Settings
 
-The main navigation has one **设置** entry. It opens a modal over the app with a left navigation: 通用 (language,
+The account, the last of the destinations at the top (on a phone: beside the mark, above the list), opens the
+settings: a modal over the app with a left navigation: 通用 (language,
 theme, avatars), 连接器, 消息渠道, 身份与配对, 扩展, 数据控制 (clear a chat's history through Router's ledger purge),
-帮助与法律 and 退出 (the edge login's logout). An Agent's own state and configuration are on its profile in the
-people panel. 扩展 lists Skills, MCP, kernel plugins, Hooks, Tools and CLI as not connected: Agents install and use
+帮助与法律 and 退出 (the edge login's logout). An Agent's own state and configuration are on its profile. 扩展 lists Skills, MCP, kernel plugins, Hooks, Tools and CLI as not connected: Agents install and use
 them in their own environment.
 
 Pages are deep-linkable: `#/settings/<section>[/<item>]`, for example `#/settings/connectors/gmail`. Before an OAuth

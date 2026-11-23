@@ -28,7 +28,6 @@ export {
   type ComposerMention,
   type ComposerCommand,
 } from "./conversation";
-export { Catalog, type CatalogItem } from "./catalog";
 export {
   FileEditor,
   type FileEditorProps,

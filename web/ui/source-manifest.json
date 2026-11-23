@@ -11,10 +11,6 @@
       "source": "web/src/components/shared/markdown-rich-editor.tsx",
       "sourceSha256": "51fb6c7051552ea16dea1b8d8dbd19bd415175c099d16c5d8f39b9f2cfdfc55a"
     },
-    "artwork/sapling.tsx": {
-      "source": "web/src/components/ui/opengrove-sapling-mark.tsx",
-      "sourceSha256": "461d6690bde02255bd8db59ecb9c446b2c9feea0cd0c9b7fa75eaef80ec1d0c5"
-    },
     "styles/shell.css": {
       "source": "web/src/app-shell.css",
       "sourceSha256": "f5742d38aa1b9355f62ec54fb77daed2ed3367e664cd08431067f6c6a1f7a158"
@@ -72,10 +68,6 @@
       "source": "web/src/components/rooms/contacts-view.css",
       "sourceSha256": "b9da1e0133db5de86bcb0e8fc184ad3136fd84783761579061a43a60cc3b04d9"
     },
-    "styles/app-store.css": {
-      "source": "web/src/components/network/app-store-view.css",
-      "sourceSha256": "c0fc1c58f185e1acfba9e621908eee771b77b684a15f2cc53baf8755b33f9d93"
-    },
     "styles/composer.css": {
       "source": "web/src/components/chat/opengrove-composer.css",
       "sourceSha256": "ebbc21dc3534aa5f0a07ad638b99674003586e549bd63a9c7e7971e8e0ab1460"
@@ -95,18 +87,6 @@
     "styles/settings.css": {
       "source": "web/src/components/sidebar/settings.css",
       "sourceSha256": "081a199b7dc4db50c2e8a767d2c8ae5a60fc800ccbab06f01e7d253504a7029c"
-    },
-    "styles/rail.module.css": {
-      "source": "web/src/components/sidebar/app-navigation.module.css",
-      "sourceSha256": "ea97be413cdd17f8586e11dd8f96ea5431a7e31f1667b36a57d613a32def2d31"
-    },
-    "styles/navigation-panel.module.css": {
-      "source": "web/src/components/app-shell/app-navigation-panel.module.css",
-      "sourceSha256": "e88603f480345c7efb71968a2c77d79696e8138b0dd032e41cccd27f0c45e441"
-    },
-    "styles/resize.module.css": {
-      "source": "web/src/components/ui/resize-handle.module.css",
-      "sourceSha256": "0721bee7553123560ac095d2eebca047f0cc97069d1cdc16bcc98e7817641d6c"
     },
     "styles/app-create.css": {
       "source": "web/src/components/apps/app-create-wizard.css",
@@ -148,45 +128,10 @@
       "source": "web/src/components/ui/motion/popover.tsx",
       "sourceSha256": "9c90d0a9c42cb32f5b01575e1b6e5020654f068c63f6b13177ee0a74573fde05"
     },
-    "presentation/rail-layout-model.ts": {
-      "source": "web/src/runtime/app-rail-layout-model.ts",
-      "sourceSha256": "b69ee81c4e4dec7e1214296e382ebd350465de4996b8b0222f6c0a979b9d0c54",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/pointer-drag.ts": {
-      "source": "web/src/runtime/app-layout-resize.ts",
-      "sourceSha256": "ba11f2c68e29764081d3658a510ab268115b62cd7686ec7b7ec201ab350186a3",
-      "changes": "Extract the original pointer lifetime helper; omit app storage and composer policy."
-    },
-    "presentation/use-app-rail-layout.ts": {
-      "source": "web/src/runtime/use-app-rail-layout.ts",
-      "sourceSha256": "1186ad9ee5601c330293c42e353ab8c5f4f455c802af8a88e6a714ce00574383",
-      "changes": "Keep original snapping, hover and keyboard/drag behavior. Replace product storage/migration with initial value, controlled width and change callback."
-    },
-    "presentation/resize-handle.tsx": {
-      "source": "web/src/components/ui/resize-handle.tsx",
-      "sourceSha256": "14915649d85226aa424c3dac604cdb5d1f8517817189f2fa9d64c5c6335d514c",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/compact-navigation-dialog.tsx": {
-      "source": "web/src/components/app-shell/compact-navigation-dialog.tsx",
-      "sourceSha256": "06e694253bbf44af0656224b10ded7b7ddf2064a405e9e90311f1ba78cd0c9c5",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/app-navigation-panel.tsx": {
-      "source": "web/src/components/app-shell/app-navigation-panel.tsx",
-      "sourceSha256": "afa16fda210b1f2d00eb5564ec118d45efe2a0fb0ed6042dafbe55a3285b8b94",
-      "changes": "Original panel, overlay timers, drag handles and compact dialog. Instance IDs replace application-global IDs."
-    },
     "presentation/use-compact-layout.ts": {
       "source": "web/src/runtime/use-compact-layout.ts",
       "sourceSha256": "62e4176ee4416ee2220159ff596588e71b13e0ce355484af4901454c32b4df21",
       "changes": "Original media-query subscription only; omit document-wide viewport mutations."
-    },
-    "presentation/app-titlebar.tsx": {
-      "source": "web/src/components/app-shell/app-titlebar.tsx",
-      "sourceSha256": "da79e10fa259b6b6e7dd405d16464139edcd55a8090e629ab6dc6d95582bc2dd",
-      "changes": "Original titlebar JSX. Brand/artwork and extra actions supplied by caller; remove product updater/account/developer controllers."
     },
     "presentation/room-composer.tsx": {
       "source": "web/src/components/rooms/room-composer.tsx",
@@ -202,21 +147,6 @@
       "source": "web/src/components/rooms/room-message-stream.tsx",
       "sourceSha256": "8e2a0a5c622387b6a9dc049f64094e1de2fffa26c04e92284a4494f97ee2436d",
       "changes": "Original stream, message article, animated author, bubble/reply markup, contextual toolbar and its position measurement. Replace legacy/native protocol interpretation, remote authorization and diagnostics HTTP with render-ready messages and optional callbacks."
-    },
-    "presentation/unread-count.tsx": {
-      "source": "web/src/components/ui/unread-count.tsx",
-      "sourceSha256": "81d0afdfbb4ce8774c96757e35132c9b19f1e565a7ec01be235f95cbfa82f263",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/unread-count.module.css": {
-      "source": "web/src/components/ui/unread-count.module.css",
-      "sourceSha256": "bfcf4540fb144c35078b21721328fd6e0df8d9a3cb65aef5e4ecce7846fea8b0",
-      "changes": "Original presentation implementation; local imports only."
-    },
-    "presentation/app-rail.tsx": {
-      "source": "web/src/components/sidebar/app-navigation.tsx",
-      "sourceSha256": "573856c32e6ea9e9e59dbc33b698679c0b379be5b8681a45bd2eb3e936531691",
-      "changes": "Original rail, group/button markup, unread badges and account surface. Product supplies navigation groups and account actions. Wallet, withdrawal, cloud profile and fixture-account controllers excluded."
     },
     "layouts/compact-list-detail.tsx": {
       "source": "web/src/components/shared/compact-list-detail.tsx",
@@ -287,11 +217,6 @@
       "sourceSha256": "f3376222a4fd4c6cb4b8e46a8c2a796cf9fe163734885ddf5824624441bc94cb",
       "changes": "Extract original employee dialog chrome and app create/identity/settings form JSX. Related source files: apps/app-create-wizard.tsx, app-identity-editor.tsx, app-settings-dialog.tsx. Product supplies form fields/actions; original complete app icon picker/create editor are also exported."
     },
-    "catalog.tsx": {
-      "source": "web/src/components/network/app-store-view.tsx",
-      "sourceSha256": "0666f7474c818db2e57d7da1de21b0cf9de33fb034f7e8c3d93dc5a38f0ca2fc",
-      "changes": "Original catalogue title/search, card structure, loading skeleton and detail modal. Replace registry/package API and install/update policy with caller-owned records, action nodes and detail content."
-    },
     "presentation/use-room-composer-keyboard.ts": {
       "source": "web/src/components/rooms/rooms-view.tsx",
       "sourceSha256": "1a1b3bd4c8b454035c352cd3998655f770fac04d5528dcae17c5c28f87e02436",
@@ -312,11 +237,6 @@
     "styles/section-sidebar.css": {
       "source": "web/src/components/sidebar/section-sidebar.css",
       "sourceSha256": "d1b6e8f0b1af33559651f26d1421d61bff6bcf4af36db4cfe4cedea98693125e",
-      "changes": "Removed selectors unused by this package."
-    },
-    "styles/mobile-nav.css": {
-      "source": "web/src/app-mobile-nav.css",
-      "sourceSha256": "9c4902e8c1307862bac79bb31aa28c0c366d8e980bd2a77923a01f1ea28281fe",
       "changes": "Removed selectors unused by this package."
     },
     "layouts/adaptive-split-layout.module.css": {

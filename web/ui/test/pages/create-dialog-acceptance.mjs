@@ -58,7 +58,7 @@ export async function checkCreateDialog(base) {
       assert.equal(
         await actions.evaluate((element) => getComputedStyle(element).display),
         "flex",
-        "catalog feature CSS includes the original action styling",
+        "the page stylesheet lays the dialog's actions out in a row",
       );
       for (const button of await actions.getByRole("button").all()) {
         await button.scrollIntoViewIfNeeded();

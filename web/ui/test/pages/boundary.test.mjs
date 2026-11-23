@@ -99,7 +99,6 @@ test("independent components can render with two different products and no brows
             React.createElement(
               ui.AppShell,
               { label: brand, key: brand, destinations: [], onSelect() {} },
-              React.createElement(ui.Catalog, { items: [] }),
             ),
           ),
         ),
