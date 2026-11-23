@@ -52,7 +52,7 @@ it("recruits only with a valid name, duty and listed settings, and never changes
   expect(f.service.agents(alice).map(agent => agent.name)).toEqual(["helper"]);
   // Listed values are used as given; the kernel may be named when it is the recruiter's own.
   expect(await call({ action: "recruit", name: "trip", duty, kernel: "codex", model: "small", effort: "low" })).toMatchObject({ status: "recruited",
-    partner: { name: "trip", duty, kernel: "codex", model: "small", effort: "low" }, next: `${NEXT.recruited("trip")} ${NEXT.noFirstMessage}` });
+    partner: { name: "trip", duty, kernel: "codex", model: "small", effort: "low" }, next: NEXT.noFirstMessage });
   expect(await settings(f, f.partner("trip").id)).toEqual({ model: "small", effort: "low" });
   // A name in use is not recruited again, whatever else is asked.
   expect(await call({ action: "recruit", name: "trip", duty: "Something else" })).toMatchObject({ isError: true, error: "partner_name_taken", partner: { name: "trip", duty } });
@@ -123,7 +123,7 @@ it("dismisses a partner by archiving it and restores it when its name is recruit
   f.mau.facts.mutate(alice, trip.id, { action: "add", content: "Flights are booked for May" });
   expect(await call({ action: "dismiss", name: "nobody" })).toMatchObject({ isError: true, error: "partner_not_found", partners: ["trip"] });
   expect(await call({ action: "dismiss", name: "helper" })).toMatchObject({ isError: true, error: "partner_is_self" });
-  expect(await call({ action: "dismiss", name: "trip" })).toEqual({ status: "dismissed", name: "trip", next: NEXT.dismissed });
+  expect(await call({ action: "dismiss", name: "trip" })).toEqual({ status: "dismissed", name: "trip" });
   expect(await call({ action: "dismiss", name: "trip" })).toMatchObject({ status: "dismissed" });
   // Hidden from the roster and from what a turn is shown, listed on request, and not messaged.
   expect((await call({ action: "roster" })).partners).toEqual([]);
@@ -244,10 +244,10 @@ it("refuses a further message when four of a sender's messages wait for replies,
   expect(await send("Question 5")).toMatchObject({ isError: true, error: "partner_message_limit_reached",
     waiting: sent.map(result => ({ messageId: result.messageId, to: "trip" })), instruction: expect.stringContaining("Nothing was queued") });
   expect(await call({ action: "recruit", name: "more", duty: "Helps", message: "Question 6", intent: "relay" })).toMatchObject({ status: "recruited",
-    message: { isError: true, error: "partner_message_limit_reached" }, next: `${NEXT.recruited("more")} ${NEXT.firstMessageFailed}` });
+    message: { isError: true, error: "partner_message_limit_reached" }, next: NEXT.firstMessageFailed });
   expect(f.messages()).toHaveLength(4);
   // An inform waits for no reply and is not counted.
-  expect(await send("By the way", "inform")).toMatchObject({ status: "recorded", expectsReply: false, next: NEXT.informed("trip") });
+  expect(await send("By the way", "inform")).toMatchObject({ status: "recorded", expectsReply: false });
   expect((await call({ action: "roster" })).waitingForReplies).toHaveLength(4);
   expect((await f.api("/partners")).data.data.find((partner: { name: string }) => partner.name === "trip")).toMatchObject({ status: "working", waiting: { messages: 4, approvals: 0 } });
   // The partner handles them one after another in its conversation. When one has ended, there is room again.

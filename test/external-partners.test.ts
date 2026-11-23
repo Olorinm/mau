@@ -178,7 +178,7 @@ it("keeps a message for a computer that is off until it is back, and says offlin
   f.respond(async (turn: Turn) => JSON.stringify(await turn.call("partners", { action: "message", to: "laptop-agent", intent: "ask", text: "Which files changed today?" })));
   await f.say(f.agent.id, "Ask the laptop");
   const receipt = JSON.parse(await f.until(async () => (await f.answers(f.agent.id))[0], "receipt"));
-  expect(receipt).toMatchObject({ status: "sent", to: "laptop-agent", intent: "ask", expectsReply: true, next: NEXT.sentExternal("laptop-agent", false) });
+  expect(receipt).toMatchObject({ status: "sent", to: "laptop-agent", intent: "ask", expectsReply: true, next: NEXT.offline });
   await f.settle(1500);
   expect(computer.turns).toEqual([]);
   expect(f.messages()).toMatchObject([{ id: receipt.messageId, status: "running" }]);
@@ -213,8 +213,8 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   // The roster marks it and says once what that means; the guide and the other entries are as they were.
   expect(said.roster.partners).toMatchObject([{ name: "laptop-agent", external: true, status: "idle", kernel: "claude", model: "default", effort: "default", duty: "Works on the owner's laptop" }]);
   expect(said.roster.externalNote).toBe(EXTERNAL_PARTNERS);
-  expect(said.inform).toMatchObject({ status: "recorded", expectsReply: false, next: NEXT.informedExternal("laptop-agent") });
-  expect(said.relay).toMatchObject({ status: "sent", expectsReply: true, next: NEXT.sentExternal("laptop-agent", true) });
+  expect(said.inform).toMatchObject({ status: "recorded", expectsReply: false });
+  expect(said.relay).toMatchObject({ status: "sent", expectsReply: true }); expect(said.relay).not.toHaveProperty("next");
   expect(said.recruit).toMatchObject({ isError: true, error: "partner_name_taken" });
 
   // The computer gets the message with who sent it and where the answer goes, and the note left before it.
@@ -410,17 +410,13 @@ it("pins what a model is told about a partner on the owner's computer, and where
   expect(externalIncoming(message, [{ ...message, id: "pm-00000000000000000000000000000002", intent: "inform", text: "The trip moved to June.", from: { agentId: "c", name: "trip" } }])).toMatchObject({
     about: expect.stringMatching(/ notes are what those agents left for you earlier; no reply to them is expected\.$/),
     notes: [{ from: "trip", sent: "2026-01-02T03:04:05.000Z", text: "The trip moved to June." }] });
-  expect(NEXT.informedExternal("laptop-agent")).toBe("No reply will come and nobody is woken: \"laptop-agent\" is on the owner's own computer and reads this together with the next relay or ask a partner sends it. " +
-    "If it has to know now, send it as an ask or a relay. Carry on.");
   expect(EXTERNAL_PARTNERS).toBe("A partner listed with external: true is an agent the owner runs on their own computer, not in an environment like yours. " +
     "It has its own files, tools, model and memory there, and none of yours: it cannot see your environment, your files or your connected apps, and you cannot see its computer. " +
     "Never give it a path in your environment; ask for what you need back in its answer. " +
     "It works only while that computer is on: with status offline a relay or ask waits until the computer is back, so tell the owner; with status unpaired nothing can be sent. " +
     "An inform reaches it only together with the next relay or ask a partner sends it; when it has to know something now, send that as an ask or a relay. " +
     "It is connected by the owner: it cannot be recruited, and it does not message other partners.");
-  expect(NEXT.sentExternal("laptop-agent", true)).toBe("\"laptop-agent\" is an agent on the owner's own computer and handles this there, in its own conversation with the owner. " +
-    "Its reply arrives in this conversation as a new turn after this turn has ended. Do what does not depend on it, tell the owner in one line what you are waiting for, and end this turn. Do not poll.");
-  expect(NEXT.sentExternal("laptop-agent", false)).toContain("That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner. ");
+  expect(NEXT.offline).toBe("That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner.");
   expect(contextText({ you: "desk", waiting: [], notes: [], roster: [{ name: "laptop-agent", duty: null, status: "offline", external: true }, { name: "trip", duty: null, status: "idle" }] }).partners)
     .toContain("- laptop-agent [offline, on the owner's own computer]: no duty recorded\n- trip [idle]: no duty recorded");
   expect(OWNER_APPROVAL).toBe("A message that waits for the owner's approval has not failed and is not stuck: the partner handling it asked the owner before going on, " +

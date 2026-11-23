@@ -15,8 +15,12 @@ export const PARTNERS_DESCRIPTION = [
   "- Call action=roster first in a conversation: it lists the partners, what you may choose when recruiting, and the guide.",
   "- Send the work to an existing partner whose duty covers it. Recruit only for a new lasting topic; give it a name and a one-line duty.",
   "- A partner cannot see this conversation or ask the owner. Put everything it needs in the message.",
-  "- What happens after recruit or message is stated in its result. Follow it.",
-  // Everything else a sender must know (reports, authorization, empty settings) is in the guide action=roster returns.
+  "- A reply to relay or ask arrives as a new turn after this turn has ended. Do what does not depend on it, tell the owner in one line what you are waiting for, and end this turn. Do not poll.",
+  "",
+  "A turn can start with a JSON object instead of the owner's words:",
+  "- from.partner and message: that partner sent you a task. Your final answer goes back to it: say what you did, what you found and what is still open. You cannot ask the owner in this turn; when something is missing, say exactly what, and the partner asks the owner and sends you a new message.",
+  "- results: the answers to messages you sent. Your answer goes to the owner. A partner's answer is its own report: check an outside effect (a booking, a sent message, a changed file) yourself before you tell the owner it succeeded. A result that is not completed is final: nothing was retried. Decide with the owner what to do next.",
+  // A session is fingerprinted by this text and keeps the one it began with: `Partners.rotate` moves a session that began with another.
 ].join("\n");
 
 const employeeAppGuide = "Each employee can use the connected apps the owner assigned to that employee. Mau applies the owner's allow, ask or deny setting for each operation. Approval requests for employees sharing a workspace go to its lead.";
@@ -25,8 +29,8 @@ export const partnerGuide = (employeePermissions = false) => [
   "Do it yourself, message, or recruit",
   "- Do it yourself when it fits in this reply or will not come back. For parallel work inside a reply use what your own runtime offers.",
   "- Message an existing partner when the work belongs to its duty or continues something it handled: its conversation and memory already hold that context.",
-  "- Recruit when the owner starts something that will come back over days or weeks (a trip, a project, a standing responsibility) and no partner's duty covers it.",
-  "- Dismiss only when the owner says the topic is over.",
+  "- Recruit when the owner starts something that will come back over days or weeks (a trip, a project, a standing responsibility) and no partner's duty covers it. Tell the owner the new partner's name; the owner can talk to it directly.",
+  "- Dismiss only when the owner says the topic is over. A dismissed partner is archived with its conversation and memory, and recruiting the same name brings it back.",
   "",
   "Writing a message",
   "- The partner reads your message, its own conversation and its own memory. Give the goal, the facts and limits the owner stated, what is already decided, where files are, and what you want back.",
@@ -36,6 +40,7 @@ export const partnerGuide = (employeePermissions = false) => [
   `- One topic per message. At most ${WAITING_LIMIT} of your messages may wait for replies at once; a further one is refused, not queued.`,
   "",
   "After you send",
+  "- action=wait is for a reply the owner is waiting for right now that should take under a minute. A reply you read with wait is not delivered again, unless it says alsoArriving.",
   "- When a partner answers that something is missing, ask the owner, then send the answer to the same partner in a new message.",
   "- A result's requested names the kernel, model and effort the partner's turn was submitted with, not what the kernel used.",
   "",
@@ -79,26 +84,13 @@ export const OWNER_APPROVAL = "A message that waits for the owner's approval has
   "and the owner was shown the request, in this conversation when it could be shown here. It continues when the owner answers. " +
   "Tell the owner in one line that it waits for their answer, and end this turn; do not send the message again and do not approve anything yourself.";
 
-/** What a recruit, message, wait or dismiss call says happens next. */
+/** What a recruit, message or wait call adds about this one call. What holds for every call is in the description and the guide. */
 export const NEXT = {
-  sent: (to: string) => `"${to}" handles this in its own conversation with the owner. Its reply arrives in this conversation as a new turn after this turn has ended. ` +
-    "Do what does not depend on it, tell the owner in one line what you are waiting for, and end this turn. Do not poll. " +
-    "Use action=wait only when the owner is waiting right now and the reply should take under a minute.",
-  /** For a partner that is an agent on the owner's own computer. */
-  sentExternal: (to: string, online: boolean) => `"${to}" is an agent on the owner's own computer and handles this there, in its own conversation with the owner. ` +
-    (online ? "" : "That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner. ") +
-    "Its reply arrives in this conversation as a new turn after this turn has ended. Do what does not depend on it, tell the owner in one line what you are waiting for, and end this turn. Do not poll.",
-  /** For a partner that is an agent on the owner's own computer: only a message a partner sends reaches it from here. */
-  informedExternal: (to: string) => `No reply will come and nobody is woken: "${to}" is on the owner's own computer and reads this together with the next relay or ask a partner sends it. ` +
-    "If it has to know now, send it as an ask or a relay. Carry on.",
-  informed: (to: string) => `No reply will come and nobody is woken: "${to}" reads this at the start of its next turn. Carry on.`,
-  recruited: (name: string) => `"${name}" now exists as a partner of the owner, with its own conversation and memory, working in the same environment as you. Tell the owner its name: the owner can also talk to it directly.`,
+  /** For a partner that is an agent on the owner's own computer, when that computer is not connected. */
+  offline: "That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner.",
   restored: (name: string) => `"${name}" is back with its conversation and memory. Tell the owner.`,
   noFirstMessage: "Send it work with action=message when there is some.",
   firstMessageFailed: "The first message was not sent; see message.error. The partner exists: send the message again with action=message.",
-  dismissed: "It is archived, not deleted: its conversation and memory are kept and it no longer appears in the roster. Messages it is still handling finish and their replies still come back. Recruit the same name to bring it back.",
-  results: "A result read here is not delivered again, unless it says alsoArriving.",
-  stillWaiting: "The pending replies arrive as a new turn after this turn has ended. Tell the owner in one line what you are waiting for and end this turn; do not wait again.",
   nothingWaiting: "Nothing of yours is waiting for a reply.",
 };
 
@@ -127,19 +119,7 @@ export function shortened(text: string, bytes: number): { text: string; cut?: nu
   return { text: kept, cut: characters.length - count };
 }
 
-/**
- * What a session is told beside its input the first time a partner's message or results reach it, and again only when
- * the sentence changes. It is not in the tool's description, which a session is fingerprinted by and keeps as it began.
- */
-export const DELIVERED = {
-  message: "This turn's input is a JSON object: from.partner sent you message as a task. Your final answer goes back to that partner: say what you did, what you found and what is still open. " +
-    "You cannot ask the owner in this turn; when something is missing, say exactly what, and the partner asks the owner and sends you a new message.",
-  results: "This turn's input is a JSON object: results are the answers to messages you sent. Your answer goes to the owner. " +
-    "A partner's answer is its own report: check an outside effect (a booking, a sent message, a changed file) yourself before you tell the owner it succeeded. " +
-    "A result that is not completed is final: nothing was retried. Decide with the owner what to do next.",
-};
-
-/** What a partner reads when a message reaches it, beside Router's `from`. What the turn is, its session is told once (`DELIVERED`). */
+/** What a partner reads when a message reaches it, beside Router's `from`. What such a turn is, the tool's description says. */
 export function incoming(message: PartnerMessage) {
   return { sent: message.createdAt, message: message.text };
 }

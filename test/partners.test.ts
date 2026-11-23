@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { DELIVERED, incoming, returned, partnerGuide, NEXT } from "../src/partner-text.js";
+import { PARTNERS_DESCRIPTION, incoming, returned, partnerGuide } from "../src/partner-text.js";
 import { alice } from "./fixtures/mau.js";
 import { partnersFixture, type Turn } from "./fixtures/partners.js";
 
@@ -34,8 +34,8 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
     recruit: { kernels: ["codex"], efforts: ["low", "high"], yours: { kernel: "codex", model: "large", effort: "default" },
       models: [{ id: "large", label: "Large", efforts: ["low", "high"] }, { id: "small", label: "Small", efforts: ["low"] }] } });
   expect(seen.recruit).toMatchObject({ status: "recruited", partner: { name: "korea-trip", duty, kernel: "codex", model: "default", effort: "default" },
-    message: { status: "sent", to: "korea-trip", intent: "relay", expectsReply: true, next: NEXT.sent("korea-trip") },
-    next: `${NEXT.recruited("korea-trip")} ${NEXT.sent("korea-trip")}` });
+    message: { status: "sent", to: "korea-trip", intent: "relay", expectsReply: true } });
+  expect(seen.recruit).not.toHaveProperty("next"); expect(seen.recruit.message).not.toHaveProperty("next");
   // The new partner runs in the recruiter's environment and is recorded as recruited by it.
   expect((await f.api(`/agents/${trip.id}`)).data).toMatchObject({ duty, dismissed: null, environment: { sharedFrom: f.agent.id, state: "ready" } });
   expect(f.creates).toBe(1);
@@ -43,8 +43,8 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   const record = f.record(seen.recruit.message.messageId);
   expect(work.body.input).toBe("");
   expect(work.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners", retain: false });
-  // The whole of what the partner reads: who sent it, when, and the message. What such a turn is, its session is told once.
-  expect(work.told.partnerTurn).toBe(DELIVERED.message);
+  // The whole of what the partner reads: who sent it, when, and the message. What such a turn is, the tool's description says.
+  expect(work.body.tools.find((tool: { name: string }) => tool.name === "partners").description).toBe(PARTNERS_DESCRIPTION);
   expect(work.delivered).toEqual({ from: { partner: "helper" }, sent: record.createdAt, message: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need." });
   // Opened by a partner's message, the conversation has the tools and the memory snapshot an owner's message would give it.
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
@@ -54,7 +54,6 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   const back = await f.turnOf(f.agent.id, 1);
   const settled = f.record(record.id);
   expect(back.delivered).toEqual({ from: { partner: "korea-trip" }, ...returned([{ ...settled, status: "returning" }]) });
-  expect(back.told.partnerTurn).toBe(DELIVERED.results);
   expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", sentAt: record.createdAt,
     yourMessage: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.", status: "completed", took: expect.stringMatching(/^\d+ s$/),
     requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
@@ -101,7 +100,7 @@ it("an inform wakes nobody and reaches its partner with that partner's next turn
   await first.call({ action: "recruit", name: "trip", duty });
   const trip = f.partner("trip");
   const note = await first.call({ action: "message", to: "trip", text: "The budget is now 20000.", intent: "inform" });
-  expect(note).toEqual({ status: "recorded", messageId: note.messageId, to: "trip", intent: "inform", expectsReply: false, next: NEXT.informed("trip") });
+  expect(note).toEqual({ status: "recorded", messageId: note.messageId, to: "trip", intent: "inform", expectsReply: false });
   end(first.turn);
   // No turn starts for it at either partner, now or later.
   await f.settle();
@@ -166,7 +165,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
   expect(waited).toEqual({ results: [{ messageId: id, to: "trip", sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Seoul first, then Busan." }], pending: [], next: NEXT.results });
+    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Seoul first, then Busan." }], pending: [] });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);
   // The sender has had the result, so no turn hands it over.
@@ -176,7 +175,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   // A wait that ends before the reply says so, and that reply comes back as a turn after all.
   await f.say(f.agent.id, "Ask a slow question");
   await f.until(() => later, "second wait");
-  expect(later).toMatchObject({ results: [], pending: [{ to: "trip" }], next: NEXT.stillWaiting });
+  expect(later).toMatchObject({ results: [], pending: [{ to: "trip" }] });
   const slow = later.pending[0].messageId;
   await f.until(async () => (await f.answers(f.agent.id)).includes("Still waiting for the trip partner."), "turn ended");
   release();
@@ -300,4 +299,36 @@ it("hands a result over as a turn when the answer of the wait that read it never
   expect(f.record(id).delivery).toMatchObject({ via: "turn", readBy: expect.stringContaining("call") });
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   expect(await f.answers(f.agent.id)).toEqual(["I could not read the reply in time.", "Seoul first, says the trip partner."]);
+}, 60_000);
+
+it("continues a conversation in a new session, once nothing runs in it, when its session began with another description of the tool", async () => {
+  const f = await partnersFixture(cleanup);
+  let release: (() => void) | undefined;
+  f.respond(async (turn: Turn) => { if (turn.text === "Take your time") await new Promise<void>(resolve => { release = resolve; }); return "Done."; });
+  await f.say(f.agent.id, "Hello");
+  const first = await f.turnOf(f.agent.id, 0);
+  await f.until(async () => (await f.answers(f.agent.id)).length === 1, "first answer");
+  // The session as an earlier release left it: Mau's record of its tools has another description, and nothing has compared it yet.
+  f.store(store => {
+    for (const { id, value } of store.entries<Array<{ name: string }>>("business_session_catalog"))
+      store.set("business_session_catalog", id, value.map(tool => tool.name === "partners" ? { ...tool, description: "An earlier description." } : tool));
+    store.delete("partner_rotations", "partners");
+  });
+  // A turn that runs is not cancelled for it: it keeps the session it has.
+  await f.say(f.agent.id, "Take your time");
+  const second = await f.turnOf(f.agent.id, 1);
+  expect(second.body.sessionId).toBe(first.body.sessionId);
+  expect(f.store(store => store.get<{ agents: unknown[] }>("partner_rotations", "partners"))!.agents).toEqual([{ owner: "@alice:example.test", agentId: f.agent.id }]);
+  await f.until(() => release, "running turn"); release!();
+  await f.until(() => f.store(store => store.get<{ agents: unknown[] }>("partner_rotations", "partners"))!.agents.length === 0, "rotation");
+  // The next turn opens a session with the current tools; the conversation is one history with a divider.
+  await f.say(f.agent.id, "And now?");
+  const third = await f.turnOf(f.agent.id, 2);
+  expect(third.body.sessionId).not.toBe(first.body.sessionId);
+  expect(third.body.tools.find((tool: { name: string }) => tool.name === "partners").description).toBe(PARTNERS_DESCRIPTION);
+  expect((await f.events(f.agent.id)).filter(event => event.kind === "window")).toHaveLength(1);
+  // It is done once: the session that began with the current description stays.
+  await f.until(async () => (await f.answers(f.agent.id)).length === 3, "third answer");
+  await f.say(f.agent.id, "Once more");
+  expect((await f.turnOf(f.agent.id, 3)).body.sessionId).toBe(third.body.sessionId);
 }, 60_000);
