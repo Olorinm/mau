@@ -32,7 +32,7 @@
   --c-overlay-highlight: oklch(100% 0 0);
   --c-accent: var(--c-interaction-blue);
   --c-accent-hover: oklch(60.421% 0.1570 251.07);
-  --c-accent-solid: oklch(56.000% 0.1600 250.73);
+  --c-accent-solid: #5b5bd6;
   --c-accent-soft: color-mix(in srgb, var(--c-accent) 10%, var(--c-bg));
   --c-focus-ring: oklch(from var(--c-text) l c h / 0.25);
   --c-success: oklch(55.966% 0.1292 156.01);
@@ -217,7 +217,7 @@
   --c-overlay-highlight: oklch(100% 0 0);
   --c-accent: var(--c-interaction-blue);
   --c-accent-hover: oklch(79.968% 0.1039 252.12);
-  --c-accent-solid: oklch(56.000% 0.1600 250.73);
+  --c-accent-solid: #5b5bd6;
   --c-accent-soft: color-mix(in srgb, var(--c-accent) 16%, var(--c-bg));
   --c-focus-ring: oklch(from var(--c-text) l c h / 0.25);
   --c-success: oklch(73.422% 0.1336 145.14);
@@ -278,6 +278,7 @@
   --c-status-warning: oklch(76% 0.16 70);
   --c-status-neutral: oklch(70% 0.005 260);
   --c-action: var(--c-accent-solid);
+  --c-on-accent: #fff;
   --c-danger-text: var(--c-error);
   --c-scrim: oklch(0% 0 0 / 0.1);
 
@@ -329,7 +330,8 @@
   --c-panel-hover: oklch(31.708% 0.0054 91.55);
   --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
   --c-panel-raised: oklch(33.640% 0.0070 95.27);
-  --c-action: var(--c-link);
+  --c-accent-solid: #6563e2;
+  --c-action: #8a88f5;
   /* A dialog has the page colour, so the scrim and a light edge are what lift it off a dark page. */
   --c-scrim: oklch(0% 0 0 / 0.6);
   --modal-overlay-bg: var(--c-scrim);

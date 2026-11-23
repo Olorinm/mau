@@ -413,27 +413,38 @@ button.mau-chat-title:enabled:hover {
   height: 18px;
   border-radius: 9px;
   background: var(--c-accent-solid);
-  color: #fff;
+  color: var(--c-on-accent);
   font-size: 11px;
   font-weight: 600;
   padding: 0 5px;
   place-items: center;
 }
-.mau-header-button {
-  display: grid;
-  width: 30px;
-  height: 30px;
+/* Round glass buttons of a header: back, search, what else the conversation offers. */
+.mau-header-button,
+.mau-chat-header .room-header-tool-button,
+.mau-roster-back {
   border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--c-text-secondary);
+  background: var(--c-glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--shadow-glass);
+  color: var(--c-text);
   cursor: pointer;
+}
+.mau-header-button,
+.mau-chat-header .room-header-tool-button {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   place-items: center;
 }
 .mau-header-button:hover,
-.mau-header-button[aria-pressed="true"] {
-  background: var(--c-fill);
-  color: var(--c-text);
+.mau-header-button[aria-pressed="true"],
+.mau-chat-header .room-header-tool-button:hover,
+.mau-roster-back:hover {
+  background: color-mix(in srgb, var(--c-glass), var(--c-text) 8%);
 }
 
 /* The list of conversations: a glass panel beside the conversation. */
@@ -498,23 +509,16 @@ button.mau-chat-title:enabled:hover {
 .mau-roster[data-view="profile"] .mau-roster-top {
   padding: 0 8px;
 }
-.mau-roster-back {
+.mau-roster-top > .mau-roster-back {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 2px;
-  height: 36px;
-  border: 0;
+  height: 40px;
   border-radius: var(--r-pill);
-  background: none;
-  color: var(--c-text-secondary);
-  cursor: pointer;
   font: inherit;
   font-size: var(--fs-note);
-  padding: 0 12px 0 6px;
-}
-.mau-roster-back:hover {
-  background: var(--c-fill);
-  color: var(--c-text);
+  padding: 0 14px 0 8px;
 }
 /* A row and, for a partner, the button that opens the profile; it takes the place of the time on hover. */
 .mau-roster-item {
@@ -555,7 +559,7 @@ button.mau-chat-title:enabled:hover {
   align-items: center;
   gap: 4px;
 }
-.mau-roster-top > :first-child {
+.mau-roster-top > :first-child:not(.mau-roster-back) {
   flex: 1;
   min-width: 0;
 }
@@ -859,3 +863,19 @@ button.mau-chat-title:enabled:hover {
 .mau-profile-edit label { display: grid; gap: 4px; }
 .mau-profile-edit input { min-width: 0; padding: 6px 8px; font: inherit; }
 .mau-profile-edit > div { display: flex; gap: 8px; }
+
+/* The composer and the search of the list are capsules of glass. */
+.mau-stage .room-composer .opengrove-composer {
+  border-radius: 24px;
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+.mau-stage .room-composer .opengrove-primary.opengrove-send:not(:disabled) {
+  color: var(--c-on-accent);
+}
+.mau-roster-top .rooms-search {
+  height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--c-glass);
+  box-shadow: var(--shadow-glass);
+}
