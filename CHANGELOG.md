@@ -4,6 +4,12 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [Unreleased]
+
+- Tell a turn the partner roster on its session's first turn and when it changes, instead of every turn. `partners` with `action=roster` returns it at any time.
+- Keep Router's routing identifiers out of what a model reads beside its input.
+- State who sent a partner's message once. Router's separate provenance notice is no longer added in front of it; this takes effect with the Agent Kit release that reads `notice`.
+
 ## [0.1.0-alpha.64] - 2026-11-23
 
 - Run Claude, Codex and Antigravity employees in one workspace with their own connector assignments and approval routing. DeepSeek Harness is available as another native runtime.

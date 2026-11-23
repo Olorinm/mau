@@ -27,6 +27,8 @@ interface Run { record: Record<string, unknown>; calls: Array<Record<string, unk
 export function scriptedHost() {
   const runs = new Map<string, Run>(), turns: Turn[] = [], discoveries: Record<string, unknown> = {};
   let script: Script = turn => `answer to ${turn.text}`, deadlineMs = 90_000, expired: (call: { name: string; input: any }) => boolean = () => false;
+  // A Host is not told which agent a run belongs to: that is Router's and Mau's record, not model input.
+  let identify: (body: { runtimeId: string; requestKey?: string }) => string | undefined = () => undefined;
   const json = (value: unknown, status = 200) => Response.json(value, { status });
   const host = (url: URL, init?: RequestInit): Response => {
     const method = init?.method ?? "GET", path = url.pathname.replace(/^\/[^/]+/, "");
@@ -37,9 +39,10 @@ export function scriptedHost() {
       const id = `run-${runs.size + 1}`, run: Run = { record: { id, sessionId: body.sessionId, runtimeId: body.runtimeId, status: "running", answer: "" },
         calls: [], answers: new Map(), events: [], ...(body.requestKey ? { requestKey: body.requestKey } : {}) };
       runs.set(id, run);
-      const context = typeof body.context === "object" && body.context ? body.context : {}, request = context.requestContext ?? context;
+      // What the model is told beside its input: the per-turn context itself. Routing facts stay on the run.
+      const context = typeof body.context === "object" && body.context ? body.context : {};
       const delivered = body.toolOutput ? JSON.parse(body.toolOutput.output).message : undefined;
-      const turn: Turn = { runId: id, agentId: request.agentId, body, text: delivered ?? body.input, told: context.requestContext ? context : {},
+      const turn: Turn = { runId: id, agentId: identify(body) ?? "", body, text: delivered ?? body.input, told: context,
         call: (name, input) => new Promise(resolve => {
           const callId = `${id}-call-${run.calls.length + 1}`;
           run.events.push({ type: "tool.started", runId: id, callId, tool: name, input });
@@ -82,6 +85,8 @@ export function scriptedHost() {
   return { host, turns, runs,
     /** What the Host's discovery of another runtime than the fixture's own returns. */
     discovery(runtimeId: string, value: unknown) { discoveries[runtimeId] = value; },
+    /** How the fixture learns whose run a request is, from the product's own records. */
+    identify(next: typeof identify) { identify = next; },
     /** What every following run does. Throwing fails the run. */
     respond(next: Script) { script = next; },
     /** How long a tool call of a following run may wait for its answer. */
@@ -102,6 +107,12 @@ export async function partnersFixture(cleanup: Array<() => unknown>, options: { 
     ...(options.hostConfigRuntimes ? { hostConfigRuntimes: options.hostConfigRuntimes } : {}),
     ...(options.webRoot ? { webRoot: options.webRoot } : {}) },
     { nativeWork: { partnerTools: true }, ...options.mau });
+  // Mau records each run request under its agent before it reaches the Host.
+  scripted.identify(body => {
+    const store = new DurableStore(join(f.directory, "business-tools.sqlite"), "example.test");
+    try { return store.entries("business_run_requests").find(entry => entry.id.endsWith(`:${body.runtimeId}:${body.requestKey}`))?.id.split(":")[0]; }
+    finally { store.close(); }
+  });
   expect((await f.api(f.path, { profileId: "cloud" })).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
   const web = () => ledgerApi("alice", f.base + "/_agent-router/v1/web");

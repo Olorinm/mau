@@ -241,8 +241,9 @@ export class BusinessHost extends SandboxHost {
       }
       const forwarded = { ...request, instructions, ...(added.length ? { tools: [...(request.tools ?? []), ...added] } : {}),
         ...(toolOutput ? { toolOutput } : {}),
-        ...(Object.keys(told).length || memoryContext ? { context: { requestContext: request.context ?? null,
-          ...told, ...(memoryContext ? { scheduledMemory: memoryContext } : {}) } } : {}) };
+        // Router records the agent, conversation and source on the run; what the model reads is the per-turn context
+        // itself: the roster, tells and notes it may act on.
+        ...(Object.keys(told).length || memoryContext ? { context: { ...told, ...(memoryContext ? { scheduledMemory: memoryContext } : {}) } } : {}) };
       return { hash, request: forwarded, sessionKey, added,
         ...(admission ? { admission } : {}) };
     };

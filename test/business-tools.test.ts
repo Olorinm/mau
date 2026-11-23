@@ -252,7 +252,7 @@ it("keeps a session that began before this release on the tools and instructions
   expect(f.submitted().tools).toEqual([...tools, ...before]);
   expect(f.submitted().instructions).toBe(instructions);
   // What a turn is told beside its input is decided by the tools its session has, not by the current ones.
-  expect(f.submitted().context).toEqual({ requestContext: null, sessionTools: ["work_sessions", "employee_memory", "session_search"] });
+  expect(f.submitted().context).toEqual({ sessionTools: ["work_sessions", "employee_memory", "session_search"] });
   // A tool that kept its name still works there; the removed ones are answered at once; the new ones are not offered.
   f.setCalls("session_search", "", { query: "invoice" }, "search-call");
   await host.calls("run");
@@ -266,7 +266,7 @@ it("keeps a session that began before this release on the tools and instructions
   await host.start({ ...input, sessionId: "new-window", instructions: "Stable role", admission, tools });
   expect(f.submitted().tools).toEqual([...tools, ...current]);
   expect(f.submitted().instructions).toBe("Stable role\n\nYour memory (frozen when this session began).");
-  expect(f.submitted().context).toEqual({ requestContext: null, sessionTools: ["partners", "memory", "session_search"] });
+  expect(f.submitted().context).toEqual({ sessionTools: ["partners", "memory", "session_search"] });
   expect(f.store.get("business_session_catalog", "agent:binding:session")).toEqual(before);
 });
 

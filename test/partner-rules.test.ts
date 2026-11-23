@@ -129,6 +129,11 @@ it("dismisses a partner by archiving it and restores it when its name is recruit
   expect((await call({ action: "roster" })).partners).toEqual([]);
   expect((await call({ action: "roster", includeDismissed: true })).partners).toMatchObject([{ name: "trip", status: "dismissed", dismissedAt: expect.any(String) }]);
   expect((await f.mau.partners.turnContext(await f.admission(turn), true)).partners).toContain("The owner has no other partners now");
+  // A session reads the roster once and again when it changes; another session has not read it yet.
+  const admitted = await f.admission(turn);
+  expect((await f.mau.partners.turnContext(admitted, true, "session-a")).partners).toContain("The owner has no other partners now");
+  expect(await f.mau.partners.turnContext(admitted, true, "session-a")).toEqual({});
+  expect((await f.mau.partners.turnContext(admitted, true, "session-b")).partners).toContain("The owner has no other partners now");
   expect(await call({ action: "message", to: "trip", text: "Any news?", intent: "ask" })).toMatchObject({ isError: true, error: "partner_dismissed" });
   // Nothing was deleted: the agent, its memory and its conversation are as they were.
   expect((await f.api(`/agents/${trip.id}`)).data).toMatchObject({ agent: { id: trip.id, name: "trip" }, duty, dismissed: expect.any(String) });

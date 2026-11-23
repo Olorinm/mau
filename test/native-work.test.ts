@@ -54,7 +54,7 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   expect(request.admission).toBeUndefined(); expect(request.instructions).toContain("Stable role");
   expect(request.instructions).toContain("Prefers concise summaries"); expect(request.instructions).toContain("/4000 Unicode characters");
   // What the turn is told travels beside its input, not in its instructions or its tool definitions.
-  expect(request.context).toEqual({ requestContext: null, memoryMaintenanceReminder: "Maintain useful durable notes when appropriate.", partners: "The owner has no other partners now." });
+  expect(request.context).toEqual({ memoryMaintenanceReminder: "Maintain useful durable notes when appropriate.", partners: "The owner has no other partners now." });
   expect(request.instructions).not.toContain("no other partners"); expect(JSON.stringify(request.tools)).not.toContain("no other partners");
   pending = [{ id: "roster", runId: "run", kind: "tool", name: "partners", status: "pending",
     deadlineAt: new Date(Date.now() + 60_000).toISOString(), input: { action: "roster", owner: "bob" } }];
