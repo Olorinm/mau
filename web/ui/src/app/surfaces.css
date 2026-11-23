@@ -539,6 +539,12 @@ button.agent-list-row-main:focus-visible {
   outline: 0;
   animation: fade-in var(--motion-normal) var(--motion-ease-out);
 }
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
 .agent-modal {
   display: grid;
   gap: 20px;
@@ -780,9 +786,10 @@ button.agent-list-row-main:focus-visible {
   margin-top: 0;
 }
 
-/* Mobile: full-screen modal, the navigation becomes the first page. */
+/* Mobile: the settings fill the screen and their navigation becomes the first page. A modal (a confirmation, a
+   consent, a short form) is a sheet that rises from the foot of the screen, inset from its edges, with the page
+   still in view above it. */
 @media (max-width: 640px) {
-  .agent-modal,
   .agent-settings-dialog {
     top: 0;
     left: 0;
@@ -795,8 +802,16 @@ button.agent-list-row-main:focus-visible {
     padding-bottom: env(safe-area-inset-bottom);
   }
   .agent-modal {
-    align-content: start;
-    padding: calc(env(safe-area-inset-top) + 56px) 20px calc(env(safe-area-inset-bottom) + 20px);
+    top: auto;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 56px - env(safe-area-inset-top));
+    transform: none;
+    border-radius: 32px;
+    padding: 24px 20px 20px;
+    animation: sheet-in var(--motion-normal) var(--motion-ease-out);
   }
   .agent-modal-actions {
     margin-top: auto;

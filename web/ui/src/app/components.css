@@ -818,48 +818,18 @@
   rotate: -90deg;
 }
 
-.agent-ui-dialog-drawer-shell.agent-ui-dialog-drawer-shell {
-  bottom: auto;
-  height: var(--opengrove-visual-height, 100dvh);
-  padding: 0;
-  place-items: stretch start;
-}
-
-.agent-ui-dialog-drawer-content.agent-ui-dialog-drawer-content {
-  width: min(360px, calc(100% - 44px));
-  height: 100%;
-  min-height: 0;
-  max-height: 100%;
-  border-radius: 0;
-  padding: max(var(--sp-2), env(safe-area-inset-top)) max(var(--sp-2), env(safe-area-inset-right))
-    max(var(--sp-2), env(safe-area-inset-bottom)) max(var(--sp-2), env(safe-area-inset-left));
-  animation: agent-ui-drawer-enter var(--motion-normal) var(--motion-ease-out);
-}
-
-.agent-ui-dialog-drawer-content[data-state="closed"] {
-  animation: agent-ui-drawer-exit var(--motion-fast) var(--motion-ease);
-}
-
-@keyframes agent-ui-drawer-enter {
-  from {
-    transform: translateX(-100%);
+/* Narrow screens: a dialog is a sheet at the foot of the screen, inset from its edges. A dialog that asks for a
+   page of its own (a long form) still fills the screen. */
+@media (max-width: 640px) {
+  .modal-shell:not([data-compact-page]) {
+    place-items: end stretch;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes agent-ui-drawer-exit {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-ui-dialog-drawer-content.agent-ui-dialog-drawer-content {
-    animation: none;
+  .modal-shell:not([data-compact-page]) > .modal-card {
+    width: auto;
+    max-height: calc(100dvh - 56px - env(safe-area-inset-top));
+    overflow: auto;
+    border-radius: 32px;
+    padding: 24px 20px 20px;
   }
 }

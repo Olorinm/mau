@@ -975,6 +975,12 @@ it.skipIf(!built)(
     expect(policy).toContain("frame-src https://live.browser.run;");
     expect(policy).toContain("frame-ancestors 'none'");
     expect(policy).toContain("default-src 'self'");
+    // The console can be installed to a home screen: its manifest names it, opens it standalone and has icons that exist.
+    const manifest = await (await page.request.get(f.base + (await page.locator('link[rel="manifest"]').getAttribute("href")))).json();
+    expect(manifest).toMatchObject({ name: "Mau", display: "standalone", start_url: "/" });
+    for (const icon of [...manifest.icons.map((item: { src: string }) => item.src), await page.locator('link[rel="apple-touch-icon"]').getAttribute("href")])
+      expect((await page.request.get(f.base + icon)).headers()["content-type"]).toMatch(/^image\//);
+    await see(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", /^#[0-9a-f]{6}$/);
     await page.setViewportSize({ width: 390, height: 844 });
     expect(
       await page.evaluate(

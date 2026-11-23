@@ -37,11 +37,9 @@ export function DialogContent({
   onOpenAutoFocus,
   onCloseAutoFocus,
   mobilePresentation = "dialog",
-  placement = "center",
   ...props
 }: ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   mobilePresentation?: "dialog" | "page";
-  placement?: "center" | "left";
 }) {
   const compact = useCompactLayout();
   const container = usePortalContainer();
@@ -93,7 +91,7 @@ export function DialogContent({
     <DialogPrimitive.Portal container={container}>
       <DialogPrimitive.Overlay className="modal-overlay" />
       <div
-        className={clsx("modal-shell", placement === "left" && "agent-ui-dialog-drawer-shell")}
+        className="modal-shell"
         data-compact-page={compactPage || undefined}
       >
         <DialogPrimitive.Content
@@ -109,7 +107,7 @@ export function DialogContent({
               returnFocusRef.current.focus();
             }
           }}
-          className={clsx("modal-card", placement === "left" && "agent-ui-dialog-drawer-content", className)}
+          className={clsx("modal-card", className)}
           data-compact={compact || undefined}
           data-compact-page={compactPage || undefined}
           onEscapeKeyDown={(event) => {
