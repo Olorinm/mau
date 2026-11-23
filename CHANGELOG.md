@@ -4,6 +4,15 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [Unreleased]
+
+- Deliver a partner's message as one JSON object: who sent it (`from.partner`), when (`sent`) and the message. The fixed lines around it are gone: the header, the sender's duty, the intent, the rules of the turn, the permission sentences that the `connected_apps` description already states, and both boundary lines. A Codex partner and a partner on a text-only kernel read the same object.
+- Deliver results to their sender as one JSON object with `results`. `action=wait` returns the same members for a result; `sentTo` is now `requested: { kernel, model, effort }`, and `intent` is no longer part of a result.
+- Tell a session what a partner's message or a hand-over is once, beside the input of the first such turn, instead of in every message. The `partners` tool's description is unchanged, so existing sessions keep their fingerprint.
+- Tell an agent on the owner's computer why a partner's message arrives and where its answer goes, in the message's `about`, and carry earlier notes as `notes`. It is no longer told that the message grants no approval.
+- Leave out of the partner guide what each call's result already says.
+- Needs the Agent Kit release that delivers `{ from, message }` (after 0.11.0-alpha.15); `components.json` is not moved yet.
+
 ## [0.1.0-alpha.65] - 2026-11-23
 
 - Move desktop navigation to a left rail and open the app grid beside it. The phone layout keeps its bottom bar.

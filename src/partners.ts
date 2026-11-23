@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import type { OwnerRequestResult, ServiceExtension, WorkEventResult, WorkPendingCard, WorkSessions } from "@agent-router/server";
@@ -8,11 +8,11 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { CARRIED_NOTES, EXTERNAL_PARTNERS, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, DELIVERED, EXTERNAL_PARTNERS, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncoming, incoming, noticeText, resultView, returned, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards",
-  /** The roster text each session was last shown, so a turn repeats it only when it changed. */
+  /** The roster text, and what a delivered turn is, as each session was last shown them: a turn repeats one only when it changed. */
   SENT_ROSTER = "partner_sent_roster";
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
@@ -119,8 +119,6 @@ interface ReturnBatch {
   id: string; owner: string; agentId: string; messageIds: string[]; status: "submitted" | "completed" | "failed";
   origin: Omit<Origin, "taskId">; authorization: Authorization; attempt: number; createdAt: string;
   reply: { connectionId?: string };
-  /** Marks where each answer begins and ends in the turn's input. Chosen after the answers were written. */
-  boundary: string;
   /** Since when the outcome of the hand-over's turn has been unknown. */
   unknownSince?: string;
 }
@@ -638,7 +636,7 @@ export class Partners {
    * session has not already read the same text; and for every such turn and every turn that handles a message, the
    * informs left for the partner.
    */
-  async turnContext(admission: RunAdmission, roster: boolean, sessionKey?: string): Promise<{ partners?: string; partnerNotes?: string }> {
+  async turnContext(admission: RunAdmission, roster: boolean, sessionKey?: string): Promise<{ partners?: string; partnerNotes?: string; partnerTurn?: string }> {
     const turn = this.turn(admission);
     if (!turn) return {};
     try { if (turn.kind === "owner") await this.conversation(admission, turn); } catch { return {}; }
@@ -652,14 +650,18 @@ export class Partners {
         .map(message => ({ to: message.to.name, intent: message.intent, sentAt: message.createdAt, answered: message.status !== "sending" && message.status !== "running" })),
       notes: notes.map(note => ({ from: note.from.name, sentAt: note.createdAt, text: note.text })),
     });
-    // The roster and the waits stay the same most turns. A session reads them once and again when they change, so
-    // that what a model is told each turn is what it did not already know.
-    if (context.partners !== undefined && sessionKey) {
-      const key = `${owner}:${self}:${sessionKey}`, digest = createHash("sha256").update(context.partners).digest("hex");
-      if (this.store.get<{ digest: string }>(SENT_ROSTER, key)?.digest === digest) delete context.partners;
+    // The roster and the waits stay the same most turns, and what a delivered turn is never changes. A session reads
+    // each once and again when it changes, so that what a model is told each turn is what it did not already know.
+    const told: { partners?: string; partnerNotes?: string; partnerTurn?: string } = { ...context,
+      ...(turn.kind === "message" ? { partnerTurn: DELIVERED.message } : turn.kind === "return" ? { partnerTurn: DELIVERED.results } : {}) };
+    if (sessionKey) for (const [member, key] of [["partners", `${owner}:${self}:${sessionKey}`], ["partnerTurn", `${owner}:${self}:${sessionKey}:${turn.kind}`]] as const) {
+      const text = told[member];
+      if (text === undefined) continue;
+      const digest = createHash("sha256").update(text).digest("hex");
+      if (this.store.get<{ digest: string }>(SENT_ROSTER, key)?.digest === digest) delete told[member];
       else this.store.set(SENT_ROSTER, key, { digest });
     }
-    return context;
+    return told;
   }
   /** A completed turn has read the informs its context carried. */
   turnCompleted(admission: RunAdmission) {
@@ -717,9 +719,8 @@ export class Partners {
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId,
-      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message, this.port.employeePermissions),
+      input: JSON.stringify(this.external(message.owner, message.to.agentId) ? externalIncoming(message, this.carried(message)) : incoming(message)), json: true,
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
-      notice: "brief",
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
@@ -974,7 +975,7 @@ export class Partners {
           const taken = ready.filter(message => this.transition(message.id, ["settled"], current => ({ ...current, status: "returning" }))).map(message => message.id);
           if (!taken.length) return undefined;
           const record: ReturnBatch = { id: `pr-${digest([taken, attempt]).slice(0, 32)}`, owner, agentId: from.agentId, messageIds: taken, status: "submitted", origin, authorization,
-            attempt, createdAt: iso(), reply: connected ? { connectionId: origin.connectionId } : {}, boundary: randomBytes(6).toString("hex") };
+            attempt, createdAt: iso(), reply: connected ? { connectionId: origin.connectionId } : {} };
           for (const id of taken) this.transition(id, ["returning"], current => ({ ...current, delivery: { ...current.delivery!, batchId: record.id } }));
           this.store.set(RETURNS, record.id, record);
           return record;
@@ -997,7 +998,7 @@ export class Partners {
     const messages = batch.messageIds.map(id => this.store.get<PartnerMessage>(MESSAGES, id)).filter((message): message is PartnerMessage => !!message);
     const senders = new Map(messages.map(message => [message.to.agentId, message.to.name])), authorization = batch.authorization;
     const share = Math.floor(SHOWN_ANSWER_BYTES / Math.max(1, messages.length));
-    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary, this.port.employeePermissions),
+    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: JSON.stringify(returned(messages)), json: true,
       // What the owner is shown in the sender's conversation: each partner's result, apart from the lines written for the model.
       display: { partnerResults: messages.map(message => {
         const result = message.result!, answer = shortened(result.answer.trim(), share);

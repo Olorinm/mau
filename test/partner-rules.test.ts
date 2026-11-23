@@ -163,7 +163,7 @@ it("dismisses a partner by archiving it and restores it when its name is recruit
   // Dismissing takes the owner's own turn: a turn that hands results over cannot do it.
   f.respond(async (next: Turn) => {
     if (f.name(next.agentId) === "trip") return "Nothing new.";
-    if (!next.text.includes("[Partner results")) { await next.call("partners", { action: "message", to: "trip", text: "Any news?", intent: "ask" }); return "Asked."; }
+    if (!next.delivered?.results) { await next.call("partners", { action: "message", to: "trip", text: "Any news?", intent: "ask" }); return "Asked."; }
     return JSON.stringify(await next.call("partners", { action: "dismiss", name: "trip" }));
   });
   await f.say(f.agent.id, "Ask trip for news");
@@ -178,7 +178,7 @@ it("lets a turn that handles a partner's message read the roster but not recruit
   let inner: any[] = [];
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) !== "trip") {
-      if (turn.text.includes("[Partner results")) return "Relayed.";
+      if (turn.delivered?.results) return "Relayed.";
       await turn.call("partners", { action: "recruit", name: "trip", duty, intent: "ask", message: "Who else works with us?" });
       return "Asked.";
     }
@@ -263,7 +263,7 @@ it("stops a line of messages that results keep extending without the owner", asy
   const asked: any[] = [];
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return "Ask me again.";
-    if (!turn.text.includes("[Partner results")) await turn.call("partners", { action: "recruit", name: "trip", duty });
+    if (!turn.delivered?.results) await turn.call("partners", { action: "recruit", name: "trip", duty });
     asked.push(await turn.call("partners", { action: "message", to: "trip", text: `Round ${asked.length + 1}`, intent: "ask" }));
     return `Round ${asked.length} sent.`;
   });
@@ -273,7 +273,7 @@ it("stops a line of messages that results keep extending without the owner", asy
   expect(asked[4]).toMatchObject({ isError: true, error: "partner_chain_limit", instruction: expect.stringContaining("wait for the owner's next message") });
   expect(f.messages().map(message => f.record(message.id).origin.chain).sort()).toEqual([0, 1, 2, 3]);
   // The owner's next message starts a new line.
-  f.respond(async (turn: Turn) => f.name(turn.agentId) === "trip" ? "Fine." : turn.text.includes("[Partner results") ? "Done."
+  f.respond(async (turn: Turn) => f.name(turn.agentId) === "trip" ? "Fine." : turn.delivered?.results ? "Done."
     : JSON.stringify(await turn.call("partners", { action: "message", to: "trip", text: "A new request", intent: "relay" })));
   await f.say(f.agent.id, "Ask once more");
   await f.until(async () => (await f.answers(f.agent.id)).some(answer => answer.includes('"status":"sent"')), "new line");
@@ -305,13 +305,13 @@ it("gives a partner's turn what the sending turn could use within the partner's 
     const name = f.name(turn.agentId);
     if (name === "helper") {
       // The turn that brings the results back is not the owner's own turn either.
-      if (turn.text.includes("[Partner results")) { keep("helper results", [await turn.call("connected_apps", { action: "tools" }), await turn.call("connected_apps", personal)]); return "Reported."; }
+      if (turn.delivered?.results) { keep("helper results", [await turn.call("connected_apps", { action: "tools" }), await turn.call("connected_apps", personal)]); return "Reported."; }
       keep("helper owner", [await turn.call("connected_apps", personal)]);
       await Promise.all([turn.call("partners", { action: "message", to: "trip", text: "Check the calendar", intent: "relay" }),
         turn.call("partners", { action: "message", to: "plain", text: "Check the mail", intent: "relay" })]);
       return "Asked both.";
     }
-    const owners = !turn.text.includes("[Partner message");
+    const owners = !turn.delivered?.message;
     keep(`${name} ${owners ? "owner" : "message"}`, [await turn.call("connected_apps", { action: "tools" }), await turn.call("connected_apps", personal),
       await turn.call("connected_apps", { action: "call", name: "trip_browser__open", arguments: {} })]);
     return "Checked.";

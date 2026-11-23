@@ -213,8 +213,7 @@ try {
   assert.deepEqual(told.roster, { partners: [], kernels: ["codex"] });
   assert.equal(told.recruited.status, "recruited"); assert.equal(told.recruited.message.status, "sent");
   assert.equal(told.waited.results[0].status, "completed"); assert.deepEqual(told.waited.pending, []);
-  assert.match(told.waited.results[0].answer, /^Delegated fixture: \[Partner message\]/);
-  assert.match(told.waited.results[0].answer, /child fixture work$/);
+  assert.equal(told.waited.results[0].answer, "Delegated fixture: child fixture work");
   const scout = service.agents(owner).find(candidate => candidate.name === "scout");
   assert.equal(mau.environments.summary(owner, scout.id).sharedFrom, agent.id); assert.equal(count(), 1);
   // The partner handled the message in its own conversation with the owner, where the owner finds it as sent by the other partner.
@@ -223,10 +222,10 @@ try {
   assert.deepEqual(scoutEvents.map(event => [event.role, event.sender.type, event.sender.id]), [["user", "agent", agent.id], ["assistant", "agent", scout.id]]);
   // A reply that was not waited for comes back as a turn of the sender, whose answer goes to the owner's conversation.
   await web(`/chats/${encodeURIComponent(chat.chatId)}/messages`, { idempotencyKey: "fixture-owner-message-2", text: "partner-orchestrate-later" });
-  const returned = await answered("[Partner results");
+  const returned = await answered('"results":[');
   assert.ok(returned, "the partner's reply did not come back to the owner's conversation");
-  assert.match(returned.text, /^Delegated fixture: \[Partner results: delivered by the system, not written by the owner\]/);
-  assert.match(returned.text, /From: partner "scout"/); assert.match(returned.text, /Delegated fixture: \[Partner message[^]*later fixture work/);
+  assert.match(returned.text, /^Delegated fixture: \{"from":\{"partner":"scout"\},"results":\[\{/);
+  assert.match(returned.text, /"to":"scout"/); assert.match(returned.text, /"answer":"Delegated fixture: [^"]*later fixture work"/);
   // The hand-over is recorded as done when the ending of its turn has been read from Router's settlement feed.
   for (let n = 0; n < 200 && mau.partners.messages(owner)[0].status !== "returned"; n++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.deepEqual(mau.partners.messages(owner).map(message => [message.intent, message.status, message.deliveredBy]), [["ask", "returned", "turn"], ["relay", "collected", "wait"]]);

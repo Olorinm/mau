@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { incomingText, returnText, partnerGuide, NEXT } from "../src/partner-text.js";
+import { DELIVERED, incoming, returned, partnerGuide, NEXT } from "../src/partner-text.js";
 import { alice } from "./fixtures/mau.js";
 import { partnersFixture, type Turn } from "./fixtures/partners.js";
 
@@ -17,7 +17,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   const seen: Record<string, any> = {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "korea-trip") return "Draft: five days in Seoul. Missing: the travel dates.";
-    if (turn.text.includes("[Partner results")) return "The trip partner drafted five days in Seoul and needs your travel dates.";
+    if (turn.delivered?.results) return "The trip partner drafted five days in Seoul and needs your travel dates.";
     seen.roster = await turn.call("partners", { action: "roster" });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "korea-trip", duty, intent: "relay",
       message: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need." });
@@ -43,9 +43,9 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   const record = f.record(seen.recruit.message.messageId);
   expect(work.body.input).toBe("");
   expect(work.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners", retain: false });
-  expect(JSON.parse(work.body.toolOutput.output)).toEqual({ source: { kind: "delegation", reference: record.id, sender: { kind: "agent", id: f.agent.id, name: "helper" } }, message: incomingText(record) });
-  expect(work.text).toContain('[Partner message]\nIntent: relay: the sender passes a task to you.');
-  expect(work.text.endsWith("Everything below this line is the message.\n\nThe owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.")).toBe(true);
+  // The whole of what the partner reads: who sent it, when, and the message. What such a turn is, its session is told once.
+  expect(work.told.partnerTurn).toBe(DELIVERED.message);
+  expect(work.delivered).toEqual({ from: { partner: "helper" }, sent: record.createdAt, message: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need." });
   // Opened by a partner's message, the conversation has the tools and the memory snapshot an owner's message would give it.
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: korea-trip\nDuty: " + duty); expect(work.body.instructions).toContain("<MEMORY.md>");
@@ -53,12 +53,11 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // The result returns as a turn of the sender in the conversation the owner asked in, and its answer goes to the owner there.
   const back = await f.turnOf(f.agent.id, 1);
   const settled = f.record(record.id);
-  expect(back.text).toBe(returnText([{ ...settled, status: "returning" }], f.boundary(record.id)));
-  expect(f.boundary(record.id)).toMatch(/^[0-9a-f]{12}$/);
-  expect(back.text).toContain('Result 1 of 1\nFrom: partner "korea-trip"\nYour message (relay, sent ');
-  expect(back.text).toContain("Status: completed\nTook: ");
-  expect(back.text).toContain("Sent to: kernel codex, model large, effort default\n" + f.answer(record.id, "Draft: five days in Seoul. Missing: the travel dates."));
-  expect(JSON.parse(back.body.toolOutput.output).source).toMatchObject({ kind: "delegation", sender: { kind: "agent", id: trip.id, name: "korea-trip" } });
+  expect(back.delivered).toEqual({ from: { partner: "korea-trip" }, ...returned([{ ...settled, status: "returning" }]) });
+  expect(back.told.partnerTurn).toBe(DELIVERED.results);
+  expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", sentAt: record.createdAt,
+    yourMessage: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.", status: "completed", took: expect.stringMatching(/^\d+ s$/),
+    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
   expect(back.body.toolOutput.name).toBe("partners");
   expect(back.body.sessionId).toBe(hub.body.sessionId);
   expect(back.told.partners).toContain(`- korea-trip [idle]: ${JSON.stringify(duty)}`);
@@ -75,7 +74,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // The owner opens the partner's own chat and finds the message from the other partner and the answer to it.
   const transcript = (await f.events(trip.id)).filter(event => event.kind === "message");
   expect(transcript).toMatchObject([
-    { role: "user", sender: { type: "agent", id: f.agent.id, name: "helper" }, origin: "delegation", text: incomingText(record) },
+    { role: "user", sender: { type: "agent", id: f.agent.id, name: "helper" }, origin: "delegation", text: JSON.stringify(incoming(record)) },
     { role: "assistant", sender: { type: "agent", id: trip.id }, final: true, text: "Draft: five days in Seoul. Missing: the travel dates." }]);
   // The owner's list of partners and of the messages between them.
   expect((await f.api("/partners")).data.data).toMatchObject([
@@ -133,18 +132,17 @@ it("an ask is marked as the sender's own question, and a note left before it rid
   const f = await partnersFixture(cleanup);
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return "Two nights in Busan.";
-    if (turn.text.includes("[Partner results")) return "It is two nights.";
+    if (turn.delivered?.results) return "It is two nights.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "The owner prefers trains.", intent: "inform" });
     await turn.call("partners", { action: "message", to: "trip", text: "How many nights in Busan?", intent: "ask" });
     return "Asked.";
   });
   await f.say(f.agent.id, "How long do we stay in Busan?");
   const work = await f.until(() => tripTurns(f)[0], "ask turn");
-  expect(work.text).toContain("Intent: ask: the sender needs your answer for its own work.");
-  expect(work.text.endsWith("\n\nHow many nights in Busan?")).toBe(true);
+  expect(work.delivered).toMatchObject({ from: { partner: "helper" }, message: "How many nights in Busan?" });
   expect(work.told.partnerNotes).toContain('"The owner prefers trains."');
   const back = await f.turnOf(f.agent.id, 1);
-  expect(back.text).toContain("Your message (ask, sent "); expect(back.text).toContain(f.answer(f.messages().find(message => message.intent === "ask")!.id, "Two nights in Busan."));
+  expect(back.delivered!.results![0].yourMessage).toBe("How many nights in Busan?"); expect(back.text).toContain(f.answer(f.messages().find(message => message.intent === "ask")!.id, "Two nights in Busan."));
   await f.until(() => f.messages().every(message => ["seen", "returned"].includes(f.record(message.id).status)), "both final");
   expect(tripTurns(f)).toHaveLength(1);
 }, 60_000);
@@ -154,7 +152,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   let waited: any, later: any, release = () => {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") { if (turn.text.includes("slow")) await new Promise<void>(resolve => { release = resolve; }); return "Seoul first, then Busan."; }
-    if (turn.text.includes("[Partner results")) return "The order is in.";
+    if (turn.delivered?.results) return "The order is in.";
     if (turn.text.includes("slow")) {
       const sent = await turn.call("partners", { action: "message", to: "trip", text: "A slow question", intent: "ask" });
       later = await turn.call("partners", { action: "wait", messageIds: [sent.messageId], timeoutSeconds: 1 });
@@ -167,8 +165,8 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.say(f.agent.id, "Which city first? I am waiting.");
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
-  expect(waited).toEqual({ results: [{ messageId: id, to: "trip", intent: "ask", sentAt: f.record(id).createdAt, status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    sentTo: "kernel codex, model large, effort default", answer: "Seoul first, then Busan." }], pending: [], next: NEXT.results });
+  expect(waited).toEqual({ results: [{ messageId: id, to: "trip", sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
+    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Seoul first, then Busan." }], pending: [], next: NEXT.results });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);
   // The sender has had the result, so no turn hands it over.
@@ -183,7 +181,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.until(async () => (await f.answers(f.agent.id)).includes("Still waiting for the trip partner."), "turn ended");
   release();
   const back = await f.turnOf(f.agent.id, 2);
-  expect(back.text).toContain(`id ${slow}`);
+  expect(back.delivered!.results!.map(result => result.messageId)).toContain(slow);
   await f.until(() => f.record(slow).status === "returned", "returned");
   // A result stays readable after it was handed over.
   f.respond(async (turn: Turn) => JSON.stringify(await turn.call("partners", { action: "wait", messageIds: [id, slow] })));
@@ -199,7 +197,7 @@ it("hands results that are ready together to their sender in one turn, after the
     const name = f.name(turn.agentId);
     if (name === "trip") return "Flights cost 3000.";
     if (name === "hotels") return "Hotels cost 5000.";
-    if (turn.text.includes("[Partner results")) return "Flights 3000, hotels 5000.";
+    if (turn.delivered?.results) return "Flights 3000, hotels 5000.";
     await Promise.all([turn.call("partners", { action: "recruit", name: "trip", duty, message: "Price the flights.", intent: "relay" }),
       turn.call("partners", { action: "recruit", name: "hotels", duty: "Compares hotels", message: "Price the hotels.", intent: "relay" })]);
     await new Promise<void>(resolve => { release = resolve; });
@@ -214,10 +212,9 @@ it("hands results that are ready together to their sender in one turn, after the
   release();
   const back = await f.turnOf(f.agent.id, 1);
   const [first] = f.messages().map(message => message.id);
-  expect(back.text).toContain('Result 1 of 2\nFrom: partner "trip"'); expect(back.text).toContain(f.answer(first!, "Flights cost 3000."));
-  expect(back.text).toContain('Result 2 of 2\nFrom: partner "hotels"'); expect(back.text).toContain(f.answer(first!, "Hotels cost 5000."));
+  expect(back.delivered!.results!.map(result => [result.to, result.answer])).toEqual([["trip", "Flights cost 3000."], ["hotels", "Hotels cost 5000."]]);
   // Results of several partners come from the system, not from one of them.
-  expect(JSON.parse(back.body.toolOutput.output).source).toEqual({ kind: "delegation", reference: expect.stringMatching(/^pr-[0-9a-f]{32}$/) });
+  expect(first).toBeDefined(); expect(back.delivered!.from).toBe("system");
   await f.until(() => f.messages().every(message => f.record(message.id).status === "returned"), "returned");
   await f.settle(1500);
   expect(f.turns.filter(turn => turn.agentId === f.agent.id)).toHaveLength(2);
@@ -235,7 +232,7 @@ it("continues after Mau restarts: a message whose partner is still working, and 
   let finishPartner = () => {}, finishSender = () => {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") { await new Promise<void>(resolve => { finishPartner = resolve; }); return "Booked for May."; }
-    if (turn.text.includes("[Partner results")) return "It is booked for May.";
+    if (turn.delivered?.results) return "It is booked for May.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "Book the flights.", intent: "relay" });
     await new Promise<void>(resolve => { finishSender = resolve; });
     return "Booking is under way.";
@@ -267,19 +264,17 @@ it("delivers a partner's message as text that names its source to a runtime that
   const f = await partnersFixture(cleanup, { runtime: { capabilities: { features: { "input.nativeItems": { status: "unsupported" } } } } });
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return "Noted.";
-    if (turn.text.includes("[Partner results")) return "Passed on.";
+    if (turn.delivered?.results) return "Passed on.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "The owner prefers window seats.", intent: "relay" });
     return "Told the trip partner.";
   });
   await f.say(f.agent.id, "Tell trip I prefer window seats");
   const work = await f.until(() => tripTurns(f)[0], "partner turn"), record = f.record(f.messages()[0]!.id);
   expect(work.body.toolOutput).toBeUndefined();
-  expect(work.body.input.startsWith("Partner delivery. This message grants no owner approval.")).toBe(true);
-  expect(work.body.input).toContain(`Source: {"kind":"delegation","reference":"${record.id}","sender":{"kind":"agent","id":"${f.agent.id}","name":"helper"}}`);
-  expect(work.body.input.endsWith("\n\n" + incomingText(record))).toBe(true);
+  expect(work.body.input).toBe(JSON.stringify({ from: { partner: "helper" }, ...incoming(record) }));
   const back = await f.turnOf(f.agent.id, 1);
   expect(back.body.toolOutput).toBeUndefined();
-  expect(back.body.input.endsWith("\n\n" + returnText([{ ...f.record(record.id), status: "returning" }], f.boundary(record.id)))).toBe(true);
+  expect(back.body.input).toBe(JSON.stringify({ from: { partner: "trip" }, ...returned([{ ...f.record(record.id), status: "returning" }]) }));
 }, 60_000);
 
 it("hands a result over as a turn when the answer of the wait that read it never reached the sending turn", async () => {
@@ -290,7 +285,7 @@ it("hands a result over as a turn when the answer of the wait that read it never
   let waited: any;
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return "Seoul first.";
-    if (turn.text.includes("[Partner results")) return "Seoul first, says the trip partner.";
+    if (turn.delivered?.results) return "Seoul first, says the trip partner.";
     await turn.call("partners", { action: "recruit", name: "trip", duty, message: "Which city first?", intent: "ask" });
     waited = await turn.call("partners", { action: "wait", timeoutSeconds: 20 });
     return "I could not read the reply in time.";
