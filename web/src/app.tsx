@@ -69,6 +69,8 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   const pins = usePinnedApps(appList);
   const [launcher, setLauncher] = useState(false);
   const [dropping, setDropping] = useState(false);
+  // Whether the destinations are put away behind the left edge; remembered on this device.
+  const [railAway, setRailAway] = useState(() => { try { return localStorage.getItem("mau.rail") === "away"; } catch { return false; } });
   const compact = useCompactLayout();
   // `?agent=<id>` opens the conversation with that partner.
   const [conversationTarget, setConversationTarget] = useState<string | undefined>(() => new URLSearchParams(location.search).get("agent") ?? undefined);
@@ -136,12 +138,19 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     >
       <PartnerAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
-        logo={<MauMark />}
+        logo={<MauMark weight={26} />}
         label={zh ? "主导航" : "Navigation"}
         destinations={destinations}
         selectedId="messages"
         {...(launcher ? { expandedId: "apps" } : {})}
         dropTarget={dropping}
+        collapsed={railAway}
+        collapseLabel={railAway ? (zh ? "展开导航" : "Show navigation") : (zh ? "收起导航" : "Hide navigation")}
+        onCollapse={(away) => {
+          setRailAway(away);
+          if (away) setLauncher(false);
+          try { localStorage.setItem("mau.rail", away ? "away" : "shown"); } catch { /* Kept for this page only. */ }
+        }}
         onSelect={(id) => {
           const app = id.startsWith("app:") ? appList.find((item) => item.id === id.slice(4)) : undefined;
           if (app) openApp(app);
