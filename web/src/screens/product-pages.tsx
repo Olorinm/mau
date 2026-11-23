@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppCreateDialog, Catalog, InlineNotice } from "@olorinm/agent-ui/pages";
+import { AppCreateDialog, InlineNotice } from "@olorinm/agent-ui/pages";
 import { useI18n } from "../i18n";
 
 function Unconnected({ name }: { name: string }) {
@@ -14,31 +14,12 @@ function Unconnected({ name }: { name: string }) {
     </InlineNotice>
   );
 }
-export function AppsScreen() {
-  const { language } = useI18n();
-  const zh = language === "zh-CN";
-  const [query, setQuery] = useState("");
-  return (
-    <Catalog
-      title={zh ? "App 商店" : "App Store"}
-      connected={false}
-      items={[]}
-      query={query}
-      onQueryChange={setQuery}
-      searchPlaceholder={zh ? "搜索 App" : "Search apps"}
-      notice={<Unconnected name={zh ? "App 商店" : "App Store"} />}
-      empty={zh ? "暂无可展示的 App" : "No apps available"}
-    />
-  );
-}
 export function CreateAppScreen({
   open,
   onCancel,
-  onStore,
 }: {
   open: boolean;
   onCancel(): void;
-  onStore(): void;
 }) {
   const { language } = useI18n();
   const zh = language === "zh-CN";
@@ -67,10 +48,6 @@ export function CreateAppScreen({
       canRequestAgent={false}
       onRequestAgent={() => {}}
       onCancel={close}
-      onOpenStore={() => {
-        close();
-        onStore();
-      }}
     />
   );
 }

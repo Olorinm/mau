@@ -487,7 +487,6 @@
 
 :root[data-resolved-theme="dark"] {
 color-scheme: dark;
-  --app-rail-collapsed-bg: var(--c-overlay-ink);
   --app-rail-button-fg: var(--og-text-muted);
   --app-store-primary-bg: var(--c-surface-hover);
   --app-store-primary-border: var(--c-border-strong);
@@ -572,10 +571,6 @@ color-scheme: dark;
   --mounted-app-attach-bg: var(--mounted-app-dark-action-bg);
   --mounted-app-attach-hover-border: var(--og-border);
   --mounted-app-attach-hover-bg: var(--mounted-app-dark-action-bg);
-  /* Sibling separator between sidebar and workspace — a hairline is the right
-     tool here, so it carries its own value instead of borrowing the composer's. */
-  --app-shell-bg: var(--app-rail-collapsed-bg);
-  --app-shell-sidebar-bg: var(--app-rail-collapsed-bg);
   --extensions-heading-fg: var(--og-text-strong);
   --extensions-title-button-fg: var(--og-text-strong);
   --extensions-title-button-hover-fg: var(--og-text-strong);

@@ -1,8 +1,8 @@
 // Extracted from web/src/components/app-shell/compact-navigation-dialog.tsx at 8b365ed. See source-manifest.json for boundary changes.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useI18n } from "./i18n";
-import { Dialog, DialogContent, DialogTitle } from "../../app/index";
+import { Dialog, DialogContent, DialogTitle, PortalProvider } from "../../app/index";
 
 export function CompactNavigationDialog(props: {
   navigationId?: string;
@@ -13,6 +13,8 @@ export function CompactNavigationDialog(props: {
   children: ReactNode;
 }) {
   const { t } = useI18n();
+  // Menus opened from the navigation (the account menu) belong to the dialog: outside it they cannot be pressed.
+  const [menus, setMenus] = useState<HTMLDivElement | null>(null);
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
@@ -38,8 +40,9 @@ export function CompactNavigationDialog(props: {
           </button>
         </header>
         <div id={props.navigationId} className="compact-navigation-body">
-          {props.children}
+          <PortalProvider container={menus}>{props.children}</PortalProvider>
         </div>
+        <div ref={setMenus} style={{ display: "contents" }} />
       </DialogContent>
     </Dialog>
   );
