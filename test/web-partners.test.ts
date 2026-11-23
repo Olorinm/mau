@@ -25,10 +25,10 @@ async function browser(f: PartnersFixture, locale = "zh-CN") {
   page.on("pageerror", (error) => errors.push(error.message));
   return { page, errors };
 }
-const chip = (page: Page, agentId: string) => page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
+const chip = (page: Page, agentId: string) => page.locator(`.mau-roster-row[data-chat-key="agent:${agentId}"]`);
 const openChat = async (page: Page, f: PartnersFixture, agentId: string) => {
   await page.goto(f.base + "?agent=" + encodeURIComponent(agentId));
-  await see(chip(page, agentId)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, agentId)).toHaveAttribute("aria-current", "true");
 };
 const profile = (page: Page) => page.getByRole("complementary", { name: "伙伴资料" });
 const profileTab = (page: Page, name: string) => profile(page).getByRole("group", { name: "伙伴资料分类" }).getByRole("button", { name, exact: true }).click();
@@ -92,7 +92,7 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
 
   // In the receiving partner's conversation the message stands under the sender's figure and name, with only what
   // the sender wrote.
-  await see(chip(page, scene.trip.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, scene.trip.id)).toHaveAttribute("aria-current", "true");
   const received = stream.locator("article.from-agent").first();
   await see(received.locator(".room-chat-author")).toContainText("helper");
   await see(received.locator(".room-chat-bubble")).toHaveText(tripMessage.replace("\n\n", "\n"), { useInnerText: true });
@@ -104,9 +104,9 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   await see(stream).toContainText("明洞站前酒店");
   // The sender's name and figure lead back to the conversation with it.
   await received.getByRole("button", { name: "helper", exact: true }).click();
-  await see(chip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
   await page.locator(`article[data-room-message-id$=":1"]`).getByRole("button", { name: "打开与 visa 的对话" }).click();
-  await see(chip(page, scene.visa.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, scene.visa.id)).toHaveAttribute("aria-current", "true");
   await see(stream.locator("article.from-agent").first().locator(".room-chat-bubble")).toHaveText(visaQuestion);
 
   // A second round: asking, waiting for the reply inside the turn, and dismissing.
@@ -120,7 +120,7 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   await turn.call("partners", { action: "dismiss", name: "visa" });
   scene.end(turn, "korea-trip 说可以加床，每晚 150 元。visa 已经解散。");
   await chip(page, f.agent.id).click();
-  await see(chip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
   const second = page.locator(".mau-run").last();
   await see(second).toContainText("visa 已经解散");
   await second.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
@@ -160,13 +160,13 @@ it.skipIf(!built)("an input recorded without what to show is its whole text; a l
 
   // The results are the newest event of the conversation with helper, and another partner sent them: they are not
   // its preview. The conversation with notes ends with what notes itself answered.
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   const row = (agentId: string) => roster(page).locator(`.mau-roster-row[data-chat-key="agent:${agentId}"]`);
-  await see(row(notes.id)).toHaveAttribute("title", /^字+$/);
-  await see(row(f.agent.id)).not.toHaveAttribute("title", /./);
+  await see(row(notes.id).locator(".mau-roster-preview")).toHaveText(/^字+$/);
+  // A row without a preview says what the partner is doing instead.
+  await see(row(f.agent.id).locator(".mau-roster-preview")).toHaveText("正在处理");
   end(back, "笔记抄好了。");
-  await see(row(f.agent.id)).toHaveAttribute("title", "笔记抄好了。");
-  await page.keyboard.press("Escape");
+  await see(row(f.agent.id).locator(".mau-roster-preview")).toHaveText("笔记抄好了。");
 
   // Inputs as an earlier release recorded them: only the text written for the model. All of it is shown, as it is,
   // under the partner that sent it; one that several partners' results came in has no partner to stand under.
@@ -248,12 +248,10 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   await see(asking.locator(".room-chat-author")).toContainText("korea-trip");
   await see(asking.getByRole("button", { name: "打开与 korea-trip 的对话" })).toBeVisible();
   await see(cards.first().getByRole("button")).toHaveText(["批准这次操作", "拒绝这次操作"]);
-  // The partner that waits says so in the list, where the time of its last message would be.
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  // The partner that waits says so in the list, where its last message would be.
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await see(roster(page).locator(`[data-chat-key="agent:${scene.trip.id}"] .mau-roster-note`)).toHaveText("等待批准");
   await see(roster(page).locator(".mau-roster-note")).toHaveCount(1);
-  await page.keyboard.press("Escape");
-  await see(roster(page)).toHaveCount(0);
   // Approved on the card.
   await cards.first().getByRole("button", { name: "批准这次操作" }).click();
   await see(cards.first()).toHaveAttribute("data-card-status", "approved");
@@ -306,7 +304,7 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   await see(cards.nth(5).getByRole("button")).toHaveCount(0);
   sixth.settle();
   // Nothing waits any more.
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await see(roster(page).locator(`[data-chat-key="agent:${scene.trip.id}"]`)).toBeVisible();
   await see(roster(page).locator(".mau-roster-note")).toHaveCount(0);
   // The partner's turn ends; its result comes back alone, as that partner's block.
@@ -409,7 +407,7 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
   await see(partners.locator(".mau-roster-row").last()).toHaveAttribute("data-chat-key", `agent:${scene.trip.id}`);
   // A search finds a dismissed partner by its name.
   await page.reload();
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await list.getByPlaceholder("搜索").fill("korea");
   await see(partners.locator(`[data-chat-key="agent:${scene.trip.id}"]`)).toBeVisible();
   await partners.getByRole("button", { name: "恢复 · korea-trip", exact: true }).click();
@@ -438,10 +436,10 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
   await openChat(page, f, f.agent.id);
   await see(chip(page, scene.trip.id)).toBeVisible();
   await see(chip(page, scene.visa.id)).toHaveCount(0);
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await partners.getByRole("button", { name: "已解散 · 1", exact: true }).click();
   await partners.locator(`[data-chat-key="agent:${scene.visa.id}"]`).click();
-  await see(chip(page, scene.visa.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, scene.visa.id)).toHaveAttribute("aria-current", "true");
   await see(page.locator(".room-chat-stream")).toContainText("韩国旅游签证现在要多久能办下来？");
   // Restoring from the profile; a refusal of the server is said in words.
   await chip(page, scene.visa.id).click();
@@ -482,7 +480,7 @@ it.skipIf(!built)("a partner sharing an environment that offers several kernels 
   await openChat(page, f, f.agent.id);
   const dialog = page.getByRole("dialog", { name: "新建伙伴" });
   const sharing = async (name: string) => {
-    await page.getByRole("button", { name: "全部对话", exact: true }).click();
+    if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
     await roster(page).getByRole("button", { name: "新建伙伴", exact: true }).click();
     await dialog.getByLabel("名称").fill(name);
     await dialog.getByRole("group", { name: "环境类型" }).getByRole("button", { name: "与伙伴共用", exact: true }).click();
@@ -503,7 +501,7 @@ it.skipIf(!built)("a partner sharing an environment that offers several kernels 
   await dialog.getByRole("button", { name: "创建" }).click();
   await see(dialog).toHaveCount(0);
   const writer = await f.until(() => f.partner("writer"), "writer created");
-  await see(chip(page, writer.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, writer.id)).toHaveAttribute("aria-current", "true");
   // Its profile shows the kernel it runs on, and the models of that kernel; the partner that has the environment keeps its own.
   const card = profile(page), row = (title: string) => card.locator(".agent-list-row").filter({ has: page.locator(".agent-list-row-title", { hasText: new RegExp(`^${title}$`) }) });
   await chip(page, writer.id).click();
@@ -543,7 +541,7 @@ it.skipIf(!built)("the English console calls them partners, in conversations, ac
   await see(run.getByRole("alert")).toHaveText("Partner not found.");
   await see(page.locator(`article[data-room-message-id$=":1"] .room-chat-status`)).toContainText("Not completed");
   await page.locator(`article[data-room-message-id$=":0"]`).getByRole("button", { name: "Open the conversation with korea-trip" }).click();
-  await see(chip(page, scene.trip.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, scene.trip.id)).toHaveAttribute("aria-current", "true");
   await chip(page, scene.trip.id).click();
   const card = page.getByRole("complementary", { name: "Partner profile" });
   await see(card.locator(".agent-list-row-title")).toContainText(["Shared environment", "Recruited by"]);

@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.63] - 2026-11-23
+
+- Keep the conversation list beside the active chat on desktop, with last-message previews and unread indicators. On phones, the list, chat and partner profile each get their own screen.
+- Open conversations, apps and account settings from the new navigation bar. Settings and profiles share the updated layout, and dialogs open as bottom sheets on phones.
+- Browse apps from the deployment's app directory through `GET /_mau/v1/apps` and pin up to three in the navigation bar. Pins are saved in the current browser.
+- Add a web app manifest and home-screen icons for the console.
+
 ## [0.1.0-alpha.62] - 2026-11-23
 
 - Show Conversations and Create app in a single navigation list on desktop and mobile. Remove the App Store placeholder.

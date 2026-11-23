@@ -14,6 +14,7 @@ import { apiInput, apiReference, apiRoot, requestScope } from "./api-reference.j
 import { BusinessTools, feishuBotReadersSchema } from "./business-tools.js";
 import { DurableStore } from "./store.js";
 import { ConnectorAccounts, connectInputSchema, connectorAccountsSchema, policySettingsSchema, siteAccessInputSchema } from "./connector-accounts.js";
+import { listApps, type AppDirectory } from "./apps.js";
 import { ConnectorRuntime } from "./connector-runtime.js";
 import { ConnectedApps, connectedAppsSchema, connectorAssignmentInput } from "./connected-apps.js";
 import { AgentSkills } from "./agent-skills.js";
@@ -32,6 +33,7 @@ import { ModelSettings } from "./model-settings.js";
 import { OwnerPrivateConnections, ownerPrivateAdmission } from "./owner-private.js";
 import { chatChannelApplication } from "./feishu-entry.js";
 
+export type { AppDirectory, AppSummary } from "./apps.js";
 export { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "./restricted-memory-reviewer.js";
 export type { ReviewRuntimeBinding, ReviewToolBinding, CodexRestrictedReviewerDependencies } from "./restricted-memory-reviewer.js";
 export type { RestrictedMemoryReviewer } from "./memory-review.js";
@@ -76,6 +78,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   router?: Omit<ServiceDependencies, "configure" | "authorizeOperator">;
   environments?: () => Promise<Environments>;
   reviewer?: RestrictedMemoryReviewer;
+  /** The owner's apps, from the deployment's app service. Without it the console is told there is none. */
+  apps?: AppDirectory;
 } = {}, serving: { webRoot?: string } = {}) {
   const base = dirname(resolve(optionsFile));
   const options = optionsSchema.parse(JSON.parse(readFileSync(optionsFile, "utf8")));
@@ -443,6 +447,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const { mode } = apiInput.sessionMemoryMode.parse(req.body);
     res.json(await (await sessions(res.locals.owner, String(req.params.id))).memoryMode(String(req.params.sessionId), mode));
   });
+  product.get("/apps", async (_req, res) => res.json(await listApps(dependencies.apps, res.locals.owner)));
   product.get("/connector-accounts", async (_req, res) => {
     const result = await connectorAccounts.list(res.locals.owner);
     res.json({ ...result, data: result.data.map(account => {

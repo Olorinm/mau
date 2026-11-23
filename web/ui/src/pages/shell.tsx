@@ -1,34 +1,7 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useState,
-  type ReactNode,
-  type CSSProperties,
-  type ComponentProps,
-} from "react";
-import { AppRail } from "./presentation/app-rail";
-import { AppNavigationPanel } from "./presentation/app-navigation-panel";
-import { AppTitlebar } from "./presentation/app-titlebar";
-import { useAppRailLayout } from "./presentation/use-app-rail-layout";
+import { type ReactNode } from "react";
 import { useCompactLayout } from "./presentation/use-compact-layout";
 import { DefaultScope } from "./scope";
-const RailContext = createContext(true);
-const CloseNavigation = createContext(() => {});
-export interface NavigationItem {
-  id: string;
-  label: string;
-  icon?: ReactNode;
-  badge?: ReactNode;
-  disabled?: boolean;
-}
-export interface NavigationGroup {
-  id: string;
-  label?: string;
-  compactLabel?: string;
-  items: readonly NavigationItem[];
-}
+
 export interface MenuAction {
   id: string;
   label: string;
@@ -37,119 +10,72 @@ export interface MenuAction {
   onSelect(): void;
 }
 
-export function Navigation({
-  items = [],
-  groups,
-  ...props
-}: Omit<ComponentProps<typeof AppRail>, "expanded" | "groups"> & {
-  items?: readonly NavigationItem[];
-  groups?: readonly NavigationGroup[];
-}) {
-  const expanded = useContext(RailContext);
-  const close = useContext(CloseNavigation);
-  return (
-    <AppRail
-      {...props}
-      account={props.account && {
-        ...props.account,
-        actions: props.account.actions.map((action) => ({
-          ...action,
-          onSelect: () => {
-            action.onSelect();
-            close();
-          },
-        })),
-      }}
-      onSelect={(id) => {
-        props.onSelect(id);
-        close();
-      }}
-      expanded={expanded}
-      groups={groups ?? [{ id: "navigation", items }]}
-    />
-  );
+export interface Destination {
+  id: string;
+  label: string;
+  icon: ReactNode;
 }
-/** Composition of original titlebar, rail controller and navigation panel. */
+
+/**
+ * The frame of the console: the mark, the destinations and the page.
+ * In a wide window the destinations are a capsule in the middle of a row at the top, with the mark at its left.
+ * In a narrow one they are a capsule at the foot of the screen, which a page marked `data-app-page` puts away.
+ */
 export function AppShell({
-  brand,
   logo,
-  navigation,
-  toolbar,
+  label,
+  destinations,
+  selectedId,
+  expandedId,
+  dropTarget,
+  onSelect,
   children,
   className = "",
-  initialNavigationWidth = 126,
-  navigationWidth,
-  onNavigationWidthChange,
 }: {
-  brand: ReactNode;
   logo?: ReactNode;
-  navigation?: ReactNode;
-  toolbar?: ReactNode;
+  /** The accessible name of the destinations. */
+  label: string;
+  destinations: readonly Destination[];
+  selectedId?: string;
+  /** The destination that has opened something over the page (a list to choose from), when one has. */
+  expandedId?: string;
+  /** Whether something held over the destinations would be added to them if let go. */
+  dropTarget?: boolean;
+  onSelect(id: string): void;
   children: ReactNode;
   className?: string;
-  initialNavigationWidth?: number;
-  navigationWidth?: number;
-  onNavigationWidthChange?(width: number): void;
 }) {
-  const railLayout = useAppRailLayout(
-    initialNavigationWidth,
-    navigationWidth,
-    onNavigationWidthChange,
-  );
   const compact = useCompactLayout();
-  const id = useId();
-  const toggleId = id + "-toggle";
-  const navigationId = id + "-navigation";
-  const [compactOpen, setCompactOpen] = useState(false);
-  useEffect(() => setCompactOpen(false), [compact]);
   return (
     <DefaultScope>
-    <div
-      className={"app-shell react-app agent-app af-shell " + className}
-      data-compact={compact ? "true" : "false"}
-      style={
-        {
-          "--af-rail-width":
-            navigation && !compact ? railLayout.width + "px" : "0px",
-          "--opengrove-rail-width": railLayout.width + "px",
-        } as CSSProperties
-      }
-    >
-      <AppTitlebar
-        brand={brand}
-        logo={logo}
-        toolbar={toolbar}
-        toggleId={toggleId}
-        navigationId={navigationId}
-        railVisible={compact ? compactOpen : railLayout.mode !== "hidden"}
-        onToggleRail={
-          navigation
-            ? () =>
-                compact ? setCompactOpen((open) => !open) : railLayout.toggle()
-            : undefined
-        }
-      />
-      {navigation ? (
-        <AppNavigationPanel
-          toggleId={toggleId}
-          navigationId={navigationId}
-          layout={railLayout}
-          overlayOpen={false}
-          compact={compact}
-          compactOpen={compactOpen}
-          onCompactOpenChange={setCompactOpen}
-        >
-          {(expanded) => (
-            <CloseNavigation.Provider value={() => setCompactOpen(false)}>
-              <RailContext.Provider value={expanded}>
-                {navigation}
-              </RailContext.Provider>
-            </CloseNavigation.Provider>
-          )}
-        </AppNavigationPanel>
-      ) : null}
-      <main className="workspace af-workspace">{children}</main>
-    </div>
+      <div
+        className={"app-shell react-app agent-app af-shell " + className}
+        data-compact={compact ? "true" : "false"}
+      >
+        <header className="app-topbar">
+          <span className="app-mark" aria-hidden="true">
+            {logo}
+          </span>
+          <nav className="app-switch" aria-label={label} data-drop={dropTarget || undefined}>
+            {destinations.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="app-switch-item"
+                data-id={item.id}
+                aria-current={item.id === selectedId ? "page" : undefined}
+                aria-expanded={expandedId === undefined ? undefined : item.id === expandedId}
+                title={item.label}
+                onClick={() => onSelect(item.id)}
+              >
+                {item.icon}
+                <span className="app-switch-label">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </header>
+        <main className="workspace af-workspace">{children}</main>
+      </div>
     </DefaultScope>
   );
 }

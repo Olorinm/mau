@@ -32,7 +32,7 @@
   --c-overlay-highlight: oklch(100% 0 0);
   --c-accent: var(--c-interaction-blue);
   --c-accent-hover: oklch(60.421% 0.1570 251.07);
-  --c-accent-solid: oklch(56.000% 0.1600 250.73);
+  --c-accent-solid: #5b5bd6;
   --c-accent-soft: color-mix(in srgb, var(--c-accent) 10%, var(--c-bg));
   --c-focus-ring: oklch(from var(--c-text) l c h / 0.25);
   --c-success: oklch(55.966% 0.1292 156.01);
@@ -217,7 +217,7 @@
   --c-overlay-highlight: oklch(100% 0 0);
   --c-accent: var(--c-interaction-blue);
   --c-accent-hover: oklch(79.968% 0.1039 252.12);
-  --c-accent-solid: oklch(56.000% 0.1600 250.73);
+  --c-accent-solid: #5b5bd6;
   --c-accent-soft: color-mix(in srgb, var(--c-accent) 16%, var(--c-bg));
   --c-focus-ring: oklch(from var(--c-text) l c h / 0.25);
   --c-success: oklch(73.422% 0.1336 145.14);
@@ -265,8 +265,12 @@
 /* Design system: type scale, spacing, radii and surfaces shared by settings, connectors, chat and
    compact operational views. Brand colors (accent, success, error) stay those above. */
 :root {
-  /* Settings dialogs and pages: near white, above the grey app background. */
-  --c-page: oklch(99.107% 0 0);
+  /* Settings dialogs and pages: a grey page with white cards on it, as in the system's own settings.
+     On the page, a card is --c-card and what is filled (a selected control, a hovered row) is --c-page-fill. */
+  --c-page: oklch(96.4% 0.003 286);
+  --c-card: oklch(100% 0 0);
+  --c-page-fill: oklch(91.5% 0.003 286);
+  --c-page-fill-hover: oklch(89% 0.003 286);
   --c-panel: oklch(95.213% 0 0);
   --c-panel-hover: oklch(92.797% 0 0);
   --c-panel-line: oklch(92.191% 0 0);
@@ -278,6 +282,7 @@
   --c-status-warning: oklch(76% 0.16 70);
   --c-status-neutral: oklch(70% 0.005 260);
   --c-action: var(--c-accent-solid);
+  --c-on-accent: #fff;
   --c-danger-text: var(--c-error);
   --c-scrim: oklch(0% 0 0 / 0.1);
 
@@ -314,6 +319,10 @@
   --r-tile: 10px;
 
   --shadow-float: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 14px oklch(0% 0 0 / 0.08);
+  /* Glass, for the controls that float over content: the destinations, bar buttons, search, the composer, sheets. */
+  --c-glass: oklch(100% 0 0 / 0.66);
+  --glass-filter: blur(20px) saturate(180%);
+  --shadow-glass: inset 0 0 0 1px oklch(100% 0 0 / 0.5), inset 0 1.5px 0 oklch(100% 0 0 / 0.95), 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 4px 16px oklch(0% 0 0 / 0.1);
   --shadow-tile: 0 0 0 0.5px oklch(0% 0 0 / 0.08), 0 1px 3px oklch(0% 0 0 / 0.06);
   --shadow-modal: 0 0 0 0.5px oklch(0% 0 0 / 0.06), 0 24px 64px oklch(0% 0 0 / 0.16), 0 2px 8px oklch(0% 0 0 / 0.06);
 }
@@ -325,14 +334,20 @@
   --c-panel-hover: oklch(31.708% 0.0054 91.55);
   --c-panel-line: oklch(from var(--c-text) l c h / 0.1);
   --c-panel-raised: oklch(33.640% 0.0070 95.27);
-  --c-action: var(--c-link);
+  --c-accent-solid: #6563e2;
+  --c-action: #8a88f5;
   /* A dialog has the page colour, so the scrim and a light edge are what lift it off a dark page. */
   --c-scrim: oklch(0% 0 0 / 0.6);
   --modal-overlay-bg: var(--c-scrim);
   --shadow-float: 0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 4px 14px oklch(0% 0 0 / 0.35);
+  --c-glass: oklch(38% 0.004 100 / 0.6);
+  --shadow-glass: inset 0 0 0 1px oklch(100% 0 0 / 0.1), inset 0 1.5px 0 oklch(100% 0 0 / 0.22), 0 4px 16px oklch(0% 0 0 / 0.4);
   --shadow-tile: 0 0 0 0.5px oklch(100% 0 0 / 0.12);
   --shadow-modal: 0 0 0 1px oklch(100% 0 0 / 0.14), 0 24px 64px oklch(0% 0 0 / 0.6);
   --c-page: oklch(23.852% 0.0037 106.68);
+  --c-card: oklch(28.019% 0.0036 106.63);
+  --c-page-fill: oklch(31.708% 0.0054 91.55);
+  --c-page-fill-hover: oklch(33.640% 0.0070 95.27);
 }
 
 /* Compact density for run details, events, approvals and logs. */

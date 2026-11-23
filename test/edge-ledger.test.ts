@@ -93,15 +93,14 @@ it.skipIf(!built)("runs the console without any Matrix code path", async () => {
   // No login page: the console starts from the Access session, and chats come from the ledger.
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
   await composer.fill("没有 Matrix 也能聊");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await see(page.locator(".thread-md-p", { hasText: "收到-1" })).toBeVisible();
   // Matrix wording is hidden: no Matrix connector, no Matrix channel to connect.
-  await page.getByRole("button", {name:"账号", exact:true}).click();
-  await page.getByRole("menuitem", {name:"设置", exact:true}).click();
+  await page.getByRole("button", { name: "我", exact: true }).click();
   await page.getByRole("dialog", { name: "设置" }).getByRole("button", { name: "消息渠道", exact: true }).click();
   await see(page.getByRole("button", { name: "连接飞书", exact: true })).toBeVisible();
   await see(page.getByText("Matrix", { exact: true })).toHaveCount(0);

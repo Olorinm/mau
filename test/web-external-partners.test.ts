@@ -22,7 +22,7 @@ async function browser(f: PartnersFixture) {
   page.on("pageerror", (error) => errors.push(error.message));
   return { page, errors };
 }
-const chip = (page: Page, agentId: string) => page.locator(`.mau-chip[data-chat-key="agent:${agentId}"]`);
+const chip = (page: Page, agentId: string) => page.locator(`.mau-roster-row[data-chat-key="agent:${agentId}"]`);
 const profile = (page: Page) => page.getByRole("complementary", { name: "伙伴资料" });
 const tabs = (page: Page) => profile(page).getByRole("group", { name: "伙伴资料分类" }).getByRole("button");
 const tab = (page: Page, name: string) => profile(page).getByRole("group", { name: "伙伴资料分类" }).getByRole("button", { name, exact: true });
@@ -34,8 +34,8 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   const posted: unknown[] = [];
   page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/_mau/v1/agents")) posted.push(request.postDataJSON()); });
   await page.goto(f.base + "?agent=" + encodeURIComponent(f.agent.id));
-  await see(chip(page, f.agent.id)).toHaveAttribute("aria-selected", "true");
-  await page.getByRole("button", { name: "全部对话", exact: true }).click();
+  await see(chip(page, f.agent.id)).toHaveAttribute("aria-current", "true");
+  if (await page.locator('.mau-roster[data-view="profile"]').count()) await page.locator(".mau-roster-back").click();
   await roster(page).getByRole("button", { name: "新建伙伴", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新建伙伴" });
   await dialog.getByLabel("名称").fill("laptop");
@@ -55,7 +55,7 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   expect(posted).toEqual([{ name: "laptop", kind: "external", duty: "在我的笔记本上整理文件" }]);
   await pairing.getByRole("button", { name: "完成" }).click();
   const laptop = f.partner("laptop");
-  await see(chip(page, laptop.id)).toHaveAttribute("aria-selected", "true");
+  await see(chip(page, laptop.id)).toHaveAttribute("aria-current", "true");
   // A message written before a computer is paired waits, and the conversation says for what.
   await page.getByRole("textbox").last().fill("在吗？");
   await page.keyboard.press("Enter");
@@ -109,9 +109,9 @@ it.skipIf(!built)("creates a partner on the owner's computer, shows its pairing 
   await page.getByRole("dialog", { name: "解除 Mac 的配对？" }).getByRole("button", { name: "解除配对", exact: true }).click();
   await see(row("状态")).toContainText("等待配对");
   expect(links.get(laptop.id)).toBeUndefined();
-  // The list says waiting, online or offline, never an environment state.
-  await card.getByRole("button", { name: "收起", exact: true }).click();
-  const state = chip(page, laptop.id).locator("small");
+  // The conversation's header says waiting, online or offline, never an environment state.
+  await card.getByRole("button", { name: "全部对话" }).click();
+  const state = page.locator(".mau-chat-title small");
   await see(state).toHaveText("等待配对");
   const again = await linkComputer(f.base, (await f.api(`/agents/${laptop.id}/device/pair`, {})).data.code, cleanup);
   await see(state).toHaveText("在线", { timeout: 15_000 });

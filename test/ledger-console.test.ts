@@ -29,7 +29,7 @@ it.skipIf(!built)("starts a new chat, answers a card and purges the history from
   await page.goto(f.base);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   // No control buttons in the header: "/" lists the commands, Enter runs the highlighted one.
   await see(page.getByRole("button", { name: "新对话", exact: true })).toHaveCount(0);
   const composer = page.getByPlaceholder("发送消息…");
@@ -125,7 +125,7 @@ it.skipIf(!built)("attaches, uploads with progress, sends and renders images inl
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
 
@@ -229,7 +229,7 @@ it.skipIf(!built || !edgeRouter)("with an edge login uploads without a bearer an
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await see(composer).toBeEnabled();
   // A text/plain upload passes Router's edge CSRF guard because it carries X-File-Name (ADR 0005 attachments note 13).
@@ -281,7 +281,7 @@ it.skipIf(!built)("while a reply runs, the send button stops it and text sent go
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   const composer = page.getByPlaceholder("发送消息…");
   await composer.fill("查一下天气");
   await composer.press("Enter");
@@ -342,7 +342,7 @@ it.skipIf(!built)("a running reply keeps one working line below its content and 
   page.setDefaultTimeout(10_000);
   await page.getByRole("button", { name: "对话", exact: true }).click();
   // The partner is in the header row before any chat exists; a click opens the DM.
-  await page.locator(`.mau-chip[data-chat-key="agent:${f.agent.id}"]`).click();
+  await page.locator(`.mau-roster-row[data-chat-key="agent:${f.agent.id}"]`).click();
   // Every change to the reply, as (working line position, text) states.
   await page.evaluate(() => {
     const w = window as unknown as { states: string[] }; w.states = [];

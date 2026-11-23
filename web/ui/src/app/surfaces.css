@@ -30,11 +30,12 @@
   min-height: 20px;
   padding: 0 2px;
 }
+/* A section's title is plain and strong, as on a system settings page. */
 .agent-settings-section-header h3 {
   margin: 0;
-  color: var(--c-text-secondary);
+  color: var(--c-text);
   font-size: var(--fs-body);
-  font-weight: var(--fw-medium);
+  font-weight: var(--fw-semibold);
   line-height: var(--lh-ui);
 }
 .agent-settings-section-note {
@@ -50,7 +51,7 @@
   min-width: 0;
   overflow: hidden;
   border-radius: var(--r-panel);
-  background: var(--c-panel);
+  background: var(--c-card);
   padding: var(--space-panel-y) 0;
 }
 
@@ -538,6 +539,12 @@ button.agent-list-row-main:focus-visible {
   outline: 0;
   animation: fade-in var(--motion-normal) var(--motion-ease-out);
 }
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
 .agent-modal {
   display: grid;
   gap: 20px;
@@ -709,14 +716,19 @@ button.agent-list-row-main:focus-visible {
   text-align: left;
 }
 .agent-settings-nav-item:hover {
-  background: color-mix(in srgb, var(--c-panel) 60%, transparent);
+  background: var(--c-page-fill);
 }
+/* The current page of the navigation is filled with the accent, as a system sidebar's selection is. */
 .agent-settings-nav-item[aria-current="page"] {
-  background: var(--c-panel);
+  background: var(--c-accent-solid);
+  color: var(--c-on-accent);
 }
 .agent-settings-nav-icon {
   display: inline-flex;
   color: var(--c-text-strong);
+}
+.agent-settings-nav-item[aria-current="page"] :is(.agent-settings-nav-icon, .agent-settings-nav-chevron) {
+  color: inherit;
 }
 .agent-settings-nav-icon svg {
   width: 17px;
@@ -774,9 +786,10 @@ button.agent-list-row-main:focus-visible {
   margin-top: 0;
 }
 
-/* Mobile: full-screen modal, the navigation becomes the first page. */
+/* Mobile: the settings fill the screen and their navigation becomes the first page. A modal (a confirmation, a
+   consent, a short form) is a sheet that rises from the foot of the screen, inset from its edges, with the page
+   still in view above it. */
 @media (max-width: 640px) {
-  .agent-modal,
   .agent-settings-dialog {
     top: 0;
     left: 0;
@@ -789,8 +802,16 @@ button.agent-list-row-main:focus-visible {
     padding-bottom: env(safe-area-inset-bottom);
   }
   .agent-modal {
-    align-content: start;
-    padding: calc(env(safe-area-inset-top) + 56px) 20px calc(env(safe-area-inset-bottom) + 20px);
+    top: auto;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 56px - env(safe-area-inset-top));
+    transform: none;
+    border-radius: 32px;
+    padding: 24px 20px 20px;
+    animation: sheet-in var(--motion-normal) var(--motion-ease-out);
   }
   .agent-modal-actions {
     margin-top: auto;
@@ -820,7 +841,7 @@ button.agent-list-row-main:focus-visible {
     overflow: hidden;
     gap: 0;
     border-radius: var(--r-panel);
-    background: var(--c-panel);
+    background: var(--c-card);
   }
   .agent-settings-nav-footer {
     margin-top: 24px;
@@ -876,4 +897,14 @@ button.agent-list-row-main:focus-visible {
   .agent-modal-overlay {
     animation: none;
   }
+}
+
+/* On a page (a dialog, the settings, a partner's profile) the filled controls use the page's fill, so they show
+   on its grey as they do on white elsewhere. */
+.agent-modal,
+.agent-settings-dialog,
+.modal-card,
+.agent-page-surface {
+  --c-panel: var(--c-page-fill);
+  --c-panel-hover: var(--c-page-fill-hover);
 }

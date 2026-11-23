@@ -1,9 +1,11 @@
 import { useThemePreference } from "./theme";
 import { MauMark } from "./mau-mark";
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useToast } from "@olorinm/agent-ui/app";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, PartnerAvatar, PartnerAvatarAppearanceProvider, useCompactLayout, useToast } from "@olorinm/agent-ui/app";
 import { useAvatarAppearance } from "./avatar";
+import { mauApi } from "./api/client";
+import { AppLauncher, AppMark, maxPinned, openApp, usePinnedApps } from "./screens/apps";
 import {
   bootSession,
   logout,
@@ -19,7 +21,6 @@ import { SettingsModal } from "./settings/settings-modal";
 import { openSettings, takeSettingsReturn, useSettingsRoute } from "./settings/route";
 import {
   AppShell,
-  Navigation,
   FrontendProvider,
   frontendLabels,
   type FrontendLabelKey,
@@ -27,7 +28,7 @@ import {
 import { ProductIcon } from "@olorinm/agent-ui/app";
 
 export function App({ onExpired }: { onExpired(handler: () => void): void }) {
-  const { t, language, setLanguage } = useI18n();
+  const { t, language } = useI18n();
   const [theme] = useThemePreference();
   const [avatarAppearance] = useAvatarAppearance();
   const { toast } = useToast();
@@ -61,6 +62,14 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     else if (oauth === "cancelled") toast({ kind: "info", title: t("connectors.oauthCancelled") });
   }, [t, toast]);
   const [createOpen, setCreateOpen] = useState(false);
+  // The owner's apps, from the deployment's app service when it has one; some of them stand among the destinations.
+  const apps = useQuery({ queryKey: ["apps", session?.owner], enabled: !!session, retry: false, staleTime: 60_000,
+    queryFn: () => mauApi(session!.token).apps() });
+  const appList = apps.data?.data ?? [];
+  const pins = usePinnedApps(appList);
+  const [launcher, setLauncher] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const compact = useCompactLayout();
   // `?agent=<id>` opens the conversation with that partner.
   const [conversationTarget, setConversationTarget] = useState<string | undefined>(() => new URLSearchParams(location.search).get("agent") ?? undefined);
   const current = useRef(session);
@@ -78,9 +87,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     queries.clear();
     setSession(null);
   };
-  const toggleLanguage = () =>
-    setLanguage(language === "zh-CN" ? "en" : "zh-CN");
-
   if (!boot) return null;
   if (boot.mode === "edge-denied" || boot.mode === "edge-failed")
     return (
@@ -96,8 +102,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
   if (!session) return null;
   const zh = language === "zh-CN";
   const labels: Partial<Record<FrontendLabelKey, string>> = {
-    navigation: "主导航",
-    toggleNavigation: "展开或收起导航",
     back: "返回",
     loading: "加载中…",
     search: "搜索",
@@ -107,7 +111,6 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     attachments: "附件",
     mention: "提及",
     close: "关闭",
-    resizeNavigation: "调整主导航宽度",
     connected: "已连接",
     unavailable: "尚未接入",
     download: "下载",
@@ -116,15 +119,12 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     open: "打开",
     empty: "暂无内容",
   };
-  // One flat list: the entries are few enough to need no section titles. Settings is in the account menu.
-  const groups = [
-    {
-      id: "main",
-      items: [
-        { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
-        { id: "create-app", label: zh ? "新建应用" : "Create app", icon: <ProductIcon name="add" /> },
-      ],
-    },
+  // Where the owner can go: the conversations, the apps they pinned, all of their apps, and their own settings.
+  const destinations = [
+    { id: "messages", label: zh ? "对话" : "Conversations", icon: <ProductIcon name="rooms" /> },
+    ...pins.pinned.map((app) => ({ id: "app:" + app.id, label: app.name, icon: <AppMark app={app} size={22} /> })),
+    { id: "apps", label: zh ? "应用" : "Apps", icon: <ProductIcon name="store" /> },
+    { id: "me", label: zh ? "我" : "Me", icon: <PartnerAvatar seed={session.owner} fallbackName={session.owner} size={24} appearance="illustrated" /> },
   ];
   return (
     <FrontendProvider
@@ -136,44 +136,19 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
     >
       <PartnerAvatarAppearanceProvider appearance={avatarAppearance}>
       <AppShell
-        brand={t("app.name")}
         logo={<MauMark />}
-        navigation={
-          <Navigation
-            groups={groups}
-            selectedId="messages"
-            onSelect={(id) => { if (id === "create-app") setCreateOpen(true); }}
-            account={{
-              name: session.edge?.email ?? session.owner,
-              avatar: (
-                <PartnerAvatar
-                  seed={session.owner}
-                  fallbackName={session.owner}
-                  size={28}
-                  appearance="illustrated"
-                />
-              ),
-              label: zh ? "账号" : "Account",
-              actions: [
-                {
-                  id: "settings",
-                  label: zh ? "设置" : "Settings",
-                  onSelect: () => openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" }),
-                },
-                {
-                  id: "language",
-                  label: t("language.toggle"),
-                  onSelect: toggleLanguage,
-                },
-                {
-                  id: "logout",
-                  label: t("account.logout"),
-                  onSelect: signOut,
-                },
-              ],
-            }}
-          />
-        }
+        label={zh ? "主导航" : "Navigation"}
+        destinations={destinations}
+        selectedId="messages"
+        {...(launcher ? { expandedId: "apps" } : {})}
+        dropTarget={dropping}
+        onSelect={(id) => {
+          const app = id.startsWith("app:") ? appList.find((item) => item.id === id.slice(4)) : undefined;
+          if (app) openApp(app);
+          // With no apps to choose from, the apps destination leads straight to making one.
+          else if (id === "apps") { if (appList.length) setLauncher((open) => !open); else setCreateOpen(true); }
+          else if (id === "me") openSettings({ section: matchMedia("(max-width: 640px)").matches ? null : "general" });
+        }}
       >
         {accessExpired ? (
           <div className="mau-access-banner" role="alert">
@@ -187,6 +162,11 @@ export function App({ onExpired }: { onExpired(handler: () => void): void }) {
           onStartHandled={() => setConversationTarget(undefined)}
         />
         {settingsRoute ? <SettingsModal session={session} route={settingsRoute} onSignOut={signOut} /> : null}
+        {launcher && appList.length ? <AppLauncher apps={appList} pins={pins} compact={compact} onClose={() => setLauncher(false)}
+          onCreate={() => setCreateOpen(true)} onDropping={setDropping}
+          labels={{ title: zh ? "应用" : "Apps", pin: zh ? "固定" : "Pin", unpin: zh ? "取消固定" : "Unpin", create: zh ? "新建应用" : "Create app",
+            pinned: (count) => zh ? `已固定 ${count}/${maxPinned}` : `${count}/${maxPinned} pinned`,
+            hint: zh ? "左右滑动 · 按住拖到底栏固定" : "Swipe to turn · hold and drag to the bar to pin" }} /> : null}
         <CreateAppScreen
           open={createOpen}
           onCancel={() => setCreateOpen(false)}
