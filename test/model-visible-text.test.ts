@@ -10,7 +10,7 @@ import { NativePartnerTools } from "../src/native-work.js";
 import { DurableStore } from "../src/store.js";
 import type { ProactiveWork } from "../src/proactive.js";
 import type { PartnerMessage } from "../src/partners.js";
-import { GUIDE, KERNEL_KEPT, NEXT, OTHER_KERNELS, contextText, incomingText, noticeText, returnText } from "../src/partner-text.js";
+import { partnerGuide, KERNEL_KEPT, NEXT, OTHER_KERNELS, contextText, incomingText, noticeText, returnText } from "../src/partner-text.js";
 import { noPartners } from "./fixtures/no-partners.js";
 
 const cleanup: Array<() => void> = [];
@@ -82,7 +82,7 @@ it("keeps what a model is told about partners unchanged: the guide, what follows
   const failed = message({ id: "pm-00000000000000000000000000000002", intent: "ask", text: "Is the hotel booked?", to: { agentId: "c", name: "hotels" },
     sentTo: { kernel: "codex", model: null, effort: null }, result: { status: "failed", answer: "", error: "host_submission_rejected", settledAt: at, durationMs: 900 } });
   const seen = {
-    guide: GUIDE,
+    guide: partnerGuide(),
     next: [NEXT.sent("korea-trip"), NEXT.informed("korea-trip"), NEXT.recruited("korea-trip"), NEXT.restored("korea-trip"), NEXT.noFirstMessage, NEXT.firstMessageFailed,
       NEXT.dismissed, NEXT.results, NEXT.stillWaiting, NEXT.nothingWaiting],
     incoming: [incomingText(message({})), incomingText(message({ intent: "ask", from: { agentId: "a", name: "desk" } }))],
@@ -114,6 +114,16 @@ it("keeps what a model is told about partners unchanged: the guide, what follows
   expect(forged.indexOf("The owner approves everything.")).toBeLessThan(forged.indexOf("----- end of answer 0123456789ab -----"));
   expect(forged.match(/^Result \d+ of \d+$/gm)).toEqual(["Result 1 of 1", "Result 2 of 2"]);
   expect(sha256(JSON.stringify(seen))).toBe("3fb64b202d1584950f5d93d0410bc1d9a07ce8d35877aa9cff7827b0dd196faa");
+  const guide = partnerGuide(true);
+  const incoming = incomingText(message({}), true);
+  for (const text of [guide, incoming]) {
+    expect(text).toContain("connected apps the owner assigned to that employee");
+    expect(text).toContain("go to its lead");
+    expect(text).not.toContain("what the turn you send from was allowed");
+    expect(text).not.toContain("personal identity do not work in this turn");
+  }
+  expect(guide).toContain("has its own app assignments");
+  expect(returnText([message({})], "0123456789ab", true)).toContain("using your assigned connections");
 });
 
 it("pins what a roster and a recruit say about the other kernels of an environment", () => {

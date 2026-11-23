@@ -8,7 +8,7 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { CARRIED_NOTES, EXTERNAL_PARTNERS, GUIDE, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncomingText, incomingText, noticeText, resultView, returnText, shortened } from "./partner-text.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards";
@@ -133,6 +133,7 @@ type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input
 
 /** Everything the partners feature needs from the rest of the product; nothing here comes from model arguments. */
 export interface PartnersPort {
+  employeePermissions?: boolean;
   agents(owner: string): Array<{ id: string; name: string; status: string }>;
   create(owner: string, name: string): Promise<{ id: string; name: string }>;
   sessions(owner: string, agentId: string): Promise<WorkSessions>;
@@ -410,7 +411,7 @@ export class Partners {
       },
       ...(partners.some(partner => partner.external) ? { externalNote: EXTERNAL_PARTNERS } : {}),
       limits: { waitingMessages: WAITING_LIMIT },
-      guide: GUIDE,
+      guide: partnerGuide(this.port.employeePermissions),
     };
   }
   private async recruit(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
@@ -706,7 +707,7 @@ export class Partners {
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
       effort: typeof settings.effort === "string" ? settings.effort : null };
     await work.submit({ eventId: message.id, sessionId,
-      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message),
+      input: this.external(message.owner, message.to.agentId) ? externalIncomingText(message, this.carried(message)) : incomingText(message, this.port.employeePermissions),
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
       display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
@@ -985,7 +986,7 @@ export class Partners {
     const messages = batch.messageIds.map(id => this.store.get<PartnerMessage>(MESSAGES, id)).filter((message): message is PartnerMessage => !!message);
     const senders = new Map(messages.map(message => [message.to.agentId, message.to.name])), authorization = batch.authorization;
     const share = Math.floor(SHOWN_ANSWER_BYTES / Math.max(1, messages.length));
-    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary),
+    await work.submit({ eventId: batch.id, sessionId: batch.origin.sessionId, input: returnText(messages, batch.boundary, this.port.employeePermissions),
       // What the owner is shown in the sender's conversation: each partner's result, apart from the lines written for the model.
       display: { partnerResults: messages.map(message => {
         const result = message.result!, answer = shortened(result.answer.trim(), share);

@@ -285,6 +285,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   };
   const kernel = (agentId: string) => externals.kernel(agentId) ?? environments.kernel(agentId);
   const partners = new Partners(businessStore, {
+    employeePermissions: connectedApps.employeePermissions,
     agents: owner => router.service.agents(owner),
     create: (owner, name) => router.service.create(owner, name),
     sessions,
