@@ -4,6 +4,14 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.67] - 2026-11-24
+
+- Show a conversation who the owner's other partners are once: their names and duties, and which of them is on the owner's own computer. It is shown again when a partner is added, removed or re-paired. A status or a waiting reply no longer shows it again, so a turn that hands a result over is not also told that the result is on its way.
+- `partners`: the description no longer asks for a roster call first. It says what every message needs (what to put in it, one topic per message, how to write to a partner on the owner's computer, when to wait, when to dismiss). `action=roster` returns the partners, their status and what waits; with `guide: true` it adds what a recruit may choose and the guide, and only then reads what the other kernels offer.
+- A result no longer carries `requested`; the message record keeps `sentTo` for the owner.
+- `connected_apps` and `memory`: shorter descriptions. What to do about a declined write, a missing authorization or a personal connection outside the owner's private conversation is said by that result; each memory action's inputs are described in the schema.
+- A partner's conversation with the owner continues in a new session once after the upgrade, because the `partners` definition changed. Transcript, memory and files stay.
+
 ## [0.1.0-alpha.66] - 2026-11-24
 
 - Collapse or reopen the desktop navigation with the Mau mark at the left edge. The console remembers the choice on this device.
