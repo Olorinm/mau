@@ -18,3 +18,5 @@ dbs:
       path: ${STATE_PREFIX}db
       endpoint: ${R2_ENDPOINT}
       region: auto
+      force-path-style: true
+      sign-accept-encoding: false

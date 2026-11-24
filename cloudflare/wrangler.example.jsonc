@@ -31,7 +31,8 @@
     ]
   },
   "exports": {
-    "Mau": { "type": "durable-object", "storage": "sqlite" }
+    "Mau": { "type": "durable-object", "storage": "sqlite" },
+    "StateControl": { "type": "worker" }
   },
   "r2_buckets": [
     { "binding": "ACCESS_LOGS", "bucket_name": "your-access-log-bucket" },

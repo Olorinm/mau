@@ -72,7 +72,7 @@ count=0 restores=
 while IFS= read -r database; do
   mkdir -p "$(dirname "/state/$database")"
   (
-    litestream restore -o "/state/$database" "s3://$STATE_BUCKET/${STATE_SOURCE}db/$database?endpoint=$R2_ENDPOINT&region=auto" &&
+    litestream restore -o "/state/$database" "s3://$STATE_BUCKET/${STATE_SOURCE}db/$database?endpoint=$R2_ENDPOINT&region=auto&signAcceptEncoding=false" &&
       python3 "$here/verify-restore.py" "/state/$database" "$database"
   ) &
   restores="$restores $!"
@@ -91,7 +91,7 @@ if [ -n "${STATE_CONTROL:-}" ]; then
     if [ "$count" -gt 0 ]; then
       litestream replicate -config "$here/litestream.yml" -once
       while IFS= read -r database; do
-        litestream restore -dry-run -o /var/lib/litestream/restore-check "s3://$STATE_BUCKET/${STATE_PREFIX}db/$database?endpoint=$R2_ENDPOINT&region=auto" > /dev/null
+        litestream restore -dry-run -o /var/lib/litestream/restore-check "s3://$STATE_BUCKET/${STATE_PREFIX}db/$database?endpoint=$R2_ENDPOINT&region=auto&signAcceptEncoding=false" > /dev/null
       done < "$inventory"
     fi
     sync_files
