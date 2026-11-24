@@ -4,6 +4,10 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.69] - 2026-11-25
+
+- Keep uploading database changes when Cloudflare R2 renews the container’s temporary storage credentials.
+
 ## [0.1.0-alpha.68] - 2026-11-25
 
 - Keep database replication responsive to incoming messages while reducing idle object-storage requests. Process leases live on the local container disk, ordinary files are synchronized when they change, and replica cleanup runs hourly.

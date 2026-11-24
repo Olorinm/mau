@@ -1,0 +1,27 @@
+--- a/aws/signer/internal/v4/cache.go
++++ b/aws/signer/internal/v4/cache.go
+@@ -20,5 +20,6 @@
+ type derivedKey struct {
+-	AccessKey  string
+-	Date       time.Time
+-	Credential []byte
++	AccessKey    string
++	SessionToken string
++	Date         time.Time
++	Credential   []byte
+ }
+@@ -52,5 +53,6 @@
+ 	entry := derivedKey{
+-		AccessKey:  credentials.AccessKeyID,
+-		Date:       signingTime.Time,
+-		Credential: cred,
++		AccessKey:    credentials.AccessKeyID,
++		SessionToken: credentials.SessionToken,
++		Date:         signingTime.Time,
++		Credential:   cred,
+ 	}
+@@ -64,3 +66,3 @@
+ 	cacheEntry, ok := s.retrieveFromCache(key)
+-	if ok && cacheEntry.AccessKey == credentials.AccessKeyID && isSameDay(signingTime, cacheEntry.Date) {
++	if ok && cacheEntry.AccessKey == credentials.AccessKeyID && cacheEntry.SessionToken == credentials.SessionToken && isSameDay(signingTime, cacheEntry.Date) {
+ 		return cacheEntry.Credential, true
