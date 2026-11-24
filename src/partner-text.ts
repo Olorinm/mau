@@ -13,7 +13,8 @@ export const PARTNERS_DESCRIPTION = [
   "Work with the owner's other partners. A partner is a long-lived agent with its own conversation, memory and duty.",
   "",
   "- You are shown the partners' names and duties when a conversation begins and when they change. action=roster adds each partner's status and what waits there.",
-  "- Send work to the partner whose duty covers it. Recruit only for a new topic the owner will come back to, not for a sub-task inside this reply. Before you recruit or dismiss, call action=roster with guide=true: it adds what a recruit may choose and the guide.",
+  "- Send work to the partner whose duty covers it. Recruit only for a new topic the owner will come back to, not for a sub-task inside this reply. Before you recruit, call action=roster with guide=true: it adds what a recruit may choose and the guide.",
+  "- Dismiss a partner only when the owner says its topic is over. It is archived with its conversation and memory, and recruiting the same name brings it back.",
   "- A partner cannot see this conversation or ask the owner. Put everything it needs in the message: the goal, the facts and limits the owner stated, what is already decided, where files are, and what you want back. One topic per message.",
   "- A partner on the owner's own computer has its own files and tools there and none of yours. Never give it a path in your environment; ask for what you need back in its answer.",
   "- A reply to relay or ask arrives as a new turn after this turn has ended. Do what does not depend on it, tell the owner in one line what you are waiting for, and end this turn. Do not poll: action=wait is for a reply the owner is waiting for right now that should take under a minute.",
@@ -26,16 +27,14 @@ export const PARTNERS_DESCRIPTION = [
 
 const employeeAppGuide = "Each employee can use the connected apps the owner assigned to that employee. Mau applies the owner's allow, ask or deny setting for each operation. Approval requests for employees sharing a workspace go to its lead.";
 
-/** What a roster returns when asked for the guide: what the description does not say, for recruiting, dismissing and reading what comes back. */
+/** What a roster returns when asked for the guide: what the description does not say, for recruiting and reading what comes back. */
 export const partnerGuide = (employeePermissions = false) => [
-  "Recruiting and dismissing",
-  "- name: lowercase letters, digits and hyphens, starting with a letter, at most 48 characters. A duty cannot be changed later.",
+  "Recruiting",
   employeePermissions
     ? "- The new partner shares your workspace files and has its own app assignments, conversation, memory and model settings."
     : "- The new partner works in the same environment as you, with the same files and connected apps, and has its own conversation, memory and model settings.",
   "- kernel, model, effort: leave them empty to use the same as you. Only the values under recruit are accepted. Keep your own model unless the owner asks otherwise; a lighter listed model or lower effort suits routine lookups, a stronger one planning and long documents.",
   "- Tell the owner the new partner's name; the owner can talk to it directly.",
-  "- Dismiss only when the owner says the topic is over. A dismissed partner is archived with its conversation and memory, and recruiting the same name brings it back.",
   "",
   "Messages and replies",
   "- In a relay, keep the owner's words where they matter.",

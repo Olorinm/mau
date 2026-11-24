@@ -66,8 +66,8 @@ export const partnersInput = z.object({
   action: z.enum(["roster", "recruit", "message", "wait", "dismiss"]).describe(
     "roster: the partners, their status and what waits at each. recruit: add a partner (name, duty; optionally kernel, model, effort, and a first message with intent). " +
     "message: send text to a partner (to, text, intent). wait: wait up to a minute for replies (optionally messageIds, timeoutSeconds). dismiss: archive a partner (name)."),
-  name: z.string().max(48).optional().describe("recruit, dismiss: the partner's name."),
-  duty: z.string().max(200).optional().describe("recruit: one line saying what the partner is responsible for."),
+  name: z.string().max(48).optional().describe("recruit, dismiss: the partner's name. A new name has lowercase letters, digits and hyphens, and starts with a letter."),
+  duty: z.string().max(200).optional().describe("recruit: one line saying what the partner is responsible for. It cannot be changed later."),
   kernel: setting.optional().describe("recruit: a kernel listed by roster. Empty: yours."),
   model: setting.optional().describe("recruit: a model listed by roster. Empty: yours."),
   effort: setting.optional().describe("recruit: an effort listed by roster for the model. Empty: yours."),
