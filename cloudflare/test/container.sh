@@ -37,6 +37,7 @@ EOF
 docker network create "$name" >/dev/null
 docker run -d --name "$s3" --network "$name" --entrypoint sh "$image" -c \
   'mkdir -p /tmp/s3/config /tmp/s3/state && exec rclone serve s3 --auth-key test,test-secret --addr :9000 /tmp/s3' >/dev/null
+docker exec "$s3" mkdir -p /tmp/s3/config /tmp/s3/state
 docker cp "$work/config/." "$s3:/tmp/s3/config/"
 # What is in the state bucket, and emptying it.
 bucket() {
@@ -50,7 +51,7 @@ empty() { for part in db files; do bucket purge "s3:state/$part"; done; }
 run() {
   expected=$1; shift
   docker rm -f "$mau" >/dev/null 2>&1 || true
-  docker run -d --name "$mau" --network "$name" -e R2_ENDPOINT="http://$s3:9000" -e R2_ACCESS_KEY_ID=test \
+  docker run -d --name "$mau" --network "$name" -e NO_PROXY="$s3,127.0.0.1,localhost" -e no_proxy="$s3,127.0.0.1,localhost" -e R2_ENDPOINT="http://$s3:9000" -e R2_ACCESS_KEY_ID=test \
     -e R2_SECRET_ACCESS_KEY=test-secret -e CONFIG_BUCKET=config -e STATE_BUCKET=state -e STATE_EXPECTED="$expected" "$@" >/dev/null
 }
 running() { [ "$(docker inspect -f '{{.State.Running}}' "$mau")" = true ]; }
@@ -128,4 +129,31 @@ ready || fail "Mau did not start on seeded state"
 [ "$(docker exec "$mau" cat /state/probe/file)" = seeded ] || fail "seeded file not restored"
 [ "$(rows 0)" = 4 ] || fail "seeded rows not restored"
 
+step "scoped profiles restore the legacy state and publish a new replica"
+docker stop -t 60 "$mau" >/dev/null
+docker cp "$root/cloudflare/test/replica-control.py" "$s3:/tmp/replica-control.py"
+docker exec -d "$s3" python3 /tmp/replica-control.py
+for _ in $(seq 1 30); do
+  docker exec "$s3" curl -fsS -o /dev/null http://localhost:9050/status 2>/dev/null && break
+  sleep 1
+done
+prefix=replicas/test-promotion/
+controlled() {
+  run 1 -e STATE_CONTROL="http://$s3:9050" -e STATE_PREFIX="$prefix" -e STATE_SOURCE="$1" "$image"
+  ready || fail "scoped restore did not start"
+  docker exec "$s3" test -f /tmp/replica-control/publish || fail "new replica was not published"
+}
+controlled ""
+[ "$(rows 1)" = 5 ] || fail "legacy records missing from published replica"
+docker exec "$mau" sh -c 'echo promoted > /state/probe/file'
+docker exec "$s3" touch /tmp/replica-control/drain
+exited || fail "writer kept serving after being drained"
+docker exec "$s3" test -f /tmp/replica-control/released || fail "writer did not acknowledge final flush"
+[ "$(bucket cat s3:state/files/probe/file)" = seeded ] || fail "old prefix changed"
+[ "$(bucket cat "s3:state/${prefix}files/probe/file")" = promoted ] || fail "new replica missed final file change"
+docker exec "$s3" rm /tmp/replica-control/drain /tmp/replica-control/publish /tmp/replica-control/released
+step "restart on the published replica"
+controlled "$prefix"
+[ "$(rows 0)" = 5 ] || fail "record missing after cold restore from new replica"
+[ "$(docker exec "$mau" cat /state/probe/file)" = promoted ] || fail "cold restore missed promoted file"
 echo "ok"
