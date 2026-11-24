@@ -44,7 +44,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "writer") return "The draft is in notes/letter.md.";
     if (turn.delivered?.results) return "The writer drafted the letter.";
-    seen.roster = await turn.call("partners", { action: "roster" });
+    seen.roster = await turn.call("partners", { action: "roster", guide: true });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "writer", duty: "Writes the weekly letter", kernel: "claude", model: "claude-small",
       intent: "relay", message: "Draft this week's letter in notes/letter.md." });
     return "I asked writer to draft it.";
@@ -76,11 +76,11 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: writer\nDuty: Writes the weekly letter"); expect(work.body.instructions).toContain("<MEMORY.md>");
   expect(f.store(store => store.get<{ inputRole: string }>("business_turn_inputs", `${writer.id}:${operationId}:${work.runId}`))).toMatchObject({ inputRole: "tool" });
-  // The result returns to the recruiter on its own kernel, and names what the partner's turn was submitted with.
+  // The result returns to the recruiter on its own kernel. What the partner's turn was submitted with stays on the message record.
   const back = await f.turnOf(f.agent.id, 1);
   expect(back.body.runtimeId).toBe("personal");
   expect(back.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners" });
-  expect(back.delivered!.results![0]).toMatchObject({ requested: { kernel: "claude", model: "claude-small", effort: "default" }, answer: "The draft is in notes/letter.md." });
+  expect(back.delivered!.results![0]).toMatchObject({ answer: "The draft is in notes/letter.md." });
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   // What the owner's console is given beside the text written for the models.
   const shown = async (agentId: string) => (await f.events(agentId)).flatMap((event: any) => event.display ? [event.display] : []);
@@ -126,7 +126,7 @@ it("checks a recruit against the kernel it names, carries nothing over to anothe
   end(turn);
   // A Claude partner's own roster describes its kernel, and a recruit that names none stays on it.
   const writer = f.partner("writer"), second = await ownerTurn(f, writer.id);
-  const roster = await second.call({ action: "roster" });
+  const roster = await second.call({ action: "roster", guide: true });
   expect(roster.recruit).toMatchObject({ kernels: ["claude", "codex"], yours: { kernel: "claude", model: "claude-small", effort: "default" },
     models: [{ id: "claude-main" }, { id: "claude-small" }], otherKernels: [{ kernel: "codex", models: [{ id: "large" }, { id: "small" }], default: { model: "large", effort: "default" } }] });
   expect(roster.partners.find((partner: { name: string }) => partner.name === "clerk")).toMatchObject({ kernel: "codex", model: "small", recruitedBy: "helper" });
@@ -145,7 +145,7 @@ it("refuses a kernel the profile offers when the environment's Host does not hav
   expect(f.partner("writer")).toBeUndefined();
   expect(f.store(store => store.entries("partner_recruits"))).toEqual([]);
   // The roster still lists the kernel and says that its models cannot be read.
-  expect((await call({ action: "roster" })).recruit.otherKernels).toMatchObject([{ kernel: "claude", models: [], unavailable: expect.stringContaining("could not be read") }]);
+  expect((await call({ action: "roster", guide: true })).recruit.otherKernels).toMatchObject([{ kernel: "claude", models: [], unavailable: expect.stringContaining("could not be read") }]);
   // The owner's API refuses the same way, and names the kernels when one is not offered at all.
   expect(await f.api("/agents", { name: "writer", shareWith: f.agent.id, kernel: "claude" })).toMatchObject({ status: 409, data: { error: "environment_kernel_not_ready", kernel: "claude" } });
   expect(await f.api("/agents", { name: "writer", shareWith: f.agent.id, kernel: "pi" })).toMatchObject({ status: 409, data: { error: "environment_kernel_not_available", kernels: ["codex", "claude"] } });
@@ -192,7 +192,7 @@ it("an environment with one kernel is set up, bound and offered exactly as befor
     instructions: "Work carefully.\nAnswer in the owner's language.", binding: operationId });
   // The roster offers what it offered: one kernel, and no member about other kernels.
   const end = f.hold(), first = await ownerTurn(f, f.agent.id);
-  const roster = await first.call({ action: "roster" });
+  const roster = await first.call({ action: "roster", guide: true });
   expect(Object.keys(roster.recruit)).toEqual(["kernels", "models", "efforts", "yours"]);
   expect(roster.recruit.kernels).toEqual(["codex"]);
   expect(await first.call({ action: "recruit", name: "trip", duty: "Plans the trip" })).toMatchObject({ status: "recruited", partner: { kernel: "codex" } });
@@ -298,7 +298,7 @@ it("offers Antigravity beside Codex: its Google model service, its owner's model
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "gemini") return "Checked with Gemini.";
     if (turn.delivered?.results) return "Gemini checked it.";
-    seen.roster = await turn.call("partners", { action: "roster" });
+    seen.roster = await turn.call("partners", { action: "roster", guide: true });
     seen.refused = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "large" });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "gemini", duty: "Second opinion", kernel: "agy", model: "gemini-3.8-flash", effort: "low",
       intent: "relay", message: "Review notes/plan.md." });

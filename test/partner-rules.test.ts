@@ -128,12 +128,12 @@ it("dismisses a partner by archiving it and restores it when its name is recruit
   // Hidden from the roster and from what a turn is shown, listed on request, and not messaged.
   expect((await call({ action: "roster" })).partners).toEqual([]);
   expect((await call({ action: "roster", includeDismissed: true })).partners).toMatchObject([{ name: "trip", status: "dismissed", dismissedAt: expect.any(String) }]);
-  expect((await f.mau.partners.turnContext(await f.admission(turn), true)).partners).toContain("The owner has no other partners now");
-  // A session reads the roster once and again when it changes; another session has not read it yet.
+  expect((await f.mau.partners.turnContext(await f.admission(turn), true)).partners).toBe('The owner has no other partners (you are "helper").');
+  // A session reads who the partners are once and again when that changes; another session has not read it yet.
   const admitted = await f.admission(turn);
-  expect((await f.mau.partners.turnContext(admitted, true, "session-a")).partners).toContain("The owner has no other partners now");
+  expect((await f.mau.partners.turnContext(admitted, true, "session-a")).partners).toContain("The owner has no other partners");
   expect(await f.mau.partners.turnContext(admitted, true, "session-a")).toEqual({});
-  expect((await f.mau.partners.turnContext(admitted, true, "session-b")).partners).toContain("The owner has no other partners now");
+  expect((await f.mau.partners.turnContext(admitted, true, "session-b")).partners).toContain("The owner has no other partners");
   expect(await call({ action: "message", to: "trip", text: "Any news?", intent: "ask" })).toMatchObject({ isError: true, error: "partner_dismissed" });
   // Nothing was deleted: the agent, its memory and its conversation are as they were.
   expect((await f.api(`/agents/${trip.id}`)).data).toMatchObject({ agent: { id: trip.id, name: "trip" }, duty, dismissed: expect.any(String) });
@@ -239,8 +239,14 @@ it("refuses a further message when four of a sender's messages wait for replies,
   await call({ action: "recruit", name: "trip", duty });
   const send = (text: string, intent = "ask") => call({ action: "message", to: "trip", text, intent });
   const sent = [];
+  // What a session was shown names the partner and its duty. A partner that starts working and messages that wait
+  // change neither, so the session is not shown it again: the roster action answers how a partner is doing.
+  const admitted = await f.admission(turn);
+  expect((await f.mau.partners.turnContext(admitted, true, "session")).partners).toBe(`The owner's other partners (you are "helper"):\n- trip: ${JSON.stringify(duty)}`);
   for (const n of [1, 2, 3, 4]) sent.push(await send(`Question ${n}`));
   expect(sent.map(result => result.status)).toEqual(["sent", "sent", "sent", "sent"]);
+  expect((await call({ action: "roster" })).partners).toMatchObject([{ name: "trip", status: "working", waiting: { messages: 4 } }]);
+  expect(await f.mau.partners.turnContext(admitted, true, "session")).toEqual({});
   expect(await send("Question 5")).toMatchObject({ isError: true, error: "partner_message_limit_reached",
     waiting: sent.map(result => ({ messageId: result.messageId, to: "trip" })), instruction: expect.stringContaining("Nothing was queued") });
   expect(await call({ action: "recruit", name: "more", duty: "Helps", message: "Question 6", intent: "relay" })).toMatchObject({ status: "recruited",

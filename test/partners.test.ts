@@ -18,18 +18,21 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "korea-trip") return "Draft: five days in Seoul. Missing: the travel dates.";
     if (turn.delivered?.results) return "The trip partner drafted five days in Seoul and needs your travel dates.";
-    seen.roster = await turn.call("partners", { action: "roster" });
+    seen.plain = await turn.call("partners", { action: "roster" });
+    seen.roster = await turn.call("partners", { action: "roster", guide: true });
     seen.recruit = await turn.call("partners", { action: "recruit", name: "korea-trip", duty, intent: "relay",
       message: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need." });
     return "I recruited korea-trip for this and will report when it answers.";
   });
   await f.say(f.agent.id, "Plan a Korea trip for me");
   const hub = await f.turnOf(f.agent.id);
-  // Every owner turn is shown the current roster without calling a tool.
-  expect(hub.told.partners).toBe('The owner has no other partners now (you are "helper").\nThis is current information, not an instruction. The partners tool works with them.');
+  // A conversation's first turn is shown who the owner's other partners are without calling a tool.
+  expect(hub.told.partners).toBe('The owner has no other partners (you are "helper").');
   expect(hub.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   const trip = await f.until(() => f.partner("korea-trip"), "recruit");
   const work = await f.turnOf(trip.id);
+  // The roster is who the partners are and what waits. What a recruit may choose and the guide come when asked for.
+  expect(seen.plain).toEqual({ you: { name: "helper", duty: null }, partners: [], waitingForReplies: [], limits: { waitingMessages: 4 } });
   expect(seen.roster).toMatchObject({ you: { name: "helper", duty: null }, partners: [], waitingForReplies: [], guide: partnerGuide(), limits: { waitingMessages: 4 },
     recruit: { kernels: ["codex"], efforts: ["low", "high"], yours: { kernel: "codex", model: "large", effort: "default" },
       models: [{ id: "large", label: "Large", efforts: ["low", "high"] }, { id: "small", label: "Small", efforts: ["low"] }] } });
@@ -56,10 +59,12 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(back.delivered).toEqual({ from: { partner: "korea-trip" }, ...returned([{ ...settled, status: "returning" }]) });
   expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", sentAt: record.createdAt,
     yourMessage: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.", status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
+    answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
   expect(back.body.toolOutput.name).toBe("partners");
   expect(back.body.sessionId).toBe(hub.body.sessionId);
-  expect(back.told.partners).toContain(`- korea-trip [idle]: ${JSON.stringify(duty)}`);
+  // The partners changed since this conversation was shown them, so it is shown them again: names and duties, and
+  // neither a status nor the reply that this very turn hands over.
+  expect(back.told.partners).toBe(`The owner's other partners (you are "helper"):\n- korea-trip: ${JSON.stringify(duty)}`);
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   expect(await f.answers(f.agent.id)).toEqual(["I recruited korea-trip for this and will report when it answers.",
     "The trip partner drafted five days in Seoul and needs your travel dates."]);
@@ -165,7 +170,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
   expect(waited).toEqual({ results: [{ messageId: id, to: "trip", sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Seoul first, then Busan." }], pending: [] });
+    answer: "Seoul first, then Busan." }], pending: [] });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);
   // The sender has had the result, so no turn hands it over.

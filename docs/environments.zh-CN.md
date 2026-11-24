@@ -66,7 +66,7 @@ mau env resume helper
 
 1. 将样例复制到 Mau 私有配置目录，填好所有者、服务地址和 `private/` 下的凭据路径。按示例放好已验证的 Host 包、校验清单、同版本 Agent Kit 的 Cloudflare 启动脚本及 `official-skills.tgz`。`node24` 会安装 Codex 和带摘要校验的 Linux 版 Antigravity。Host 包自带 Claude Agent SDK。
 2. 在运营端提供 Anthropic API key、Gemini API key、Codex 登录文件和限定作用域的 GitHub token。Gemini 使用[样例设置文件](../examples/cloud/agy-settings.json)。样例中的 `anthropicCredentialFile` 和 `githubCredentialFile` 按 Mau 配置目录解析。保留字段时，文件须在创建或恢复环境前存在且可读。无需 GitHub 访问时可移除 `githubCredentialFile`；更换 Claude 的认证方式时需同时配置可用的提供方。Mau 将模型和 GitHub 的凭据交给网关，连接器签名私钥保存在 Mau 端。
-3. 创建名为 `lead` 的伙伴，选择 `shared-team` 环境。在和 lead 的私聊里让它先用 `partners` 的 `action=roster` 检查环境，再用 `action=recruit` 招募三人。backend（`codex`）负责实现和测试；reviewer（`codex`）独立审查代码；advisor（`agy`）评审方案。招募后再查一次 roster，核对四个人的名字和内核。
+3. 创建名为 `lead` 的伙伴，选择 `shared-team` 环境。在和 lead 的私聊里让它先用 `partners` 的 `action=roster`（带 `guide=true`）检查环境，再用 `action=recruit` 招募三人。backend（`codex`）负责实现和测试；reviewer（`codex`）独立审查代码；advisor（`agy`）评审方案。招募后再查一次 roster，核对四个人的名字和内核。
 4. 打开 Mau 连接器设置，把个人飞书、个人邮箱只分给 lead，再分别给下属分配工作连接。每项操作的允许、询问或拒绝设置保存在连接上。样例启用 `employee` 权限模式，终端可转发的工具限定为 `connected_apps`。lead 派活时，下属的连接器审批卡回到 lead 的会话。
 
 backend 和 reviewer 共用 `implementation` 运行时的沙箱和审批配置。两人的会话 ID 和 Mau 员工 ID 各自独立，撤掉其中一人的飞书连接不会改变另一人的分配。两人分到同一个连接时，适用该连接的同一套操作规则。沙箱内的进程共用系统账号，可以读取彼此的会话 ID；此模式适合互相信任的伙伴。

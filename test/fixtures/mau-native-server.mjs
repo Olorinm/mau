@@ -48,7 +48,7 @@ createInterface({ input: process.stdin }).on("line", async line => {
       const sent = await call({ action: "message", to: "scout", text: "later fixture work", intent: "ask" });
       return complete(threadId, turnId, JSON.stringify({ sent }));
     }
-    const roster = await call({ action: "roster" });
+    const roster = await call({ action: "roster", guide: true });
     const recruited = await call({ action: "recruit", name: "scout", duty: "Does fixture work", message: "child fixture work", intent: "relay" });
     if (!recruited.message?.messageId) return complete(threadId, turnId, JSON.stringify({ error: "partner_not_recruited", recruited }));
     const waited = await call({ action: "wait", messageIds: [recruited.message.messageId], timeoutSeconds: 30 });
