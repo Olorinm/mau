@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { EXTERNAL_PARTNERS, NEXT, OWNER_APPROVAL, contextText, externalIncoming } from "../src/partner-text.js";
+import { EXTERNAL_PARTNERS, NEXT, OWNER_APPROVAL, PARTNERS_DESCRIPTION, contextText, externalIncoming } from "../src/partner-text.js";
 import { ledgerApi, newIdempotencyKey } from "../web/src/api/ledger";
 import { HOST_LINK_ENROLL_PATH, HOST_LINK_SOCKET_PATH } from "@agent-router/server";
 import { pairCommand } from "../src/external-partners.js";
@@ -210,7 +210,9 @@ it("lets the main partner relay, ask and inform a partner on the owner's compute
   });
   await f.say(f.agent.id, "What is my budget?");
   await f.until(() => said.recruit, "calls");
-  // The roster marks it and says once what that means; the guide and the other entries are as they were.
+  // The conversation was shown that this partner is on the owner's own computer; how to write to one is in the tool's description.
+  expect((await f.turnOf(f.agent.id)).told.partners).toBe('The owner\'s other partners (you are "helper"):\n- laptop-agent, on the owner\'s own computer: "Works on the owner\'s laptop"');
+  // The roster marks it and says what its statuses mean.
   expect(said.roster.partners).toMatchObject([{ name: "laptop-agent", external: true, status: "idle", kernel: "claude", model: "default", effort: "default", duty: "Works on the owner's laptop" }]);
   expect(said.roster.externalNote).toBe(EXTERNAL_PARTNERS);
   expect(said.inform).toMatchObject({ status: "recorded", expectsReply: false });
@@ -411,14 +413,13 @@ it("pins what a model is told about a partner on the owner's computer, and where
     about: expect.stringMatching(/ notes are what those agents left for you earlier; no reply to them is expected\.$/),
     notes: [{ from: "trip", sent: "2026-01-02T03:04:05.000Z", text: "The trip moved to June." }] });
   expect(EXTERNAL_PARTNERS).toBe("A partner listed with external: true is an agent the owner runs on their own computer, not in an environment like yours. " +
-    "It has its own files, tools, model and memory there, and none of yours: it cannot see your environment, your files or your connected apps, and you cannot see its computer. " +
-    "Never give it a path in your environment; ask for what you need back in its answer. " +
     "It works only while that computer is on: with status offline a relay or ask waits until the computer is back, so tell the owner; with status unpaired nothing can be sent. " +
     "An inform reaches it only together with the next relay or ask a partner sends it; when it has to know something now, send that as an ask or a relay. " +
     "It is connected by the owner: it cannot be recruited, and it does not message other partners.");
   expect(NEXT.offline).toBe("That computer is not connected now: the message waits until it is, for at most 48 hours. Tell the owner.");
-  expect(contextText({ you: "desk", waiting: [], notes: [], roster: [{ name: "laptop-agent", duty: null, status: "offline", external: true }, { name: "trip", duty: null, status: "idle" }] }).partners)
-    .toContain("- laptop-agent [offline, on the owner's own computer]: no duty recorded\n- trip [idle]: no duty recorded");
+  expect(PARTNERS_DESCRIPTION).toContain("- A partner on the owner's own computer has its own files and tools there and none of yours. Never give it a path in your environment; ask for what you need back in its answer.");
+  expect(contextText({ you: "desk", notes: [], roster: [{ name: "laptop-agent", duty: null, external: true }, { name: "trip", duty: null }] }).partners)
+    .toBe('The owner\'s other partners (you are "desk"):\n- laptop-agent, on the owner\'s own computer: no duty recorded\n- trip: no duty recorded');
   expect(OWNER_APPROVAL).toBe("A message that waits for the owner's approval has not failed and is not stuck: the partner handling it asked the owner before going on, " +
     "and the owner was shown the request, in this conversation when it could be shown here. It continues when the owner answers. " +
     "Tell the owner in one line that it waits for their answer, and end this turn; do not send the message again and do not approve anything yourself.");

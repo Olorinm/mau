@@ -64,7 +64,7 @@ export const partnerName = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
 const setting = z.string().min(1).max(200);
 export const partnersInput = z.object({
   action: z.enum(["roster", "recruit", "message", "wait", "dismiss"]).describe(
-    "roster: list the partners, what a recruit may choose, and the guide. recruit: add a partner (name, duty; optionally kernel, model, effort, and a first message with intent). " +
+    "roster: the partners, their status and what waits at each. recruit: add a partner (name, duty; optionally kernel, model, effort, and a first message with intent). " +
     "message: send text to a partner (to, text, intent). wait: wait up to a minute for replies (optionally messageIds, timeoutSeconds). dismiss: archive a partner (name)."),
   name: z.string().max(48).optional().describe("recruit, dismiss: the partner's name."),
   duty: z.string().max(200).optional().describe("recruit: one line saying what the partner is responsible for."),
@@ -75,10 +75,11 @@ export const partnersInput = z.object({
   to: z.string().max(48).optional().describe("message: the name of the partner to send to."),
   text: z.string().max(24_000).optional().describe("message: what the partner is to read."),
   intent: z.enum(["relay", "ask", "inform"]).optional().describe(
-    "relay: you pass on what the owner asked for. ask: you need an answer for your own work. inform: for the partner to know; no reply comes."),
+    "relay: you pass on what the owner asked for. ask: you need an answer for your own work. inform: for the partner to know; no reply comes and nobody is woken: the partner reads it at the start of its next turn."),
   messageIds: z.array(z.string().max(64)).min(1).max(BATCH).optional().describe("wait: the messages to wait for. Empty: every message of yours that waits for a reply."),
   timeoutSeconds: z.number().int().min(1).max(60).optional().describe("wait: how long to wait, at most 60. Empty: 30."),
   includeDismissed: z.boolean().optional().describe("roster: also list dismissed partners."),
+  guide: z.boolean().optional().describe("roster: also what a recruit may choose, and the guide."),
 }).strict();
 type Input = z.infer<typeof partnersInput>;
 export type Intent = "relay" | "ask" | "inform";
@@ -297,7 +298,7 @@ export class Partners {
     try {
       const input = partnersInput.parse(raw), turn = this.turn(admission);
       if (!turn) throw new PartnerError("partner_tool_not_authorized");
-      if (input.action === "roster") return await this.roster(admission, input.includeDismissed ?? false);
+      if (input.action === "roster") return await this.roster(admission, input.includeDismissed ?? false, input.guide ?? false);
       if (input.action === "wait") return await this.wait(admission, turn, input, callId);
       if (turn.kind === "message") throw new PartnerError("partner_layer_limit", { instruction:
         "This turn handles a partner's message, so it cannot recruit, message or dismiss partners. If another partner is needed, say so in your answer; the sender decides." });
@@ -375,26 +376,13 @@ export class Partners {
         ...(recruit ? { recruitedBy: { id: recruit.by.agentId, name: names.get(recruit.by.agentId) ?? recruit.by.name }, recruitedAt: recruit.at } : {}), ...(dismissal ? { dismissedAt: dismissal.at } : {}) };
     }));
   }
-  private async roster(admission: RunAdmission, includeDismissed: boolean) {
+  /** Who the partners are, how each one is doing and what waits; with `guide`, also what a recruit may choose and the guide. */
+  private async roster(admission: RunAdmission, includeDismissed: boolean, guide: boolean) {
     const self = this.self(admission), owner = admission.owner;
     const names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
     const mine = this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self.agentId);
     const asked = new Set(this.openCards(owner).map(card => card.messageId));
-    let options: ModelSettingsView | undefined;
-    try { options = await this.port.models(owner, self.agentId); } catch { /* Listed as unavailable below. */ }
-    const kernel = this.port.kernel(self.agentId), others = this.port.kernels(self.agentId).filter(name => name !== kernel);
     const partners = (await this.list(owner, includeDismissed)).filter(partner => partner.id !== self.agentId);
-    const choices = (view: ModelSettingsView | undefined) => ({
-      models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
-      efforts: view?.efforts ?? [] });
-    // What the other kernels of the environment offer is read one after the other: each reading starts that kernel.
-    const otherKernels: Array<Record<string, unknown>> = [];
-    for (const name of others) {
-      let view: ModelSettingsView | undefined;
-      try { view = await this.port.kernelModels(owner, self.agentId, name); } catch { /* Listed as unavailable below. */ }
-      otherKernels.push({ kernel: name, ...choices(view), default: { model: view?.defaultModel ?? "default", effort: "default" },
-        ...(view && view.source !== "none" ? {} : { unavailable: "The model list of this kernel could not be read now. Recruit on it without model and effort, or call roster again later." }) });
-    }
     return {
       you: { name: self.name, duty: self.duty ?? null },
       partners: partners.map(({ id: _id, sharesEnvironmentOf, ...partner }) => ({ ...partner,
@@ -406,16 +394,33 @@ export class Partners {
         state: message.status === "settled" || message.status === "returning" ? "answered, on its way to you"
           : asked.has(message.id) ? "waiting for the owner's approval" : "not answered yet" })),
       ...(asked.size ? { ownerApprovalNote: OWNER_APPROVAL } : {}),
-      recruit: {
-        kernels: kernel ? [kernel, ...others] : others,
-        ...choices(options),
-        yours: { kernel: kernel ?? null, model: options?.selection.model ?? options?.defaultModel ?? "default", effort: options?.selection.effort ?? "default" },
-        ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
-        ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
-      },
       ...(partners.some(partner => partner.external) ? { externalNote: EXTERNAL_PARTNERS } : {}),
       limits: { waitingMessages: WAITING_LIMIT },
-      guide: partnerGuide(this.port.employeePermissions),
+      ...(guide ? { recruit: await this.recruitChoices(owner, self.agentId), guide: partnerGuide(this.port.employeePermissions) } : {}),
+    };
+  }
+  /** The kernels, models and efforts a recruit of this partner may name. */
+  private async recruitChoices(owner: string, agentId: string) {
+    let options: ModelSettingsView | undefined;
+    try { options = await this.port.models(owner, agentId); } catch { /* Listed as unavailable below. */ }
+    const kernel = this.port.kernel(agentId), others = this.port.kernels(agentId).filter(name => name !== kernel);
+    const choices = (view: ModelSettingsView | undefined) => ({
+      models: view?.models.map(({ id, label, description, efforts, defaultEffort }) => ({ id, label, ...(description ? { description } : {}), efforts, ...(defaultEffort ? { defaultEffort } : {}) })) ?? [],
+      efforts: view?.efforts ?? [] });
+    // What the other kernels of the environment offer is read one after the other: each reading starts that kernel.
+    const otherKernels: Array<Record<string, unknown>> = [];
+    for (const name of others) {
+      let view: ModelSettingsView | undefined;
+      try { view = await this.port.kernelModels(owner, agentId, name); } catch { /* Listed as unavailable below. */ }
+      otherKernels.push({ kernel: name, ...choices(view), default: { model: view?.defaultModel ?? "default", effort: "default" },
+        ...(view && view.source !== "none" ? {} : { unavailable: "The model list of this kernel could not be read now. Recruit on it without model and effort, or call roster again later." }) });
+    }
+    return {
+      kernels: kernel ? [kernel, ...others] : others,
+      ...choices(options),
+      yours: { kernel: kernel ?? null, model: options?.selection.model ?? options?.defaultModel ?? "default", effort: options?.selection.effort ?? "default" },
+      ...(options && options.source !== "none" ? {} : { unavailable: "The model list could not be read now. Recruit without model and effort, or call roster again later." }),
+      ...(otherKernels.length ? { otherKernels, otherKernelsNote: OTHER_KERNELS } : {}),
     };
   }
   private async recruit(admission: RunAdmission, turn: Turn, input: Input, callId: string) {
@@ -636,7 +641,7 @@ export class Partners {
 
   /**
    * What a turn is told beside its input: for a turn in the owner conversation (the owner's own, or one that hands
-   * results over) the roster and who it waits for, when its session has the tool to work with them, and only when the
+   * results over) who the other partners are, when its session has the tool to work with them, and only when the
    * session has not already read the same text; and for every such turn and every turn that handles a message, the
    * informs left for the partner.
    */
@@ -649,13 +654,11 @@ export class Partners {
     for (const note of notes) this.transition(note.id, ["queued"], current => ({ ...current, offeredTo: admission.reference }));
     const context = contextText({
       you: this.partners(owner).find(agent => agent.id === self)?.name ?? "",
-      roster: turn.kind === "message" || !roster ? undefined : this.summary(owner, false).filter(partner => partner.id !== self).map(({ name, duty, status }) => ({ name, duty, status })),
-      waiting: turn.kind === "message" || !roster ? [] : this.outstanding(owner, ["sending", "running", "settled", "returning"]).filter(message => message.from.agentId === self)
-        .map(message => ({ to: message.to.name, intent: message.intent, sentAt: message.createdAt, answered: message.status !== "sending" && message.status !== "running" })),
+      roster: turn.kind === "message" || !roster ? undefined : this.summary(owner, false).filter(partner => partner.id !== self).map(({ name, duty, external }) => ({ name, duty, ...(external ? { external } : {}) })),
       notes: notes.map(note => ({ from: note.from.name, sentAt: note.createdAt, text: note.text })),
     });
-    // The roster and the waits stay the same most turns. A session reads them once and again when they change, so
-    // that what a model is told each turn is what it did not already know.
+    // Names and duties change when the owner adds, removes or re-pairs a partner. A session reads them on its first
+    // turn and again when they change; how each partner is doing and what waits is what the roster action answers.
     if (context.partners !== undefined && sessionKey) {
       const key = `${owner}:${self}:${sessionKey}`, digest = createHash("sha256").update(context.partners).digest("hex");
       if (this.store.get<{ digest: string }>(SENT_ROSTER, key)?.digest === digest) delete context.partners;
