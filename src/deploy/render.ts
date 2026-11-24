@@ -120,7 +120,7 @@ export function renderWorkerWrangler(source: Source, inputs: WorkerInputs): Json
   return { ...config, name: names.worker, account_id: inputs.accountId, main: source.path("cloudflare", "src", "index.ts"),
     routes: [{ pattern: inputs.hostname, custom_domain: true }],
     containers: [{ ...container, images: { mau: { dockerfile: source.path("Dockerfile"), build_context: source.root, build_vars: { SOURCE_REVISION: inputs.revision } } } }],
-    r2_buckets: [{ ...config.r2_buckets[0], bucket_name: names.buckets.accessLogs }],
+    r2_buckets: [{ binding: "ACCESS_LOGS", bucket_name: names.buckets.accessLogs }, { binding: "STATE_REPLICA", bucket_name: names.buckets.state }],
     vars: { ...vars, ...(inputs.backup ? { BACKUP_HOUR_UTC: backupHour } : {}), CONFIG_REVISION: inputs.configRevision, SOURCE_REVISION: inputs.revision,
       R2_ENDPOINT: r2Endpoint(inputs.accountId), CONFIG_BUCKET: names.buckets.config, STATE_BUCKET: names.buckets.state } };
 }

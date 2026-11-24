@@ -156,14 +156,16 @@ behaves as after a process restart: runs that were in progress are reconciled, c
 | What | Copied by | To | When |
 | --- | --- | --- | --- |
 | SQLite databases below `/state` (also ones created while running) | [Litestream](https://litestream.io) | `db/<path>` in the state bucket | As they change, within about a second |
-| Every other file below `/state` | [rclone](https://rclone.org) | `files/` in the state bucket | Every 30 seconds, and once after Mau has stopped |
+| Every other file below `/state` | [rclone](https://rclone.org) | `files/` in the state bucket | On a local change (checked every five seconds), hourly, and after Mau has stopped |
 
 A stop that Mau is asked for (a deploy, `RUN` set to another value, the platform's `SIGTERM`) loses nothing that
 was committed: Mau has 30 seconds to close, then Litestream sends what is left, the files are copied once more,
 and only then does the container exit. A container that is killed can lose the last second of database writes,
-a database created in its last two seconds, and the last 30 seconds of file changes.
+a database created in its last two seconds, and file changes since the last successful copy.
 
-A start refuses to run Mau when the restore fails, and, once this deployment has served requests, when it finds no
+The state bucket records the current replica prefix in `replica-head.json`. While running, each container uses short-lived credentials for its replica. On a normal shutdown, it releases the replica after its final copy. If the previous writer cannot acknowledge a handoff, the replacement seeds a separate prefix, checks it, and publishes it before taking traffic. Existing unprefixed replicas can be restored during the first upgrade.
+
+A start verifies SQLite integrity and foreign keys. It refuses to run Mau when the restore fails, and, once this deployment has served requests, when it finds no
 database to restore. A broken or emptied bucket therefore stops the deployment instead of being overwritten by a
 new empty state. To start over on purpose, deploy under a new Worker name with empty buckets.
 
@@ -193,9 +195,7 @@ The image sets `HOST`, `PORT`, `MAU_STATE=/state`, `AGENT_SERVICE_STATE=/state/r
 start: the Worker's `CONFIG_REVISION` is a digest of the configuration, so a deploy after a change restarts the
 container as for a new image. `SOURCE_REVISION` is the commit the deployment was built from.
 
-The container reads and writes the configuration, state and attachment buckets with its own R2 key pair, the
-Worker's `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets. The access-record bucket is written through the
-Worker's binding and needs no key.
+The Worker uses its `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets to issue short-lived S3 credentials. The startup script reads the configuration and previous replica, then writes to the assigned replica. Router uses the configured attachment key. The Worker publishes the current replica through its `STATE_REPLICA` binding and writes access records through `ACCESS_LOGS`.
 
 The gateway admits three environments (`MAX_ENVIRONMENTS`) and four hours of running time a day for each
 (`DAILY_RUNTIME_MINUTES`), the defaults of its [example configuration](https://github.com/Olorinm/agent-kit/tree/main/packages/environment/cloudflare).

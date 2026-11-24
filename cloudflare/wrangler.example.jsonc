@@ -34,7 +34,8 @@
     "Mau": { "type": "durable-object", "storage": "sqlite" }
   },
   "r2_buckets": [
-    { "binding": "ACCESS_LOGS", "bucket_name": "your-access-log-bucket" }
+    { "binding": "ACCESS_LOGS", "bucket_name": "your-access-log-bucket" },
+    { "binding": "STATE_REPLICA", "bucket_name": "your-state-bucket" }
   ],
   "vars": {
     // "true" runs Mau; any other value stops it and keeps it stopped.

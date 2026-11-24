@@ -421,10 +421,7 @@ export class EnvironmentManager {
     this.assertLease();
   }
   private assertLease() {
-    const lease = this.store.get<{ owner: string; expires: number }>(
-      "meta",
-      "lease",
-    );
+    const lease = this.store.lease.current();
     if (lease?.owner !== this.lease || lease.expires <= Date.now())
       throw new WorkError("environment_coordinator_unavailable", 503);
   }

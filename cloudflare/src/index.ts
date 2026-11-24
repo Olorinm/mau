@@ -1,7 +1,13 @@
-import { DurableObject } from "cloudflare:workers";
+import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { accessBatchDue, accessBatchKey, accessRecord, accessRecorded, backupDueFor, recordAccess } from "./policy.mjs";
 
+import { POINTER, parseHead, prepareReplica, temporaryKey, type ReplicaOwner } from "./replica-owner.js";
+
+declare global { namespace Cloudflare { interface GlobalProps { mainModule: typeof import("./index.js"); } } }
+
 interface Env {
+  STATE_REPLICA: R2Bucket;
+  STATE_LEASE_REPAIR?: string;
   MAU: DurableObjectNamespace<Mau>;
   ACCESS_LOGS: R2Bucket;
   /** "true" runs Mau. Any other value stops it and keeps it stopped, for a migration or a restore. */
@@ -19,10 +25,21 @@ interface Env {
   R2_SECRET_ACCESS_KEY: string;
 }
 
+const CONTROL_HOST = "state-control.internal";
+
+/** Only the container's outbound binding carries a boot identity. No public route dispatches here. */
+export class StateControl extends WorkerEntrypoint<Env, { boot: string }> {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.hostname !== CONTROL_HOST) return new Response(null, { status: 403 });
+    return this.env.MAU.getByName("mau").replicaControl(this.ctx.props.boot, request.method, url.pathname);
+  }
+}
+
 const PORT = 8790;
 const MINUTE = 60_000;
-// The longest the platform accepts. The alarm keeps this object active, so the container is never idle that long.
-const INACTIVITY_MS = 6 * 60 * MINUTE;
+// The minute alarm keeps the current placement alive. Bound the lifetime of an abandoned placement.
+const INACTIVITY_MS = 5 * MINUTE;
 // Memory and disk are billed as set here, CPU only while used: a whole core costs nothing idle and shortens every start.
 const INSTANCE = { vcpu: 1, memoryMib: 768, diskMb: 4000 };
 const BACKUP = ["python3", "node_modules/@olorinm/agent-environment/cloudflare/backup/scripts/server-backup.py", "/config/backup.json"];
@@ -44,6 +61,7 @@ export default {
 export class Mau extends DurableObject<Env> {
   private reconciling?: Promise<void>;
   private accessFailureLoggedAt = 0;
+  private retrySoon = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -103,7 +121,7 @@ export class Mau extends DurableObject<Env> {
     for (const [step, run] of steps) {
       try { await run(); } catch (error) { log("mau_upkeep_failed", { step, error: String(error) }, true); }
     }
-    await this.ctx.storage.setAlarm(Date.now() + MINUTE);
+    await this.ctx.storage.setAlarm(Date.now() + (this.retrySoon ? 5_000 : MINUTE));
   }
 
   /** Brings the container to what this deployment asks for: stopped, or running the deployed image. One run at a time. */
@@ -118,17 +136,26 @@ export class Mau extends DurableObject<Env> {
     // What the running container was started from: its image, its size and the configuration revision.
     const wanted = image && JSON.stringify([image, INSTANCE, this.env.CONFIG_REVISION ?? ""]);
     if (container.running && await this.ctx.storage.get<string>("started") !== wanted) await this.stop();
-    if (!image || container.running) return;
+    if (!image) return;
+    if (container.running) { await container.setInactivityTimeout(INACTIVITY_MS); return; }
+    const boot = await this.ctx.blockConcurrencyWhile(async () => {
+      const owner = await this.ctx.storage.get<ReplicaOwner>("replicaOwner") ?? {};
+      const marker = await this.env.STATE_REPLICA.get(POINTER);
+      const head = marker ? parseHead(await marker.text()) : undefined;
+      if (owner.active && !head) throw new Error("replica_head_missing");
+      const boot = prepareReplica(owner, head, crypto.randomUUID(), Date.now());
+      await this.ctx.storage.put("replicaOwner", owner);
+      return boot;
+    });
+    this.retrySoon = !boot;
+    if (!boot) return;
+    await container.interceptOutboundHttp(CONTROL_HOST, this.ctx.exports.StateControl({ props: { boot: boot.id } }));
     container.start({
-      image,
-      enableInternet: true,
-      instance: INSTANCE,
+      image, enableInternet: true, instance: INSTANCE,
       env: {
-        R2_ENDPOINT: this.env.R2_ENDPOINT,
-        R2_ACCESS_KEY_ID: this.env.R2_ACCESS_KEY_ID,
-        R2_SECRET_ACCESS_KEY: this.env.R2_SECRET_ACCESS_KEY,
-        CONFIG_BUCKET: this.env.CONFIG_BUCKET,
-        STATE_BUCKET: this.env.STATE_BUCKET,
+        R2_ENDPOINT: this.env.R2_ENDPOINT, CONFIG_BUCKET: this.env.CONFIG_BUCKET, STATE_BUCKET: this.env.STATE_BUCKET,
+        STATE_CONTROL: "http://" + CONTROL_HOST, STATE_SOURCE: boot.source, STATE_PREFIX: boot.target,
+        ...(this.env.STATE_LEASE_REPAIR ? { STATE_LEASE_REPAIR: this.env.STATE_LEASE_REPAIR } : {}),
         STATE_EXPECTED: await this.ctx.storage.get<boolean>("served") ? "1" : "0",
       },
     });
@@ -154,6 +181,39 @@ export class Mau extends DurableObject<Env> {
       await container.destroy();
     }
     log("mau_container_stopped");
+  }
+
+  /** RPC for the per-boot outbound binding. Serialize pointer changes with preparation of a replacement. */
+  async replicaControl(id: string, method: string, path: string): Promise<Response> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const owner = await this.ctx.storage.get<ReplicaOwner>("replicaOwner") ?? {};
+      const pending = owner.pending?.id === id ? owner.pending : undefined;
+      const active = owner.active?.id === id && !owner.released ? owner.active : undefined;
+      const denied = () => new Response(null, { status: 409 });
+      if (!pending && !active) return denied();
+      if (method === "GET" && path === "/status") return active && owner.drainSince === undefined ? new Response("active") : denied();
+      if (method === "POST" && path === "/publish") {
+        if (!pending) return active && owner.drainSince === undefined ? new Response("active") : denied();
+        const head = { prefix: pending.target, id };
+        await this.env.STATE_REPLICA.put(POINTER, JSON.stringify(head), { httpMetadata: { contentType: "application/json" } });
+        await this.ctx.storage.put("replicaOwner", { active: head } satisfies ReplicaOwner);
+        log("mau_replica_published", { prefix: head.prefix });
+        return new Response("active");
+      }
+      if (method === "POST" && path === "/released" && active) {
+        owner.released = true;
+        await this.ctx.storage.put("replicaOwner", owner);
+        return new Response("released");
+      }
+      if (method !== "GET") return denied();
+      let bucket = this.env.STATE_BUCKET, prefix: string, write = false;
+      if (path === "/credentials/config" && pending) { bucket = this.env.CONFIG_BUCKET; prefix = ""; }
+      else if (path === "/credentials/restore" && pending) { prefix = pending.source; }
+      else if (path === "/credentials/state" && (active || (pending && pending.target !== pending.source))) {
+        prefix = active?.prefix ?? pending!.target; write = true;
+      } else return denied();
+      return Response.json(await temporaryKey(this.env, bucket, prefix, write, Date.now()), { headers: { "Cache-Control": "no-store" } });
+    });
   }
 
   /** Once Mau has answered here, a start that finds no state to restore is refused instead of running empty. */

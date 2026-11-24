@@ -1,6 +1,11 @@
 # Every SQLite database below /state, including one created while Mau runs, is replicated to the
-# state bucket under db/<path below /state>. Credentials come from LITESTREAM_ACCESS_KEY_ID and
-# LITESTREAM_SECRET_ACCESS_KEY.
+# assigned replica under db/<path below /state>. The startup script selects the AWS profile.
+# Preserve prompt L0 uploads. These intervals govern maintenance of already uploaded files.
+l0-retention-check-interval: 1h
+levels:
+  - interval: 15m
+  - interval: 2h
+  - interval: 6h
 dbs:
   - dir: /state
     pattern: "*.sqlite"
@@ -10,6 +15,6 @@ dbs:
     replica:
       type: s3
       bucket: ${STATE_BUCKET}
-      path: db
+      path: ${STATE_PREFIX}db
       endpoint: ${R2_ENDPOINT}
       region: auto

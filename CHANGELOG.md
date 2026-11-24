@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.68] - 2026-11-25
+
+- Keep database replication responsive to incoming messages while reducing idle object-storage requests. Process leases live on the local container disk, ordinary files are synchronized when they change, and replica cleanup runs hourly.
+- Verify restored SQLite databases before serving traffic. Container handoffs use scoped replica credentials and preserve the previous replica after an unclean stop.
+
 ## [0.1.0-alpha.67] - 2026-11-24
 
 - Show a conversation who the owner's other partners are once: their names and duties, and which of them is on the owner's own computer. It is shown again when a partner is added, removed or re-paired. A status or a waiting reply no longer shows it again, so a turn that hands a result over is not also told that the result is on its way.

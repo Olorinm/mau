@@ -1,10 +1,12 @@
 import { mkdirSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { StoreLease } from "@agent-router/server";
 
 /** Durable identity-scoped state. Network calls never run inside a transaction. */
 export class DurableStore {
   readonly db: DatabaseSync;
+  readonly lease: StoreLease;
   constructor(path: string, identity: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
@@ -15,7 +17,8 @@ export class DurableStore {
     if (path !== ":memory:") chmodSync(path, 0o600);
     const previous = this.get<string>("meta", "identity");
     if (previous && previous !== identity) { this.db.close(); throw new Error("store_identity_mismatch"); }
-    this.set("meta", "identity", identity);
+    if (!previous) this.set("meta", "identity", identity);
+    this.lease = new StoreLease(this.db, path, "environment_coordinator_already_running");
   }
   get<T>(collection: string, id: string): T | undefined {
     const row = this.db.prepare("SELECT value FROM documents WHERE collection=? AND id=?").get(collection, id);
@@ -69,15 +72,8 @@ export class DurableStore {
    * second half, so a coordinator may ask every second without writing every second.
    */
   acquireLease(owner: string, now = Date.now()): void {
-    this.transaction(() => {
-      const lease = this.get<{ owner: string; expires: number }>("meta", "lease");
-      if (lease && lease.owner !== owner && lease.expires > now) throw new Error("environment_coordinator_already_running");
-      if (lease?.owner === owner && lease.expires - now > 15_000) return;
-      this.set("meta", "lease", { owner, expires: now + 30_000 });
-    });
+    this.transaction(() => this.lease.acquire(owner, now));
   }
-  releaseLease(owner: string): void {
-    if (this.get<{ owner: string }>("meta", "lease")?.owner === owner) this.delete("meta", "lease");
-  }
+  releaseLease(owner: string): void { this.lease.release(owner); }
   close(): void { this.db.close(); }
 }
