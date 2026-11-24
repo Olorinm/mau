@@ -41,7 +41,6 @@ export const partnerGuide = (employeePermissions = false) => [
   `- At most ${WAITING_LIMIT} of your messages may wait for replies at once; a further one is refused, not queued.`,
   "- A reply you read with wait is not delivered again, unless it says alsoArriving.",
   "- When a partner answers that something is missing, ask the owner, then send the answer to the same partner in a new message.",
-  "- A result's requested names the kernel, model and effort the partner's turn was submitted with, not what the kernel used.",
   "",
   "Authorization",
   ...(employeePermissions ? ["- " + employeeAppGuide, "- Personal connections can be assigned only to the partner that owns the environment."] : [
@@ -138,10 +137,9 @@ const outcome = (result: NonNullable<PartnerMessage["result"]>) => ({ status: re
 
 /** One message of the caller and what became of it: the same members whether a wait reads it or a turn brings it. */
 export function resultView(message: PartnerMessage, answerBytes = 16_000) {
-  const result = message.result, to = message.sentTo;
+  const result = message.result;
   return { messageId: message.id, to: message.to.name, sentAt: message.createdAt, yourMessage: clip(message.text, 400, "you wrote the rest"),
     ...(result ? { ...outcome(result), took: seconds(result.durationMs),
-      requested: { kernel: to?.kernel ?? "unknown", model: to?.model ?? "runtime default", effort: to?.effort ?? "default" },
       answer: clip(result.answer.trim() || "(no answer)", answerBytes, "the full answer is in that partner's conversation") } : { status: "pending" }) };
 }
 

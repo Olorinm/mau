@@ -76,11 +76,11 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: writer\nDuty: Writes the weekly letter"); expect(work.body.instructions).toContain("<MEMORY.md>");
   expect(f.store(store => store.get<{ inputRole: string }>("business_turn_inputs", `${writer.id}:${operationId}:${work.runId}`))).toMatchObject({ inputRole: "tool" });
-  // The result returns to the recruiter on its own kernel, and names what the partner's turn was submitted with.
+  // The result returns to the recruiter on its own kernel. What the partner's turn was submitted with stays on the message record.
   const back = await f.turnOf(f.agent.id, 1);
   expect(back.body.runtimeId).toBe("personal");
   expect(back.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners" });
-  expect(back.delivered!.results![0]).toMatchObject({ requested: { kernel: "claude", model: "claude-small", effort: "default" }, answer: "The draft is in notes/letter.md." });
+  expect(back.delivered!.results![0]).toMatchObject({ answer: "The draft is in notes/letter.md." });
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   // What the owner's console is given beside the text written for the models.
   const shown = async (agentId: string) => (await f.events(agentId)).flatMap((event: any) => event.display ? [event.display] : []);

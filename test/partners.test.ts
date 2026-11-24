@@ -59,7 +59,7 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   expect(back.delivered).toEqual({ from: { partner: "korea-trip" }, ...returned([{ ...settled, status: "returning" }]) });
   expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", sentAt: record.createdAt,
     yourMessage: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.", status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
+    answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
   expect(back.body.toolOutput.name).toBe("partners");
   expect(back.body.sessionId).toBe(hub.body.sessionId);
   // The partners changed since this conversation was shown them, so it is shown them again: names and duties, and
@@ -170,7 +170,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
   expect(waited).toEqual({ results: [{ messageId: id, to: "trip", sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
-    requested: { kernel: "codex", model: "large", effort: "default" }, answer: "Seoul first, then Busan." }], pending: [] });
+    answer: "Seoul first, then Busan." }], pending: [] });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);
   // The sender has had the result, so no turn hands it over.
