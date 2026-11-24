@@ -31,3 +31,7 @@ https://github.com/googleworkspace/cli
 The container image includes the project's official release binary at /opt/gws/gws, together with its
 LICENSE file, unmodified. Licensed under the Apache License, Version 2.0
 (https://www.apache.org/licenses/LICENSE-2.0). "This is not an officially supported Google product."
+
+The Cloudflare container includes Litestream v0.5.18 with a modified AWS SDK for Go v2 signing-key cache. The cache takes the R2 session token into account when selecting a signing key. Both projects use the Apache License 2.0.
+https://github.com/benbjohnson/litestream
+https://github.com/aws/aws-sdk-go-v2

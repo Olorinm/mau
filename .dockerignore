@@ -7,6 +7,8 @@
 !.packages/*.tar
 !src/
 !src/**
+!cloudflare/build/
+!cloudflare/build/**
 !cloudflare/container/
 !cloudflare/container/**
 !web/

@@ -1,3 +1,22 @@
+# R2 rotates the signing secret and session token while retaining the parent access key ID.
+# Litestream's AWS SDK otherwise reuses the previous signing key until the next UTC day.
+FROM --platform=$BUILDPLATFORM golang:1.26.10-bookworm AS litestream
+ARG TARGETARCH
+ARG LITESTREAM_VERSION=0.5.18
+WORKDIR /src
+RUN curl --retry 3 -fsSL -o /tmp/source.tgz "https://codeload.github.com/benbjohnson/litestream/tar.gz/refs/tags/v${LITESTREAM_VERSION}" \
+    && echo "9b81e469dbe17006fa7646c25703eeffb921a22987112b13bfe1735f4c3a23aa  /tmp/source.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/source.tgz --strip-components=1
+COPY cloudflare/build/ /tmp/replica-build/
+RUN go mod download github.com/aws/aws-sdk-go-v2 \
+    && cp -R "$(go list -m -f '{{.Dir}}' github.com/aws/aws-sdk-go-v2)" /tmp/aws-sdk \
+    && chmod -R u+w /tmp/aws-sdk \
+    && git -C /tmp/aws-sdk apply /tmp/replica-build/r2-session-signer.patch \
+    && cp /tmp/replica-build/session-rotation_test.go /tmp/aws-sdk/aws/signer/internal/v4/ \
+    && go mod edit -replace github.com/aws/aws-sdk-go-v2=/tmp/aws-sdk \
+    && go test -run '^TestRotatedR2Session$' github.com/aws/aws-sdk-go-v2/aws/signer/internal/v4 \
+    && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGETARCH" go build -trimpath -ldflags "-s -w -X main.Version=${LITESTREAM_VERSION}" -o /out/litestream ./cmd/litestream
+
 FROM node:24.22.2-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
@@ -29,19 +48,17 @@ RUN case "$TARGETARCH" in \
     && mkdir -p /opt/gws && tar xzf /tmp/gws.tar.gz -C /opt/gws ./gws ./LICENSE && rm /tmp/gws.tar.gz
 # State replication for a container without a persistent disk (cloudflare/container/start.sh): Litestream copies the
 # SQLite databases as they change, rclone the other files.
-ARG LITESTREAM_VERSION=0.5.18
 ARG RCLONE_VERSION=1.76.0
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/* \
     && case "$TARGETARCH" in \
-      arm64) litestream=arm64; litestream_sum=922a09e6a7ac67f2095571894dc6382e94e1dd4cdd9674883ddf1a8e74ab982d; rclone=arm64; rclone_sum=ee169016675e23a69d77240565133ff7dbc9b33d16fa8f7053d4af39f1eaeb78 ;; \
-      *) litestream=x86_64; litestream_sum=d3687b9fd0f2e9426bbd3da828429ff3f1dfc5c9b74d54fdf028e4ee510e7dea; rclone=amd64; rclone_sum=b00f00b3266c3764413afe599d3ec316f6f43b3e0ea8a0bc1d186d2133e46df7 ;; \
+      arm64) rclone=arm64; rclone_sum=ee169016675e23a69d77240565133ff7dbc9b33d16fa8f7053d4af39f1eaeb78 ;; \
+      *) rclone=amd64; rclone_sum=b00f00b3266c3764413afe599d3ec316f6f43b3e0ea8a0bc1d186d2133e46df7 ;; \
     esac \
-    && curl -fsSL -o /tmp/litestream.tar.gz "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-${litestream}.tar.gz" \
     && curl -fsSL -o /tmp/rclone.zip "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${rclone}.zip" \
-    && printf '%s  %s\n' "$litestream_sum" /tmp/litestream.tar.gz "$rclone_sum" /tmp/rclone.zip | sha256sum -c - \
-    && mkdir -p /opt/replication && tar xzf /tmp/litestream.tar.gz -C /opt/replication litestream \
+    && printf '%s  %s\n' "$rclone_sum" /tmp/rclone.zip | sha256sum -c - \
+    && mkdir -p /opt/replication \
     && unzip -j -q /tmp/rclone.zip "rclone-v${RCLONE_VERSION}-linux-${rclone}/rclone" -d /opt/replication \
-    && rm /tmp/litestream.tar.gz /tmp/rclone.zip
+    && rm /tmp/rclone.zip
 
 FROM node:24.22.2-bookworm-slim
 WORKDIR /app
@@ -53,7 +70,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web
 COPY --from=build /opt/gws /opt/gws
-COPY --from=build /opt/replication/litestream /opt/replication/rclone /usr/local/bin/
+COPY --from=litestream /out/litestream /usr/local/bin/
+COPY --from=litestream /src/LICENSE /usr/share/doc/litestream/LICENSE
+COPY --from=build /opt/replication/rclone /usr/local/bin/
 COPY cloudflare/container/ ./container/
 COPY package.json LICENSE NOTICE THIRD_PARTY_NOTICES components.json ./
 ARG SOURCE_REVISION
