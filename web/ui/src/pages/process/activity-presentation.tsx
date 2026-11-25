@@ -21,7 +21,7 @@ import type { ToolPart } from "./parts";
 import { rawDiagnosticText, useI18n, type TranslationFn } from "../presentation/i18n";
 import { ResourceCardFrame } from "./resource-card";
 import { ResourceLink } from "./resource-link";
-import { PartnerLink } from "./partner-link";
+import { PartnerFigure, PartnerLink } from "./partner-link";
 import {
   artifactCardToResource,
   type ChatResourceAction,
@@ -36,7 +36,7 @@ import { createActivityModel } from './activity-model';
 
 type PendingActionResult = void | Promise<unknown>;
 export function createActivityPresentation(translate: TranslationFn, model: ReturnType<typeof createActivityModel>) {
-const { partnerActivityTitle, activityItemDetailDisplay, activityItemError, activityItemKind, activityItemStatus, activityItemTitle, activityItemTitleTooltip, artifactCardsFromItem, buildActivityRenderNodes, buildActivityItems, buildQuestionResponse, choiceFormFromItem, editActivityInfo, editDiffFromItem, isImageArtifactKind, primaryActivityKind, questionPromptLabel, summarizeActivityItems } = model;
+const { partnerActivityTitle, readClusterTitle, activityItemOpened, activityItemDetailDisplay, activityItemError, activityItemKind, activityItemStatus, activityItemTitle, activityItemTitleTooltip, artifactCardsFromItem, buildActivityRenderNodes, buildActivityItems, buildQuestionResponse, choiceFormFromItem, editActivityInfo, editDiffFromItem, isImageArtifactKind, primaryActivityKind, questionPromptLabel, summarizeActivityItems } = model;
 
 
 function AssistantProcessBlock(props: {
@@ -46,7 +46,6 @@ function AssistantProcessBlock(props: {
   renderMode?: "standalone" | "embedded";
   detailMode?: "summary" | "full";
   includeReasoningInSummary?: boolean;
-  unwrapSingleExploration?: boolean;
   unwrapEmbeddedList?: boolean;
   showArtifactCards?: boolean;
   pendingQuestionIds?: ReadonlySet<string>;
@@ -93,7 +92,6 @@ function AssistantProcessBlock(props: {
     includeReasoning: props.includeReasoningInSummary,
   });
   const summaryKind = primaryActivityKind(summaryItems);
-  const renderNodes = buildActivityRenderNodes(props.entries);
   const baseClassName = clsx(
     "thread-activity",
     props.renderMode === "embedded" ? "thread-activity-embedded" : null,
@@ -109,31 +107,6 @@ function AssistantProcessBlock(props: {
     !hasPendingApproval &&
     !hasPendingQuestion &&
     !hasActiveChoiceForm
-  ) {
-    return (
-      <ActivityEntryList
-        entries={props.entries}
-        activeChoiceFormKey={props.activeChoiceFormKey}
-        openRunningByDefault={props.openRunningByDefault}
-        detailMode={props.detailMode}
-        includeReasoningInSummary={props.includeReasoningInSummary}
-        pendingQuestionIds={props.pendingQuestionIds}
-        onResolveApproval={props.onResolveApproval}
-        onResolveQuestion={props.onResolveQuestion}
-        onInsertPrompt={props.onInsertPrompt}
-        onSubmitPrompt={props.onSubmitPrompt}
-        onOpenResource={props.onOpenResource}
-        resourceContext={props.resourceContext}
-        showArtifactCards={props.showArtifactCards}
-      />
-    );
-  }
-
-  if (
-    props.renderMode === "embedded" &&
-    props.unwrapSingleExploration &&
-    renderNodes.length === 1 &&
-    (renderNodes[0]?.type === "exploration" || renderNodes[0]?.type === "edit" || renderNodes[0]?.type === "command")
   ) {
     return (
       <ActivityEntryList
@@ -295,7 +268,7 @@ function ActivityEntryList(props: {
   return (
     <div className="thread-activity-list">
       {buildActivityRenderNodes(props.entries).map((node, index) =>
-        node.type === "exploration" || node.type === "edit" || node.type === "command" || node.type === "skill" ? (
+        node.type === "exploration" || node.type === "skill" ? (
           <div key={node.key} style={{ "--i": index } as CSSProperties}>
             <ActivityCluster
               kind={node.type}
@@ -338,7 +311,7 @@ function ActivityEntryList(props: {
 
 
 function ActivityCluster(props: {
-  kind: "exploration" | "edit" | "command" | "skill";
+  kind: "exploration" | "skill";
   entries: ActivityEntry[];
   activeChoiceFormKey?: string;
   openRunningByDefault?: boolean;
@@ -370,7 +343,7 @@ function ActivityCluster(props: {
     active: hasRunningItem,
     includeReasoning: props.includeReasoningInSummary,
   });
-  const summary = activityClusterSummary(props.kind, rawSummary);
+  const summary = props.kind === "exploration" ? readClusterTitle(items) : rawSummary;
 
   return (
     <Disclosure
@@ -380,17 +353,7 @@ function ActivityCluster(props: {
       summary={
         <>
           <span className="thread-activity-row-icon" aria-hidden="true">
-            <ActivitySummaryIcon
-              kind={
-                props.kind === "edit"
-                  ? "edit"
-                  : props.kind === "command"
-                    ? "command"
-                    : props.kind === "skill"
-                      ? "skill"
-                      : "search"
-              }
-            />
+            <ActivitySummaryIcon kind={props.kind === "skill" ? "skill" : "read"} />
           </span>
           <TextTransition className="thread-activity-summary-text" identity={summary}>
             {hasRunningItem ? <TextShimmer>{summary}</TextShimmer> : summary}
@@ -420,12 +383,6 @@ function ActivityCluster(props: {
 }
 
 
-// 中文摘要的语气改写（"已编辑"→"编辑了"）；英文摘要不匹配这些前缀，原样透传。
-function activityClusterSummary(kind: "exploration" | "edit" | "command" | "skill", rawSummary: string): string {
-  if (kind === "edit") return rawSummary.replace(/^已编辑 /, "编辑了 ");
-  if (kind === "command") return rawSummary.replace(/^已运行 /, "执行了 ");
-  return rawSummary.replace(/^已探索 /, "读取了 ").replace(/(\d+) 次搜索/g, "搜索了 $1 次");
-}
 
 
 function ActivityItemRow(props: {
@@ -457,17 +414,21 @@ function ActivityItemRow(props: {
   // With the caller's full input and output in the expandable code block, the row keeps a one-line summary.
   const callerSummary = callerDetail && props.item.type === "tool" && !collapsesInlineDetail(kind) && kind !== "edit" && kind !== "partner"
     ? inputSummary(props.item.call?.input ?? props.item.result?.input) : undefined;
-  const detail = choiceForm
+  const shown = choiceForm
     ? null
     : callerSummary !== undefined
       ? callerSummary ? { label: callerSummary } : null
       : activityItemDetailDisplay(props.item, {
           full: props.detailMode === "full" && !collapsesInlineDetail(kind),
         });
+  // A step is one line that says what was done. What it ran, said or printed opens from the row.
+  const opened = choiceForm ? "" : activityItemOpened(props.item);
+  const folds = props.item.type === "reasoning" || (props.item.type === "tool" && FOLDED_KINDS.has(kind));
+  const detail = folds ? null : shown;
   const title = activityItemTitle(props.item);
   const titleTooltip = choiceForm ? "" : activityItemTitleTooltip(props.item);
-  const fullDetail = callerDetail?.text ?? (
-    props.detailMode === "full" && !choiceForm ? collapsibleFullDetail(kind, titleTooltip, detail?.title) : "");
+  const fullDetail = opened || (callerDetail?.text ?? (
+    props.detailMode === "full" && !choiceForm ? collapsibleFullDetail(kind, titleTooltip, shown?.title) : ""));
   const artifactCards = props.showArtifactCards === false ? [] : artifactCardsFromItem(props.item);
   const editInfo = kind === "edit" ? editActivityInfo(props.item) : null;
   // A partner action names its partner, and the name leads to that partner.
@@ -535,7 +496,7 @@ function ActivityItemRow(props: {
       titleTooltip={titleTooltip || undefined}
       detail={detail ?? undefined}
       fullDetail={fullDetail}
-      icon={<ActivitySummaryIcon kind={kind} />}
+      icon={partner?.name ? <PartnerFigure name={partner.name}><ActivitySummaryIcon kind={kind} /></PartnerFigure> : <ActivitySummaryIcon kind={kind} />}
       header={
         editInfo ? (
           <>
@@ -603,25 +564,22 @@ function ActivityItemRow(props: {
                 {partner.after}
               </span>
               {/* The name is a link, so the call's arguments and answer open from the chevron beside the title. */}
-              {callerDetail ? (
+              {opened || callerDetail ? (
                 <button
                   type="button"
                   className="thread-activity-edit-diff-toggle"
                   aria-expanded={partnerDetailOpen}
-                  aria-label={callerDetail.label}
-                  title={callerDetail.label}
+                  aria-label={opened ? t("activity.partnerMessageText") : callerDetail!.label}
+                  title={opened ? t("activity.partnerMessageText") : callerDetail!.label}
                   onClick={() => setPartnerDetailOpen((current) => !current)}
                 >
                   <ChevronRight size={13} strokeWidth={2.1} aria-hidden="true" />
                 </button>
               ) : null}
             </div>
-            {detail ? (
-              <div className="thread-activity-row-detail" title={detail.title}>
-                {detail.label}
-              </div>
-            ) : null}
-            {callerDetail && partnerDetailOpen ? <pre className="thread-activity-row-full-detail">{callerDetail.text}</pre> : null}
+            {/* A message opens as it was written; an action without one opens as the call's arguments and answer. */}
+            {partnerDetailOpen && opened ? <div className="thread-activity-row-message">{opened}</div> : null}
+            {partnerDetailOpen && !opened && callerDetail ? <pre className="thread-activity-row-full-detail">{callerDetail.text}</pre> : null}
           </>
         ) : undefined
       }
@@ -676,6 +634,9 @@ function ActivityItemRow(props: {
   );
 }
 
+
+/** The kinds of step whose row is its title alone: what the step ran, said or printed opens from the row. */
+const FOLDED_KINDS = new Set(["command", "monitor", "search", "read", "browser", "partner", "tool", "reasoning"]);
 
 /** "action: tools · limit: 5": a tool's arguments on one line. */
 function inputSummary(input: unknown): string {

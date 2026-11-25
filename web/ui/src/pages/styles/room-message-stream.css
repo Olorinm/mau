@@ -385,18 +385,19 @@
   --thread-activity-edit-prefix-fg: var(--room-stream-process-row-fg);
 }
 
-/* Match Codex's process transcript rhythm: execution summaries are standalone
-   status rows with visible space on both sides, while commentary stays continuous. */
+/* The steps of a reply are one column of rows: the disclosure's gap separates the groups (what another partner
+   sent, what the partner said as it worked, what it did), and the rows of a group stand a little closer. */
 .room-run-group--activity {
-  margin-block: var(--sp-4);
+  margin-block: 0;
 }
 
-.room-run-group--activity:first-child {
-  margin-top: 0;
+.room-run-group--activity:last-child {
+  margin-bottom: var(--sp-1);
 }
 
-.room-run-group--activity + .room-run-group--activity {
-  margin-top: 0;
+/* What another partner sent and the steps that followed read as one list. */
+.room-run-group--incoming + .room-run-group--activity {
+  margin-top: calc(var(--sp-2) - var(--sp-3));
 }
 
 .room-chat-thinking-row,
@@ -550,6 +551,8 @@
 }
 
 .room-chat-tools .thread-activity-list {
+  gap: var(--sp-2);
+  margin-top: 0;
   padding-left: 0;
 }
 
@@ -652,7 +655,15 @@
   line-height: var(--lh-tight);
 }
 
+/* The figure of the partner whose message started a reply, before the reply's collapsed line. */
+.room-run-incoming-figure {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
 .room-chat-tools .thread-activity-row-full-detail,
+.room-chat-tools .thread-activity-row-message,
 .room-chat-tools .thread-activity-edit-diff {
   border-color: var(--rooms-border);
   background: var(--room-stream-code-bg);

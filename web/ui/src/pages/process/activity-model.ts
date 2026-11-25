@@ -21,8 +21,6 @@ export interface ActivityEntry {
 export type ActivityRenderNode =
   | { type: "item"; entry: ActivityEntry }
   | { type: "exploration"; key: string; entries: ActivityEntry[] }
-  | { type: "edit"; key: string; entries: ActivityEntry[] }
-  | { type: "command"; key: string; entries: ActivityEntry[] }
   | { type: "skill"; key: string; entries: ActivityEntry[] };
 
 
@@ -80,7 +78,6 @@ export interface EditDiffLine {
 export function createActivityModel(translate: TranslationFn, options: { resolveArtifactUrl?(id: string): string | undefined } = {}) {
 
 
-const EXPLORATION_KINDS = new Set(["read", "search"]);
 
 /** Label keys of a partner action: while it runs, when it is done, when it was refused. */
 const PARTNER_ACTION_LABELS: Record<string, readonly [string, string, string]> = {
@@ -93,6 +90,13 @@ const PARTNER_ACTION_LABELS: Record<string, readonly [string, string, string]> =
   roster: ["activity.partnerRosterReading", "activity.partnerRoster", "activity.partnerRosterFailed"],
   wait: ["activity.partnerWaiting", "activity.partnerWaitedNone", "activity.partnerWaitFailed"],
 };
+
+/** The kind an ACP agent gives a call, as the kind its row has here. */
+const KERNEL_KIND: Record<string, string> = {
+  "read": "read", "edit": "edit", "delete": "edit", "move": "edit", "search": "search", "execute": "command", "fetch": "browser",
+};
+/** Tools with a subcommand that says more than the program does. */
+const PROGRAMS_WITH_SUBCOMMAND = new Set(["git", "npm", "pnpm", "yarn", "cargo", "docker", "gh", "kubectl", "go"]);
 
 const CLAUDE_NATIVE_TOOL_KIND: Record<string, string> = {
   bash: "command",
@@ -117,28 +121,24 @@ const CLAUDE_NATIVE_TOOL_KIND: Record<string, string> = {
 };
 
 
-function clusterTypeForEntry(entry: ActivityEntry): "exploration" | "edit" | "command" | "skill" | null {
+function clusterTypeForEntry(entry: ActivityEntry): "exploration" | "skill" | null {
   if (activityItemKind(entry.item) === "skill") return "skill";
-  if (entry.item.type !== "tool") return null;
-  const kind = activityItemKind(entry.item);
-  if (EXPLORATION_KINDS.has(kind)) return "exploration";
-  if (kind === "edit") return "edit";
-  if (kind === "command" || kind === "monitor") return "command";
-  return null;
+  return entry.item.type === "tool" && activityItemKind(entry.item) === "read" ? "exploration" : null;
 }
 
 
-// Collapse read/search, command, and edit activity into expandable clusters,
-// matching Codex desktop's activity accordions. Concrete commands, file names,
-// and line counts stay one level lower than the aggregate row.
+// A step is one row. Files read one after another are one row that names them, and the skills loaded together
+// are one row; a command, a search and an edit each say what they did on a row of their own.
 function buildActivityRenderNodes(entries: ActivityEntry[]): ActivityRenderNode[] {
   const nodes: ActivityRenderNode[] = [];
   let cluster: ActivityEntry[] = [];
-  let clusterType: "exploration" | "edit" | "command" | "skill" | null = null;
+  let clusterType: "exploration" | "skill" | null = null;
 
   const flush = () => {
     if (!clusterType) return;
-    if (cluster.length) {
+    if (clusterType === "exploration" && cluster.length === 1) {
+      nodes.push({ type: "item", entry: cluster[0]! });
+    } else if (cluster.length) {
       nodes.push({
         type: clusterType,
         key: `${clusterType}-${cluster[0]?.item.key ?? nodes.length}`,
@@ -167,7 +167,8 @@ function buildActivityRenderNodes(entries: ActivityEntry[]): ActivityRenderNode[
 }
 
 
-function buildActivityItems(parts: Array<ToolPart | SkillPart | ReasoningPart>): ActivityItem[] {
+function buildActivityItems(allParts: Array<ToolPart | SkillPart | ReasoningPart>): ActivityItem[] {
+  const parts = allParts.filter((part) => part.type !== "tool" || claudeNativeToolName(part.toolId) !== "ToolSearch");
   const items: ActivityItem[] = [];
   const usedResultIndexes = new Set<number>();
   const resultIndexByCallIndex = new Map<number, number>();
@@ -375,7 +376,7 @@ function summarizeActivityItems(
     if (stats.partnerTitles.length > 3) {
       shown.push(translate("activity.partnerMore", { count: stats.partnerTitles.length - 3 }));
     }
-    fragments.push(shown.join(translate("activity.partnerSeparator")));
+    fragments.push(...shown);
   }
   if (stats.editCount) {
     fragments.push(translate("activity.editedFiles", { count: stats.editCount }));
@@ -420,7 +421,7 @@ function summarizeActivityItems(
     }
   }
 
-  return fragments.join(" ");
+  return fragments.join(" · ");
 }
 
 
@@ -605,13 +606,17 @@ function activityItemTitle(item: ActivityItem): string {
       translate("activity.readPrefix"),
       target || translate("activity.fileWith", { preview: filePreview(item) }),
     );
-  if (kind === "command")
+  if (kind === "command") {
+    // The sentence the kernel's model wrote for its command says what it is for; the command says only how.
+    const said = commandDescription(tool);
+    if (said) return said;
     return statusAwareTitle(
       status,
       translate("activity.runningPrefix"),
       translate("activity.ranPrefix"),
       target || translate("activity.commandWith", { preview: toolPreview(tool) }),
     );
+  }
   if (kind === "edit")
     return statusAwareTitle(
       status,
@@ -661,6 +666,38 @@ function activityItemTitle(item: ActivityItem): string {
   );
 }
 
+
+/** The files a row of reads names: "Read billing.py, test_billing.py". */
+function readClusterTitle(items: ActivityItem[]): string {
+  const names = uniqueStrings(items.map(activityTargetLabel).filter(Boolean));
+  const shown = names.slice(0, 3).join(translate("activity.listSeparator"));
+  const label = names.length > 3 ? translate("activity.listMore", { items: shown, total: names.length, more: names.length - 3 }) : shown;
+  const running = items.some((item) => activityItemStatus(item) === "running");
+  return statusAwareTitle(running ? "running" : "complete", translate("activity.readingPrefix"), translate("activity.readPrefix"),
+    label || translate("activity.file"));
+}
+
+/**
+ * What a row shows when it is opened, where that is more than the caller's record of the call: a thought and a
+ * partner's message as they were written, a command with what it printed.
+ */
+function activityItemOpened(item: ActivityItem): string {
+  if (item.type === "reasoning") return item.part.text;
+  if (item.type !== "tool") return "";
+  const kind = activityItemKind(item);
+  if (kind === "partner") return partnerCall(item)?.text ?? "";
+  if (kind !== "command") return "";
+  const command = commandText(item.call || item.result);
+  if (!command) return "";
+  // Codex reports the command twice: as it started, and as it ended with what it printed.
+  const ended = recordValue(item.result?.result), native = isCodexNativeItem(ended) ? ended : codexNativeItemFromActivity(item);
+  const printed = native.type === "commandExecution"
+    ? stringValue(native.aggregatedOutput) || stringValue(recordValue(item.call?.input).aggregatedOutput)
+    : readableResultText(item.result?.result);
+  // The directory it ran in stands before the prompt, as a shell shows it.
+  const cwd = stringValue(native.cwd);
+  return [`${cwd ? `${cwd} ` : ""}$ ${command}`, printed.trim()].filter(Boolean).join("\n\n");
+}
 
 function statusAwareTitle(status: string, runningPrefix: string, completedPrefix: string, label: string): string {
   const normalized = status.toLowerCase();
@@ -960,6 +997,8 @@ function activityItemKind(item: ActivityItem): string {
   const toolId = String(tool?.toolId || "").toLowerCase();
   if (isPartnersToolId(toolId)) return "partner";
   if (isSkillInvokeToolId(toolId)) return "skill";
+  const said = KERNEL_KIND[stringValue(tool?.kind)];
+  if (said) return said;
   if (toolId === "codex.reasoning" || toolId.includes("reasoning")) return "reasoning";
   if (toolId === "codex.commandexecution") return "command";
   if (isMonitorToolLabel(tool?.toolId) || isMonitorToolLabel(tool?.title)) return "monitor";
@@ -1075,10 +1114,12 @@ function workflowCreateApprovalSummary(part: ToolPart): { label: string; title?:
 }
 
 
+/** The Claude tool a tool id names: `claude.Bash` and, as the Host reports Claude's calls, `Bash`. */
 function claudeNativeToolName(value: unknown): string {
   const text = stringValue(value);
   const match = text.match(/^claude\.(.+)$/i);
-  return match?.[1]?.trim() || "";
+  if (match) return match[1]?.trim() || "";
+  return Object.hasOwn(CLAUDE_NATIVE_TOOL_KIND, text.toLowerCase()) || text === "ToolSearch" ? text : "";
 }
 
 
@@ -1146,7 +1187,7 @@ function claudeAgentToolLabel(item: ActivityItem): string {
 
 
 function isPartnersToolId(toolId: string): boolean {
-  return toolId === "partners" || toolId.endsWith(".partners");
+  return toolId === "partners" || toolId === "mcp__agent_host__partners" || toolId.endsWith(".partners");
 }
 
 
@@ -1415,7 +1456,7 @@ function isSkillInvokeToolId(toolId: string): boolean {
 
 
 function searchTargetLabel(tool: ToolPart): string {
-  const query = stringValue(codexNativeItemFromTool(tool).query);
+  const query = stringValue(codexNativeItemFromTool(tool).query) || commandActions(tool).map((action) => stringValue(action.query)).find(Boolean) || "";
   if (query) {
     return `"${summarize(query, 36)}"`;
   }
@@ -1445,6 +1486,9 @@ function searchTargetLabel(tool: ToolPart): string {
 
 
 function readTargetLabel(tool: ToolPart): string {
+  // What the kernel named comes first: Codex's reading of its own command, then the files an ACP agent points at.
+  const named = commandActions(tool).flatMap((action) => stringValue(action.name) || []);
+  if (named.length || tool.paths?.length) return summarizePathTargets(named.length ? named : tool.paths!);
   const command = commandText(tool);
   const tokens = shellWords(command);
   const positional = commandPositionals(tokens.slice(1));
@@ -1456,16 +1500,52 @@ function readTargetLabel(tool: ToolPart): string {
 }
 
 
+/** A command is named by the programs it ran: the command itself is one click away. */
 function commandTargetLabel(tool: ToolPart): string {
-  const command = commandText(tool);
-  const tokens = shellWords(command);
-  if (tokens[0] === "npm" && tokens[1] === "run" && tokens[2]) {
-    return summarize(command, 44);
+  const programs = commandPrograms(commandText(tool));
+  if (!programs.length) return summarize(structuredTargetLabel(tool) || cleanToolLabel(tool.title, tool.toolId, ""), 44);
+  const shown = programs.slice(0, 3).join(translate("activity.listSeparator"));
+  return programs.length > 3 ? translate("activity.listMore", { items: shown, total: programs.length, more: programs.length - 3 }) : shown;
+}
+
+/**
+ * The programs of a shell command in the order they run, each once: `cd`, variable assignments and the body of an
+ * inline script are not programs, and a separator inside quotes separates nothing.
+ */
+function commandPrograms(command: string): string[] {
+  const script = command.search(/<<-?\s*['"]?\w/);
+  const bare = (script < 0 ? command : command.slice(0, script)).replace(/'[^']*'|"[^"]*"/g, "''");
+  const programs: string[] = [];
+  for (const stage of bare.split(/&&|\|\||[;|\n]/)) {
+    const words = stage.trim().split(/\s+/).filter(Boolean);
+    while (words[0] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) words.shift();
+    if (!words[0] || words[0] === "cd") continue;
+    let program = pathBaseName(words[0]);
+    if (PROGRAMS_WITH_SUBCOMMAND.has(program)) {
+      // `git -C /repo status` runs `git status`: an option before the subcommand may take a value.
+      let index = 1;
+      while (words[index]?.startsWith("-")) index += /^-[A-Za-z]$/.test(words[index]!) ? 2 : 1;
+      if (words[index]) program += " " + words[index];
+    } else if (/^python3?$/.test(program)) {
+      const module = words.indexOf("-m");
+      if (module > 0 && words[module + 1]) program += " -m " + words[module + 1];
+      else if (script >= 0 && words.at(-1) === "-") program = translate("activity.inlineScript", { program });
+    }
+    if (!programs.includes(program)) programs.push(program);
   }
-  if (tokens[0] === "npm" && tokens[1]) {
-    return summarize(command, 44);
-  }
-  return summarize(command || structuredTargetLabel(tool) || cleanToolLabel(tool.title, tool.toolId, ""), 44);
+  return programs;
+}
+
+/** What Codex read its own command as: `read` with the file's name, `listFiles`, `search` with a query, or `unknown`. */
+function commandActions(tool: ToolPart | undefined): Record<string, unknown>[] {
+  const actions = recordValue(tool?.input).commandActions;
+  return Array.isArray(actions) ? actions.map(recordValue) : [];
+}
+
+/** The sentence a kernel's model wrote for a command it ran (Claude's `description`), on one line. */
+function commandDescription(tool: ToolPart | undefined): string {
+  const said = stringValue(recordValue(tool?.input).description).trim();
+  return said && !said.includes("\n") ? summarize(said, 96) : "";
 }
 
 
@@ -1510,6 +1590,8 @@ function commandText(tool: ToolPart | undefined): string {
       stringValue(input.shellCommand) ||
       stringValue(input.args) ||
       stringValue(result.command) ||
+      // An ACP agent may keep the command under a name of its own; its title for a command is the command.
+      (tool.kind === "execute" ? stringValue(input.CommandLine) || tool.title : "") ||
       "",
   );
 }
@@ -1690,6 +1772,12 @@ function compactPathLabel(path: string): string {
 
 
 function commandActivityKind(tool: ToolPart | undefined): string {
+  // Codex says what it read its command as; only where it says nothing is the command's first word a guess.
+  const read = commandActions(tool).map((action) => stringValue(action.type));
+  if (read.length) {
+    if (read.every((type) => type === "read")) return "read";
+    return read.every((type) => type === "read" || type === "search" || type === "listFiles") ? "search" : "command";
+  }
   const command = commandText(tool);
   if (!command) return "command";
   const searchesFiles =
@@ -2416,5 +2504,5 @@ function askUserQuestionItemsFromInput(input: Record<string, unknown>): unknown[
   }
   return [];
 }
-return { partnerActivityTitle, buildActivityRenderNodes, buildActivityItems, choiceFormFromItem, summarizeActivityItems, primaryActivityKind, activityItemTitle, activityItemDetail, artifactCardsFromItem, activityItemDetailDisplay, activityItemTitleTooltip, activityItemError, activityItemStatus, activityItemKind, isImageArtifactKind, formatElapsedMs, editActivityInfo, editDiffFromItem, questionPromptLabel, buildQuestionResponse };
+return { partnerActivityTitle, readClusterTitle, activityItemOpened, buildActivityRenderNodes, buildActivityItems, choiceFormFromItem, summarizeActivityItems, primaryActivityKind, activityItemTitle, activityItemDetail, artifactCardsFromItem, activityItemDetailDisplay, activityItemTitleTooltip, activityItemError, activityItemStatus, activityItemKind, isImageArtifactKind, formatElapsedMs, editActivityInfo, editDiffFromItem, questionPromptLabel, buildQuestionResponse };
 }

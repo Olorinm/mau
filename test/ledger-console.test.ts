@@ -390,10 +390,10 @@ it.skipIf(!built)("a running reply keeps one working line below its content and 
   expect(first).toBeGreaterThanOrEqual(0);
   expect(states.slice(first).filter((state) => state.split("|")[1] !== "你连了 Gmail。")).toEqual([]);
 
-  // The tool row: a one-line summary, full input and output in the code block.
+  // The tool row: its title alone, full input and output in the code block it opens.
   await reply.locator(".og-disclosure-toggle").click();
   const row = reply.locator(".thread-activity-row-toggle", { hasText: "已调用 connected_apps" });
-  await see(row.locator(".thread-activity-row-detail")).toHaveText("action: tools");
+  await see(row.locator(".thread-activity-row-detail")).toHaveCount(0);
   await row.click();
   const code = JSON.parse(await reply.locator("pre.thread-activity-row-full-detail").textContent() ?? "{}");
   expect(code).toEqual({ input: { action: "tools" }, output: { status: "completed", tools: [{ name: "gmail" }] } });

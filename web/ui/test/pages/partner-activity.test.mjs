@@ -74,10 +74,10 @@ test("a run's summary says what was done with partners, and a refused call says 
     call(model, { action: "message", to: "visa", text: "x", intent: "ask" }, { status: "sent" }).item,
     call(model, { action: "wait" }, { results: [] }).item,
   ];
-  assert.equal(zh.summarizeActivityItems(done(zh), {}), "招募了 korea-trip，询问 visa");
-  assert.equal(en.summarizeActivityItems(done(en), {}), "Recruited korea-trip, Asked visa");
+  assert.equal(zh.summarizeActivityItems(done(zh), {}), "招募了 korea-trip · 询问 visa");
+  assert.equal(en.summarizeActivityItems(done(en), {}), "Recruited korea-trip · Asked visa");
   const many = ["a", "b", "c", "d", "e"].map((name) => call(zh, { action: "message", to: name, text: "x", intent: "inform" }, { status: "recorded" }).item);
-  assert.equal(zh.summarizeActivityItems(many, {}), "告知 a，告知 b，告知 c，另有 2 项");
+  assert.equal(zh.summarizeActivityItems(many, {}), "告知 a · 告知 b · 告知 c · 另有 2 项");
   assert.equal(zh.primaryActivityKind(done(zh)), "partner");
   // While the call runs, the summary is the action itself.
   assert.equal(zh.summarizeActivityItems([call(zh, { action: "recruit", name: "korea-trip", duty: "x" }).item], { active: true }), "正在招募 korea-trip");

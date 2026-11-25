@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.70] - 2026-11-25
+
+- Show incoming partner messages at the start of the reply they triggered. The message stays readable while history loads, after cancellation and when the execution outcome is unknown.
+- Summarize commands and consecutive file reads in plain language. Expand a step to read the message, reasoning, command or output. Keep distinct partner calls and retain streamed command output when the final event omits it.
+
 ## [0.1.0-alpha.69] - 2026-11-25
 
 - Keep uploading database changes when Cloudflare R2 renews the container’s temporary storage credentials.

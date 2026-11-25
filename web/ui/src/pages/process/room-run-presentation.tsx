@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { Check, Square } from 'lucide-react';
-import { Disclosure, type ChatImagePayload } from '../../index';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { Check, ChevronRight, Square } from 'lucide-react';
+import { ActivityRow, Disclosure, type ChatImagePayload } from '../../index';
+import { PartnerLink } from './partner-link';
 import { AgentStateIndicator, Tooltip, type AgentStatePresentation } from '../../app/index';
 import { useI18n, type TranslationFn } from '../presentation/i18n';
 import { TextShimmer } from '../ui/text-shimmer';
-import { TextTransition } from '../ui/text-transition';
 import { ThreadTextBlock } from './message-markdown';
 import type { NotePart } from './parts';
 import type { ActivityEntry, createActivityModel } from './activity-model';
@@ -12,6 +12,25 @@ import type { AssistantPartGroup, createRunModel } from './run-model';
 import type { createActivityPresentation } from './activity-presentation';
 import type { ChatResourceAction, ChatResourceContext, ChatResourceRef } from './resource-model';
 export type MessageStatus = 'running' | 'done' | 'failed' | 'interrupted' | 'pending';
+/**
+ * What another partner sent that this reply answers: the first rows of the reply's steps. The caller words it
+ * (`before` + `name` + `after` is the row, `summary` its part of the collapsed line) and gives what the row opens.
+ */
+export interface RunIncoming {
+  key: string;
+  /** The partner's figure, in the place of a step's icon. */
+  icon: ReactNode;
+  before: string;
+  name: string;
+  after: string;
+  summary: string;
+  /** The message as its partner wrote it, opened from the row; the label names what the chevron opens. */
+  content?: ReactNode;
+  contentLabel?: string;
+  /** What is said of a result that is not a whole answer, and behind it a reason that has no words. */
+  note?: string;
+  noteTitle?: string;
+}
 type RoomPartGroup = AssistantPartGroup;
 type RoomReplyPreview = { text: string; senderName?: string };
 export function createRoomRunPresentation(model: ReturnType<typeof createActivityModel>, run: ReturnType<typeof createRunModel>, presentation: ReturnType<typeof createActivityPresentation>) {
@@ -122,7 +141,53 @@ function RoomRunLeadingControl(props: { presentation?: AgentStatePresentation; c
   );
 }
 
+/** One message of another partner, as a step of the reply it started: its figure, who it is, and the message on request. */
+function RoomIncomingRow({ row }: { row: RunIncoming }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <ActivityRow
+      status="complete"
+      icon={row.icon}
+      title={row.before + row.name + row.after}
+      header={
+        <>
+          <div className="thread-activity-row-title-line">
+            <span className="thread-activity-row-title">
+              {row.before}
+              <PartnerLink name={row.name} />
+              {row.after}
+            </span>
+            {row.content ? (
+              <button
+                type="button"
+                className="thread-activity-edit-diff-toggle"
+                aria-expanded={open}
+                aria-label={row.contentLabel}
+                title={row.contentLabel}
+                onClick={() => setOpen((current) => !current)}
+              >
+                <ChevronRight size={13} strokeWidth={2.1} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+          {row.note ? <div className="thread-activity-row-detail" title={row.noteTitle}>{row.note}</div> : null}
+          {open && row.content ? <div className="thread-activity-row-message is-rich">{row.content}</div> : null}
+        </>
+      }
+    />
+  );
+}
+
+type ProcessPlaceholder = {
+  label: string;
+  content?: ReactNode;
+};
+
 function RoomAgentMessageBody(props: {
+  /** What another partner sent that this reply answers. */
+  incoming?: RunIncoming[];
+  placeholder?: ProcessPlaceholder;
+  onProcessToggle?(open: boolean): void;
   answerGroups: RoomPartGroup[];
   processGroups: RoomPartGroup[];
   fallbackText: string;
@@ -192,8 +257,12 @@ function RoomAgentMessageBody(props: {
   };
   return (
     <div className="room-chat-agent-stack" ref={agentStackRef}>
-      {visibleProcessGroups.length ? (
+      {visibleProcessGroups.length || props.incoming?.length || props.placeholder ? (
         <RoomRunDetailsBlock
+          incoming={props.incoming}
+          placeholder={props.placeholder}
+          onProcessToggle={props.onProcessToggle}
+          statusText={props.statusText}
           groups={visibleProcessGroups}
           status={props.status}
           duration={props.duration}
@@ -266,7 +335,7 @@ function RoomAgentMessageBody(props: {
       ) : null}
       {props.status !== "running" &&
       (props.statusText || props.retry || props.cancel) &&
-      !visibleProcessGroups.length ? (
+      !visibleProcessGroups.length && (!props.incoming?.length || props.retry || props.cancel) ? (
         <div className="room-chat-status-row">
           <div className="room-chat-status" data-status={props.status}>
             {props.status === "done" ? <Check size={12} className="room-chat-status-check" aria-hidden="true" /> : null}
@@ -327,7 +396,7 @@ function RoomActivityBlock(props: {
         renderMode="embedded"
         detailMode="full"
         includeReasoningInSummary={false}
-        unwrapSingleExploration={true}
+        unwrapEmbeddedList={true}
         showArtifactCards={false}
         pendingQuestionIds={props.pendingQuestionIds}
         onResolveApproval={props.onResolveApproval}
@@ -365,8 +434,12 @@ function RoomCommentaryBlock(props: {
 }
 
 function RoomRunDetailsBlock(props: {
+  incoming?: RunIncoming[];
+  placeholder?: ProcessPlaceholder;
+  onProcessToggle?(open: boolean): void;
   groups: RoomPartGroup[];
   status: MessageStatus;
+  statusText?: string;
   duration?: string;
   live?: boolean;
   cancel?: RoomRunCancel;
@@ -396,37 +469,65 @@ function RoomRunDetailsBlock(props: {
   const hasRunningActivity = processGroupsHaveRunningActivity(props.groups);
   const live = props.live ?? (props.status === "running" || hasRunningActivity);
   const shouldOpenByDefault = hasPendingQuestion || hasPendingApproval || hasActiveChoiceForm;
-  const summaryText = live
-    ? t("rooms.statusRunning")
-    : items.length && props.status !== "failed" && props.status !== "interrupted"
-      ? [
-          summarizeActivityItems(items, {
-            pendingQuestion: hasPendingQuestion,
-            pendingApproval: hasPendingApproval,
-            activeChoiceForm: hasActiveChoiceForm,
-            includeReasoning: false,
-          }),
-          props.duration,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : roomRunSummaryText(props.status, props.duration, live, t);
+  const incoming = props.incoming ?? [];
+  // The collapsed line says who wrote in first, then what the reply did, or how it stands when it did not finish.
+  const settled = props.status !== "failed" && props.status !== "interrupted";
+  const summaryText = [
+    ...incoming.map((row) => row.summary),
+    ...(live
+      ? [t("rooms.statusRunning")]
+      : (items.length || incoming.length) && settled
+        ? [
+            items.length
+              ? summarizeActivityItems(items, {
+                  pendingQuestion: hasPendingQuestion,
+                  pendingApproval: hasPendingApproval,
+                  activeChoiceForm: hasActiveChoiceForm,
+                  includeReasoning: false,
+                })
+              : "",
+            props.duration,
+          ]
+        : [props.status === "interrupted" && props.statusText
+            ? props.statusText
+            : props.placeholder && settled ? props.placeholder.label : roomRunSummaryText(props.status, props.duration, live, t)]),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Disclosure
       variant="room-run"
       active={live}
       defaultOpen={shouldOpenByDefault}
+      onToggle={props.onProcessToggle}
       leading={
         live || props.cancel ? (
           <RoomRunLeadingControl presentation={props.agentPresentation} cancel={props.cancel} />
         ) : null
       }
       summary={
-        <TextTransition identity={summaryText}>
-          {live ? <TextShimmer>{summaryText}</TextShimmer> : renderActivitySummary(summaryText)}
-        </TextTransition>
+        <>
+          {!live && incoming[0] ? <span className="room-run-incoming-figure" aria-hidden="true">{incoming[0].icon}</span> : null}
+          <span>
+            {live ? <TextShimmer>{summaryText}</TextShimmer> : renderActivitySummary(summaryText)}
+          </span>
+        </>
       }
     >
+      {incoming.length ? (
+        <div className="room-run-group room-run-group--activity room-run-group--incoming">
+          <div className="room-chat-tools">
+            <div className="thread-activity-list">
+              {incoming.map((row) => (
+                <div key={row.key}>
+                  <RoomIncomingRow row={row} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {props.placeholder?.content}
       {props.groups.map((group, index) => renderRoomRunGroup(group, props, index, activityEntries))}
     </Disclosure>
   );

@@ -125,8 +125,8 @@
   > .og-disclosure-panel
   > .og-disclosure-panel-motion
   > .og-disclosure-panel-inner {
-  gap: 0;
-  margin-top: var(--sp-4);
+  gap: var(--sp-3);
+  margin-top: var(--sp-2-5);
 }
 
 /* A single homogeneous tool cluster skips the outer embedded aggregate. Bound
