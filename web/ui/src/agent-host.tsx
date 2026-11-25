@@ -290,4 +290,4 @@ export function useAgentInteractions() {
 }
 
 
-export { projectHostMessage, projectHostInteraction } from "./agent-host-message.js";
+export { projectHostMessage, projectHostInteraction, placeHostInteraction } from "./agent-host-message.js";

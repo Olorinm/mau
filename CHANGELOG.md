@@ -4,6 +4,11 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.71] - 2026-11-26
+
+- An approval that was answered or ended is no longer a separate record under the reply. The step it asked about says how it ended in the process ("Declined · git status, git log and 3 more", "Canceled · …"), a declined step never ran, and an allowed step is a step like any other. Without that step it is one row of the process that opens to the command it asked about. A pending approval is still the card it was.
+- A row's command is shown once, in plain words of what it ran; the command itself opens from the row.
+
 ## [0.1.0-alpha.70] - 2026-11-25
 
 - Show incoming partner messages at the start of the reply they triggered. The message stays readable while history loads, after cancellation and when the execution outcome is unknown.

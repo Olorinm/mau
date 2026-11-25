@@ -529,6 +529,17 @@ function countEditedFiles(items: ActivityItem[]): number {
 
 
 function activityItemTitle(item: ActivityItem): string {
+  const title = stepTitle(item);
+  if (item.type !== "tool") return title;
+  // A step the owner was asked about and did not allow never ran: its row says how the asking ended.
+  const tool = item.call || item.result;
+  const ending = tool?.approvalStatus === "rejected" ? "activity.rejectedLabel" : tool?.approvalStatus === "canceled" ? "activity.canceledLabel" : "";
+  if (!ending) return title;
+  return translate(ending, { label: (activityItemKind(item) === "command" && commandDescription(tool)) || activityTargetLabel(item) || title });
+}
+
+
+function stepTitle(item: ActivityItem): string {
   const status = activityItemStatus(item);
   if (item.type === "skill") {
     const name = item.part.skillName || item.part.title || item.part.skillId || "skill";
@@ -540,7 +551,7 @@ function activityItemTitle(item: ActivityItem): string {
     return elapsed ? translate("activity.thoughtElapsed", { elapsed }) : translate("activity.thought");
   }
   if (item.type === "approval") {
-    const label = cleanToolLabel(item.part.title, item.part.toolId, translate("activity.action"));
+    const label = approvalLabel(item.part);
     if (item.part.approvalStatus === "pending") {
       return translate("activity.waitingConfirmLabel", { label });
     }
@@ -683,6 +694,10 @@ function readClusterTitle(items: ActivityItem[]): string {
  */
 function activityItemOpened(item: ActivityItem): string {
   if (item.type === "reasoning") return item.part.text;
+  if (item.type === "approval") {
+    const asked = approvalCommand(item.part);
+    return asked.command ? `${asked.cwd ? `${asked.cwd} ` : ""}$ ${asked.command}` : "";
+  }
   if (item.type !== "tool") return "";
   const kind = activityItemKind(item);
   if (kind === "partner") return partnerCall(item)?.text ?? "";
@@ -787,7 +802,7 @@ function activityItemDetailDisplay(
     if (workflowSummary) {
       return workflowSummary;
     }
-    const text = item.part.approvalReason || commandText(item.part) || structuredTargetLabel(item.part);
+    const text = approvalCommand(item.part).command || item.part.approvalReason || structuredTargetLabel(item.part);
     const label = options.full ? compactMultilineDetail(text) : summarize(text, 150);
     return label ? { label } : null;
   }
@@ -1502,8 +1517,12 @@ function readTargetLabel(tool: ToolPart): string {
 
 /** A command is named by the programs it ran: the command itself is one click away. */
 function commandTargetLabel(tool: ToolPart): string {
-  const programs = commandPrograms(commandText(tool));
-  if (!programs.length) return summarize(structuredTargetLabel(tool) || cleanToolLabel(tool.title, tool.toolId, ""), 44);
+  return programsLabel(commandText(tool)) || summarize(structuredTargetLabel(tool) || cleanToolLabel(tool.title, tool.toolId, ""), 44);
+}
+
+/** "git status、git log 等 4 个": the first programs of a command, and how many there are. */
+function programsLabel(command: string): string {
+  const programs = commandPrograms(command);
   const shown = programs.slice(0, 3).join(translate("activity.listSeparator"));
   return programs.length > 3 ? translate("activity.listMore", { items: shown, total: programs.length, more: programs.length - 3 }) : shown;
 }
@@ -1543,6 +1562,25 @@ function commandActions(tool: ToolPart | undefined): Record<string, unknown>[] {
 }
 
 /** The sentence a kernel's model wrote for a command it ran (Claude's `description`), on one line. */
+/** The command an approval asks about, as the kernel's request carries it: Codex's own fields, or the input of Claude's tool. */
+function approvalCommand(part: ToolPart): { command: string; said: string; cwd: string } {
+  const asked = recordValue(recordValue(part.input).params), input = recordValue(asked.input);
+  const said = (stringValue(asked.description) || stringValue(input.description)).trim();
+  return {
+    command: cleanShellCommand(stringValue(asked.command) || stringValue(input.command)),
+    said: said && !said.includes("\n") ? summarize(said, 96) : "",
+    cwd: stringValue(asked.cwd),
+  };
+}
+
+
+/** What an approval is about, in the words of a step: the sentence written for the command, else its programs. */
+function approvalLabel(part: ToolPart): string {
+  const asked = approvalCommand(part);
+  return asked.said || programsLabel(asked.command) || cleanToolLabel(part.title, part.toolId, translate("activity.action"));
+}
+
+
 function commandDescription(tool: ToolPart | undefined): string {
   const said = stringValue(recordValue(tool?.input).description).trim();
   return said && !said.includes("\n") ? summarize(said, 96) : "";
