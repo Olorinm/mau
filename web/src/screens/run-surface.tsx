@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
+import { AgentInteraction, projectHostMessage, projectHostInteraction, placeHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
 import { RunMessage, type PartnerLinkResolver, type RunIncoming } from "@olorinm/agent-ui/pages";
 import { Button } from "@olorinm/agent-ui/app";
 import { mauApi } from "../api/client";
@@ -128,7 +128,7 @@ function RunSurface({ task, run, token, agentId, fallback, onInsertPrompt, contr
     const interactionStatus = call.status === "completed" ? request.kind === "approval" ? chosen ? chosen.allows ? "approved" : "rejected" : "completed" : "answered" : available ? "pending" : "canceled";
     const part = projectHostInteraction(call.id, request, {status: interactionStatus, result: call.result,
       ...(available ? {} : {disabledReason: zh ? "请求已结束或过期" : "Request closed or expired"})});
-    if (part) parts.push(part);
+    if (part) placeHostInteraction(parts, part);
   }
   const reply = async (id: string, action: string, response?: unknown) => {
     const entry = interactions.find(entry => entry.call.id === id);

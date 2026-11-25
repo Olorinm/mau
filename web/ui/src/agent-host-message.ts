@@ -202,9 +202,12 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
 export function projectHostInteraction(id: string, request: HostInteraction, options: {status?: string; disabledReason?: string; result?: unknown} = {}): ToolPart | undefined {
   if (request.kind !== "approval" && request.kind !== "questions") return undefined;
   const status = options.status ?? "pending";
+  // The kernel names the step it asks about: Codex's item, Claude's tool use, ACP's tool call.
+  const asked = record(record(request.native).params);
+  const step = text(asked.itemId) || text(asked.toolUseID) || text(record(asked.toolCall).toolCallId);
   return {
     id: `interaction:${id}`, type: "tool", phase: request.kind === "approval" ? "approval" : "question",
-    toolId: "interaction", title: request.title, status, error: "",
+    toolId: "interaction", ...(step ? { callId: step } : {}), title: request.title, status, error: "",
     input: json(request.native), result: json(options.result),
     approvalId: request.kind === "approval" ? id : "", approvalStatus: status, approvalReason: request.title,
     approvalInput: json(request.permissions ?? request.native),
@@ -217,4 +220,16 @@ export function projectHostInteraction(id: string, request: HostInteraction, opt
         options: (question.options ?? []).map(option => ({...option, value: option.label}))})),
     },
   };
+}
+
+/**
+ * Adds a request's part to a run's parts. A waiting request, and any question, stands after them. An approval
+ * that is over belongs to the step it was about, whose row says how it ended; without that step it is a step of
+ * its own, before the answer.
+ */
+export function placeHostInteraction(parts: MessagePart[], part: ToolPart): void {
+  if (part.phase !== "approval" || part.approvalStatus === "pending") { parts.push(part); return; }
+  const steps = parts.filter((step): step is ToolPart => step.type === "tool" && (step.phase === "call" || step.phase === "result") && !!step.callId && step.callId === part.callId);
+  if (steps.length) { for (const step of steps) step.approvalStatus = part.approvalStatus; return; }
+  parts.splice(parts.at(-1)?.type === "text" ? parts.length - 1 : parts.length, 0, part);
 }

@@ -134,7 +134,7 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   await see(page.locator(".mau-run")).toContainText("第一段，第二段");
   await see(processToggle).toHaveAttribute("aria-expanded", "true");
   emit({ type: "native.tool", callId: "cmd-1", phase: "finished", native: { type: "commandExecution", command: "pwd", aggregatedOutput: "/workspace", exitCode: 0 } });
-  calls.push({ id: "approval", runId: run!.id, kind: "interaction", name: "item/commandExecution/requestApproval", input: { command: "pwd", reason: "Approve fixture command" }, status: "pending", deadlineAt: new Date(Date.now() + 60000).toISOString() });
+  calls.push({ id: "approval", runId: run!.id, kind: "interaction", name: "item/commandExecution/requestApproval", input: { itemId: "cmd-1", command: "pwd", reason: "Approve fixture command" }, status: "pending", deadlineAt: new Date(Date.now() + 60000).toISOString() });
   await see(page.locator(".mau-run")).toHaveAttribute("aria-label", "等待你的回应");
   await page.reload();
   await see(page.locator(".mau-run")).toContainText("第一段，第二段");
@@ -152,7 +152,10 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   if (await processToggle.getAttribute("aria-expanded") === "false") await processToggle.click();
   // A step is a row of its own: nothing groups a single command, and what it printed opens from the row.
   await see(page.locator(".og-disclosure--exploration")).toHaveCount(0);
-  const detailToggle = page.locator(".thread-activity-row-toggle");
+  // An answered approval is no card of its own. The step it asked about is that step's row; without one it is a row of the process.
+  await see(page.locator(".thread-approval-interaction")).toHaveCount(0);
+  await see(page.locator(".thread-activity-row-title")).toHaveText(["已运行 pwd", "已拒绝 · denied-command"]);
+  const detailToggle = page.locator(".thread-activity-row-toggle").first();
   await see(detailToggle).toBeVisible();
   await detailToggle.click();
   await see(page.locator(".mau-run")).toContainText("/workspace");

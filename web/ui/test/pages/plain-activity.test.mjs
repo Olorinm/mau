@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { rm } from "node:fs/promises";
-import { projectHostMessage } from "../../dist/agent-host.js";
+import { projectHostMessage, projectHostInteraction, placeHostInteraction } from "../../dist/agent-host.js";
 
 /** The activity model with the labels of one language, built from the sources. */
 async function models() {
@@ -177,4 +177,52 @@ test("Codex command details retain streamed output when the final item omits it"
     const [item] = items(zh, [start, delta("/re"), delta("po"), end]);
     assert.equal(zh.activityItemOpened(item), "/repo $ pwd\n\n" + (value || "/repo"));
   }
+});
+
+// Approval requests as each kernel sends them (shapes taken from recorded runs).
+const codexAsk = (itemId, command) => ({ kind: "approval", title: command, native: { method: "item/commandExecution/requestApproval",
+  params: { kind: "command", itemId, command, cwd: "/repo", commandActions: [{ type: "unknown", command }] } } });
+const claudeAsk = (toolUseID, input) => ({ kind: "approval", title: "Bash", native: { method: "permission",
+  params: { name: "Bash", input, displayName: "Bash", description: input.description, toolUseID } } });
+const placed = (events, id, request, status) => { const parts = projectHostMessage(events.flat(), { active: false, answer: "done" });
+  placeHostInteraction(parts, projectHostInteraction(id, request, { status })); return parts; };
+
+test("an approval that is over is not a record of its own: the step it was about says how it ended", async () => {
+  const { "zh-CN": zh, en } = await models();
+  const ran = codex("lsof -a -p 65819 -d txt -Fn | grep -Fxq n/App && kill -TERM 65819 && sleep 1 && open -a /App", [{ type: "unknown" }]);
+  const command = ran[0].native.command, step = ran[0].callId;
+  const allowed = placed([ran], "a1", codexAsk(step, command), "approved");
+  assert.deepEqual(allowed.filter((part) => part.phase === "approval"), []);
+  assert.equal(allowed.at(-1).text, "done");
+  assert.deepEqual(zh.buildActivityItems(allowed.filter((part) => part.type === "tool")).map(zh.activityItemTitle), ["已运行 lsof、grep、kill 等 5 个"]);
+
+  const asked = [{ type: "native.tool", runId: "run", phase: "started", callId: step, native: ran[0].native }];
+  for (const [status, zhTitle, enTitle] of [["rejected", "已拒绝 · lsof、grep、kill 等 5 个", "Declined · lsof, grep, kill and 2 more"], ["canceled", "已取消 · lsof、grep、kill 等 5 个", "Canceled · lsof, grep, kill and 2 more"]]) {
+    const parts = placed([asked], "a2", codexAsk(step, command), status).filter((part) => part.type === "tool");
+    assert.deepEqual(parts.map((part) => part.phase), ["call"]);
+    assert.deepEqual(zh.buildActivityItems(parts).map(zh.activityItemTitle), [zhTitle]);
+    assert.deepEqual(en.buildActivityItems(parts).map(en.activityItemTitle), [enTitle]);
+  }
+
+  const input = { command: "cd /repo && git status -sb && git branch -a", description: "查看仓库状态和分支差异" };
+  const use = claude("Bash", input).slice(0, 1);
+  const refused = placed([use], "a3", claudeAsk(use[0].callId, input), "canceled").filter((part) => part.type === "tool");
+  assert.deepEqual(zh.buildActivityItems(refused).map(zh.activityItemTitle), ["已取消 · 查看仓库状态和分支差异"]);
+});
+
+test("an approval without its step is one row before the answer, in the words of a step; a waiting one names its command once", async () => {
+  const { "zh-CN": zh } = await models();
+  const command = "/bin/zsh -lc \"osascript -e 'tell application id \\\"com.example.app\\\" to quit' && open -a /Applications/App.app\"";
+  const parts = placed([], "a1", codexAsk("exec-gone", command), "approved");
+  assert.deepEqual(parts.map((part) => part.type === "tool" ? part.phase : part.type), ["approval", "text"]);
+  const [item] = zh.buildActivityItems(parts.filter((part) => part.type === "tool"));
+  assert.equal(zh.activityItemTitle(item), "已确认 · osascript、open");
+  assert.equal(zh.activityItemOpened(item), "/repo $ osascript -e 'tell application id \"com.example.app\" to quit' && open -a /Applications/App.app");
+
+  const input = { command: "cd /repo && git status -sb", description: "查看仓库状态" };
+  const waiting = placed([], "a2", claudeAsk("toolu_gone", input), "pending");
+  assert.deepEqual(waiting.map((part) => part.type === "tool" ? part.phase : part.type), ["text", "approval"]);
+  const [card] = zh.buildActivityItems(waiting.filter((part) => part.type === "tool"));
+  assert.equal(zh.activityItemTitle(card), "等待确认 · 查看仓库状态");
+  assert.equal(zh.activityItemDetailDisplay(card, { full: true }).label, "cd /repo && git status -sb");
 });

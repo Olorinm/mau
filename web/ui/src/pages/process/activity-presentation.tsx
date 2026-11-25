@@ -423,7 +423,8 @@ function ActivityItemRow(props: {
         });
   // A step is one line that says what was done. What it ran, said or printed opens from the row.
   const opened = choiceForm ? "" : activityItemOpened(props.item);
-  const folds = props.item.type === "reasoning" || (props.item.type === "tool" && FOLDED_KINDS.has(kind));
+  const folds = props.item.type === "reasoning" || (props.item.type === "tool" && FOLDED_KINDS.has(kind)) ||
+    (props.item.type === "approval" && props.item.part.approvalStatus !== "pending");
   const detail = folds ? null : shown;
   const title = activityItemTitle(props.item);
   const titleTooltip = choiceForm ? "" : activityItemTitleTooltip(props.item);

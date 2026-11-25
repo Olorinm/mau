@@ -87,7 +87,8 @@ function splitAssistantPartsForSurface(parts: MessagePart[], messageId: string):
       orderedGroups.push(group);
       continue;
     }
-    if (part.type === "tool" && part.phase === "approval") {
+    // An approval still waiting is a card to answer; one that is over is a step like any other.
+    if (part.type === "tool" && part.phase === "approval" && part.approvalStatus === "pending") {
       flushActivity();
       const group: AssistantPartGroup = {
         type: "approval",

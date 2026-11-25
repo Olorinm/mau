@@ -126,7 +126,10 @@ The console reads runs through Router's public run, event and call-result APIs. 
 reasoning, tool arguments and results, run state and pending approvals or questions under the message that
 started them. Owners answer approvals and questions, stop a running reply, or send text into it, all
 through Router. Native choices and answer formats come from Host's public interaction helpers; Mau does
-not define its own approval options.
+not define its own approval options. An approval that was answered or ended is not a record of its own:
+the step it asked about says in the process how it ended (declined, canceled), and a step that ran after
+being allowed is a step like any other. Without that step it is one row of the process, which opens to the
+command it asked about.
 
 A reply's steps are behind one collapsed line that counts them by kind ("Explored 2 files · Ran 4 commands ·
 Asked reviewer"). Opened, each step is one row that says what was done:
