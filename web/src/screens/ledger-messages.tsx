@@ -20,11 +20,12 @@ import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
   AttachmentDrafts, LedgerClient, attachmentKind, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
   type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerSocket, type LedgerTurn,
-  type PartnerResult, type PendingAnswer,
+  type MessageDisplay, type PartnerIntent, type PartnerResult, type PendingAnswer,
 } from "../api/ledger";
 import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
 import { errorMessage, errorSentence, failureMessage, useI18n, type Translate } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
+import { PartnerFigureProvider, type PartnerFigureResolver, type RunIncoming } from "@olorinm/agent-ui/pages";
 import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } from "./ledger-group";
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
@@ -123,8 +124,10 @@ function LedgerCardView({ client, api, chatId, card, answer }: {
 }
 
 /** One ledger turn rendered with the existing run surface, keyed by turnId. */
-function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink, waiting }: {
+function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt, controls, partnerLink, waiting, incoming }: {
   api: LedgerApi; chatId: string; turn: LedgerTurn; token: string; fallback: string; onInsertPrompt(prompt: string): void;
+  /** What another partner sent that this turn answers. */
+  incoming?: RunIncoming[] | undefined;
   /** What a turn that has not started waits for. */
   waiting?: string | undefined;
   controls?: RunControls | undefined; partnerLink?: PartnerLinkResolver | undefined;
@@ -139,11 +142,11 @@ function LedgerTurnSurface({ api, chatId, turn, token, fallback, onInsertPrompt,
     ...(terminal ? { staleTime: Infinity } : {}),
     refetchInterval: (query) => query.state.error || terminal ? false : 3000,
   });
-  if (!detail.data) return detail.error || terminal
+  if (!detail.data && !incoming) return detail.error || terminal
     ? fallback ? <ChatMarkdown markdown={fallback} /> : null
     : <WorkingSurface fallback={fallback} waiting={waiting} />;
-  const task: TaskLike = { id: detail.data.turnId, status: detail.data.state, runs: detail.data.runs };
-  return <TaskSurface task={task} token={token} agentId={detail.data.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} waiting={waiting} />;
+  const task: TaskLike = { id: turn.turnId, status: detail.data?.state ?? turn.state, runs: detail.data?.runs ?? [] };
+  return <TaskSurface task={task} token={token} agentId={turn.agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} waiting={waiting} incoming={incoming} />;
 }
 
 async function saveAttachment(api: LedgerApi, ref: AttachmentRef) {
@@ -435,21 +438,47 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   // A run's activity names partners as its tool was given them: by name.
   const partnerIds = new Map((agents.data ?? []).map(({ agent }) => [agent.name, agent.id]));
   const partnerLink: PartnerLinkResolver = (name) => openPartner(partnerIds.get(name));
+  // A row about a partner carries that partner's figure where a step of another kind has its icon.
+  const partnerFigure: PartnerFigureResolver = (name) => {
+    const id = partnerIds.get(name);
+    return id ? <PartnerAvatar seed={id} fallbackName={name} size={16} animated={false} /> : undefined;
+  };
   const partnerAuthor = ({ id, name }: PartnerRef) => {
     const open = openPartner(id);
     return { title: name, avatar: <PartnerAvatar seed={id} fallbackName={name} size={28} animated={false} />, ...(open ? { onAuthorClick: open } : {}) };
   };
   // A result that is not completed says so under the partner's name, with the reason in words where there is one.
-  const resultStatus = (result: PartnerResult) => {
-    if (result.status === "completed" && !result.cut) return {};
+  /** What is said of a result that is not a whole answer: that it is not completed (and why), or that it was cut. */
+  const resultNote = (result: PartnerResult) => {
     const cut = result.cut ? t("partners.result.cut", { name: result.partner.name }) : "";
-    if (result.status === "completed") return { state: "note", status: cut };
+    if (result.status === "completed") return { failed: false, text: cut };
     const status = t(`partners.result.${result.status}`), reason = result.error;
     // A reason that is a code has a sentence here, or stays behind the status as its tooltip; the runtime's own words are shown.
     const code = reason && /^[A-Za-z0-9_.:-]+$/.test(reason) ? reason : undefined;
     const said = code ? errorSentence(t, code) : reason;
     const text = said ? t("partners.result.reason", { status, reason: said }) : status;
-    return { state: "failed", status: <span {...(code && !said ? { title: code } : {})}>{[text, cut].filter(Boolean).join(" ")}</span> };
+    return { failed: true, text: [text, cut].filter(Boolean).join(" "), ...(code && !said ? { code } : {}) };
+  };
+  const resultStatus = (result: PartnerResult) => {
+    const note = resultNote(result);
+    if (!note.text) return {};
+    return note.failed ? { state: "failed", status: <span {...(note.code ? { title: note.code } : {})}>{note.text}</span> } : { state: "note", status: note.text };
+  };
+  /**
+   * What another partner sent, as the first steps of the reply it started: a row under that partner's figure that
+   * names it and opens the message as it was written.
+   */
+  const incomingRows = (eventId: string, display: MessageDisplay | undefined): RunIncoming[] | undefined => {
+    const { partnerMessage: sent, partnerResults: results } = display ?? {};
+    const row = (key: string, partner: PartnerRef, kind: "reply" | PartnerIntent, text: string, note?: { text: string; code?: string }): RunIncoming => {
+      const [before = "", after = ""] = t(`partners.incoming.${kind}`, { name: "\u0000" }).split("\u0000");
+      return { key, icon: <PartnerAvatar seed={partner.id} fallbackName={partner.name} size={16} animated={false} />, before, name: partner.name, after,
+        summary: before + partner.name + after,
+        ...(text ? { content: <ChatMarkdown markdown={text} />, contentLabel: t(kind === "reply" ? "partners.incoming.replyText" : "partners.incoming.messageText") } : {}),
+        ...(note?.text ? { note: note.text, ...(note.code ? { noteTitle: note.code } : {}) } : {}) };
+    };
+    if (results) return results.map((result, index) => row(`${eventId}:${index}`, result.partner, "reply", result.answer, resultNote(result)));
+    return sent ? [row(eventId, sent.from, sent.intent, sent.text)] : undefined;
   };
   const restore = useMutation({
     mutationFn: (entry: Entry) => mauApi(session.token).restoreAgent(entry.agentId!),
@@ -514,7 +543,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       cancel: () => client.cancelTurn(chatId, turn.turnId),
       ...(current.kind === "dm" && !current.readOnly ? { stopInComposer: true } : {}),
     });
-    const turnView = (turn: LedgerTurn): MessageView => {
+    const turnView = (turn: LedgerTurn, incoming?: RunIncoming[]): MessageView => {
       const name = agentName(turn.agentId), partner = agents.data?.find(({ agent }) => agent.id === turn.agentId);
       // A partner on the owner's computer starts the turn when that computer is paired and connected.
       const waiting = partner?.kind === "external" && partner.connection !== "online" ? t(`device.${partner.connection ?? "pairing"}`) : undefined;
@@ -523,7 +552,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         avatar: <PartnerAvatar seed={turn.agentId} fallbackName={name} size={28} animated={false} />,
         copyText: finals.get(turn.turnId) ?? "",
         body: <LedgerTurnSurface api={api} chatId={current.chatId} turn={turn} token={session.token}
-          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} waiting={waiting} />,
+          fallback={finals.get(turn.turnId) ?? ""} onInsertPrompt={insertPrompt} controls={controlsFor(turn)} partnerLink={partnerLink} waiting={waiting} incoming={incoming} />,
       };
     };
     for (const item of fold.items) {
@@ -534,11 +563,14 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         continue;
       }
       // What partners sent each other is recorded as an input no person wrote, with what to show of it beside the text
-      // written for the model: a message, in the conversation of the partner that received it, stands under the
-      // sender's figure as the sender wrote it, and each result, in the conversation of the partner that had sent the
-      // message, under the figure of the partner that answered. An input recorded without that is shown as its whole text.
+      // written for the model. Where it started a reply, it is the first step of that reply: a row that names the
+      // partner and opens what it wrote, so the conversation stays between the owner and this partner. Where no reply
+      // followed, a message stands under the sender's figure as the sender wrote it and each result under the figure
+      // of the partner that answered. An input recorded without that is shown as its whole text.
       if (item.kind === "message" && item.role === "user" && item.origin === "delegation" && !item.redacted) {
         const { partnerMessage: sent, partnerResults: results } = item.display ?? {};
+        const answering = turnsByInput.get(item.eventId) ?? [], incoming = answering.length ? incomingRows(item.eventId, item.display) : undefined;
+        if (incoming) { answering.forEach((turn, index) => messages.push(turnView(turn, index === 0 ? incoming : undefined))); continue; }
         if (results) results.forEach((result, index) => messages.push({
           id: `${item.eventId}:${index}`, role: "assistant", ...partnerAuthor(result.partner),
           ...(result.answer ? { copyText: result.answer, content: <ChatMarkdown markdown={result.answer} /> } : {}), ...resultStatus(result) }));
@@ -747,7 +779,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   event.preventDefault(); setUploadError(undefined); uploads.add(current.chatId, dropped);
                 },
               } : {})}>
-            <Conversation conversationId={current.chatId}
+            <PartnerFigureProvider value={partnerFigure}><Conversation conversationId={current.chatId}
               header={header}
               notice={<>
                 {failure}
@@ -789,7 +821,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 ...(commands ? { commands } : {}),
                 ...(runningTurn ? { running: true, onStop: () => void client.cancelTurn(current.chatId, runningTurn.turnId).catch(setUploadError) } : {}),
                 onSend,
-              }} />
+              }} /></PartnerFigureProvider>
             </div>
           ) : (
             <>

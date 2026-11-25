@@ -55,4 +55,6 @@ export type * from "./resource-model";
 export type { ActivityItem, ActivityEntry, ActivityArtifactCard } from "./activity-model";
 
 export type {ResourceOperations} from "./resource-operations";
-export type { PartnerLinkResolver } from "./partner-link";
+export { PartnerFigureProvider } from "./partner-link";
+export type { PartnerLinkResolver, PartnerFigureResolver } from "./partner-link";
+export type { RunIncoming } from "./room-run-presentation";

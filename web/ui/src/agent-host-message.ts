@@ -23,12 +23,20 @@ function contentItems(value: unknown): unknown {
   return items.length === 1 ? items[0] : items;
 }
 
+// Claude's MCP bridge and the Host can assign different IDs to the same invocation.
+function callSignature(name: string, input: JsonValue): string {
+  return JSON.stringify([name, input], (_, value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+}
+
 export function projectHostMessage(events: readonly HostEvent[], options: { active?: boolean; answer?: string; detailsLabel?: string;
   /** What a refused tool call says: the caller's sentence for the error code its result carries, or nothing to keep the row as it is. */
   describeError?(code: string, toolId: string): string | undefined } = {}): MessagePart[] {
   const parts = new Map<string, MessagePart>();
   const phases = new Map<string, string>();
   const calls = new Map<string, ToolPart>();
+  const hostCalls = new Set<string>();
+  const bridgeCalls = new Map<string, string>();
   let reasoning = "", reasoningTail = "", anonymous = 0, segment = 0, pending = "", rootThread = "";
   // Deltas are live-only; a completed reasoning item replaces the fragments streamed for it.
   const showReasoning = () => {
@@ -113,6 +121,10 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
       native.status === "failed" || (typeof native.exitCode === "number" && native.exitCode !== 0);
     const nativeName = text(native.name) || text(native.toolName) || text(native.title) || text(native.type);
     const toolId = text(row.tool) || previous?.toolId || nativeName || "tool";
+    if (event.type === "tool.started") hostCalls.add(key);
+    if (event.type === "native.tool" && native.type === "tool_use" && toolId.startsWith("mcp__agent_host__")) {
+      bridgeCalls.set(key, toolId.slice("mcp__agent_host__".length));
+    }
     // Keep the structured native item so original command/search/edit presenters can
     // show meaningful summaries, diff lines and results instead of an opaque JSON list.
     const input = row.input ?? (
@@ -123,19 +135,50 @@ export function projectHostMessage(events: readonly HostEvent[], options: { acti
     const reported = text(native.error) || text(result.error);
     const code = reported || text(record(contentItems(result.contentItems ?? native.contentItems)).error);
     const error = failed ? (code && options.describeError?.(code, toolId)) || reported : "";
+    // An ACP agent says what kind of call this is and which files it is about; a title alone need not name either.
+    const paths = text(native.sessionUpdate) && Array.isArray(native.locations) ? native.locations.flatMap(place => text(record(place).path) || []) : [];
+    const said = { ...(text(native.sessionUpdate) && text(native.kind) ? { kind: text(native.kind) } : previous?.kind ? { kind: previous.kind } : {}),
+      ...(paths.length ? { paths } : previous?.paths ? { paths: previous.paths } : {}) };
     const base: ToolPart = {
-      id: `${key}:call`, type: "tool", phase: "call", toolId, callId: key,
+      id: `${key}:call`, type: "tool", phase: "call", toolId, callId: key, ...said,
       title: toolId, input: json(input), status: "running", error: "", approvalId: "", approvalStatus: "",
       approvalReason: "", questionId: "", questionStatus: "", questionPrompt: "",
     };
     if (!finished) {
-      const call = previous ? { ...previous, input: json(input ?? previous.input), toolId, title: toolId } : base;
+      const call = previous ? { ...previous, ...said, input: json(input ?? previous.input), toolId, title: toolId } : base;
       if (native.partialResult !== undefined) call.result = json(native.partialResult);
       calls.set(key, call); parts.set(call.id, call);
     } else {
       if (previous) previous.status = failed ? "error" : "complete";
       parts.set(`${key}:result`, { ...base, id: `${key}:result`, phase: "result", input: previous?.input ?? json(input),
         result: json(output), status: failed ? "error" : "complete", error });
+    }
+  }
+  if (bridgeCalls.size && hostCalls.size) {
+    // Consume one Host record per matching bridge record. A failed delivery without a Host
+    // counterpart must survive even if another call used exactly the same arguments.
+    const reports = new Map<string, ToolPart[]>();
+    for (const id of hostCalls) {
+      const call = calls.get(id);
+      if (!call || call.input === undefined) continue;
+      const key = callSignature(call.toolId, call.input);
+      const entries = reports.get(key);
+      if (entries) entries.push(call);
+      else reports.set(key, [call]);
+    }
+    for (const [id, name] of bridgeCalls) {
+      const call = calls.get(id);
+      if (!call || call.input === undefined || hostCalls.has(id)) continue;
+      const matches = reports.get(callSignature(name, call.input));
+      if (!matches?.length) continue;
+      let index = matches.findIndex(report => report.status === call.status);
+      // A Host answer can reach the console before the bridge finishes the same call.
+      if (index < 0 && call.status === "running" && matches.length === 1) index = 0;
+      if (index >= 0) {
+        matches.splice(index, 1);
+        parts.delete(call.id);
+        parts.delete(`${id}:result`);
+      }
     }
   }
   if (!options.active) for (const part of parts.values()) {

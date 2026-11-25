@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentInteraction, projectHostMessage, projectHostInteraction, type HostInteractionAnswer } from "@olorinm/agent-ui/agent-host";
-import { RunMessage, type PartnerLinkResolver } from "@olorinm/agent-ui/pages";
+import { RunMessage, type PartnerLinkResolver, type RunIncoming } from "@olorinm/agent-ui/pages";
 import { Button } from "@olorinm/agent-ui/app";
-import { Disclosure } from "@olorinm/agent-ui";
 import { mauApi } from "../api/client";
 import { answerInteraction, describeInteraction, type Interaction as HostRequest, type InteractionAnswer, type NativeRequest } from "@olorinm/agent-host/interactions";
 import { blockBuildReload } from "../build-version";
@@ -55,18 +54,21 @@ export interface TaskLike {
   runs: ReadonlyArray<{ claimId: string; runId: string | null; phase: string }>;
 }
 
-function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, controls, partnerLink }: { task: TaskLike; claimId: string; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
-  partnerLink?: PartnerLinkResolver | undefined }) {
+function RunSurface({ task, run, token, agentId, fallback, onInsertPrompt, controls, partnerLink, incoming, waiting }: { task: TaskLike; run?: TaskLike["runs"][number] | undefined; waiting?: string | undefined; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+  partnerLink?: PartnerLinkResolver | undefined; incoming?: RunIncoming[] | undefined }) {
   const { t, language } = useI18n(), zh = language === "zh-CN";
   const queries = useQueryClient();
   const api = useMemo(() => runApi(token, agentId), [token, agentId]);
+  const claimId = run?.claimId ?? task.id;
+  const canRead = Boolean(run?.runId);
   const reader = useMemo(() => new RunReader(api, claimId), [api, claimId]);
-  const terminal = ["completed", "failed", "canceled", "rejected"].includes(task.status);
+  const uncertain = run?.phase === "unknown" || task.status === "unknown";
+  const terminal = uncertain || ["completed", "failed", "canceled", "rejected"].includes(task.status);
   const key = ["run", token, agentId, claimId];
   // Finished runs are read from Router's copy, so history loads without waking the partner.
   // They never change again: read every page before publishing (one paint, not one per page)
   // and keep the result, so reopening a conversation does not read it again.
-  const query = useQuery({ queryKey: key, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  const query = useQuery({ queryKey: key, enabled: canRead, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
     queryFn: async ({ signal }) => {
       let result = await reader.refresh(signal);
       while (terminal && result.more) result = await reader.refresh(signal);
@@ -76,19 +78,21 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
     refetchInterval: (query) => query.state.error ? false : query.state.data?.more ? 100 : !query.state.data || query.state.data.detail.run.status === "running" ? 1000 : false });
   const cancel = useMutation({ mutationFn: () => controls?.cancel ? controls.cancel() : api.cancel(task.id),
     onSuccess: () => queries.invalidateQueries({ queryKey: ["run-tasks", token, agentId] }) });
-  const data = query.data, active = data?.detail.run.status === "running";
+  const data = canRead ? query.data : undefined, active = data?.detail.run.status === "running";
   const calls = data?.detail.calls.filter((call) => call.kind === "interaction") ?? [];
   const pending = calls.some((call) => call.status === "pending" && Date.parse(call.deadlineAt) > Date.now());
   useEffect(() => blockBuildReload(!!active || pending), [active, pending]);
   const status = data?.detail.run.status ?? (terminal ? task.status === "canceled" ? "cancelled" : task.status : undefined);
   // A finished task already has its delivered reply, so it never shows a loading state.
-  const label = !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
+  const label = uncertain && !data ? zh ? "执行结果待确认" : "Execution outcome uncertain"
+    : !canRead && !terminal ? waiting ?? (zh ? "正在执行" : "Running")
+    : !data && !terminal ? query.error ? zh ? "执行详情暂不可用" : "Execution details unavailable" : zh ? "正在读取执行过程…" : "Loading execution…"
     : active ? pending ? zh ? "等待你的回应" : "Waiting for your response" : task.cancelRequested ? zh ? "正在停止…" : "Stopping…" : zh ? "正在执行" : "Running"
     : status === "completed" ? zh ? "已完成" : "Completed" : status === "cancelled" ? zh ? "已取消" : "Cancelled" : zh ? "执行未完成" : "Execution failed";
   // Older runs without Router's copy need the partner awake; expanding the row wakes it.
   const sleeping = !data && terminal && query.error instanceof ApiError && query.error.code === "environment_not_ready";
   // Until a finished run's process arrives, hold its place with the same collapsed row.
-  const placeholder = !data && terminal && (sleeping || query.isPending);
+  const placeholder = canRead && !data && terminal && (sleeping || query.isPending);
   const [opened, setOpened] = useState(false);
   const wake = useMutation({
     mutationFn: async () => {
@@ -103,6 +107,15 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
       await query.refetch();
     },
   });
+  const requestedWake = useRef(false);
+  const wakeRun = wake.mutate;
+  useEffect(() => {
+    if (!opened) requestedWake.current = false;
+    else if (sleeping && !requestedWake.current) {
+      requestedWake.current = true;
+      wakeRun();
+    }
+  }, [opened, sleeping, wakeRun]);
   const failure = sleeping ? null : query.error ?? cancel.error ?? wake.error;
   const answer = active ? data?.view.text : data?.detail.run.answer || data?.view.text;
   const interactions = calls.map(call => ({call, request: describeInteraction({method: call.name, params: call.input} as NativeRequest)}));
@@ -124,21 +137,22 @@ function RunSurface({ task, claimId, token, agentId, fallback, onInsertPrompt, c
     try { await sendAnswer(api, controls, claimId, id, entry.request, answer); }
     finally { await query.refetch(); }
   };
-  return <section className="mau-run" data-density="compact" data-run-id={claimId} aria-label={label}>
-    {placeholder ? <Disclosure variant="room-run" open={opened} active={wake.isPending}
-      onToggle={(open) => { setOpened(open); if (open && sleeping && !wake.isPending) wake.mutate(); }}
-      summary={wake.isPending ? zh ? "正在唤醒伙伴…" : "Waking the partner…" : zh ? "执行过程" : "Process"}>
-      {sleeping ? <p className="mau-muted">{wake.isPending ? zh ? "伙伴醒来后会自动加载执行过程。" : "The process loads once the partner is awake."
-        : zh ? "展开即可唤醒伙伴并加载执行过程。" : "Expand to wake the partner and load the process."}</p> : null}
-    </Disclosure> : null}
+  return <section className="mau-run" data-density="compact" data-run-id={run?.claimId} aria-label={label}>
     {failure ? <p role="alert">{errorMessage(t, failure instanceof ApiError ? failure.code : "request_failed")} <Button onClick={() => void query.refetch()}>{zh ? "重试" : "Retry"}</Button></p> : null}
     <RunMessage id={claimId} parts={parts} fallbackText={data ? "" : fallback}
-      status={!data && !terminal ? query.error ? "failed" : "running" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
-      {...((!data && !terminal && query.error) || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
-      {...(active || (!data && !terminal && !query.error) ? {agentPresentation: {state: pending ? "listening" as const : "working" as const, label: active ? label : zh ? "正在执行" : "Running"}} : {})}
+      onProcessToggle={setOpened}
+      {...(placeholder ? {placeholder: {
+        label: wake.isPending ? zh ? "正在唤醒伙伴…" : "Waking the partner…" : zh ? "执行过程" : "Process",
+        content: sleeping ? <p className="mau-muted">{wake.isPending ? zh ? "伙伴醒来后会自动加载执行过程。" : "The process loads once the partner is awake."
+          : zh ? "展开即可唤醒伙伴并加载执行过程。" : "Expand to wake the partner and load the process."}</p> : null,
+      }} : {})}
+      status={uncertain && !data ? "interrupted" : !data && !terminal ? query.error ? "failed" : "running" : active ? "running" : status === "completed" ? "done" : status === "cancelled" ? "interrupted" : "failed"}
+      {...((!data && !terminal && query.error) || uncertain || status === "cancelled" || status === "failed" ? {statusText: label} : {})}
+      {...(active || (!data && !terminal && !query.error) ? {agentPresentation: {state: pending || (!canRead && waiting) ? "listening" as const : "working" as const, label: active || !canRead ? label : zh ? "正在执行" : "Running"}} : {})}
       {...(active && !controls?.stopInComposer ? {cancel: {pending: cancel.isPending || !!task.cancelRequested, onCancel: () => cancel.mutate()}} : {})}
-      {...(partnerLink ? {partnerLink} : {})}
+      {...(partnerLink ? {partnerLink} : {})} {...(incoming ? {incoming} : {})}
       onResolveApproval={reply} onResolveQuestion={reply} onInsertPrompt={onInsertPrompt} />
+    {uncertain && !data ? <p className="mau-muted">{zh ? "不会自动重试。" : "It will not be retried automatically."}</p> : null}
     {/* Shortened values are marked where they appear in the process; only lost steps get a notice. */}
     {data?.truncated ? <p className="mau-muted">{zh ? "部分执行过程未能保留。" : "Part of the execution process was not retained."}</p> : null}
     {interactions.filter(({request}) => request.kind !== "approval" && request.kind !== "questions").map(({call}) =>
@@ -157,13 +171,16 @@ export function WorkingSurface({ fallback = "", waiting }: { fallback?: string; 
     onResolveApproval={() => undefined} onResolveQuestion={() => undefined} onInsertPrompt={() => undefined} />;
 }
 
-export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls, partnerLink, waiting }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
+export function TaskSurface({ task, token, agentId, fallback, onInsertPrompt, controls, partnerLink, waiting, incoming }: { task: TaskLike; token: string; agentId: string; fallback: string; onInsertPrompt(prompt: string): void; controls?: RunControls | undefined;
   waiting?: string | undefined;
   /** What opens a partner that an activity row of the run names. */
-  partnerLink?: PartnerLinkResolver | undefined }) {
-  const { language } = useI18n(), zh = language === "zh-CN";
-  if (!task.runs.length) return task.status === "canceled" ? <p role="status">{zh ? "已取消" : "Cancelled"}</p> : <WorkingSurface fallback={fallback} waiting={waiting} />;
-  return <>{task.runs.map((run) => run.runId ? <RunSurface key={run.claimId} task={task} claimId={run.claimId} token={token} agentId={agentId} fallback={fallback} onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} />
-    : run.phase === "unknown" ? <p role="status" key={run.claimId}>{zh ? "执行结果待确认，不会自动重试。" : "Execution outcome is uncertain; it will not be retried automatically."}</p>
-    : <WorkingSurface key={run.claimId} fallback={fallback} waiting={waiting} />)}</>;
+  partnerLink?: PartnerLinkResolver | undefined;
+  /** What another partner sent that this reply answers: the first rows of its first run. */
+  incoming?: RunIncoming[] | undefined }) {
+  // The first run owns the incoming message, even before its claim or execution history
+  // arrives. Keep its component mounted so both the process and the message stay open.
+  const runs = task.runs.length ? task.runs : [undefined];
+  return <>{runs.map((run, index) => <RunSurface key={index === 0 ? task.id : run?.claimId}
+    task={task} run={run} token={token} agentId={agentId} fallback={fallback} waiting={waiting}
+    onInsertPrompt={onInsertPrompt} controls={controls} partnerLink={partnerLink} incoming={index === 0 ? incoming : undefined} />)}</>;
 }

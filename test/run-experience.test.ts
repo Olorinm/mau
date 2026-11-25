@@ -55,8 +55,11 @@ async function fakeLedger(page: Page, agentId: string, turnOf: (turnId: string) 
   return {
     chatId,
     /** The owner's message and the turn it started. */
-    ask(turnId: string, text: string, state: string) {
-      const question = append({ kind: "message", role: "user", text, channel: { kind: "web" } }, owner);
+    ask(turnId: string, text: string, state: string, from?: string) {
+      const partner = from && { id: "sender", name: from };
+      const question = append({ kind: "message", role: "user", text, channel: { kind: "web" },
+        ...(partner ? { origin: "delegation", display: { partnerMessage: { id: turnId, intent: "ask", from: partner, text } } } : {}) },
+        partner ? { type: "agent", ...partner } : owner);
       append({ kind: "turn", turnId, agentId, state, inputEventIds: [question.eventId] }, { type: "system", id: "router", name: "Router" });
     },
     /** A reply of the partner: inside a turn, or on its own (`turnId` undefined). */
@@ -147,9 +150,8 @@ it.skipIf(!existsSync(webRoot + "index.html"))("shows tool events and streamed t
   await question.getByText("workspace", { exact: true }).click();
   await see(page.locator(".thread-question-summary")).toBeVisible(); expect(decisions[2]).toEqual({ answers: { destination: { answers: ["workspace"] } } });
   if (await processToggle.getAttribute("aria-expanded") === "false") await processToggle.click();
-  const clusterToggle = page.locator(".og-disclosure--exploration > .og-disclosure-row > .og-disclosure-toggle");
-  await see(clusterToggle).toBeVisible();
-  if (await clusterToggle.getAttribute("aria-expanded") === "false") await clusterToggle.click();
+  // A step is a row of its own: nothing groups a single command, and what it printed opens from the row.
+  await see(page.locator(".og-disclosure--exploration")).toHaveCount(0);
   const detailToggle = page.locator(".thread-activity-row-toggle");
   await see(detailToggle).toBeVisible();
   await detailToggle.click();
@@ -333,6 +335,9 @@ it.skipIf(!existsSync(webRoot + "index.html"))("notices only lost steps, not sho
   await see(clipped.locator(".mau-muted")).toHaveCount(0);
   await see(lost).toContainText("部分执行过程未能保留。");
   await clipped.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
+  // A thought is a row; what was thought opens from it.
+  await see(clipped).not.toContainText("先查看目录");
+  await clipped.locator(".thread-activity-row-toggle").click();
   await see(clipped).toContainText("先查看目录");
 }, 30000);
 
@@ -374,4 +379,51 @@ it.skipIf(!existsSync(webRoot + "index.html"))("an open conversation shows the c
   await see(surface).toHaveAttribute("aria-label", "已完成", { timeout: 10000 });
   await see(surface).toContainText("第一段，第二段，完整的最终回答。", { timeout: 5000 });
   await see(surface).toHaveCount(1);
+}, 30000);
+
+it.skipIf(!existsSync(webRoot + "index.html"))("keeps partner questions readable across cancellations, uncertain claims and history loading", async () => {
+  const f = await mauFixture(cleanup, { webRoot });
+  await f.api(f.path, { profileId: "cloud" });
+  await f.settled();
+  const instance = await chromium.launch();
+  cleanup.push(() => instance.close());
+  const page = await instance.newPage({ locale: "zh-CN", extraHTTPHeaders: f.edgeHeaders() });
+  const turnReady = Promise.withResolvers<void>(), historyReady = Promise.withResolvers<void>();
+  const ledger = await fakeLedger(page, f.agent.id, async id => {
+    if (id === "canceled") return { state: id, runs: [] };
+    if (id === "unknown") return { state: id, runs: [{ claimId: "uncertain", runId: null, phase: id }] };
+    await turnReady.promise;
+    return { state: "completed", runs: [{ claimId: "finished", runId: "run", phase: "finished" }] };
+  });
+  for (const state of ["canceled", "unknown", "completed"]) ledger.ask(state, "Question " + state, state, "chief");
+  await page.route("**/communication/runs/**", async route => {
+    await historyReady.promise;
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/events"))
+      return route.fulfill({ json: { claimId: "finished", runId: "run", run: { id: "run", status: "completed", answer: "Done." }, calls: [] } });
+    const event = { runId: "run", type: "native.tool", callId: "pwd", phase: "finished",
+      native: { type: "commandExecution", command: "pwd", aggregatedOutput: "/repo", exitCode: 0 } };
+    return route.fulfill({ json: { events: url.searchParams.get("after") === "0" ? [{ sequence: 1, event }] : [], cursor: 1, hasMore: false } });
+  });
+  try {
+    await signIn(page, f.base);
+    for (const [label, state] of [["已取消", "canceled"], ["执行结果待确认", "unknown"]]) {
+      const toggle = page.getByRole("button", { name: "chief 询问 · " + label, exact: true });
+      await toggle.click();
+      const run = page.locator(".mau-run").filter({ has: toggle });
+      await run.getByRole("button", { name: "消息原文" }).click();
+      await see(run.locator(".thread-activity-row-message")).toHaveText("Question " + state);
+    }
+    const pending = page.getByRole("button", { name: "chief 询问", exact: true });
+    await pending.click();
+    const run = page.locator(".mau-run").filter({ has: page.getByRole("button", { name: /^chief 询问/ }) }).last();
+    await run.getByRole("button", { name: "消息原文" }).click();
+    turnReady.resolve();
+    await see(run).toHaveAttribute("data-run-id", "finished");
+    await see(run.locator(".og-disclosure--room-run")).toHaveCount(1);
+    await see(run.locator(".thread-activity-row-message")).toHaveText("Question completed");
+    historyReady.resolve();
+    await see(run.getByRole("button", { name: "chief 询问 · 已运行 1 条命令" })).toHaveAttribute("aria-expanded", "true");
+    await see(run.locator(".thread-activity-row-message")).toHaveText("Question completed");
+  } finally { turnReady.resolve(); historyReady.resolve(); }
 }, 30000);

@@ -44,6 +44,8 @@ function splitAssistantPartsForSurface(parts: MessagePart[], messageId: string):
   // boundaries and are flushed immediately below.
   const pendingProcessNotes: Extract<AssistantPartGroup, { type: "note" }>[] = [];
   let activityParts: Array<ToolPart | SkillPart | ReasoningPart> = [];
+  // A call's result belongs to the step the call began, whatever was said between the two.
+  const stepOfCall = new Map<string, Array<ToolPart | SkillPart | ReasoningPart>>();
   let activityGroupIndex = 0;
   let processNoteGroupIndex = 0;
 
@@ -97,7 +99,14 @@ function splitAssistantPartsForSurface(parts: MessagePart[], messageId: string):
       continue;
     }
     if (part.type === "tool" || part.type === "skill" || part.type === "reasoning") {
+      const callId = part.type === "tool" ? part.callId : "";
+      const began = callId && part.type === "tool" && part.phase === "result" ? stepOfCall.get(callId) : undefined;
+      if (began && began !== activityParts) {
+        began.push(part);
+        continue;
+      }
       activityParts.push(part);
+      if (callId && part.type === "tool" && part.phase === "call") stepOfCall.set(callId, activityParts);
       continue;
     }
     if (part.type === "note" && isProcessNotePart(part)) {

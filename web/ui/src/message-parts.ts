@@ -42,6 +42,10 @@ export type ToolPart = {
   toolId: string;
   callId?: string | undefined;
   title: string;
+  /** What the kernel itself says the call is (ACP's `kind`: read, edit, search, execute, …), when it says so. */
+  kind?: string | undefined;
+  /** The files the kernel says the call is about (ACP's `locations`). */
+  paths?: string[] | undefined;
   input?: JsonValue | undefined;
   status: string;
   result?: JsonValue | undefined;

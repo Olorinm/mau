@@ -128,6 +128,20 @@ started them. Owners answer approvals and questions, stop a running reply, or se
 through Router. Native choices and answer formats come from Host's public interaction helpers; Mau does
 not define its own approval options.
 
+A reply's steps are behind one collapsed line that counts them by kind ("Explored 2 files · Ran 4 commands ·
+Asked reviewer"). Opened, each step is one row that says what was done:
+
+- a command is named by the sentence its kernel's model wrote for it (Claude's `description`), and otherwise by
+  the programs it ran ("Ran git status, git log, head"), never by the command line;
+- Codex's own reading of a command (read, list, search) and the `kind` and `locations` an ACP agent gives a call
+  decide what kind of step it is before the command's first word is guessed at;
+- files read one after another are one row that names them;
+- what a kernel does for itself is not a step: Claude loading a tool's definition, and Claude's own report of a
+  product tool the Host already reports.
+
+A row is its title alone. The chevron at its end opens what the step ran, said or printed: the command with its
+output, a thought, a partner's message as it was written, or a tool's arguments and result.
+
 Event cursors resume after a disconnection. A refresh rebuilds the run from retained history and reports
 lost events explicitly; a finished run is read once from Router's archive. Closed or expired interactions
 are disabled. When an Agent hands its browser to the owner, the live view opens beside the conversation.
@@ -140,19 +154,24 @@ an open dialog or form, or while an input has focus.
 Partners recruit and message one another with the `partners` tool ([Partners](native-work.md#partners)). The
 console shows that work in the conversations it belongs to.
 
-- **Messages and results.** A partner's message is a turn of the recipient's conversation with the owner. It
-  stands there under the sender's figure and name, marked as relayed or asked, as the sender wrote it. Its result
-  returns to the conversation the message was sent from, where each result is a block of the partner that
-  answered: the answer, a line when it did not complete (not completed, stopped, not run, outcome unknown, with
-  the reason in a sentence where the console has one), and a note when a long answer was shortened, whose whole
-  text is in that partner's conversation. The console takes all of this from the `display` Mau records with the
-  event, never from the text written for the model; an event recorded without `display` shows its whole text as
-  it is. A partner's figure or name opens the conversation with it.
+- **Messages and results.** A partner's message is a turn of the recipient's conversation with the owner, and
+  its result returns to the conversation the message was sent from. Either one is the first step of the reply it
+  started: a row under the other partner's figure ("chief asked", "reviewer replied") whose name opens the
+  conversation with that partner and whose chevron opens what the partner wrote. The reply's collapsed line
+  begins with it ("reviewer replied · Ran 1 command · Asked reviewer"), so a conversation reads as the owner and
+  one partner; a reply that is still working or did not finish says who wrote in all the same ("helper asked ·
+  Failed"). A result that is not a whole answer says so under its row: not completed, stopped, not run or
+  outcome unknown (with the reason in a sentence where the console has one), or that a long answer was shortened
+  and is whole in that partner's conversation. Where no reply followed (a result handed over in a notice), the
+  message stands by itself under its partner's figure and name, as it was written. The console takes all of this
+  from the `display` Mau records with the event, never from the text written for the model; an event recorded
+  without `display` shows its whole text as it is.
 - **The list of conversations** previews a conversation's last event only when a person or the conversation's own
   partner wrote it. What another partner sent into it, and a system line, is not a preview.
-- **The `partners` tool in a run's process.** Each call is one line (looked at the partners, recruited, passed on,
-  asked, informed, waited, dismissed) whose partner name is a link, with what the partner was told beneath it and
-  the call's arguments and result behind a toggle. A refused call says why in a sentence.
+- **The `partners` tool in a run's process.** Each call is one row (looked at the partners, recruited, passed on,
+  asked, informed, waited, dismissed) under the figure of the partner it names, whose name is a link. The chevron
+  opens what the partner was told, or the call's arguments and result where nothing was told. A refused call says
+  why in a sentence.
 - **Approval cards.** When a partner's operation needs the owner's approval, the card appears in the conversation
   the message was sent from, under the asking partner's figure and name. The console words it in the interface
   language from the members of the request: who asks, whose message it handles, the operation, the connection and
