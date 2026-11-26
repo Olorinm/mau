@@ -30,6 +30,8 @@ export const apiInput = {
   skillState: z.object({ path: z.string().min(1).max(4096), enabled: z.boolean() }).strict(),
   sessionMemoryMode: z.object({ mode: z.enum(["enabled", "disabled"]) }).strict(),
   feishuApplication: z.object({ agentId: z.uuid() }).strict(),
+  /** What the owner writes in a session of a partner. The same `key` always submits the same turn. */
+  sessionMessage: z.object({ text: z.string().min(1).max(24_000), key: z.string().min(1).max(160) }).strict(),
   /**
    * A partner gets an environment of its own (`profileId`), runs in another partner's (`shareWith`), or is an agent
    * on a computer (`kind: "external"`). `ownership` says whose that agent is; only the owner's own can be created.
@@ -93,6 +95,8 @@ export const mauApiReference: ApiRoute[] = [
   route("PUT", agent + "/connectors", "Replace the partner's own connector connections; an empty list removes its own assignment.", connectorAssignmentInput, "manage"),
   route("GET", "/partners", "The owner's partners as they work together, dismissed ones included: status, model, who recruited them and what waits at them."),
   route("GET", "/partners/messages", "Messages between the owner's partners, newest first; query agentId and limit."),
+  route("GET", agent + "/sessions", "The sessions the partner works in beside its conversation with the owner, oldest first: one for each piece of work another partner sent it, with its title, who opened it, its turns, its size and whether it can still be continued."),
+  route("POST", agent + "/sessions/:sessionId/messages", "Write in one of the partner's sessions as the owner: a turn of that session, whose answer stays there. 409 `partner_session_ended` when the session is closed.", apiInput.sessionMessage, "chat"),
 
   route("GET", "/devices", "The owner's partners that are agents on a computer, each with whether a computer is paired and connected."),
   route("GET", agent + "/device", "The computer paired with a partner that is an agent on it: name, platform, kernel, whether it is connected and when it last was."),

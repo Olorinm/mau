@@ -42,22 +42,25 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // The new partner runs in the recruiter's environment and is recorded as recruited by it.
   expect((await f.api(`/agents/${trip.id}`)).data).toMatchObject({ duty, dismissed: null, environment: { sharedFrom: f.agent.id, state: "ready" } });
   expect(f.creates).toBe(1);
-  // The message is a turn of the partner's own conversation with the owner, delivered as a tool output that names its sender.
+  // The message is a turn of a session of its own at the partner, delivered as a tool output that names its sender.
   const record = f.record(seen.recruit.message.messageId);
+  expect(seen.recruit.message).toMatchObject({ session: record.sessionId, title: "The owner wants a five-day Korea trip in spring. Draft an i…" });
+  expect(record.sessionId).toMatch(/^ps-[0-9a-f]{32}$/);
   expect(work.body.input).toBe("");
   expect(work.body.toolOutput).toMatchObject({ namespace: "mau", name: "partners", retain: false });
   // The whole of what the partner reads: who sent it, when, and the message. What such a turn is, the tool's description says.
   expect(work.body.tools.find((tool: { name: string }) => tool.name === "partners").description).toBe(PARTNERS_DESCRIPTION);
   expect(work.delivered).toEqual({ from: { partner: "helper" }, sent: record.createdAt, message: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need." });
-  // Opened by a partner's message, the conversation has the tools and the memory snapshot an owner's message would give it.
-  expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
+  // Opened by a partner's message, the session has the product's tools and the memory snapshot an owner's message would
+  // give it. It has no channel to write on: its answer goes back to the sender.
+  expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: korea-trip\nDuty: " + duty); expect(work.body.instructions).toContain("<MEMORY.md>");
   expect(work.told.partners).toBeUndefined();
   // The result returns as a turn of the sender in the conversation the owner asked in, and its answer goes to the owner there.
   const back = await f.turnOf(f.agent.id, 1);
   const settled = f.record(record.id);
   expect(back.delivered).toEqual({ from: { partner: "korea-trip" }, ...returned([{ ...settled, status: "returning" }]) });
-  expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", sentAt: record.createdAt,
+  expect(back.delivered!.results).toEqual([{ messageId: record.id, to: "korea-trip", session: record.sessionId, sentAt: record.createdAt,
     yourMessage: "The owner wants a five-day Korea trip in spring. Draft an itinerary and say what you still need.", status: "completed", took: expect.stringMatching(/^\d+ s$/),
     answer: "Draft: five days in Seoul. Missing: the travel dates." }]);
   expect(back.body.toolOutput.name).toBe("partners");
@@ -75,8 +78,10 @@ it("recruits a partner for the owner's topic, hands it the request and brings it
   // In the sender's conversation the result stands after the answer of the turn that sent the message.
   expect((await f.events(f.agent.id)).filter(event => event.kind === "message").map(event => [event.role, event.sender.type, event.kind === "message" && event.origin || "channel"])).toEqual([
     ["user", "person", "channel"], ["assistant", "agent", "channel"], ["user", "agent", "delegation"], ["assistant", "agent", "channel"]]);
-  // The owner opens the partner's own chat and finds the message from the other partner and the answer to it.
-  const transcript = (await f.events(trip.id)).filter(event => event.kind === "message");
+  // The message and the answer to it stand in the session the message opened at the partner, not in the partner's
+  // conversation with the owner.
+  expect((await f.events(trip.id)).filter(event => event.kind === "message")).toEqual([]);
+  const transcript = (await f.thread(trip.id, record.sessionId!)).filter(event => event.kind === "message");
   expect(transcript).toMatchObject([
     { role: "user", sender: { type: "agent", id: f.agent.id, name: "helper" }, origin: "delegation", text: JSON.stringify(incoming(record)) },
     { role: "assistant", sender: { type: "agent", id: trip.id }, final: true, text: "Draft: five days in Seoul. Missing: the travel dates." }]);
@@ -169,7 +174,7 @@ it("a reply read with wait in the turn that sent the message does not come back 
   await f.say(f.agent.id, "Which city first? I am waiting.");
   await f.until(() => waited, "wait result");
   const id = waited.results[0].messageId;
-  expect(waited).toEqual({ results: [{ messageId: id, to: "trip", sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
+  expect(waited).toEqual({ results: [{ messageId: id, to: "trip", session: f.record(id).sessionId, sentAt: f.record(id).createdAt, yourMessage: f.record(id).text, status: "completed", took: expect.stringMatching(/^\d+ s$/),
     answer: "Seoul first, then Busan." }], pending: [] });
   await f.until(async () => (await f.answers(f.agent.id)).length === 1, "answer");
   await f.settle(2000);

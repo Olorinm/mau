@@ -8,14 +8,19 @@ import type { ModelSettingsView } from "./model-settings.js";
 import { APPROVAL_DISPLAY_LIMIT, type ApprovalDesk } from "./connector-approvals.js";
 import type { MemorySource } from "./partner-context.js";
 import { dutySchema } from "./environments.js";
-import { CARRIED_NOTES, EXTERNAL_PARTNERS, PARTNERS_DESCRIPTION, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, WAITING_LIMIT, contextText, externalIncoming, incoming, noticeText, resultView, returned, shortened } from "./partner-text.js";
+import { CARRIED_NOTES, EXTERNAL_PARTNERS, PARTNERS_DESCRIPTION, partnerGuide, OWNER_APPROVAL, KERNEL_KEPT, NEXT, OTHER_KERNELS, SESSION_REFUSED, SESSIONS_NOTE, WAITING_LIMIT, contextText, externalIncoming, incoming, noticeText, resultView, returned, shortened, type EarlierTurn } from "./partner-text.js";
+import { PartnerSessions, titleOf, type PartnerSession, type SessionUse } from "./partner-sessions.js";
 
 const MESSAGES = "partner_messages", RETURNS = "partner_returns", CURSORS = "partner_cursors", RECRUITS = "partner_recruits",
   DISMISSALS = "partner_dismissals", ACTIVITY = "partner_activity", WAKES = "partner_failure_wakes", CARDS = "partner_cards",
   /** The roster text each session was last shown, so a turn repeats it only when it changed. */
   SENT_ROSTER = "partner_sent_roster",
   /** The partners whose conversation still runs in a session that began with another definition of the tool (`rotate`). */
-  ROTATIONS = "partner_rotations";
+  ROTATIONS = "partner_rotations",
+  /** The last turns of a conversation Mau continued in a new session, until the first turn there has been shown them. */
+  CARRIED = "partner_carried_turns";
+/** How often the sessions that have grown large and cold are looked for. */
+const RETIRE_MS = 5 * 60_000;
 /** Results handed to a sender in one turn. */
 const BATCH = 8;
 /** A turn started by a result may message again; this many generations may follow one owner message. */
@@ -63,10 +68,11 @@ const ENDED = ["completed", "failed", "cancelled", "rejected"];
 export const partnerName = z.string().regex(/^[a-z][a-z0-9-]{0,47}$/);
 const setting = z.string().min(1).max(200);
 export const partnersInput = z.object({
-  action: z.enum(["roster", "recruit", "message", "wait", "dismiss"]).describe(
+  action: z.enum(["roster", "recruit", "message", "wait", "dismiss", "sessions"]).describe(
     "roster: the partners, their status and what waits at each. recruit: add a partner (name, duty; optionally kernel, model, effort, and a first message with intent). " +
-    "message: send text to a partner (to, text, intent). wait: wait up to a minute for replies (optionally messageIds, timeoutSeconds). dismiss: archive a partner (name)."),
-  name: z.string().max(48).optional().describe("recruit, dismiss: the partner's name. A new name has lowercase letters, digits and hyphens, and starts with a letter."),
+    "message: send text to a partner (to, text, intent; optionally session or title). wait: wait up to a minute for replies (optionally messageIds, timeoutSeconds). dismiss: archive a partner (name). " +
+    "sessions: your own sessions, or with name the sessions you opened at that partner."),
+  name: z.string().max(48).optional().describe("recruit, dismiss: the partner's name. A new name has lowercase letters, digits and hyphens, and starts with a letter. sessions: a partner's name. Empty: your own sessions."),
   duty: z.string().max(200).optional().describe("recruit: one line saying what the partner is responsible for. It cannot be changed later."),
   kernel: setting.optional().describe("recruit: a kernel listed by roster. Empty: yours."),
   model: setting.optional().describe("recruit: a model listed by roster. Empty: yours."),
@@ -74,6 +80,8 @@ export const partnersInput = z.object({
   message: z.string().max(24_000).optional().describe("recruit: a first message for the new partner. Needs intent."),
   to: z.string().max(48).optional().describe("message: the name of the partner to send to."),
   text: z.string().max(24_000).optional().describe("message: what the partner is to read."),
+  session: z.string().max(160).optional().describe("message: the id of a session of that partner to continue. Empty: a new session."),
+  title: z.string().max(200).optional().describe("message, recruit: a few words naming the work of a new session. Empty: the first line of the message."),
   intent: z.enum(["relay", "ask", "inform"]).optional().describe(
     "relay: you pass on what the owner asked for. ask: you need an answer for your own work. inform: for the partner to know; no reply comes and nobody is woken: the partner reads it at the start of its next turn."),
   messageIds: z.array(z.string().max(64)).min(1).max(BATCH).optional().describe("wait: the messages to wait for. Empty: every message of yours that waits for a reply."),
@@ -105,6 +113,11 @@ type Status = "queued" | "sending" | "running" | "settled" | "returning" | "retu
 export interface PartnerMessage {
   id: string; owner: string; from: Party; to: Party; intent: Intent; text: string; status: Status; createdAt: string;
   origin: Origin;
+  /**
+   * The recipient's session the message runs in (`PartnerSession`). Absent: the recipient's conversation with the
+   * owner, where an agent on the owner's computer works and where every message ran before sessions were kept apart.
+   */
+  sessionId?: string;
   /** What the sending turn could use, and what the recipient's turn may use: the former within the recipient's connections. */
   sender: Authorization; grants: Authorization;
   /** The kernel, model and effort the recipient's turn was submitted with. What the kernel then used is not read back. */
@@ -132,7 +145,7 @@ interface ReturnBatch {
  */
 interface PartnerCard { status: "open" | "closed"; owner: string; agentId: string; messageId: string; cardId: string; desk?: string; choices: string[]; createdAt: string }
 type Turn = { kind: "owner" } | { kind: "message"; message: PartnerMessage } | { kind: "return"; batch: ReturnBatch };
-type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input" | "isOwnerInput">;
+type Conversations = Pick<NonNullable<ServiceExtension["communication"]>, "input" | "isOwnerInput" | "ledger">;
 
 /** Everything the partners feature needs from the rest of the product; nothing here comes from model arguments. */
 export interface PartnersPort {
@@ -170,6 +183,8 @@ export interface PartnersPort {
   connections(owner: string, agentId: string): string[];
   /** Answer a card of the partner's own conversation with what the owner chose where the card was copied to. */
   answerCard(owner: string, agentId: string, cardId: string, answer: { key: string; by: string | null; surface: "web" | "channel"; choiceId: string }): Promise<unknown>;
+  /** The last turns of one session of a partner, oldest first, for the session that continues its conversation. */
+  recent?(owner: string, agentId: string, sessionId: string): EarlierTurn[];
   /** Withdraw the owner cards a finished run left open. */
   closeApprovals(agentId: string, runId: string, withdraw: (requestId: string) => Promise<void>): Promise<void>;
 }
@@ -198,9 +213,10 @@ const report = (event: string, error: unknown) => console.warn(JSON.stringify({ 
 
 /**
  * The owner's partners as they work together: the roster, recruiting and dismissing, messages between partners, and
- * the way a reply comes back. A message to a partner runs as a turn of that partner's own conversation with the
- * owner. Its result returns to the conversation the message was sent from as a turn of the sender, whose answer goes
- * to the owner there. The record of every message is durable; the endings of turns are read from Router's settlement
+ * the way a reply comes back. A message to a partner runs as a turn of a session of that partner: a new one, or one
+ * the sender opened earlier and names (`PartnerSession`); a message to an agent on the owner's computer runs in that
+ * agent's conversation with the owner. Its result returns to the conversation the message was sent from as a turn of
+ * the sender, whose answer goes to the owner there. The record of every message is durable; the endings of turns are read from Router's settlement
  * feed by a cursor per agent, so nothing is lost when either side restarts.
  */
 export class Partners {
@@ -212,7 +228,10 @@ export class Partners {
   /** When each agent's open turns were last read directly. */
   private readonly checked = new Map<string, number>();
   private cleanedAt = 0;
-  constructor(private readonly store: DurableStore, private readonly port: PartnersPort) {}
+  private retiredAt = 0;
+  /** The sessions partners work in beside their conversations with the owner, and how much each session was used. */
+  readonly sessions: PartnerSessions;
+  constructor(private readonly store: DurableStore, private readonly port: PartnersPort) { this.sessions = new PartnerSessions(store); }
   start() { this.timer = setInterval(() => { void this.tick(); }, 1000); this.timer.unref(); void this.tick(); }
   async tick() {
     if (this.closed) return;
@@ -300,6 +319,7 @@ export class Partners {
       if (!turn) throw new PartnerError("partner_tool_not_authorized");
       if (input.action === "roster") return await this.roster(admission, input.includeDismissed ?? false, input.guide ?? false);
       if (input.action === "wait") return await this.wait(admission, turn, input, callId);
+      if (input.action === "sessions") return await this.listSessions(admission, input.name);
       if (turn.kind === "message") throw new PartnerError("partner_layer_limit", { instruction:
         "This turn handles a partner's message, so it cannot recruit, message or dismiss partners. If another partner is needed, say so in your answer; the sender decides." });
       if (input.action === "recruit") return await this.recruit(admission, turn, input, callId);
@@ -471,7 +491,7 @@ export class Partners {
       restored ? { ...(input.model !== undefined && selection.model ? { model: selection.model } : {}), ...(input.effort !== undefined && selection.effort ? { effort: selection.effort } : {}) }
         : { ...(selection.model ? { model: selection.model } : {}), ...(selection.effort ? { effort: selection.effort } : {}) }, restored);
     const sent = input.message === undefined ? undefined
-      : await this.send(admission, turn, origin, callId, partner, input.intent!, input.message).catch((error: unknown) => {
+      : await this.send(admission, turn, origin, callId, partner, input.intent!, input.message, { title: input.title }).catch((error: unknown) => {
         if (error instanceof PartnerError) return { isError: true as const, error: error.message, ...error.details };
         throw error;
       });
@@ -557,9 +577,26 @@ export class Partners {
     const { text, to } = input;
     this.checkText(text, () => this.external(admission.owner, this.recipient(admission, to).agentId));
     const origin = await this.origin(admission, turn);
-    return this.send(admission, turn, origin, callId, this.recipient(admission, to), input.intent, text);
+    return this.send(admission, turn, origin, callId, this.recipient(admission, to), input.intent, text, { session: input.session, title: input.title });
   }
-  private async send(admission: RunAdmission, turn: Turn, origin: Origin, callId: string, to: Party, intent: Intent, text: string) {
+  /**
+   * The session of the recipient a message runs in: the one it names, when the sender opened it and it can still be
+   * continued, or a new one. `undefined`: the recipient's conversation with the owner (an agent on the owner's
+   * computer), or none at all (an inform starts no turn).
+   */
+  private place(owner: string, from: Party, to: Party, intent: Intent, into: { session?: string | undefined; title?: string | undefined }): { existing?: PartnerSession; title?: string } | undefined {
+    const named = into.session !== undefined || into.title !== undefined;
+    if (intent === "inform") { if (named) throw new PartnerError("partner_session_not_available", { instruction: SESSION_REFUSED.inform }); return undefined; }
+    if (this.external(owner, to.agentId)) { if (named) throw new PartnerError("partner_session_not_available", { instruction: SESSION_REFUSED.external }); return undefined; }
+    if (into.session === undefined) return { ...(into.title?.trim() ? { title: titleOf(into.title) } : {}) };
+    const existing = this.sessions.get(into.session);
+    if (!existing || existing.owner !== owner || existing.agentId !== to.agentId || existing.startedBy.agentId !== from.agentId)
+      throw new PartnerError("partner_session_not_found", { instruction: SESSION_REFUSED.notFound });
+    if (existing.status === "ended") throw new PartnerError("partner_session_ended", { instruction: SESSION_REFUSED.ended });
+    return { existing };
+  }
+  private async send(admission: RunAdmission, turn: Turn, origin: Origin, callId: string, to: Party, intent: Intent, text: string,
+    into: { session?: string | undefined; title?: string | undefined } = {}) {
     const owner = admission.owner, from = this.self(admission);
     if (intent !== "inform") {
       if (origin.chain >= CHAIN_LIMIT) throw new PartnerError("partner_chain_limit", { instruction:
@@ -578,8 +615,11 @@ export class Partners {
     const sender = this.authorization(admission, turn), theirs = this.port.connections(owner, to.agentId);
     const grants: Authorization = { ...sender, connections: sender.connections.filter(id => theirs.includes(id)) };
     const id = `pm-${digest([owner, from.agentId, admission.reference, callId]).slice(0, 32)}`;
-    const message: PartnerMessage = { id, owner, from, to, intent, text, status: intent === "inform" ? "queued" : "sending", createdAt: iso(), origin, sender, grants };
+    const place = this.place(owner, from, to, intent, into), sessionId = place && (place.existing?.id ?? `ps-${digest([owner, to.agentId, id]).slice(0, 32)}`);
+    const message: PartnerMessage = { id, owner, from, to, intent, text, status: intent === "inform" ? "queued" : "sending", createdAt: iso(), origin, sender, grants,
+      ...(sessionId ? { sessionId } : {}) };
     if (!this.store.insert(MESSAGES, id, message)) return this.receipt(this.store.get<PartnerMessage>(MESSAGES, id)!);
+    if (sessionId && !place?.existing) this.sessions.open({ id: sessionId, owner, agentId: to.agentId, title: place?.title ?? titleOf(text), startedBy: { agentId: from.agentId, name: from.name } });
     // An owner's own turn starts a new line of work; what failed before it no longer counts against the sender.
     if (origin.chain === 0) this.store.delete(WAKES, from.agentId);
     if (intent === "inform") return this.receipt(message);
@@ -594,7 +634,9 @@ export class Partners {
     return this.receipt(this.store.get<PartnerMessage>(MESSAGES, id)!);
   }
   private receipt(message: PartnerMessage) {
-    const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent };
+    const session = message.sessionId ? this.sessions.get(message.sessionId) : undefined;
+    const base = { status: message.intent === "inform" ? "recorded" : "sent", messageId: message.id, to: message.to.name, intent: message.intent,
+      ...(session ? { session: session.id, title: session.title } : {}) };
     const presence = this.port.presence(message.owner, message.to.agentId);
     if (message.intent === "inform") return { ...base, expectsReply: false };
     return { ...base, expectsReply: true, ...(presence?.external && presence.state !== "ready" ? { next: NEXT.offline } : {}) };
@@ -645,14 +687,18 @@ export class Partners {
    * session has not already read the same text; and for every such turn and every turn that handles a message, the
    * informs left for the partner.
    */
-  async turnContext(admission: RunAdmission, roster: boolean, sessionKey?: string): Promise<{ partners?: string; partnerNotes?: string }> {
+  async turnContext(admission: RunAdmission, roster: boolean, sessionKey?: string): Promise<{ partners?: string; partnerNotes?: string; earlier?: string }> {
     const turn = this.turn(admission);
     if (!turn) return {};
     try { if (turn.kind === "owner") await this.conversation(admission, turn); } catch { return {}; }
     const owner = admission.owner, self = admission.agentId;
     const notes = this.outstanding(owner, ["queued"]).filter(message => message.to.agentId === self).slice(0, 10);
     for (const note of notes) this.transition(note.id, ["queued"], current => ({ ...current, offeredTo: admission.reference }));
+    // The conversation was continued in a new session (`retire`): its first turn there reads how the earlier one ended.
+    const carried = turn.kind === "message" ? undefined : this.store.get<{ turns: EarlierTurn[] }>(CARRIED, self);
+    if (carried) this.store.delete(CARRIED, self);
     const context = contextText({
+      earlier: carried?.turns,
       you: this.partners(owner).find(agent => agent.id === self)?.name ?? "",
       roster: turn.kind === "message" || !roster ? undefined : this.summary(owner, false).filter(partner => partner.id !== self).map(({ name, duty, external }) => ({ name, duty, ...(external ? { external } : {}) })),
       notes: notes.map(note => ({ from: note.from.name, sentAt: note.createdAt, text: note.text })),
@@ -677,7 +723,100 @@ export class Partners {
     if (run.status === "running") { if (!known) { runs.add(run.id); this.active.set(agentId, runs); this.store.set(ACTIVITY, agentId, { at: iso() }); } }
     else if (known) { runs.delete(run.id); this.store.set(ACTIVITY, agentId, { at: iso() }); }
   }
+  // ---- Sessions ----
+
+  private working(owner: string) {
+    return new Set(this.outstanding(owner, ["sending", "running"]).flatMap(message => message.sessionId ? [message.sessionId] : []));
+  }
+  /** What was seen of the session a partner's conversation with the owner runs in now. */
+  private async conversationUse(agentId: string): Promise<SessionUse | undefined> {
+    const core = await this.port.conversations(agentId);
+    return core && this.sessions.uses(agentId).find(use => {
+      const conversation = use.sessionId.replace(/\.w\d+$/, "");
+      return core.ledger.session(conversation)?.kind === "owner_main" && core.ledger.contextFor(conversation) === use.sessionId;
+    });
+  }
+  /** The caller's own sessions, or with a name the ones it opened at that partner and can still continue. */
+  private async listSessions(admission: RunAdmission, name: string | undefined) {
+    const self = this.self(admission), owner = admission.owner, working = this.working(owner);
+    const names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
+    const size = (use: SessionUse | undefined) => ({ turns: use?.turns ?? 0, ...(use?.tokens !== undefined ? { tokens: use.tokens } : {}) });
+    const view = (session: PartnerSession) => {
+      const use = this.sessions.use(session.agentId, session.id);
+      return { id: session.id, title: session.title, startedBy: names.get(session.startedBy.agentId) ?? session.startedBy.name, ...size(use),
+        lastAt: use?.lastAt ?? session.createdAt, state: working.has(session.id) ? "working" : "idle" };
+    };
+    const open = (agentId: string) => this.sessions.of(owner, agentId).filter(session => session.status === "open");
+    if (name !== undefined && name !== self.name) {
+      const partner = this.recipient(admission, name);
+      return { partner: partner.name, sessions: open(partner.agentId).filter(session => session.startedBy.agentId === self.agentId).map(view), note: SESSIONS_NOTE.theirs };
+    }
+    const conversation = await this.conversationUse(self.agentId);
+    return { sessions: [...(conversation ? [{ id: conversation.sessionId, title: SESSIONS_NOTE.conversation, startedBy: "the owner", ...size(conversation), lastAt: conversation.lastAt }] : []),
+      ...open(self.agentId).map(view)], note: SESSIONS_NOTE.own };
+  }
+  private async retireWhenDue(now = Date.now()) {
+    if (now - this.retiredAt < RETIRE_MS) return;
+    this.retiredAt = now;
+    await this.retire(now);
+  }
+  /** Whether results are on their way to a partner: messages of its own that expect a reply, or a hand-over that has not ended. */
+  private awaitsReplies(owner: string, agentId: string) {
+    return this.outstanding(owner, ["sending", "running", "settled", "returning"]).some(message => message.from.agentId === agentId && expectsReply(message))
+      || this.store.entriesByStatus<ReturnBatch>(RETURNS, ["submitted"]).some(entry => entry.value.agentId === agentId);
+  }
+  /**
+   * A session that has grown large and cold is not continued (`PartnerSessions.spent`): going on in it would read all
+   * of it again at full price. A task session is closed, and the next message opens a new one. A partner's
+   * conversation with the owner goes on in a new session, as after the owner's own reset: the transcript stays one
+   * history with a divider, and the first turn there is shown the last turns of the earlier session. Nothing is
+   * cancelled: a session with a turn running is left alone, and so is a conversation that results are still on their
+   * way to, because a result that arrived in the new session would be read by a model that never sent the message.
+   */
+  async retire(now = Date.now()) {
+    const running = new Set(this.store.entriesByStatus<PartnerMessage>(MESSAGES, ["sending", "running"]).flatMap(entry => entry.value.sessionId ? [entry.value.sessionId] : []));
+    for (const use of this.sessions.spentUses(now)) {
+      if (this.closed) return;
+      const task = this.sessions.get(use.sessionId);
+      if (task) { if (task.status === "open" && !running.has(task.id)) this.sessions.end(task.id, now); continue; }
+      try {
+        const core = await this.port.conversations(use.agentId), conversation = use.sessionId.replace(/\.w\d+$/, "");
+        // Only the session the conversation's next turn would run in: an earlier one is already behind a divider.
+        if (!core || core.ledger.session(conversation)?.kind !== "owner_main" || core.ledger.contextFor(conversation) !== use.sessionId) continue;
+        if (this.awaitsReplies(use.owner, use.agentId)) continue;
+        const turns = this.port.recent?.(use.owner, use.agentId, use.sessionId) ?? [];
+        if ((await this.port.sessions(use.owner, use.agentId)).resetOwnerConversation()) this.store.set(CARRIED, use.agentId, { turns });
+      } catch (error) { if (code(error, "") !== "session_busy") report("partner_conversation_not_continued", error); }
+    }
+  }
+
   // ---- Owner API ----
+
+  /** A partner's task sessions for the owner, oldest first: each is a thread of that partner's page in the console. */
+  threads(owner: string, agentId: string) {
+    const working = this.working(owner), names = new Map(this.partners(owner).map(agent => [agent.id, agent.name]));
+    return this.sessions.of(owner, agentId).map(session => {
+      const use = this.sessions.use(agentId, session.id);
+      return { id: session.id, chatId: `obs:${agentId}:${session.id}`, title: session.title,
+        startedBy: { id: session.startedBy.agentId, name: names.get(session.startedBy.agentId) ?? session.startedBy.name },
+        createdAt: session.createdAt, lastAt: use?.lastAt ?? session.createdAt, turns: use?.turns ?? 0, ...(use?.tokens !== undefined ? { tokens: use.tokens } : {}),
+        status: session.status, working: working.has(session.id) };
+    });
+  }
+  /**
+   * The owner writes in a task session of a partner. It runs as a turn of that session with the owner's own authority,
+   * like a message in the partner's conversation; its answer stays in the session, where the owner reads it. The
+   * partner that opened the session is not told. The same key always submits the same turn.
+   */
+  async reply(owner: string, agentId: string, sessionId: string, text: string, key: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.owner !== owner || session.agentId !== agentId) throw new PartnerError("partner_session_not_found");
+    if (session.status === "ended") throw new PartnerError("partner_session_ended");
+    this.checkText(text);
+    const eventId = `po-${digest([owner, agentId, sessionId, key]).slice(0, 32)}`;
+    const event = await (await this.port.sessions(owner, agentId)).submit({ eventId, sessionId, input: text, admission: { kind: "owner", owner, agentId, reference: eventId } });
+    return { eventId, turnId: event.taskId };
+  }
 
   /** The owner's messages between partners, newest first. */
   messages(owner: string, filter: { agentId?: string | undefined; limit?: number | undefined } = {}) {
@@ -693,7 +832,8 @@ export class Partners {
    * another partner still waits on ends as failed, and a result on its way to its sender is still handed over.
    */
   forget(owner: string, agentId: string) {
-    for (const collection of [CURSORS, DISMISSALS, ACTIVITY, WAKES]) this.store.delete(collection, agentId);
+    for (const collection of [CURSORS, DISMISSALS, ACTIVITY, WAKES, CARRIED]) this.store.delete(collection, agentId);
+    this.sessions.forget(agentId);
     this.active.delete(agentId);
     for (const { id, value } of this.store.entries<{ agentId?: string; owner: string }>(RECRUITS)) if (value.owner === owner && value.agentId === agentId) this.store.delete(RECRUITS, id);
     for (const { id, value } of this.store.entries<ReturnBatch>(RETURNS)) if (value.agentId === agentId) this.store.delete(RETURNS, id);
@@ -714,9 +854,16 @@ export class Partners {
       const next = change(current); this.store.set(MESSAGES, id, next); return next;
     });
   }
-  /** Put a message in its recipient's work queue as a turn of the recipient's conversation with the owner. The same record always submits the same event. */
+  /**
+   * Put a message in its recipient's work queue as a turn of the session it was sent into, or of the recipient's
+   * conversation with the owner when it has none. The same record always submits the same event.
+   */
   private async submit(message: PartnerMessage) {
-    const work = await this.port.sessions(message.owner, message.to.agentId), { sessionId } = work.openOwnerConversation();
+    const work = await this.port.sessions(message.owner, message.to.agentId);
+    // A message recorded with its session before the session was: the call that sent it was interrupted in between.
+    const session = message.sessionId ? this.sessions.get(message.sessionId) ?? this.sessions.open({ id: message.sessionId, owner: message.owner, agentId: message.to.agentId,
+      title: titleOf(message.text), startedBy: { agentId: message.from.agentId, name: message.from.name } }) : undefined;
+    const sessionId = session?.id ?? work.openOwnerConversation().sessionId;
     const settings = work.defaultSettings(), grants = message.grants;
     const sentTo = { kernel: this.port.kernel(message.to.agentId) ?? null,
       model: typeof settings.model === "string" ? settings.model : this.port.defaultModel(message.to.agentId) ?? null,
@@ -725,7 +872,8 @@ export class Partners {
       input: JSON.stringify(this.external(message.owner, message.to.agentId) ? externalIncoming(message, this.carried(message)) : incoming(message)), json: true,
       sender: { kind: "agent", id: message.from.agentId, name: message.from.name },
       // What the owner is shown in the recipient's conversation: the message as its sender wrote it.
-      display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text } },
+      display: { partnerMessage: { id: message.id, intent: message.intent, from: { id: message.from.agentId, name: message.from.name }, text: message.text,
+        ...(session ? { session: { id: session.id, title: session.title } } : {}) } },
       context: { partnerMessage: { id: message.id, intent: message.intent, from: message.from.name } },
       admission: { kind: "delegation", owner: message.owner, agentId: message.to.agentId, reference: message.id,
         toolGrants: { feishu: grants.feishu, connectedApps: { connections: grants.connections, ...(grants.operations ? { operations: grants.operations } : {}) } },
@@ -749,7 +897,7 @@ export class Partners {
       result: { ...result, settledAt: iso(at), durationMs: Math.max(0, at - Date.parse(current.createdAt)) } }));
   }
   private async cycle() {
-    for (const step of [() => this.rotate(), () => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
+    for (const step of [() => this.rotate(), () => this.retireWhenDue(), () => this.resume(), () => this.expire(), () => this.readSettlements(), () => this.passCards(), () => this.handOver(), () => this.cleanUp()]) {
       if (this.closed) return;
       try { await step(); } catch (error) { report("partner_delivery_failed", error); }
     }
@@ -758,8 +906,8 @@ export class Partners {
    * A session keeps the tool definitions it began with, so a session that began before the `partners` tool's
    * description or input changed would never read the current one, which says what a delivered turn is. Each partner
    * with such a session has its conversation with the owner continued in a new window, once, when nothing runs in it:
-   * the next turn opens a session with the current tools. Nothing is cancelled; a busy conversation is tried again on
-   * the next cycle. The owner sees the divider of a new conversation, and the transcript, memory and files stay.
+   * the next turn opens a session with the current tools. Nothing is cancelled; a busy conversation, and one that
+   * results are still on their way to, is tried again on the next cycle. The owner sees the divider of a new conversation, and the transcript, memory and files stay.
    */
   private async rotate() {
     const current = { description: PARTNERS_DESCRIPTION, input: JSON.stringify(z.toJSONSchema(partnersInput)) }, definition = digest(current);
@@ -776,6 +924,8 @@ export class Partners {
     if (!plan.agents.length) return;
     const waiting: typeof plan.agents = [];
     for (const agent of plan.agents) {
+      // A result that arrived in the new session would be read by a model that never sent its message.
+      if (this.awaitsReplies(agent.owner, agent.agentId)) { waiting.push(agent); continue; }
       try { (await this.port.sessions(agent.owner, agent.agentId)).resetOwnerConversation(); }
       catch (error) {
         // A partner that was deleted since has nothing left to move.

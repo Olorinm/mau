@@ -47,6 +47,13 @@ export class SessionHistory {
     });
     return { imported: parsed.items.length, nextCursor: parsed.cursor ?? null };
   }
+  /** The last turns of a session that Mau saw complete, oldest first: who spoke and the text. Imported native history is not part of it. */
+  recent(owner: string, agent: string, session: string, limit = 6): Array<{ by: "owner" | "you" | "delivered"; text: string }> {
+    this.assertOwned(owner, agent);
+    const rows = this.store.db.prepare(`SELECT source,text FROM memory_history WHERE owner=? AND agent=? AND session=? AND source NOT LIKE 'native:%'
+      ORDER BY rowid DESC LIMIT ?`).all(owner, agent, session, limit) as Array<{ source: string; text: string }>;
+    return rows.reverse().map(row => ({ by: row.source.endsWith(":assistant") ? "you" as const : row.source.endsWith(":tool") ? "delivered" as const : "owner" as const, text: row.text }));
+  }
   search(owner: string, agent: string, input: unknown) {
     this.assertOwned(owner, agent);
     const query = historyQuery.parse(input), long = Array.from(query.query).length >= 3;

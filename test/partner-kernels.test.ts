@@ -73,7 +73,7 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   expect(work.body.toolOutput).toBeUndefined();
   expect(work.body.input).toBe(JSON.stringify({ from: { partner: "helper" }, ...incoming(record) }));
   expect(work.body.settings).toEqual({ model: "claude-small" });
-  expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["channel", "partners", "memory", "session_search", "proactive_work"]);
+  expect(work.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["partners", "memory", "session_search", "proactive_work"]);
   expect(work.body.instructions).toContain("Name: writer\nDuty: Writes the weekly letter"); expect(work.body.instructions).toContain("<MEMORY.md>");
   expect(f.store(store => store.get<{ inputRole: string }>("business_turn_inputs", `${writer.id}:${operationId}:${work.runId}`))).toMatchObject({ inputRole: "tool" });
   // The result returns to the recruiter on its own kernel. What the partner's turn was submitted with stays on the message record.
@@ -83,8 +83,12 @@ it("a Codex partner recruits a Claude partner into its environment; the message 
   expect(back.delivered!.results![0]).toMatchObject({ answer: "The draft is in notes/letter.md." });
   await f.until(async () => (await f.answers(f.agent.id)).length === 2, "answer to the owner");
   // What the owner's console is given beside the text written for the models.
-  const shown = async (agentId: string) => (await f.events(agentId)).flatMap((event: any) => event.display ? [event.display] : []);
-  expect(await shown(writer.id)).toEqual([{ partnerMessage: { id: record.id, intent: "relay", from: { id: f.agent.id, name: "helper" }, text: "Draft this week's letter in notes/letter.md." } }]);
+  const displays = (events: any[]) => events.flatMap(event => event.display ? [event.display] : []);
+  const shown = async (agentId: string) => displays(await f.events(agentId));
+  // The message stands in the session it opened at the writer, which the console reads as a chat of its own.
+  expect(await shown(writer.id)).toEqual([]);
+  expect(displays((await f.web().events(`obs:${writer.id}:${record.sessionId}`, { limit: 50 })).events)).toEqual([{ partnerMessage: { id: record.id, intent: "relay",
+    from: { id: f.agent.id, name: "helper" }, text: "Draft this week's letter in notes/letter.md.", session: { id: record.sessionId, title: "Draft this week's letter in notes/letter.md." } } }]);
   expect(await shown(f.agent.id)).toEqual([{ partnerResults: [{ messageId: record.id, partner: { id: writer.id, name: "writer" }, intent: "relay", status: "completed",
     answer: "The draft is in notes/letter.md.", durationMs: expect.any(Number) }] }]);
   // Each partner is listed with its own kernel, and its settings are those of its own runtime.
