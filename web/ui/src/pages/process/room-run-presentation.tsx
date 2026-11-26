@@ -506,12 +506,9 @@ function RoomRunDetailsBlock(props: {
         ) : null
       }
       summary={
-        <>
-          {!live && incoming[0] ? <span className="room-run-incoming-figure" aria-hidden="true">{incoming[0].icon}</span> : null}
-          <span>
-            {live ? <TextShimmer>{summaryText}</TextShimmer> : renderActivitySummary(summaryText)}
-          </span>
-        </>
+        <span>
+          {live ? <TextShimmer>{summaryText}</TextShimmer> : renderActivitySummary(summaryText)}
+        </span>
       }
     >
       {incoming.length ? (

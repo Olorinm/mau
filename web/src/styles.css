@@ -768,6 +768,164 @@ button.mau-chat-title:enabled:hover {
   font-size: var(--fs-note);
   white-space: nowrap;
 }
+
+/*
+ * A thread of a partner's page: one piece of work another partner sent it. Under the round it began with, a bent line
+ * leads to the thread's name, how many rounds it has and how the last one stands; the whole of it opens on the right.
+ */
+.mau-thread-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  /* Its text does not widen the reply it hangs under: it takes the width the reply has. */
+  width: 0;
+  min-width: calc(100% - 12px);
+  box-sizing: border-box;
+  margin: var(--sp-1) 0 0 12px;
+  padding: 5px var(--sp-2) 5px 26px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--c-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mau-thread-entry::before {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  width: 14px;
+  height: 24px;
+  border: solid var(--c-border);
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: 8px;
+  content: "";
+}
+.mau-thread-entry:hover,
+.mau-thread-entry[data-open] {
+  background: var(--c-fill);
+}
+.mau-thread-entry-title,
+.mau-thread-entry-last {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.mau-thread-entry-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-thread-entry-title > span {
+  flex: none;
+  color: var(--c-action);
+}
+.mau-thread-entry-title > .mau-thread-entry-state,
+.mau-thread-entry[data-ended] .mau-thread-entry-title > span {
+  color: var(--c-text-secondary);
+}
+.mau-thread-entry-title svg {
+  flex: none;
+}
+.mau-thread-entry-last > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mau-thread-entry-last time {
+  flex: none;
+  font-size: var(--fs-caption);
+}
+/* Something new in a thread that is not open. */
+.mau-thread-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-action);
+}
+/* Above the box: which thread has something new. It stays in view while the conversation scrolls. */
+.mau-thread-hint {
+  position: sticky;
+  bottom: var(--sp-2);
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  margin-top: var(--sp-2);
+  pointer-events: none;
+}
+.mau-thread-hint button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* The thread on the right: the same conversation surface, in the card. */
+.mau-thread-view > * {
+  min-height: 0;
+}
+.mau-thread-view .room-chat-workspace-shell,
+.mau-thread-view .room-main-panel {
+  flex: 1;
+  min-height: 0;
+}
+/* In a thread, the line its replies stand under: how many there are, and a rule to the edge. */
+.room-chat-system:has(> .mau-thread-rule) {
+  display: flex;
+  align-items: center;
+  justify-self: stretch;
+  gap: 10px;
+  max-width: none;
+  padding-right: 0;
+  padding-left: 0;
+  text-align: left;
+}
+.room-chat-system:has(> .mau-thread-rule)::after {
+  flex: 1;
+  height: 1px;
+  background: var(--c-border);
+  content: "";
+}
+/* What a partner asked, in a thread: its first lines, and the rest when asked. */
+.mau-clamped:not([data-open]) .mau-clamped-body {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.mau-clamped-toggle {
+  margin-top: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-action);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
 .mau-side-frame {
   flex: 1;
   width: 100%;

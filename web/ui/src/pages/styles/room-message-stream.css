@@ -655,13 +655,6 @@
   line-height: var(--lh-tight);
 }
 
-/* The figure of the partner whose message started a reply, before the reply's collapsed line. */
-.room-run-incoming-figure {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-}
-
 .room-chat-tools .thread-activity-row-full-detail,
 .room-chat-tools .thread-activity-row-message,
 .room-chat-tools .thread-activity-edit-diff {
