@@ -22,7 +22,7 @@ The content scanner detects specified injection/credential/control-character pat
 
 ## Approval and API
 
-`nativeWork.memory.writeApproval` defaults to `false`. Set it to `true` to stage tool writes for the owner. The authenticated API exposes pending changes and approve/discard operations. Approval applies only to the exact proposed change and original file version; a stale approval cannot silently overwrite newer memory. Unattended review replacements/removals are staged even when ordinary autonomous writes are enabled.
+`nativeWork.memory.writeApproval` defaults to `false`. Set it to `true` to stage tool writes for the owner. The authenticated API exposes pending changes and approve/discard operations. Approval applies only to the exact proposed change and original file version; a stale approval cannot silently overwrite newer memory. An unattended review writes like any other turn: its additions, replacements and removals apply at once unless `writeApproval` is on, and each is recorded with origin `review`.
 
 `GET /agents/:id/memory` reads the document: `{ file, entries, content, revision, usage: { used, limit }, writeApproval, snapshots }`. `POST` executes a memory operation, for example:
 

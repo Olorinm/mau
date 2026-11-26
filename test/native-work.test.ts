@@ -91,7 +91,7 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   await expect(partner.execute("memory", { action: "read" }, admission, "memory-read")).resolves.toMatchObject({ file: "MEMORY.md", entries: ["Prefers concise summaries", "A durable fact"], usage: { limit: 4000 } });
   // A memory review may use the memory tool and nothing else, and is told nothing about partners.
   const review = { ...narrow, reference: "trusted-review" };
-  await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review")).resolves.toMatchObject({ staged: true });
+  await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review")).resolves.toMatchObject({ done: true });
   await expect(partner.execute("session_search", { query: "fact" }, review, "review-history")).rejects.toThrow("memory_review_tool_not_authorized");
   await expect(partner.execute("partners", { action: "roster" }, review, "review-partners")).rejects.toThrow("memory_review_tool_not_authorized");
   expect(await partner.turnContext(review, "session", ["partners", "memory"])).toEqual({});

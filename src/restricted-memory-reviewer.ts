@@ -64,7 +64,7 @@ function validateProfile(profile: CodexReviewProfile): void {
 export interface ReviewToolBinding {
   /** Taken from the actual trusted dispatcher, never inferred from tool names. */
   enforcement: "server-dispatch-allowlist";
-  memory: { scope: MemoryReviewScope; tool: string; origin: "review"; destructiveWrites: "stage-for-owner-approval" };
+  memory: { scope: MemoryReviewScope; tool: string; origin: "review"; destructiveWrites: "apply-and-record" };
   skills: { mode: "unavailable" } | { mode: "native-managed"; scope: MemoryReviewScope; tools: string[] };
   allowedTools: string[];
   otherTools: "denied";
@@ -140,7 +140,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
     const policy = binding.installed.toolBinding;
     const skills = policy.skills.mode === "native-managed" ? policy.skills.tools : [];
     if (policy.enforcement !== "server-dispatch-allowlist" || policy.otherTools !== "denied" || policy.delivery !== "disabled" || policy.recursion !== "disabled" ||
-      !sameScope(scope, policy.memory.scope) || policy.memory.origin !== "review" || policy.memory.destructiveWrites !== "stage-for-owner-approval" ||
+      !sameScope(scope, policy.memory.scope) || policy.memory.origin !== "review" || policy.memory.destructiveWrites !== "apply-and-record" ||
       (policy.skills.mode === "native-managed" && (!sameScope(scope, policy.skills.scope) || !skills.length)) ||
       !policy.memory.tool || new Set(policy.allowedTools).size !== policy.allowedTools.length ||
       JSON.stringify([...policy.allowedTools].sort()) !== JSON.stringify([policy.memory.tool, ...skills].sort()))
@@ -172,7 +172,7 @@ export class CodexRestrictedMemoryReviewer implements RestrictedMemoryReviewer {
       policyId: createHash("sha256").update(JSON.stringify(canonical({ version: binding.installed.modelCatalog.slice("bundled-".length), profile: binding.installed.profileDigest, tools: binding.installed.toolBinding }))).digest("hex"),
       isolation: "dedicated-runtime", enforcement: "runtime-tool-allowlist", otherTools: "denied",
       contextAccess: "copied-session-and-managed-memory-skills", sideEffects: "managed-memory-skills-only",
-      unattendedDestructiveWrites: "stage-for-owner-approval", delivery: "disabled", recursion: "disabled",
+      unattendedDestructiveWrites: "apply-and-record", delivery: "disabled", recursion: "disabled",
       memory: true, skills: binding.installed.toolBinding.skills.mode === "native-managed" };
   }
 }

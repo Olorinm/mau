@@ -138,13 +138,14 @@ it("optional approval stages every write, pins the full file, and cannot apply a
   expect(() => f.memory.mutate("alice", "partner", { action: "add", content: "Spoofed", approved: true })).toThrow();
 });
 
-it("unattended review can add but always stages replacement and deletion", () => {
+it("unattended review adds, replaces and removes without the owner's approval, and each change is recorded as its own", () => {
   const f = fixture();
   f.memory.mutate("alice", "partner", { action: "add", content: "Reviewed fact" }, { origin: "review" });
-  const staged = f.memory.mutate("alice", "partner", { action: "remove", old_text: "Reviewed fact" }, { origin: "review" });
-  expect(staged).toMatchObject({ staged: true }); expect(f.file().entries).toEqual(["Reviewed fact"]);
-  f.memory.mutate("alice", "partner", { action: "batch", operations: [{ action: "replace", old_text: "Reviewed fact", content: "Shorter fact" }, { action: "add", content: "Another fact" }] }, { origin: "review" });
-  expect(f.file().entries).toEqual(["Reviewed fact"]); expect(f.memory.pending("alice", "partner")).toHaveLength(2);
+  expect(f.memory.mutate("alice", "partner", { action: "batch", operations: [{ action: "replace", old_text: "Reviewed fact", content: "Shorter fact" }, { action: "add", content: "Another fact" }] }, { origin: "review" }))
+    .toMatchObject({ done: true });
+  expect(f.memory.mutate("alice", "partner", { action: "remove", old_text: "Another fact" }, { origin: "review" })).toMatchObject({ done: true });
+  expect(f.file().entries).toEqual(["Shorter fact"]); expect(f.memory.pending("alice", "partner")).toHaveLength(0);
+  expect(f.memory.mutations("alice", "partner").map(mutation => mutation.origin)).toEqual(["review", "review", "review"]);
 });
 
 it("serializes independent process writers and leaves no partial files", async () => {

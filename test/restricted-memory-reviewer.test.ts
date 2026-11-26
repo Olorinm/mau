@@ -19,7 +19,7 @@ function fixture(version: "0.165.0" | "0.171.0" = "0.171.0") {
   };
   const binding: ReviewRuntimeBinding = { partner: scope, profile, sessions: sessions as unknown as ReviewRuntimeBinding["sessions"],
     installed: { profileDigest: reviewProfileDigest(profile), homeIsolation: "dedicated-private", modelCatalog: `bundled-${version}`,
-      toolBinding: { enforcement: "server-dispatch-allowlist", memory: { scope, tool: "memory", origin: "review", destructiveWrites: "stage-for-owner-approval" },
+      toolBinding: { enforcement: "server-dispatch-allowlist", memory: { scope, tool: "memory", origin: "review", destructiveWrites: "apply-and-record" },
         skills: { mode: "unavailable" }, allowedTools: ["memory"], otherTools: "denied", delivery: "disabled", recursion: "disabled" } } };
   const resolve = vi.fn(async () => binding), adapter = new CodexRestrictedMemoryReviewer({ resolve });
   return { profile, effective, sessions, binding, resolve, adapter };
