@@ -329,7 +329,8 @@ it("offers Antigravity beside Codex: its Google model service, its owner's model
   expect((await f.settled()).state).toBe("paused");
   expect((await f.api(f.path + "/resume", {})).status).toBe(202);
   expect((await f.settled()).state).toBe("ready");
-  expect(requests.at(-1)).toEqual(["openai", "google"]);
+  // The profile gives Antigravity no Gemini API key, so it is signed in with a Google account.
+  expect(requests.at(-1)).toEqual(["openai", "google-account"]);
 }, 90_000);
 
 it("holds an environment to the ChatGPT account of its Codex sign-in file on create and resume, with an override and an opt-out", async () => {
