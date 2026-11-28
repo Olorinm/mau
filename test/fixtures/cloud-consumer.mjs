@@ -218,7 +218,7 @@ try {
   assert.equal(mau.environments.summary(owner, scout.id).sharedFrom, agent.id); assert.equal(count(), 1);
   // The partner handled the message in a session of its own, where the owner finds it as sent by the other partner;
   // nothing of it stands in the partner's conversation with the owner.
-  const [thread] = mau.partners.threads(owner, scout.id);
+  const [thread] = mau.partners.threads(owner, scout.id).data;
   assert.equal(thread.id, told.recruited.message.session); assert.equal(thread.startedBy.id, agent.id); assert.equal(thread.working, false);
   const messagesOf = async chatId => (await web(`/chats/${encodeURIComponent(chatId)}/events?limit=200`)).events.filter(event => event.kind === "message");
   assert.deepEqual((await messagesOf(thread.chatId)).map(event => [event.role, event.sender.type, event.sender.id]), [["user", "agent", agent.id], ["assistant", "agent", scout.id]]);

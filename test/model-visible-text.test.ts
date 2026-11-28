@@ -75,7 +75,7 @@ it("keeps the tool definitions and memory text a session is fingerprinted by unc
   expect(JSON.stringify(degraded.tools)).toBe(JSON.stringify(empty.tools));
   // No partner is named in what a session is fingerprinted by: the roster reaches a turn beside its input.
   expect(JSON.stringify(seen)).not.toContain("korea-trip");
-  expect(sha256(JSON.stringify(seen))).toBe("95f753ca87857c4482f49657acab3dfb066ec261bb5157b71640d7d9f7a0584e");
+  expect(sha256(JSON.stringify(seen))).toBe("69bfb8de6c6ffe3fb945e588150debd532ce1d59f744cfc8669c7176ec972893");
 });
 
 it("keeps what a model is told about partners unchanged: the guide, what follows a call, and what is delivered", () => {

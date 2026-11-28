@@ -4,7 +4,8 @@
  * itself. This reads the size of the last model request of the run's own thread, which is what the next turn of the
  * session starts from. A sub-agent of the kernel works in a context of its own, which the next turn does not read:
  * what it reports is left out. `undefined`: the kernel reported nothing that says so (Hermes and OpenClaw report no
- * size in their events).
+ * size in their events), or what it reported cannot be told to be the session's own or its last. A size that is not
+ * known is never acted on; a wrong one would be.
  */
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const sum = (...values: unknown[]) => {
@@ -15,7 +16,8 @@ const sum = (...values: unknown[]) => {
 /**
  * The context size one Host event states for the run's own thread, if it states one. A Host puts the events of a
  * kernel's sub-agents in the same run, and each kernel marks them in its own way. `thread`: the native thread the
- * run's session is bound to (`session.bound`), which tells a Codex thread from the threads it spawned.
+ * run's session is bound to (`session.bound`), which tells a Codex thread from the threads it spawned; without it a
+ * Codex event states nothing, because it cannot be told whose it is.
  */
 export function contextTokens(event: Record<string, unknown>, thread?: string): number | undefined {
   if (event.type !== "native.notification") return undefined;
@@ -24,7 +26,7 @@ export function contextTokens(event: Record<string, unknown>, thread?: string): 
   // A spawned thread reports the same way, under its own thread id.
   if (method === "thread/tokenUsage/updated") {
     const from = typeof params.threadId === "string" ? params.threadId : event.threadId;
-    return thread !== undefined && typeof from === "string" && from !== thread ? undefined : sum(object(object(params.tokenUsage).last).inputTokens);
+    return thread === undefined || from !== thread ? undefined : sum(object(object(params.tokenUsage).last).inputTokens);
   }
   // Claude: every assistant message carries the usage of the request that produced it; cached input is counted apart.
   // A message of a sub-agent names the tool call that started it.
@@ -48,17 +50,23 @@ export function contextTokens(event: Record<string, unknown>, thread?: string): 
 /** The events of one run, as a Host serves them. */
 export interface RunEvents { events(runId: string, after: number, limit?: number): Promise<{ events: Array<{ event: Record<string, unknown> }>; cursor: number; hasMore: boolean }> }
 
-/** The context size after a run: what the last event of its own thread that states one says. */
+/** Pages of a run's events read for its size. A run with more is not read to its end, and its size is not known. */
+const EVENT_PAGES = 200;
+/**
+ * The context size after a run: what the last event of its own thread that states one says. Only a run whose events
+ * were read to the last one says so: a size from the middle of a run is an earlier size.
+ */
 export async function runContextTokens(host: RunEvents, runId: string): Promise<number | undefined> {
   let tokens: number | undefined, thread: string | undefined, after = 0;
-  for (let pages = 0; pages < 40; pages++) {
+  for (let pages = 0; pages < EVENT_PAGES; pages++) {
     const page = await host.events(runId, after, 500);
     for (const { event } of page.events) {
       if (event.type === "session.bound" && typeof event.threadId === "string") thread = event.threadId;
       else tokens = contextTokens(event, thread) ?? tokens;
     }
-    if (!page.hasMore || page.cursor === after) break;
+    if (!page.hasMore) return tokens;
+    if (page.cursor === after) return undefined;
     after = page.cursor;
   }
-  return tokens;
+  return undefined;
 }

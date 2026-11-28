@@ -51,9 +51,13 @@ export class PartnerSessions {
     return this.store.get<PartnerSession>(SESSIONS, session.id)!;
   }
   get(id: string) { return this.store.get<PartnerSession>(SESSIONS, id); }
-  /** A partner's task sessions, oldest first. */
-  of(owner: string, agentId: string): PartnerSession[] {
-    return this.store.newest<PartnerSession>(SESSIONS, [{ members: ["owner"], value: owner }, { members: ["agentId"], value: agentId }], 500).map(entry => entry.value).reverse();
+  /**
+   * A partner's task sessions, the one that began last first: at most `limit` of them, after `offset` or older than
+   * the session `before`. `startedBy`: only the ones that partner opened.
+   */
+  began(owner: string, agentId: string, limit: number, page: { before?: string | undefined; offset?: number | undefined; startedBy?: string | undefined } = {}): PartnerSession[] {
+    return this.store.newest<PartnerSession>(SESSIONS, [{ members: ["owner"], value: owner }, { members: ["agentId"], value: agentId },
+      ...(page.startedBy !== undefined ? [{ members: ["startedBy.agentId"], value: page.startedBy }] : [])], limit, { before: page.before, offset: page.offset }).map(entry => entry.value);
   }
   /** A turn ended in a context. `tokens`: how full the context was then, when the kernel said so. */
   used(owner: string, agentId: string, sessionId: string, tokens: number | undefined, at = Date.now()) {
@@ -62,9 +66,15 @@ export class PartnerSessions {
       ...(tokens !== undefined ? { tokens } : prior?.tokens !== undefined ? { tokens: prior.tokens } : {}) } satisfies SessionUse);
   }
   use(agentId: string, sessionId: string) { return this.store.get<SessionUse>(USE, `${agentId}:${sessionId}`); }
-  /** What was seen of a partner's contexts, the one used last first. */
-  uses(agentId: string): SessionUse[] {
-    return this.store.newest<SessionUse>(USE, [{ members: ["agentId"], value: agentId }], 500).map(entry => entry.value).sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  /** What was seen of a partner's contexts, the one used last first: at most `limit` of them, after `offset`. */
+  uses(agentId: string, limit: number, offset = 0): SessionUse[] {
+    return this.store.newest<SessionUse>(USE, [{ members: ["agentId"], value: agentId }], limit, { by: "lastAt", offset }).map(entry => entry.value);
+  }
+  /** What was seen of the contexts one session had, the first one first. */
+  usesOf(agentId: string, sessionId: string): SessionUse[] {
+    const uses: SessionUse[] = [];
+    for (let window = 1, use = this.use(agentId, sessionId); use; use = this.use(agentId, `${sessionId}.w${++window}`)) uses.push(use);
+    return uses;
   }
   /** The contexts that are large and cold now. */
   spentUses(now = Date.now()): SessionUse[] { return this.store.entries<SessionUse>(USE).map(entry => entry.value).filter(use => this.spent(use, now)); }

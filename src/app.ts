@@ -580,7 +580,8 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
   // The sessions a partner works in beside its conversation with the owner: one for each piece of work a partner sent it.
   product.get("/agents/:id/sessions", (req, res) => {
     const owner = res.locals.owner as string;
-    res.json({ data: partners.threads(owner, router.service.owned(String(req.params.id), owner).id) });
+    const page = z.object({ before: z.string().max(160).optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).parse(req.query);
+    res.json(partners.threads(owner, router.service.owned(String(req.params.id), owner).id, page));
   });
   product.post("/agents/:id/sessions/:sessionId/messages", async (req, res) => {
     const { text, key } = apiInput.sessionMessage.parse(req.body);

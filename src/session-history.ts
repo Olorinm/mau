@@ -124,7 +124,8 @@ export class SessionHistory {
   read(owner: string, agent: string, input: SessionQuery & { sessionId: string }) {
     this.assertOwned(owner, agent);
     const { turns } = this.turns(owner, agent, input.sessionId), total = turns.length, lines = input.view === "lines", most = lines ? LINE_TURNS : FULL_TURNS;
-    if (!total) return { turns: [], showing: { of: 0 } };
+    // A turn the session does not have is not answered with another one: `of` says how many there are.
+    if (!total || (input.fromTurn ?? 1) > total || (input.toTurn ?? total) < (input.fromTurn ?? 1)) return { turns: [], showing: { of: total } };
     const last = Math.min(total, input.toTurn ?? (input.fromTurn === undefined ? total : input.fromTurn + most - 1));
     const first = Math.max(1, Math.min(last, input.fromTurn ?? last - (lines ? LINE_TURNS : READ_TURNS) + 1), last - most + 1);
     const single = first === last && input.textOffset !== undefined;

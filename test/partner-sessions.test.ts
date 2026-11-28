@@ -22,9 +22,10 @@ async function ownerTurn(f: PartnersFixture, agentId: string, index = 0) {
   let calls = 0;
   return { turn, call: (input: Record<string, unknown>) => f.mau.partners.execute(admission, input, `${turn.runId}-direct-${++calls}`) as Promise<any> };
 }
-/** The kernel of a run reports how full its session's context is, as Codex does. */
-const reports = (f: PartnersFixture, turn: Turn, tokens: number) => f.runs.get(turn.runId)!.events.push({ type: "native.notification", runId: turn.runId,
-  notification: { method: "thread/tokenUsage/updated", params: { tokenUsage: { total: { inputTokens: tokens * 3 }, last: { inputTokens: tokens } } } } });
+/** The kernel of a run reports how full its session's context is, as Codex does: the thread the session is bound to, then that thread's usage. */
+const reports = (f: PartnersFixture, turn: Turn, tokens: number) => f.runs.get(turn.runId)!.events.push({ type: "session.bound", runId: turn.runId, threadId: "main", resumed: false },
+  { type: "native.notification", runId: turn.runId, threadId: "main",
+    notification: { method: "thread/tokenUsage/updated", params: { threadId: "main", tokenUsage: { total: { inputTokens: tokens * 3 }, last: { inputTokens: tokens } } } } });
 /** Everything that ended has been counted, and nothing else is on its way into the count. */
 const quiet = async (f: PartnersFixture) => {
   for (let n = 0; n < 40; n++) {
@@ -51,8 +52,10 @@ const windows = async (f: PartnersFixture, agentId: string, sessionId: string) =
 
 it("reads the size of a session's context from what each kernel reports", async () => {
   const event = (method: string, params: unknown) => ({ type: "native.notification", runId: "run", notification: { method, params } });
+  const bound = { type: "session.bound", runId: "run", threadId: "main" };
+  const served = (events: unknown[]) => ({ events: async () => ({ events: events.map(item => ({ event: item as Record<string, unknown> })), cursor: events.length, hasMore: false }) });
   // The last request of a Codex thread, not the thread's running total.
-  expect(contextTokens(event("thread/tokenUsage/updated", { tokenUsage: { total: { inputTokens: 900_000 }, last: { inputTokens: 120_000, cachedInputTokens: 100_000, outputTokens: 800 } } }))).toBe(120_000);
+  expect(contextTokens(event("thread/tokenUsage/updated", { threadId: "main", tokenUsage: { total: { inputTokens: 900_000 }, last: { inputTokens: 120_000, cachedInputTokens: 100_000, outputTokens: 800 } } }), "main")).toBe(120_000);
   // A Claude request counts what it read from and wrote to the cache apart from its input.
   expect(contextTokens(event("claude.message", { type: "assistant", message: { usage: { input_tokens: 12, cache_read_input_tokens: 80_000, cache_creation_input_tokens: 4_000, output_tokens: 900 } } }))).toBe(84_012);
   expect(contextTokens(event("claude.message", { type: "result", usage: { input_tokens: 500_000 } }))).toBeUndefined();
@@ -60,17 +63,26 @@ it("reads the size of a session's context from what each kernel reports", async 
   expect(contextTokens(event("item/completed", { item: { type: "commandExecution" } }))).toBeUndefined();
   expect(contextTokens({ type: "usage", runId: "run", scope: "session", inputTokens: 900_000 })).toBeUndefined();
   // The size after a run is what its last event that states one says, however many pages the events take.
-  const pages = [[event("thread/tokenUsage/updated", { tokenUsage: { last: { inputTokens: 10_000 } } }), event("item/completed", {})],
-    [event("thread/tokenUsage/updated", { tokenUsage: { last: { inputTokens: 30_000 } } }), event("turn/completed", {})]];
+  const pages = [[bound, event("thread/tokenUsage/updated", { threadId: "main", tokenUsage: { last: { inputTokens: 10_000 } } }), event("item/completed", {})],
+    [event("thread/tokenUsage/updated", { threadId: "main", tokenUsage: { last: { inputTokens: 30_000 } } }), event("turn/completed", {})]];
   const host = { events: async (_runId: string, after: number) => ({ events: (pages[after] ?? []).map(item => ({ event: item })), cursor: after + 1, hasMore: after + 1 < pages.length }) };
   expect(await runContextTokens(host, "run")).toBe(30_000);
   expect(await runContextTokens({ events: async () => ({ events: [], cursor: 0, hasMore: false }) }, "run")).toBeUndefined();
   // A kernel's sub-agent works in a context of its own, and its Host puts what it reports in the same run. A thread Codex
   // spawned reports under its own id, here after the session's own thread has reported for the last time.
   const usage = (threadId: string, tokens: number) => ({ ...event("thread/tokenUsage/updated", { threadId, tokenUsage: { last: { inputTokens: tokens } } }), threadId });
-  const spawned = [{ type: "session.bound", runId: "run", threadId: "main" }, usage("main", 32_000), usage("child", 270_000)];
-  expect(await runContextTokens({ events: async () => ({ events: spawned.map(item => ({ event: item })), cursor: spawned.length, hasMore: false }) }, "run")).toBe(32_000);
-  expect(contextTokens(usage("child", 270_000), "main")).toBeUndefined(); expect(contextTokens(usage("child", 270_000))).toBe(270_000);
+  expect(await runContextTokens(served([bound, usage("main", 32_000), usage("child", 270_000)]), "run")).toBe(32_000);
+  expect(contextTokens(usage("child", 270_000), "main")).toBeUndefined();
+  // The Host no longer has the beginning of the run, with the event that says which thread is the session's: whose
+  // usage each one is cannot be told, and the size is not known. A wrong size would be acted on; an unknown one is not.
+  expect(await runContextTokens(served([usage("main", 32_000), usage("child", 270_000)]), "run")).toBeUndefined();
+  expect(contextTokens(usage("main", 32_000))).toBeUndefined();
+  // A run with more events than are read is not read to its end: what was read is an earlier size, not the size after the run.
+  let asked = 0;
+  const endless = { events: async (_runId: string, after: number) => { asked++; return { events: [{ event: after ? usage("main", 40_000 + after) : bound }], cursor: after + 1, hasMore: true }; } };
+  expect(await runContextTokens(endless, "run")).toBeUndefined(); expect(asked).toBe(200);
+  // Neither is a run whose Host stops serving before the end.
+  expect(await runContextTokens({ events: async () => ({ events: [], cursor: 0, hasMore: true }) }, "run")).toBeUndefined();
   // A Claude sub-agent's message names the tool call that started it; OpenCode marks what a child session reports.
   expect(contextTokens(event("claude.message", { type: "assistant", parent_tool_use_id: "toolu_1", message: { usage: { input_tokens: 9, cache_read_input_tokens: 300_000 } } }))).toBeUndefined();
   expect(contextTokens(event("claude.message", { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 9, cache_read_input_tokens: 70_000 } } }))).toBe(70_009);
@@ -93,8 +105,8 @@ it("keeps the sessions a deleted partner opened at others, and removes its own",
     sessions.used(alice, "trip", "ps-a", undefined);
     expect(sessions.use("trip", "ps-a")).toMatchObject({ turns: 2, tokens: 12_000 });
     sessions.forget("desk");
-    expect(sessions.of(alice, "trip")).toMatchObject([{ id: "ps-a", startedBy: { name: "desk" } }]);
-    expect(sessions.of(alice, "desk")).toEqual([]); expect(sessions.use("desk", "ps-b")).toBeUndefined();
+    expect(sessions.began(alice, "trip", 10)).toMatchObject([{ id: "ps-a", startedBy: { name: "desk" } }]);
+    expect(sessions.began(alice, "desk", 10)).toEqual([]); expect(sessions.use("desk", "ps-b")).toBeUndefined();
     // Large is not enough, and neither is cold: a session is spent when it is both.
     const day = SPENT_IDLE_MS, at = Date.parse("2026-11-01T00:00:00Z"), use = (tokens: number | undefined) => ({ owner: alice, agentId: "trip", sessionId: "ps-a", turns: 1,
       lastAt: new Date(at).toISOString(), ...(tokens === undefined ? {} : { tokens }) });
@@ -121,8 +133,8 @@ it("a message opens a session of its own at the partner, and one that names a se
   // The sender sees the sessions it opened there; the partner sees its own work spread over them.
   const theirs = await hub.call({ action: "sessions", name: "trip" });
   expect(theirs).toEqual({ partner: "trip", note: SESSIONS_NOTE.theirs, sessions: [
-    { id: first.message.session, title: "Seoul hotels", turns: 0, lastAt: expect.any(String), state: "working" },
-    { id: second.session, title: "Find restaurants near Myeongdong.", turns: 0, lastAt: expect.any(String), state: "working" }] });
+    { id: second.session, title: "Find restaurants near Myeongdong.", turns: 0, lastAt: expect.any(String), state: "working" },
+    { id: first.message.session, title: "Seoul hotels", turns: 0, lastAt: expect.any(String), state: "working" }] });
   // The one used last comes first; nothing has ended in either yet.
   const own = await food.call("partners", { action: "sessions" });
   expect(own.sessions).toMatchObject([{ id: second.session, state: "working" }, { id: first.message.session, title: "Seoul hotels", startedBy: "helper", turns: 0, state: "working" }]);
@@ -133,7 +145,7 @@ it("a message opens a session of its own at the partner, and one that names a se
   expect(more).toMatchObject({ status: "sent", session: first.message.session, title: "Seoul hotels" });
   const closest = await f.turnOf(trip.id, 2);
   expect(closest.body.sessionId).toBe(hotels.body.sessionId);
-  expect((await hub.call({ action: "sessions", name: "trip" })).sessions[0]).toMatchObject({ turns: 1, tokens: 21_000, state: "working" });
+  expect((await hub.call({ action: "sessions", name: "trip" })).sessions[1]).toMatchObject({ id: first.message.session, turns: 1, tokens: 21_000, state: "working" });
   // What was said in a session stands there, in order, and nothing of it in the partner's conversation with the owner.
   end(closest, "The Lotte.");
   await f.until(() => f.record(more.messageId).status === "settled" || f.record(more.messageId).status === "returning", "second answer");
@@ -142,7 +154,11 @@ it("a message opens a session of its own at the partner, and one that names a se
   expect((await f.events(trip.id)).filter(event => event.kind === "message")).toEqual([]);
   // The owner's console lists the partner's sessions as threads of that partner.
   await use(f, trip.id, first.message.session, 2);
-  expect((await f.api(`/agents/${trip.id}/sessions`)).data.data).toMatchObject([
+  const listed = (await f.api(`/agents/${trip.id}/sessions`)).data;
+  expect(listed.earlier).toBeNull();
+  // The one a turn runs in, then the one something happened in last.
+  expect(listed.active.map((thread: { id: string }) => thread.id)).toEqual([second.session, first.message.session]);
+  expect(listed.data).toMatchObject([
     { id: first.message.session, chatId: `obs:${trip.id}:${first.message.session}`, title: "Seoul hotels", startedBy: { id: f.agent.id, name: "helper" }, turns: 2, tokens: 21_000, working: false },
     { id: second.session, title: "Find restaurants near Myeongdong.", turns: 0, working: true }]);
   expect((await f.api(`/agents/${trip.id}/sessions`, undefined, "bob")).status).toBe(404);
@@ -199,7 +215,7 @@ it("continues a session in a new context when it has grown large and cold, and l
   await f.mau.partners.retire();
   expect(await windows(f, trip.id, session)).toBe(1);
   // It is the same session to its sender and to the owner: still listed, with what was done in it, and both go on in it.
-  expect((await hub.call({ action: "sessions", name: "trip" })).sessions).toMatchObject([{ id: session, turns: 2, state: "idle" }, { id: second.session, state: "working" }]);
+  expect((await hub.call({ action: "sessions", name: "trip" })).sessions).toMatchObject([{ id: second.session, state: "working" }, { id: session, turns: 2, state: "idle" }]);
   expect((await f.api(`/agents/${trip.id}/sessions`)).data.data).toMatchObject([{ id: session, turns: 2, working: false }, { id: second.session, working: true }]);
   const more = await hub.call({ action: "message", to: "trip", intent: "ask", session, text: "Which one is closest to the station?" });
   expect(more).toMatchObject({ status: "sent", session, title: "Find three hotels in Seoul." });
@@ -347,11 +363,61 @@ it("a partner finds and reads what was said in its own sessions: which sessions 
   expect(one.turns).toEqual([{ turn: 1, at, by: "helper", asked: "Find three hotels in Seoul.\nFive nights in May.",
     answered: `${long.slice(0, 2000)}\n[cut: ${long.length - 2000} more characters; fromTurn=1 toTurn=1 part=answered textOffset=2000 reads on]` }]);
   expect((await search({ sessionId: session, fromTurn: 1, toTurn: 1, part: "answered", textOffset: 2000 })).turns).toEqual([{ turn: 1, at, by: "helper", answered: long.slice(2000) }]);
+  // A turn the session does not have is not answered with another one.
+  expect(await search({ sessionId: session, fromTurn: 5, toTurn: 5 })).toEqual({ session: named, showing: { of: 4 }, turns: [] });
+  expect(await search({ sessionId: session, fromTurn: 5 })).toEqual({ session: named, showing: { of: 4 }, turns: [] });
+  expect(await search({ sessionId: session, fromTurn: 3, toTurn: 2, view: "lines" })).toEqual({ session: named, showing: { of: 4 }, turns: [] });
+  expect((await search({ sessionId: session, fromTurn: 4, toTurn: 9 })).showing).toEqual({ fromTurn: 4, toTurn: 4, of: 4 });
   // A session that is not the partner's own reads as nothing, and a call needs a text or a session.
   expect(await search({ sessionId: "ps-unknown" })).toMatchObject({ isError: true, error: "session_not_found" });
   expect(await search({})).toMatchObject({ isError: true, error: "session_search_invalid_input" });
   // Another partner's sessions are not its own: the sender finds nothing of what was said there.
   expect(await hub.turn.call("session_search", { query: "pool" })).toEqual({ sessions: [] });
   expect(await hub.turn.call("session_search", { sessionId: session })).toMatchObject({ isError: true, error: "session_not_found" });
+  for (const turn of f.turns) end(turn);
+}, 60_000);
+
+it("finds a session something just happened in among hundreds, and pages back to where the first one began", async () => {
+  const f = await partnersFixture(cleanup), end = f.hold();
+  const hub = await ownerTurn(f, f.agent.id);
+  const first = await hub.call({ action: "recruit", name: "trip", duty, intent: "ask", title: "The first one", message: "Find three hotels in Seoul." });
+  const trip = f.partner("trip"), oldest = first.message.session as string, hotels = await f.turnOf(trip.id, 0);
+  // Six hundred more sessions began after it, each used once, the later ones later.
+  const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString(), ids = Array.from({ length: 600 }, (_, index) => `ps-${String(index + 1).padStart(32, "0")}`);
+  f.store(store => store.transaction(() => { for (const [index, id] of ids.entries()) {
+    store.set("partner_sessions", id, { id, owner: alice, agentId: trip.id, title: `Work ${index + 1}`, startedBy: { agentId: f.agent.id, name: "helper" }, createdAt: at(index) });
+    store.set("partner_session_use", `${trip.id}:${id}`, { owner: alice, agentId: trip.id, sessionId: id, turns: 1, lastAt: at(index) } satisfies SessionUse);
+  } }));
+  // The first one gets an answer now.
+  end(hotels, "Lotte, Shilla, Four Seasons.");
+  await use(f, trip.id, oldest, 1);
+  const page = async (query = "") => (await f.api(`/agents/${trip.id}/sessions${query}`)).data as { data: Array<{ id: string }>; earlier: string | null; active?: Array<{ id: string; turns: number }> };
+  // The owner's page: the sixty that began last, and beside them the ones something happened in last, the first one among them.
+  const head = await page();
+  expect(head.data.map(thread => thread.id)).toEqual(ids.slice(-60)); expect(head.earlier).toBe(ids[540]);
+  expect(head.active).toHaveLength(60);
+  expect(head.active![0]).toMatchObject({ id: oldest, title: "The first one", turns: 1 }); expect(head.active![1]!.id).toBe(ids[599]);
+  // Page after page reaches the first one, each session once.
+  const seen = [...head.data.map(thread => thread.id)];
+  for (let cursor = head.earlier, pages = 0; cursor; pages++) {
+    expect(pages).toBeLessThan(20);
+    const earlier = await page(`?before=${cursor}&limit=100`);
+    expect(earlier.active).toBeUndefined();
+    seen.unshift(...earlier.data.map(thread => thread.id)); cursor = earlier.earlier;
+  }
+  expect(seen).toEqual([oldest, ...ids]);
+  expect((await f.api(`/agents/${trip.id}/sessions?limit=500`)).status).toBe(400);
+  // The sender's list of the sessions it opened there: the ones that began last, twenty a call, as far back as it asks.
+  const theirs = await hub.call({ action: "sessions", name: "trip" });
+  expect(theirs.sessions.map((session: { id: string }) => session.id)).toEqual(ids.slice(-20).reverse()); expect(theirs.nextOffset).toBe(20);
+  expect((await hub.call({ action: "sessions", name: "trip", offset: 600 })).sessions).toMatchObject([{ id: oldest, title: "The first one", turns: 1 }]);
+  // The partner's own list begins with the one it used last, and goes on from there.
+  const second = await hub.call({ action: "message", to: "trip", intent: "ask", session: oldest, text: "Which one is closest?" });
+  const own = await (await f.turnOf(trip.id, 1)).call("partners", { action: "sessions" });
+  expect(own.sessions).toHaveLength(20); expect(own.nextOffset).toBe(20);
+  expect(own.sessions.slice(0, 2)).toMatchObject([{ id: oldest, title: "The first one", turns: 1, state: "working" }, { id: ids[599], title: "Work 600", state: "idle" }]);
+  const last = await (await f.turnOf(trip.id, 1)).call("partners", { action: "sessions", offset: 600 });
+  expect(last.sessions).toMatchObject([{ id: ids[0], title: "Work 1" }]); expect(last.nextOffset).toBeUndefined();
+  expect(second.session).toBe(oldest);
   for (const turn of f.turns) end(turn);
 }, 60_000);
