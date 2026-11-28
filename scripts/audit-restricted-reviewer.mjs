@@ -10,7 +10,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { zstdDecompressSync } from "node:zlib";
-import { CodexRestrictedMemoryReviewer, codexReviewProfile, reviewProfileDigest } from "../dist/restricted-memory-reviewer.js";
+import { CodexRestrictedMemoryReviewer, REVIEW_DESTRUCTIVE_WRITES, codexReviewProfile, reviewProfileDigest } from "../dist/restricted-memory-reviewer.js";
 
 const [command, version] = process.argv.slice(2);
 const supported = ["0.165.0", "0.171.0"];
@@ -104,7 +104,7 @@ try {
   const sessions = { owner: scope.owner, agentId: "fixture-worker", runtimeId: profile.id, discover: () => api("/runtimes/discover", { runtimeId: profile.id }),
     host: { nativeRequest: async (runtimeId, method, params) => (await api("/runtimes/native", { runtimeId, method, params })).result } };
   const installed = { profileDigest: reviewProfileDigest(profile), modelCatalog: "bundled-" + version, homeIsolation: "dedicated-private", toolBinding: {
-    enforcement: "server-dispatch-allowlist", memory: { scope, tool: positive, origin: "review", destructiveWrites: "stage-for-owner-approval" },
+    enforcement: "server-dispatch-allowlist", memory: { scope, tool: positive, origin: "review", destructiveWrites: REVIEW_DESTRUCTIVE_WRITES },
     skills: { mode: "unavailable" }, allowedTools: [positive], otherTools: "denied", delivery: "disabled", recursion: "disabled" } };
   const reviewer = new CodexRestrictedMemoryReviewer({ resolve: async () => ({ partner: scope, sessions, profile, installed }) });
   const proof = await reviewer.capabilities(scope, AbortSignal.timeout(15_000));
