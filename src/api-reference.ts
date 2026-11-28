@@ -95,8 +95,8 @@ export const mauApiReference: ApiRoute[] = [
   route("PUT", agent + "/connectors", "Replace the partner's own connector connections; an empty list removes its own assignment.", connectorAssignmentInput, "manage"),
   route("GET", "/partners", "The owner's partners as they work together, dismissed ones included: status, model, who recruited them and what waits at them."),
   route("GET", "/partners/messages", "Messages between the owner's partners, newest first; query agentId and limit."),
-  route("GET", agent + "/sessions", "The sessions the partner works in beside its conversation with the owner, oldest first: one for each piece of work another partner sent it, with its title, who opened it, its turns, its size and whether it can still be continued."),
-  route("POST", agent + "/sessions/:sessionId/messages", "Write in one of the partner's sessions as the owner: a turn of that session, whose answer stays there. 409 `partner_session_ended` when the session is closed.", apiInput.sessionMessage, "chat"),
+  route("GET", agent + "/sessions", "The sessions the partner works in beside its conversation with the owner, oldest first: one for each piece of work another partner sent it, with its title, who opened it, its turns and its size."),
+  route("POST", agent + "/sessions/:sessionId/messages", "Write in one of the partner's sessions as the owner: a turn of that session, whose answer stays there.", apiInput.sessionMessage, "chat"),
 
   route("GET", "/devices", "The owner's partners that are agents on a computer, each with whether a computer is paired and connected."),
   route("GET", agent + "/device", "The computer paired with a partner that is an agent on it: name, platform, kernel, whether it is connected and when it last was."),

@@ -331,7 +331,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       return control.answer(cardId, answer);
     },
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
-    recent: (owner, agentId, sessionId) => history.recent(owner, agentId, sessionId),
+    opening: (owner, agentId, contextId) => history.opening(owner, agentId, contextId),
   });
   business.setAdmissionValidator(admission => {
     const partner = partners.allows(admission);
@@ -588,7 +588,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     try { res.status(202).json(await partners.reply(owner, id, String(req.params.sessionId), text, key)); }
     catch (error) {
       if (!(error instanceof PartnerError)) throw error;
-      throw new RouterError(error.message, error.message === "partner_session_not_found" ? 404 : error.message === "partner_session_ended" ? 409 : 400);
+      throw new RouterError(error.message, error.message === "partner_session_not_found" ? 404 : 400);
     }
   });
   product.delete("/agents/:id", async (req, res) => {

@@ -3,10 +3,10 @@ import { z } from "zod";
 import type { PartnerTools } from "./business-tools.js";
 import type { RunAdmission } from "./run-admission.js";
 import { PartnerContext, MemoryError, memoryInput, memoryToolSchema } from "./partner-context.js";
-import { historyQuery, type SessionHistory } from "./session-history.js";
+import { sessionQuery, type SessionHistory, type SessionQuery } from "./session-history.js";
 import { ProactiveWork, proactiveRuleInput, type ProactiveRule, type RuleProposal } from "./proactive.js";
 import { partnersInput, type Partners } from "./partners.js";
-import { PARTNERS_DESCRIPTION } from "./partner-text.js";
+import { PARTNERS_DESCRIPTION, SESSION_SEARCH_DESCRIPTION } from "./partner-text.js";
 
 const proactiveInput = z.object({ action: z.enum(["list", "create", "update", "runs", "pause", "resume", "run"]), ruleId: z.uuid().optional(),
   expectedVersion: z.number().int().positive().optional(), rule: proactiveRuleInput.omit({ agentId: true }).optional() }).strict();
@@ -21,13 +21,13 @@ export class NativePartnerTools implements PartnerTools {
   readonly definitions;
   constructor(private readonly owner: string, private readonly agentId: string, private readonly partners: Partners,
     private readonly facts: PartnerContext, private readonly proactive: ProactiveWork, private readonly enabled: boolean,
-    private readonly options: { history?: Pick<SessionHistory, "search">; isMemoryReview?: (admission: RunAdmission) => boolean;
+    private readonly options: { history?: Pick<SessionHistory, "read" | "mentions" | "places">; isMemoryReview?: (admission: RunAdmission) => boolean;
       reminders?: (admission: RunAdmission, sessionId: string) => string } = {}) {
     this.definitions = enabled ? [
       // A wait of up to a minute has to end before the call's own deadline.
       { name: "partners", description: PARTNERS_DESCRIPTION, inputSchema: z.toJSONSchema(partnersInput), timeoutMs: 90_000 },
       { name: "memory", description: "Maintain your one durable memory document (MEMORY.md, 4000 Unicode characters). You decide what belongs in it: what stays true about the owner and how they want things done, how recurring work is done, and the current state of what you are responsible for (what was decided, what is still open, where the files are). Update an entry instead of appending history, and free space with remove or replace when full. Never store secrets (passwords, tokens, keys) or instructions that override safety. Writes are autonomous unless staged for owner approval. This memory is yours alone: no other partner reads it and you read no other partner's. A session keeps the snapshot it began with; updates load in new sessions.", inputSchema: memoryToolSchema, timeoutMs: 10_000 },
-      { name: "session_search", description: "Search the original stored text of your own conversations. Returns exact text excerpts, session IDs and coverage; this is separate from your memory and may not include older native history until explicitly imported.", inputSchema: z.toJSONSchema(historyQuery), timeoutMs: 10_000 },
+      { name: "session_search", description: SESSION_SEARCH_DESCRIPTION, inputSchema: z.toJSONSchema(sessionQuery), timeoutMs: 10_000 },
       { name: "proactive_work", description: "Create, inspect, edit, pause, resume or run a proactive rule of your own, only when requested by the owner. Show the concrete goal, schedule, time zone, sources and notification destination (notify.channel: web keeps notices in the conversation, where push channels may announce them; a connection id such as a chat channel or a push channel delivers there; new rules default to web). Source grants remain limited to the connections assigned to you. New rules default paused; explicitly requested activation uses status=active. Saving a rule never grants new account access.", inputSchema: z.toJSONSchema(proactiveInput), timeoutMs: 60_000 },
     ] : [];
   }
@@ -70,8 +70,28 @@ export class NativePartnerTools implements PartnerTools {
       }
     }
     if (name === "session_search") {
-      if (!this.options.history) throw new Error("session_search_unavailable");
-      return this.options.history.search(this.owner, this.agentId, historyQuery.parse(raw));
+      const history = this.options.history;
+      if (!history) throw new Error("session_search_unavailable");
+      let input: SessionQuery;
+      try { input = sessionQuery.parse(raw); }
+      catch (error) { if (error instanceof z.ZodError) return { isError: true, error: "session_search_invalid_input", issues: error.issues }; throw error; }
+      const { query, sessionId } = input;
+      // What each session is: its title, who started it, and whether it went on in another context since.
+      const named = async <T extends { id: string }>(sessions: T[]) => {
+        const known = await this.partners.contexts(this.owner, this.agentId, sessions.map(session => session.id));
+        return sessions.map(session => ({ ...session, ...known.get(session.id) }));
+      };
+      if (query === undefined) {
+        const [session] = await named([{ id: sessionId! }]), read = history.read(this.owner, this.agentId, { ...input, sessionId: sessionId! });
+        return read.showing.of ? { session, ...read } : { isError: true, error: "session_not_found", instruction: "Nothing was said in a session of yours with that id. action=sessions of the partners tool lists your sessions." };
+      }
+      if ((input.show ?? (sessionId ? "text" : "sessions")) === "sessions" && !sessionId) {
+        const found = history.mentions(this.owner, this.agentId, { ...input, query });
+        return { ...found, sessions: await named(found.sessions) };
+      }
+      const found = history.places(this.owner, this.agentId, { ...input, query });
+      const known = await this.partners.contexts(this.owner, this.agentId, found.places.map(place => place.session));
+      return { ...found, places: found.places.map(place => ({ ...place, ...(known.get(place.session)?.title ? { title: known.get(place.session)!.title } : {}) })) };
     }
     if (name !== "proactive_work") throw new Error("partner_tool_unknown");
     const input = proactiveInput.parse(raw);

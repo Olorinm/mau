@@ -40,6 +40,8 @@ Every change is recorded with its origin, the last 100 per partner: `owner` (a t
 
 `session_search` and `POST /agents/:id/memory/search` use SQLite FTS5 trigram retrieval; short queries use escaped literal SQLite matching. Results are original excerpts, with session/source identity, offsets and explicit truncation. No model summary replaces the source text.
 
+The tool does three things with a partner's own sessions, which `partners` lists (`action: "sessions"`). With `query` it answers which sessions say a text and how often, or with `show: "text"` each place, with the turn it is in. With `sessionId` and no `query` it reads that session by its turns: a turn is one request and the answer to it, numbered in the order the turns ended, and the number never changes. Without a range it returns the last three turns; `view: "lines"` returns how each turn begins (up to 50 turns), `view: "full"` the text (up to 10 turns, each text up to 2,000 characters). A text that was cut says with which arguments to read on. What a partner's message delivered reads as that partner wrote it, with its name. Only requests and final answers are stored: the steps between them (commands, tool results) are not, and the tool's description says so.
+
 The index contains completed turns observed by this Mau version and native-history pages explicitly imported through `POST /agents/:id/memory/history/import` with `{sessionId,cursor?}`. Continue with the returned cursor to import more pages. It does not claim to have automatically indexed every historical Codex conversation. Native history remains authoritative and is read through Router's public owner-scoped interface. Search itself does not wake the Host.
 
 ## Background review boundary
