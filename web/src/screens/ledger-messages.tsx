@@ -30,6 +30,7 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
+import { OPEN_THREADS, openThreads } from "./thread-paging";
 import { liveViewUrl } from "../api/live-view";
 import { BrowserSideView, Clamped, DocumentSideView, type PartnerDocument, FileSideView, ThreadSideView } from "./side-views";
 import { ChatRoster, type ChatEntry, type ChatSection } from "./chat-switcher";
@@ -39,8 +40,6 @@ import { openSettings } from "../settings/route";
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
 /** The chat of a session a partner works in beside its conversation with the owner (`PartnerThread`). */
 const threadChat = (chatId: string) => /^obs:[^:]+:ps-[0-9a-f]{32}$/.test(chatId);
-/** Threads of one partner whose chats the page keeps open: the newest ones. An older one is read from its own line of the API when it is needed. */
-const OPEN_THREADS = 60;
 /**
  * The fold of a thread's events, kept until the thread has a newer event: a page with many threads folds each one
  * when it changes, not on every render. The client appends to the same list, so the list alone does not say.
@@ -456,13 +455,27 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const threads = useQuery({ queryKey: ["partner-sessions", session.owner, threadAgent], enabled: !!threadAgent, retry: false,
     queryFn: () => mauApi(session.token).sessions(threadAgent!),
     refetchInterval: (query) => query.state.data?.some((item) => item.working) ? 3000 : 15_000 });
-  const threadList = threadAgent ? (threads.data ?? []).slice(-OPEN_THREADS) : [];
+  const allThreads = threadAgent ? threads.data ?? [] : [];
+  // How far back the page has gone among this partner's threads, which the API lists from the first to the last.
+  const [threadWindows, setThreadWindows] = useState<Record<string, number>>({});
+  const threadWindow = threadAgent ? threadWindows[threadAgent] ?? OPEN_THREADS : 0;
+  const moreThreads = () => { if (threadAgent) setThreadWindows((values) => ({ ...values, [threadAgent]: (values[threadAgent] ?? OPEN_THREADS) + OPEN_THREADS })); };
+  const openThreadId = sideView?.kind === "thread" ? sideView.sessionId : undefined;
+  const { open: threadList, earlier: earlierThreads, from: threadsFrom } = useMemo(() => openThreads(allThreads, threadWindow, openThreadId), [threads.data, threadAgent, threadWindow, openThreadId]);
   const threadChats = threadList.map((item) => item.chatId).join("\n");
   useEffect(() => {
     const ids = threadChats ? threadChats.split("\n") : [];
     for (const id of ids) void client.openChat(id).catch(() => undefined);
     return () => { for (const id of ids) client.closeChat(id); };
   }, [client, threadChats]);
+  // A thread is read from its first round: the page shows where it began, and counts its rounds. One at a time; a
+  // thread whose earlier part could not be read is shown from what was read, and tried again when the page is opened again.
+  const [stalled, setStalled] = useState<ReadonlySet<string>>(new Set());
+  const unreadHead = threadList.find((item) => { const read = client.view(item.chatId); return read.loaded && read.hasOlder && !read.error && !stalled.has(item.chatId); })?.chatId;
+  useEffect(() => {
+    if (unreadHead) void client.loadOlder(unreadHead).catch(() => setStalled((values) => new Set(values).add(unreadHead)));
+  }, [client, unreadHead, unreadHead ? client.view(unreadHead).events.length : 0]);
+  const threadsLoading = threadList.some((item) => { const read = client.view(item.chatId); return !read.error && !stalled.has(item.chatId) && (!read.loaded || read.hasOlder); });
   const show = (entry: Entry) => {
     setProfile(undefined);
     if (entry.chat) setSelected(entry.chat.chatId);
@@ -709,7 +722,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const chat = client.chats.get(thread.chatId) ?? { chatId: thread.chatId, kind: "observed" as const, title: thread.title, agentIds: [threadAgent!], readOnly: true,
       lastSeq: 0, generation: 0, readSeq: 0, unread: 0, lastEvent: null, activeTurns: 0, pendingCards: 0, updatedAt: thread.lastAt };
     const threadView = client.view(thread.chatId);
-    if (!threadView.loaded) return [];
+    if (!threadView.loaded || threadView.hasOlder && !stalled.has(thread.chatId)) return [];
     const threadFold = foldOnce(threadView);
     const inputs = threadFold.items.filter((item) => item.kind === "message" && item.role === "user" && !item.steer);
     if (!inputs.length) return [];
@@ -724,12 +737,11 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const views = transcript(item.chat, item.view, item.fold, { root: true, rounds: item.rounds, title: item.rounds > 1 ? undefined : item.thread.title })
       .map((message) => ({ ...message, id: `thread:${item.thread.id}:${message.id}` }));
     const entry = item.rounds > 1 ? (
-      <button type="button" className="mau-thread-entry" data-thread={item.thread.id} data-open={item.open || undefined} data-ended={item.thread.status === "ended" || undefined}
+      <button type="button" className="mau-thread-entry" data-thread={item.thread.id} data-open={item.open || undefined}
         aria-expanded={item.open} onClick={() => openThread(item.thread)}>
         <span className="mau-thread-entry-title">
           <strong>{item.thread.title}</strong>
           <span>{t("threads.rounds", { count: String(item.rounds) })}</span>
-          {item.thread.status === "ended" ? <span className="mau-thread-entry-state">{t("threads.ended")}</span> : null}
           {item.unread && !item.open ? <i className="mau-thread-dot" role="img" aria-label={t("threads.unread")} /> : null}
           <ProductIcon name="next" size={14} />
         </span>
@@ -754,11 +766,19 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (at > latest) latest = at;
     return { at: latest, message };
   });
-  // A thread that began before the oldest message read so far appears when that part of the conversation is loaded.
+  // The page shows the conversation and its threads from one moment on, and what is before it once the reader comes
+  // to the top: the oldest message read so far while the conversation has earlier ones, and after that the threads
+  // that are open. A thread that began within what is read of the conversation is opened without being asked for.
   const oldest = timed[0]?.at;
-  const messages = grouped([...timed, ...roots.filter((root) => !view?.hasOlder || oldest !== undefined && root.at >= oldest)
+  const behind = !!view?.hasOlder && earlierThreads && oldest !== undefined && threadsFrom > oldest;
+  useEffect(() => { if (behind) moreThreads(); }, [behind, threadWindow]);
+  const since = view?.hasOlder ? oldest : threadsFrom;
+  const messages = grouped([...timed.filter((item) => view?.hasOlder || item.at >= threadsFrom), ...roots.filter((root) => since !== undefined && root.at >= since)
     .flatMap((root) => root.views.map((message) => ({ at: root.at, message })))]
     .sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0).map((item) => item.message));
+  // What the top of the page loads next: earlier messages of the conversation, then earlier threads. Not while threads are being read.
+  const pageEarlier = !current || threadsLoading ? undefined : view?.hasOlder ? () => client.loadOlder(current.chatId).catch((failed: unknown) => { setUploadError(failed); throw failed; })
+    : earlierThreads ? moreThreads : undefined;
   // The thread open beside the conversation: all of it, and a place to write in it.
   const opened = sideView?.kind === "thread" ? threadViews.find((item) => item.thread.id === sideView.sessionId) : undefined;
   const openedMessages = opened ? grouped(transcript(opened.chat, opened.view, opened.fold, { panel: true, rounds: opened.rounds })) : [];
@@ -766,10 +786,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (!opened || opened.view.lastSeq <= opened.view.readSeq || document.visibilityState !== "visible") return;
     void client.markRead(opened.chat.chatId, opened.view.lastSeq).catch(() => undefined);
   }, [client, opened?.chat.chatId, opened?.view.lastSeq, opened?.view.readSeq]);
+  // What was last sent in each thread and has not been answered for: sending the same words again is the same message,
+  // so a reply whose answer was lost on the way back does not become a second turn.
+  const replyKeys = useRef(new Map<string, { text: string; key: string }>());
   const replyInThread = useMutation({
-    mutationFn: (input: { agentId: string; sessionId: string; chatId: string; text: string }) =>
-      mauApi(session.token).replyInSession(input.agentId, input.sessionId, { text: input.text, key: crypto.randomUUID() }),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ["partner-sessions", session.owner] }),
+    mutationFn: (input: { agentId: string; sessionId: string; chatId: string; text: string; key: string }) =>
+      mauApi(session.token).replyInSession(input.agentId, input.sessionId, { text: input.text, key: input.key }),
+    onSuccess: (_sent, input) => {
+      if (replyKeys.current.get(input.chatId)?.key === input.key) replyKeys.current.delete(input.chatId);
+      return queries.invalidateQueries({ queryKey: ["partner-sessions", session.owner] });
+    },
     // What was written is not lost: it goes back into the box.
     onError: (failed, input) => {
       setDrafts((values) => values[input.chatId] ? values : { ...values, [input.chatId]: input.text });
@@ -922,19 +948,19 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 onDownload={() => void saveAttachment(api, sideView.attachment).catch(setUploadError)} />
             ) } : sideView?.kind === "thread" && opened ? { inspector: (
               <PartnerFigureProvider value={partnerFigure}><ThreadSideView key={opened.thread.id} chatId={opened.chat.chatId} title={opened.thread.title}
-                detail={t("threads.detail", { partner: names.get(sideView.agentId) ?? "", starter: names.get(opened.thread.startedBy.id) ?? opened.thread.startedBy.name, count: String(opened.rounds) })
-                  + (opened.thread.status === "ended" ? " · " + t("threads.ended") : "")}
+                detail={t("threads.detail", { partner: names.get(sideView.agentId) ?? "", starter: names.get(opened.thread.startedBy.id) ?? opened.thread.startedBy.name, count: String(opened.rounds) })}
                 messages={openedMessages} onClose={() => setSideView(undefined)}
                 composer={{
                   value: drafts[opened.chat.chatId] ?? "",
                   onChange: (value) => setDrafts((values) => ({ ...values, [opened.chat.chatId]: value })),
-                  disabled: opened.thread.status === "ended",
-                  placeholder: t(opened.thread.status === "ended" ? "threads.endedHint" : "threads.reply"),
+                  placeholder: t("threads.reply"),
                   onSend: () => {
-                    const text = (drafts[opened.chat.chatId] ?? "").trim();
-                    if (!text || opened.thread.status === "ended") return;
-                    clearDraft(opened.chat.chatId);
-                    replyInThread.mutate({ agentId: sideView.agentId, sessionId: opened.thread.id, chatId: opened.chat.chatId, text });
+                    const text = (drafts[opened.chat.chatId] ?? "").trim(), chatId = opened.chat.chatId;
+                    if (!text) return;
+                    const kept = replyKeys.current.get(chatId), key = kept?.text === text ? kept.key : crypto.randomUUID();
+                    replyKeys.current.set(chatId, { text, key });
+                    clearDraft(chatId);
+                    replyInThread.mutate({ agentId: sideView.agentId, sessionId: opened.thread.id, chatId, text, key });
                   },
                 }} /></PartnerFigureProvider>
             ) } : sideView?.kind === "document" ? { inspector: (
@@ -954,6 +980,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 },
               } : {})}>
             <PartnerFigureProvider value={partnerFigure}><Conversation conversationId={current.chatId}
+              {...(pageEarlier ? { onReachStart: pageEarlier } : {})}
               header={header}
               notice={<>
                 {failure}
@@ -968,7 +995,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   </span>)}
                 </p> : null}
                 {client.connection.state === "reconnecting" ? <p className="mau-muted">{zh ? "正在重新连接…" : "Reconnecting…"}</p> : null}
-                {view.hasOlder ? <Button onClick={() => void client.loadOlder(current.chatId).catch(setUploadError)}>{zh ? "加载更早的消息" : "Load earlier messages"}</Button> : null}
               </>}
               {...(!view.loaded ? { empty: <LoadingSurface label={t("common.loading")} /> } : {})}
               messages={messages}

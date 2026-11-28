@@ -829,10 +829,6 @@ button.mau-chat-title:enabled:hover {
   flex: none;
   color: var(--c-action);
 }
-.mau-thread-entry-title > .mau-thread-entry-state,
-.mau-thread-entry[data-ended] .mau-thread-entry-title > span {
-  color: var(--c-text-secondary);
-}
 .mau-thread-entry-title svg {
   flex: none;
 }

@@ -53,8 +53,7 @@ export interface PartnerView {
  */
 export interface PartnerThread {
   id: string; chatId: string; title: string; startedBy: PartnerRef; createdAt: string; lastAt: string; turns: number; tokens?: number;
-  /** `ended`: it is not continued any more; what was said in it can still be read. */
-  status: "open" | "ended"; working: boolean;
+  working: boolean;
 }
 /** Where a new partner runs: in an environment of its own, in another partner's (on its main kernel unless one is named), or on the owner's computer. */
 export type NewPartnerEnvironment = { profileId: string } | { shareWith: string; kernel?: string } | { kind: "external" };

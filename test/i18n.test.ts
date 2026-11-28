@@ -59,7 +59,7 @@ it("says every refusal of the partners tool, of dismissing and of the memory doc
   const refusals = [...new Set([...source.matchAll(/"(partners?_[a-z_]+)"/g)].map((match) => match[1]!))].filter((code) => !internal.includes(code));
   expect(refusals).toEqual(expect.arrayContaining(["partner_owner_conversation_required", "partner_chain_limit", "partner_layer_limit", "partner_message_limit_reached",
     "partner_unavailable", "partner_not_found", "partner_dismissed", "partner_limit_reached", "partner_recruit_failed", "partners_invalid_input",
-    "partner_session_not_found", "partner_session_ended", "partner_session_not_available"]));
+    "partner_session_not_found", "partner_session_not_available"]));
   // What a message's result may end with, and what the owner's own requests (dismiss, restore, memory) are refused with.
   const others = ["no_answer_after_48_hours", "partner_deleted", "outcome_unknown", "tool_removed", "operation_failed", "agent_not_found", "connected_app_owner_private_only", "owner_approval_unavailable",
     "memory_capacity_exceeded", "memory_duplicate", "memory_no_match", "memory_ambiguous_match", "memory_file_changed", "memory_invalid_content",

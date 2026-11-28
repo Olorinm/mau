@@ -165,9 +165,13 @@ console shows that work in the conversations it belongs to.
   for) and what this partner answered. The later rounds are not laid out in the conversation. A thread with
   something new has a dot on its line, and a line above the composer says which thread it is and opens it; a
   thread that is open is read. The box in the thread writes in that session: a turn of the session with the
-  owner's own words, of which the partner that opened it is not told. A thread whose session was closed says so,
-  can be read and cannot be written in. The list of conversations has one row for a partner: what is new or
-  running in its threads shows on that row, and searching a conversation reaches into its threads.
+  owner's own words, of which the partner that opened it is not told. Sending the same words again after a reply
+  whose answer was lost is the same message, not a second turn. A thread never closes: when its session goes on in
+  a new context, the thread shows the divider of a new chat and is written in as before. The page opens the threads
+  that began last and the ones something happened in last; coming to the top of the conversation loads its earlier
+  messages and then the threads that began earlier, without a button, and leaves the reader where they were. A
+  thread is read from its first round, however long it is. The list of conversations has one row for a partner:
+  what is new or running in its threads shows on that row, and searching a conversation reaches into its threads.
 - **Messages and results.** A partner's message is a turn of a session of the recipient, and its result returns
   to the conversation the message was sent from. Either one is the first step of the reply it started: a row
   under the other partner's figure ("Asked by chief", "Reply from reviewer") whose name opens the conversation
