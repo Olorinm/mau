@@ -36,7 +36,7 @@ export interface ReviewCapabilities extends MemoryReviewScope {
   otherTools: "denied";
   contextAccess: "copied-session-and-managed-memory-skills";
   sideEffects: "managed-memory-skills-only";
-  unattendedDestructiveWrites: "stage-for-owner-approval";
+  unattendedDestructiveWrites: "apply-and-record";
   delivery: "disabled";
   recursion: "disabled";
   memory: boolean;
@@ -97,7 +97,7 @@ const configSchema = z.object({ enabled: z.boolean().default(true),
 const capabilitySchema = scopes.extend({ status: z.literal("available"), runtimeId: z.string().min(1), policyId: z.string().min(1),
   isolation: z.literal("dedicated-runtime"), enforcement: z.literal("runtime-tool-allowlist"), otherTools: z.literal("denied"),
   contextAccess: z.literal("copied-session-and-managed-memory-skills"), sideEffects: z.literal("managed-memory-skills-only"),
-  unattendedDestructiveWrites: z.literal("stage-for-owner-approval"), delivery: z.literal("disabled"), recursion: z.literal("disabled"),
+  unattendedDestructiveWrites: z.literal("apply-and-record"), delivery: z.literal("disabled"), recursion: z.literal("disabled"),
   memory: z.boolean(), skills: z.boolean(),
 }).strict();
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");

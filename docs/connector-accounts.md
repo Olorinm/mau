@@ -193,7 +193,7 @@ working. `not_supported` operations are listed but cannot be set.
 
 ### Approvals for a partner's turn
 
-A partner that handles [another partner's message](native-work.md#partners) works in its own conversation, which the
+A partner that handles [another partner's message](native-work.md#partners) works in a session of its own, which the
 owner may not be looking at, and it cannot ask the owner there. Its connected-app calls follow the turn the message
 was sent in:
 

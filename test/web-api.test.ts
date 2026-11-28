@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError, accessExpiredEvent, request, safeExternalUrl } from "../web/src/api/http.js";
-import { bootSession, logout, reloadDrafts, saveReloadDrafts } from "../web/src/api/session.js";
+import { bootSession, logout, reloadDrafts, reloadReplyKeys, saveReloadDrafts, saveReloadReplyKeys } from "../web/src/api/session.js";
 import { mauApi, routerApi } from "../web/src/api/client.js";
 import { errorMessage, translator } from "../web/src/i18n.js";
 
@@ -205,6 +205,14 @@ it("keeps unsent composer text across the Access re-login reload", () => {
   expect(reloadDrafts(storage)).toEqual({ "dm:a": "half a thought" });
   expect(reloadDrafts(storage, true)).toEqual({ "dm:a": "half a thought" });
   expect(reloadDrafts(storage)).toEqual({});
+  // The key a reply in a thread was sent under is kept with its words: sent again after signing in, it is the same message.
+  saveReloadReplyKeys({}, storage);
+  expect(reloadReplyKeys(storage)).toEqual({});
+  saveReloadReplyKeys({ "obs:a:ps-1": { text: "half a thought", key: "k-1" } }, storage);
+  expect(reloadReplyKeys(storage, true)).toEqual({ "obs:a:ps-1": { text: "half a thought", key: "k-1" } });
+  expect(reloadReplyKeys(storage)).toEqual({});
+  storage.setItem("mau.reloadReplyKeys", JSON.stringify({ a: "text", b: { text: "t" }, c: { text: "t", key: "k" } }));
+  expect(reloadReplyKeys(storage)).toEqual({ c: { text: "t", key: "k" } });
 });
 
 it("frames only a Cloudflare live-view link from a handoff card", async () => {

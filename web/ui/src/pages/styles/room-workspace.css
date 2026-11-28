@@ -123,6 +123,8 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  /* The conversation keeps the reader's place itself (conversation.tsx); the browser's anchoring would move it too. */
+  overflow-anchor: none;
   padding: 0;
   position: relative;
   z-index: 1;

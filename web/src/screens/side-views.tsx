@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatMarkdown } from "@olorinm/agent-ui";
 import { Button, useToast } from "@olorinm/agent-ui/app";
-import { FileEditor } from "@olorinm/agent-ui/pages";
+import { Conversation, FileEditor, type ConversationComposer, type MessageView } from "@olorinm/agent-ui/pages";
 import { mauApi, memoryDelimiter } from "../api/client";
 import { memoryDocument, memoryEntries, memoryOperations } from "../api/memory-document";
 import type { Session } from "../api/session";
@@ -19,6 +19,40 @@ function SideHead({ title, detail, children, onClose }: { title: string; detail?
       {children}
       <button type="button" className="mau-side-close" aria-label={t("common.close")} title={t("common.close")} onClick={onClose}>×</button>
     </header>
+  );
+}
+
+/** A long text that shows its first lines, and the rest when asked. A text that fits is shown whole, with nothing to press. */
+export function Clamped({ children, more, less }: { children: ReactNode; more: string; less: string }) {
+  const body = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false), [long, setLong] = useState(false);
+  useLayoutEffect(() => { const node = body.current; if (node && !open) setLong(node.scrollHeight > node.clientHeight + 1); }, [children, open]);
+  return (
+    <div className="mau-clamped" data-open={open || undefined}>
+      <div className="mau-clamped-body" ref={body}>{children}</div>
+      {long || open ? <button type="button" className="mau-clamped-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? less : more}</button> : null}
+    </div>
+  );
+}
+
+/**
+ * A thread of a partner's page, beside the conversation: one piece of work another partner sent it, from its first
+ * round to its last, and a box to write in it. What is written there is a turn of that session, not of the
+ * conversation it is opened from.
+ */
+export function ThreadSideView({ chatId, title, detail, messages, composer, onClose }: {
+  chatId: string; title: string; detail: string; messages: readonly MessageView[]; composer: ConversationComposer; onClose(): void;
+}) {
+  const { t } = useI18n();
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) onClose(); };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [onClose]);
+  return (
+    <aside className="mau-side-card mau-side-view mau-thread-view" aria-label={t("threads.label")} data-thread-chat={chatId}>
+      <Conversation conversationId={chatId} header={<SideHead title={title} detail={detail} onClose={onClose} />} messages={messages} composer={composer} />
+    </aside>
   );
 }
 

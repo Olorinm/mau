@@ -242,7 +242,7 @@ export class PartnerContext {
       }
     }
     this.checkCapacity(entries);
-    if (this.writeApproval || (origin === "review" && operations.some(o => o.action !== "add"))) {
+    if (this.writeApproval) {
       const id = randomUUID(), pending: PendingWrite = { id, owner, agentId, origin, status: "pending", createdAt: new Date().toISOString(),
         beforeRevision: file.revision, afterRevision: digest(entries.join(MEMORY_DELIMITER)), entries, operations, replaced, removed, changes };
       this.store.set("employee_memory_pending", id, pending);

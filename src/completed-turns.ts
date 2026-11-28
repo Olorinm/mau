@@ -11,7 +11,9 @@ export class CompletedTurns {
   private pending: Promise<void> | undefined;
   private closed = false;
   constructor(private store: DurableStore, private history: SessionHistory, private reviews: MemoryReviewCoordinator,
-    private sessions: (owner: string, agentId: string) => Promise<WorkSessions>, private memoryEnabled: boolean) {}
+    private sessions: (owner: string, agentId: string) => Promise<WorkSessions>, private memoryEnabled: boolean,
+    /** A turn ended in a session: the product's count of what the session was used for. It never fails a turn's bookkeeping. */
+    private used?: (owner: string, agentId: string, sessionId: string, runId: string) => Promise<void>) {}
   enqueue(turn: CompletedPartnerTurn) {
     if (turn.admission.kind === "schedule") return;
     this.store.insert("employee_completed_turns", JSON.stringify([turn.admission.owner, turn.admission.agentId, turn.runId]), { ...turn, status: "queued" });
@@ -35,6 +37,7 @@ export class CompletedTurns {
         this.store.set("employee_session_aliases", JSON.stringify([owner, agentId, turn.sessionId]), sessionId);
         this.history.append(owner, agentId, sessionId, `${turn.runId}:${turn.inputRole ?? "user"}`, turn.input);
         this.history.append(owner, agentId, sessionId, `${turn.runId}:assistant`, turn.answer);
+        await this.used?.(owner, agentId, sessionId, turn.runId).catch(() => undefined);
         if (this.memoryEnabled) this.reviews.completed({ owner, agentId, sessionId, runId: turn.runId,
           origin: turn.admission.kind, status: "completed", memoryAvailable: true });
         this.store.set("employee_completed_turns", id, { ...turn, status: "completed" });

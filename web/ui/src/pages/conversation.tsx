@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -85,6 +86,7 @@ export function Conversation({
   notice,
   trailing,
   conversationId,
+  onReachStart,
 }: {
   conversationId?: string;
   header?: ReactNode;
@@ -93,6 +95,11 @@ export function Conversation({
   empty?: ReactNode;
   notice?: ReactNode;
   trailing?: ReactNode;
+  /**
+   * There is more before the first message: called when the reader comes near the top, and again once what it
+   * loaded is shown. Left out when the conversation begins with its first message.
+   */
+  onReachStart?(): unknown;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -127,9 +134,78 @@ export function Conversation({
     element.style.height = "auto";
     element.style.height = `${Math.min(element.scrollHeight, 130)}px`;
   }, [composer.value]);
+  // Where the reader is in the stream: at its end, or at a message that stood at a known place. Another conversation
+  // shows its end, and so does a message the reader has just sent. Anything else leaves a reader who is not at the end
+  // at the message they were reading: messages put before the first one or between the others, and whatever takes its
+  // height after it is shown. `top` is where the stream was scrolled to when that place was last known: what the
+  // stream has scrolled since is the reader's doing, and whatever else moved the message is undone. The browser's own
+  // scroll anchoring is off for the stream (`overflow-anchor`), so nothing else scrolls it.
+  const first = messages[0]?.id, last = messages.at(-1);
+  const held = useRef<{ conversationId?: string | undefined; last?: string | undefined; atEnd: boolean; top: number; anchor?: { id: string; offset: number } }>({ atEnd: true, top: 0 });
+  const offsetOf = (element: HTMLElement, id: string) => {
+    const node = element.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`);
+    return node ? node.getBoundingClientRect().top - element.getBoundingClientRect().top : undefined;
+  };
+  /**
+   * Take where the reader is: whether at the end, and the first message that begins in view. One that only reaches
+   * into view from above would move what is read below it when it takes its height; it is the place only when no
+   * message begins in view.
+   */
+  const look = (element: HTMLElement) => {
+    const top = element.getBoundingClientRect().top, nodes = [...element.querySelectorAll<HTMLElement>("[data-room-message-id]")];
+    const begins = (item: HTMLElement) => { const at = item.getBoundingClientRect().top; return at >= top && at < top + element.clientHeight; };
+    const node = nodes.find(begins) ?? nodes.find((item) => item.getBoundingClientRect().bottom > top);
+    const id = node?.getAttribute("data-room-message-id");
+    held.current = { ...held.current, atEnd: element.scrollHeight - element.scrollTop - element.clientHeight < 48, top: element.scrollTop,
+      ...(node && id ? { anchor: { id, offset: node.getBoundingClientRect().top - top } } : {}) };
+  };
+  /**
+   * Put the reader back where they were: at the end, or at the message they were reading, moved by what they scrolled
+   * since. Messages take their height over several frames, between two scroll events as well, so the place is taken
+   * anew only when the reader has scrolled or its message is gone: taken as the stream stands, it would be a place
+   * the reader never went to, at a message that has not taken its height yet. A stream that became shorter than where
+   * it was scrolled to is scrolled back by the browser, which is not the reader's doing either.
+   */
+  const keep = (element: HTMLElement) => {
+    const { atEnd, anchor, top } = held.current, end = Math.max(0, element.scrollHeight - element.clientHeight), moved = element.scrollTop - Math.min(top, end);
+    // A reader at the end who scrolled up has left it.
+    if (atEnd && moved < 0) return look(element);
+    const at = !atEnd && anchor ? { id: anchor.id, offset: anchor.offset - moved } : undefined, now = at ? offsetOf(element, at.id) : undefined;
+    const to = atEnd ? end : now !== undefined ? element.scrollTop + now - at!.offset : element.scrollTop;
+    if (Math.abs(to - element.scrollTop) >= 1) element.scrollTop = to;
+    held.current = { ...held.current, top: element.scrollTop, ...(at ? { anchor: at } : {}) };
+    if (Math.abs(moved) >= 1 || (!atEnd && now === undefined)) look(element);
+  };
+  const loading = useRef(false);
+  const reach = useRef(onReachStart);
+  reach.current = onReachStart;
+  const nearStart = () => {
+    const element = stream.current;
+    if (!element || !reach.current || loading.current || element.scrollTop > 160) return;
+    loading.current = true;
+    // Once what was loaded is shown, the top may still be near: go on. A failure waits for the reader to come back.
+    void Promise.resolve().then(() => reach.current?.()).then(() => { loading.current = false; requestAnimationFrame(nearStart); }, () => { loading.current = false; });
+  };
   useLayoutEffect(() => {
-    if (stream.current) stream.current.scrollTop = stream.current.scrollHeight;
-  }, [messages.length, conversationId]);
+    const element = stream.current;
+    if (!element) return;
+    const before = held.current, toEnd = before.conversationId !== conversationId || (last?.role === "user" && last.id !== before.last);
+    held.current = { ...before, conversationId, last: last?.id, ...(toEnd ? { atEnd: true, top: element.scrollTop } : {}) };
+    keep(element);
+    nearStart();
+  }, [messages.length, conversationId, first, last?.id]);
+  useEffect(() => {
+    const element = stream.current;
+    if (!element) return;
+    const scrolled = () => { keep(element); nearStart(); };
+    // Messages take their height after they are shown (a rendered answer, an image): the reader stays where they were.
+    const resized = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => { keep(element); nearStart(); });
+    for (const child of element.children) resized?.observe(child);
+    element.addEventListener("scroll", scrolled, { passive: true });
+    return () => { element.removeEventListener("scroll", scrolled); resized?.disconnect(); };
+  }, [conversationId, messages.length === 0]);
+  // More became loadable while the reader was already at the top.
+  useEffect(() => { nearStart(); }, [!!onReachStart]);
   const keyboard = useRoomComposerKeyboard<MentionOption | ComposerCommand>({
     mentionMenu: commandOpen
       ? { open: true, activeIndex: Math.min(activeCommand, commands.length - 1) }

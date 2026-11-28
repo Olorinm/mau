@@ -14,15 +14,15 @@ import {
 import { Button, Dialog, DialogContent, DialogTitle, PartnerAvatar, EmptyState, PixelAvatarGroup, ProductIcon, StatusLine, TextButton, useCompactLayout, useToast } from "@olorinm/agent-ui/app";
 import { ChatMarkdown, ImagePreview } from "@olorinm/agent-ui";
 import { blockBuildReload } from "../build-version";
-import { mauApi } from "../api/client";
+import { mauApi, type PartnerThread } from "../api/client";
 import { ApiError, type PartnerRef } from "../api/http";
 import { answerInteraction } from "@olorinm/agent-host/interactions";
 import {
   AttachmentDrafts, LedgerClient, attachmentKind, attachmentUrl, cardAnswerBody, foldEvents, formatBytes, ledgerApi,
-  type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerSocket, type LedgerTurn,
+  type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerChatView, type LedgerFold, type LedgerSocket, type LedgerTurn,
   type MessageDisplay, type PartnerIntent, type PartnerResult, type PendingAnswer,
 } from "../api/ledger";
-import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
+import { beforeAccessReloadEvent, reloadDrafts, reloadReplyKeys, saveReloadDrafts, saveReloadReplyKeys, type Session } from "../api/session";
 import { errorMessage, errorSentence, failureMessage, useI18n, type Translate } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { PartnerFigureProvider, type PartnerFigureResolver, type RunIncoming } from "@olorinm/agent-ui/pages";
@@ -30,13 +30,37 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
+import { OPEN_THREADS, newestPages, openThreads, withPage, type ThreadBook } from "./thread-paging";
 import { liveViewUrl } from "../api/live-view";
-import { BrowserSideView, DocumentSideView, type PartnerDocument, FileSideView } from "./side-views";
+import { BrowserSideView, Clamped, DocumentSideView, type PartnerDocument, FileSideView, ThreadSideView } from "./side-views";
 import { ChatRoster, type ChatEntry, type ChatSection } from "./chat-switcher";
 import { MauMark } from "../mau-mark";
 import { openSettings } from "../settings/route";
 
 const terminalTurn = ["completed", "failed", "canceled", "unknown"];
+/** The chat of a session a partner works in beside its conversation with the owner (`PartnerThread`). */
+const threadChat = (chatId: string) => /^obs:[^:]+:ps-[0-9a-f]{32}$/.test(chatId);
+/**
+ * The fold of a thread's events, kept until the thread has a newer event: a page with many threads folds each one
+ * when it changes, not on every render. The client appends to the same list, so the list alone does not say.
+ */
+const threadFolds = new WeakMap<object, { lastSeq: number; fold: LedgerFold }>();
+const foldOnce = (view: LedgerChatView) => {
+  const kept = threadFolds.get(view.events);
+  if (kept?.lastSeq === view.lastSeq) return kept.fold;
+  const fold = foldEvents(view.events);
+  threadFolds.set(view.events, { lastSeq: view.lastSeq, fold });
+  return fold;
+};
+/** How a chat that is a thread of a partner's page is shown: its first round on the page, or all of it in the panel. */
+interface ThreadMode { rounds: number; root?: boolean; panel?: boolean; title?: string | undefined }
+/** A reply following one from the same sender drops the repeated avatar and name. */
+const grouped = (messages: MessageView[]) => messages.map((message, index) => {
+  const previous = messages[index - 1];
+  return previous && message.role === "assistant" && previous.role === "assistant" && message.title === previous.title ? { ...message, continued: true } : message;
+});
+/** The words of a reply on one line, without the marks of its formatting. */
+const oneLine = (text: string) => text.replace(/```[\s\S]*?```/g, " ").replace(/[#*`>_~|]/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
 const channelNames: Record<string, [string, string]> = {
   matrix: ["Matrix", "Matrix"], feishu: ["飞书", "Feishu"], "grove-mail": ["邮件", "Mail"], agentmail: ["邮件", "Mail"],
   telegram: ["Telegram", "Telegram"], weixin: ["微信", "WeChat"], schedule: ["定时", "Schedule"],
@@ -249,7 +273,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [creating, setCreating] = useState(false);
   // On the right of the conversation: a message's file, or the browser a partner handed over.
   const [sideView, setSideView] = useState<{ kind: "file"; attachment: AttachmentRef } | { kind: "browser"; cardId: string }
-    | { kind: "document"; agentId: string; name: PartnerDocument }>();
+    | { kind: "document"; agentId: string; name: PartnerDocument } | { kind: "thread"; agentId: string; sessionId: string; chatId: string }>();
   const dismissedHandoff = useRef<string | undefined>(undefined);
   const [grouping, setGrouping] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -257,9 +281,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [drafts, setDrafts] = useState<Record<string, string>>(() => reloadDrafts());
   const latestDrafts = useRef(drafts);
   latestDrafts.current = drafts;
+  // What was last sent in each thread and has not been answered for: sending the same words again is the same message,
+  // so a reply whose answer was lost on the way back does not become a second turn. Kept across that reload with the text.
+  const replyKeys = useRef(new Map(Object.entries(reloadReplyKeys())));
   useEffect(() => {
-    reloadDrafts(sessionStorage, true);
-    const save = () => saveReloadDrafts(latestDrafts.current);
+    reloadDrafts(sessionStorage, true); reloadReplyKeys(sessionStorage, true);
+    const save = () => { saveReloadDrafts(latestDrafts.current); saveReloadReplyKeys(Object.fromEntries(replyKeys.current)); };
     globalThis.addEventListener(beforeAccessReloadEvent, save);
     return () => globalThis.removeEventListener(beforeAccessReloadEvent, save);
   }, []);
@@ -276,13 +303,16 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const list = client.chatList();
   // A turn that starts or ends, or a card that opens or closes, changes what waits at the partners.
   const activity = list.map((chat) => `${chat.chatId}:${chat.activeTurns}:${chat.pendingCards}`).join("\n");
-  useEffect(() => { void queries.invalidateQueries({ queryKey: ["partners", session.owner] }); }, [activity]);
+  useEffect(() => {
+    void queries.invalidateQueries({ queryKey: ["partners", session.owner] });
+    void queries.invalidateQueries({ queryKey: ["partner-sessions", session.owner] });
+  }, [activity]);
   // On a wide screen the first conversation opens by itself: a chat with a partner before another channel's session.
   useEffect(() => {
     if (selected || !agents.isSuccess || !matchMedia("(min-width: 901px)").matches) return;
     const partners = new Set(agents.data.flatMap(({ agent, dismissed }) => dismissed ? [] : [agent.id]));
     const first = list.find((chat) => chat.kind === "dm" && partners.has(chat.agentIds[0] ?? ""))
-      ?? list.find((chat) => chat.kind === "group") ?? list.find((chat) => !observedKey(chat)?.startsWith("work:"));
+      ?? list.find((chat) => chat.kind === "group") ?? list.find((chat) => !observedKey(chat)?.startsWith("work:") && !threadChat(chat.chatId));
     if (first) setSelected(first.chatId);
   }, [list.length, selected, agents.isSuccess]);
 
@@ -299,7 +329,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (handoffCard && handoffUrl && dismissedHandoff.current !== handoffCard.cardId) { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }
     else if (!handoffCard) setSideView((view) => view?.kind === "browser" ? undefined : view);
   }, [handoffCard?.cardId, handoffUrl]);
-  useEffect(() => { setSideView((view) => view?.kind === "file" || view?.kind === "document" ? undefined : view); }, [current?.chatId]);
+  useEffect(() => { setSideView((view) => view?.kind === "file" || view?.kind === "document" || view?.kind === "thread" ? undefined : view); }, [current?.chatId]);
   const room = useLedgerGroup({ token: session.token, chat: current, view, agents: agents.data ?? [] });
   const agentName = (agentId: string) => room.group ? room.nameOf(agentId) : names.get(agentId) ?? current?.title ?? agentId;
 
@@ -387,13 +417,18 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     const chat = dms.get(agent.id), state = environment?.state ?? "unconfigured", waiting = dismissed ? undefined : views.get(agent.id)?.waiting;
     // A partner on the owner's computer is online or offline; a computer that is off is not working, whatever waits for it.
     const device = kind === "external" ? connection ?? "pairing" : undefined, away = device !== undefined && device !== "online";
-    const working = !away && (!!chat?.activeTurns || !!waiting?.messages);
+    // Its sessions are threads of its page, not conversations of their own: what is new or running in one shows here.
+    const sessions = list.filter((item) => threadChat(item.chatId) && item.agentIds[0] === agent.id);
+    const working = !away && (!!chat?.activeTurns || !!waiting?.messages || sessions.some((item) => item.activeTurns));
+    // The row shows the newest thing on the partner's page, in its conversation or in one of its threads.
+    const latest = [chat, ...sessions].reduce<ChatSummary | undefined>((newest, item) =>
+      item?.lastEvent && (!newest?.lastEvent || item.lastEvent.at > newest.lastEvent.at) ? item : newest, undefined) ?? chat;
     // The figure's eyes carry the state: aside while a reply runs (the owner's or another partner's message), closed
     // when the environment cannot take messages or the partner is dismissed.
     const figure = dismissed || away ? "offline" : working ? "working" : !device && unavailable.includes(state) ? "offline" : "idle";
     return { key: "agent:" + agent.id, title: agent.name,
       status: dismissed ? t("partners.dismissedState") : waiting?.approvals ? t("partners.waitingApproval") : working ? (zh ? "正在处理" : "Working") : t(device ? `device.${device}` : `state.${state}`),
-      preview: preview(chat), time: clock(chat?.lastEvent?.at), unread: chat?.unread ?? 0, chat, agentId: agent.id,
+      preview: preview(latest), time: clock(latest?.lastEvent?.at), unread: (chat?.unread ?? 0) + sessions.reduce((sum, item) => sum + item.unread, 0), chat, agentId: agent.id,
       ...(waiting?.approvals ? { note: t("partners.waitingApproval") } : {}),
       avatar: (size) => <PartnerAvatar seed={agent.id} fallbackName={agent.name} size={size} state={figure} /> };
   };
@@ -410,13 +445,54 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const groupEntries = list.filter((chat) => chat.kind === "group").map(chatEntry);
   // Sessions on other channels (a Feishu group, a chat with a partner that no longer exists) can be read here.
   const otherEntries = list.filter((chat) => chat.kind !== "group" && !(chat.kind === "dm" && known.has(chat.agentIds[0] ?? ""))
-    && !observedKey(chat)?.startsWith("work:")).map(chatEntry);
+    && !observedKey(chat)?.startsWith("work:") && !threadChat(chat.chatId)).map(chatEntry);
   const allEntries = [...agentEntries, ...groupEntries, ...otherEntries];
   const currentKey = !current ? undefined : current.kind === "dm" && known.has(current.agentIds[0] ?? "") ? "agent:" + current.agentIds[0] : "chat:" + current.chatId;
   // The profile card follows the conversation; it closes on one that has no single partner.
   const currentAgent = current && current.kind !== "group" ? current.agentIds[0] : undefined;
   useEffect(() => { setProfile((open) => open === undefined ? open : currentAgent && known.has(currentAgent) ? currentAgent : undefined); }, [current?.chatId]);
   const profileSummary = profile ? agents.data?.find(({ agent }) => agent.id === profile) : undefined;
+  // The sessions the partner on screen works in beside this conversation. Each is a thread of this page: its first
+  // round stands in the conversation where it began, and the rest opens beside it.
+  const threadAgent = current?.kind === "dm" && currentAgent && known.has(currentAgent) ? currentAgent : undefined;
+  // The threads of each partner the page has been given, page by page: the list is the server's, which keeps it however long it grows.
+  const [books, setBooks] = useState<Record<string, ThreadBook<PartnerThread>>>({});
+  const given = useRef(books);
+  given.current = books;
+  const threads = useQuery({ queryKey: ["partner-sessions", session.owner, threadAgent], enabled: !!threadAgent, retry: false,
+    queryFn: () => newestPages(given.current[threadAgent!], (before) => mauApi(session.token).sessions(threadAgent!, before ? { before, limit: OPEN_THREADS } : {})),
+    refetchInterval: (query) => [...query.state.data?.data ?? [], ...query.state.data?.active ?? []].some((item) => item.working) ? 3000 : 15_000 });
+  useEffect(() => {
+    const page = threads.data;
+    if (threadAgent && page) setBooks((values) => ({ ...values, [threadAgent]: withPage(values[threadAgent], page, true) }));
+  }, [threads.data, threadAgent]);
+  const book = threadAgent ? books[threadAgent] : undefined, earlierThreads = !!book?.earlier;
+  const pagingThreads = useRef<Promise<void>>(undefined);
+  const moreThreads = () => pagingThreads.current ??= (async () => {
+    const before = book?.earlier;
+    if (!threadAgent || !before) return;
+    const page = await mauApi(session.token).sessions(threadAgent, { before, limit: OPEN_THREADS });
+    setBooks((values) => ({ ...values, [threadAgent]: withPage(values[threadAgent], page, false) }));
+  })().finally(() => { pagingThreads.current = undefined; });
+  const openThreadId = sideView?.kind === "thread" ? sideView.sessionId : undefined;
+  const { live: liveThreads, read: readThreads, from: threadsFrom } = useMemo(() => openThreads(book, threadAgent ? threads.data?.active ?? [] : [], openThreadId), [book, threads.data, threadAgent, openThreadId]);
+  const threadList = useMemo(() => [...liveThreads, ...readThreads], [liveThreads, readThreads]);
+  // Threads the page follows are subscribed to; the others are read once, and followed when something happens in them.
+  const threadChats = liveThreads.map((item) => item.chatId).join("\n"), readChats = readThreads.map((item) => item.chatId).join("\n");
+  useEffect(() => {
+    const ids = threadChats ? threadChats.split("\n") : [];
+    for (const id of ids) void client.openChat(id).catch(() => undefined);
+    return () => { for (const id of ids) client.closeChat(id); };
+  }, [client, threadChats]);
+  useEffect(() => { for (const id of readChats ? readChats.split("\n") : []) void client.readChat(id).catch(() => undefined); }, [client, readChats]);
+  // A thread is read from its first round: the page shows where it began, and counts its rounds. One at a time; a
+  // thread whose earlier part could not be read is shown from what was read, and tried again when the page is opened again.
+  const [stalled, setStalled] = useState<ReadonlySet<string>>(new Set());
+  const unreadHead = threadList.find((item) => { const read = client.view(item.chatId); return read.loaded && read.hasOlder && !read.error && !stalled.has(item.chatId); })?.chatId;
+  useEffect(() => {
+    if (unreadHead) void client.loadOlder(unreadHead).catch(() => setStalled((values) => new Set(values).add(unreadHead)));
+  }, [client, unreadHead, unreadHead ? client.view(unreadHead).events.length : 0]);
+  const threadsLoading = threadList.some((item) => { const read = client.view(item.chatId); return !read.error && !stalled.has(item.chatId) && (!read.loaded || read.hasOlder); });
   const show = (entry: Entry) => {
     setProfile(undefined);
     if (entry.chat) setSelected(entry.chat.chatId);
@@ -468,12 +544,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
    * What another partner sent, as the first steps of the reply it started: a row under that partner's figure that
    * names it and opens the message as it was written.
    */
-  const incomingRows = (eventId: string, display: MessageDisplay | undefined): RunIncoming[] | undefined => {
+  const incomingRows = (eventId: string, display: MessageDisplay | undefined, title?: string): RunIncoming[] | undefined => {
     const { partnerMessage: sent, partnerResults: results } = display ?? {};
     const row = (key: string, partner: PartnerRef, kind: "reply" | PartnerIntent, text: string, note?: { text: string; code?: string }): RunIncoming => {
       const [before = "", after = ""] = t(`partners.incoming.${kind}`, { name: "\u0000" }).split("\u0000");
+      const summary = before + partner.name + after;
       return { key, icon: <PartnerAvatar seed={partner.id} fallbackName={partner.name} size={16} animated={false} />, before, name: partner.name, after,
-        summary: before + partner.name + after,
+        summary: title ? t("partners.incoming.titled", { summary, title }) : summary,
         ...(text ? { content: <ChatMarkdown markdown={text} />, contentLabel: t(kind === "reply" ? "partners.incoming.replyText" : "partners.incoming.messageText") } : {}),
         ...(note?.text ? { note: note.text, ...(note.code ? { noteTitle: note.code } : {}) } : {}) };
     };
@@ -510,13 +587,19 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const attachmentsOf = (refs: readonly AttachmentRef[]) => refs.length ? <LedgerAttachments api={api} attachments={refs} onError={setUploadError}
     onPreview={(attachment) => { setProfile(undefined); setSideView({ kind: "file", attachment }); }} /> : undefined;
 
-  const answers = new Map(view?.answers.map((item) => [item.cardId, item]) ?? []);
   // Only the owner's own web messages can be withdrawn (no edit); the key is present only on those (§8.2).
   const canRedact = (item: LedgerBubble) => item.kind === "message" && item.role === "user" && !item.redacted
     && !!item.idempotencyKey && (item.channel?.kind ?? "web") === "web";
-  const redactions = new Map(view?.redactions.map((item) => [item.eventId, item]) ?? []);
-  const messages: MessageView[] = [];
-  if (current && view && fold) {
+  /**
+   * What stands in one chat, as the messages of a conversation. `thread`: the chat is a session of the partner, shown
+   * as a thread of its page. Its first round stands on the page as any reply does (`root`); in the panel beside it
+   * (`panel`) what the other partner asked is a message of that partner, so that the thread reads as the two of them.
+   */
+  const transcript = (current: ChatSummary, view: LedgerChatView, fold: LedgerFold, thread?: ThreadMode): MessageView[] => {
+    const answers = new Map(view.answers.map((item) => [item.cardId, item]));
+    const redactions = new Map(view.redactions.map((item) => [item.eventId, item]));
+    const messages: MessageView[] = [];
+    let rounds = 0;
     const shown = new Set(fold.items.map((item) => item.eventId));
     const finals = new Map(fold.items.flatMap((item) => item.kind === "message" && item.turnId && item.role === "assistant" ? [[item.turnId, item.text] as const] : []));
     // Text Router already streamed for a turn stays on screen while its run loads (no blank between the two).
@@ -557,6 +640,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     };
     for (const item of fold.items) {
       const turn = item.turnId ? fold.turns.get(item.turnId) : undefined;
+      if (thread && item.kind === "message" && item.role === "user" && !item.steer && ++rounds === 2) {
+        if (thread.root) break;
+        // Below the round the thread began with, the line a thread's replies stand under.
+        if (thread.panel) messages.push({ id: "thread-replies", role: "system",
+          content: <span className="mau-chat-divider mau-thread-rule">{t("threads.replies", { count: String(thread.rounds - 1) })}</span> });
+      }
       // Replies and Host cards of a turn are shown inside its run surface; Router's own cards have no Host call there.
       if (turn && item.role !== "user" && (item.kind === "message" || item.kind === "card" && item.card?.source !== "router")) {
         if (!placed.has(turn.turnId)) { placed.add(turn.turnId); messages.push(turnView(turn)); }
@@ -569,12 +658,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       // of the partner that answered. An input recorded without that is shown as its whole text.
       if (item.kind === "message" && item.role === "user" && item.origin === "delegation" && !item.redacted) {
         const { partnerMessage: sent, partnerResults: results } = item.display ?? {};
-        const answering = turnsByInput.get(item.eventId) ?? [], incoming = answering.length ? incomingRows(item.eventId, item.display) : undefined;
+        const answering = turnsByInput.get(item.eventId) ?? [], incoming = answering.length && !thread?.panel ? incomingRows(item.eventId, item.display, thread?.title) : undefined;
         if (incoming) { answering.forEach((turn, index) => messages.push(turnView(turn, index === 0 ? incoming : undefined))); continue; }
         if (results) results.forEach((result, index) => messages.push({
           id: `${item.eventId}:${index}`, role: "assistant", ...partnerAuthor(result.partner),
           ...(result.answer ? { copyText: result.answer, content: <ChatMarkdown markdown={result.answer} /> } : {}), ...resultStatus(result) }));
-        else if (sent) messages.push({ id: item.eventId, role: "assistant", copyText: sent.text, content: <ChatMarkdown markdown={sent.text} />,
+        else if (sent) messages.push({ id: item.eventId, role: "assistant", copyText: sent.text,
+          content: thread?.panel ? <Clamped more={t("threads.more")} less={t("threads.less")}><ChatMarkdown markdown={sent.text} /></Clamped> : <ChatMarkdown markdown={sent.text} />,
           ...partnerAuthor(sent.from), subtitle: t(`partners.intent.${sent.intent}`) });
         else messages.push({ id: item.eventId, role: "assistant", copyText: item.text, content: item.text,
           ...(item.sender.type === "agent" ? partnerAuthor(item.sender) : { title: t("partners.results"), avatar: actorAvatar(item) }) });
@@ -619,6 +709,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
       });
       for (const attached of turnsByInput.get(item.eventId) ?? []) messages.push(turnView(attached));
     }
+    if (thread?.root) return messages;
     // Active turns whose input and replies are not loaded (older page) still show their run surface.
     for (const turn of fold.turns.values()) if (!placed.has(turn.turnId) && !terminalTurn.includes(turn.state)) messages.push(turnView(turn));
     // Streams of turns not yet in the loaded page (accumulated text; durable events replace it).
@@ -640,12 +731,118 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         <Button onClick={() => client.discard(item.idempotencyKey)}>{zh ? "放弃" : "Dismiss"}</Button>
       </> } : {}),
     });
-    // A reply following one from the same sender drops the repeated avatar and name.
-    for (let index = 1; index < messages.length; index++) {
-      const message = messages[index]!, previous = messages[index - 1]!;
-      if (message.role === "assistant" && previous.role === "assistant" && message.title === previous.title) messages[index] = { ...message, continued: true };
-    }
-  }
+    return messages;
+  };
+  const openThread = (thread: PartnerThread) => { if (threadAgent) { setProfile(undefined); setSideView({ kind: "thread", agentId: threadAgent, sessionId: thread.id, chatId: thread.chatId }); } };
+  // Each thread of the partner on screen, once its chat is read: how many rounds it has, and how its last one stands.
+  const threadViews = threadList.flatMap((thread) => {
+    const chat = client.chats.get(thread.chatId) ?? { chatId: thread.chatId, kind: "observed" as const, title: thread.title, agentIds: [threadAgent!], readOnly: true,
+      lastSeq: 0, generation: 0, readSeq: 0, unread: 0, lastEvent: null, activeTurns: 0, pendingCards: 0, updatedAt: thread.lastAt };
+    const threadView = client.view(thread.chatId);
+    if (!threadView.loaded || threadView.hasOlder && !stalled.has(thread.chatId)) return [];
+    const threadFold = foldOnce(threadView);
+    const inputs = threadFold.items.filter((item) => item.kind === "message" && item.role === "user" && !item.steer);
+    if (!inputs.length) return [];
+    const last = threadFold.items.filter((item) => item.kind === "message" && item.role === "assistant" && item.text).at(-1);
+    return [{ thread, chat, view: threadView, fold: threadFold, rounds: inputs.length, at: inputs[0]!.at, last,
+      running: [...threadFold.turns.values()].some((turn) => !terminalTurn.includes(turn.state)),
+      open: sideView?.kind === "thread" && sideView.sessionId === thread.id, unread: chat.unread }];
+  });
+  // On the page, a thread is the round it began with. When more followed, a line under it names the work, says how
+  // many rounds there are and how the last one stands, and opens the thread.
+  const roots = threadViews.map((item) => {
+    const views = transcript(item.chat, item.view, item.fold, { root: true, rounds: item.rounds, title: item.rounds > 1 ? undefined : item.thread.title })
+      .map((message) => ({ ...message, id: `thread:${item.thread.id}:${message.id}` }));
+    const entry = item.rounds > 1 ? (
+      <button type="button" className="mau-thread-entry" data-thread={item.thread.id} data-open={item.open || undefined}
+        aria-expanded={item.open} onClick={() => openThread(item.thread)}>
+        <span className="mau-thread-entry-title">
+          <strong>{item.thread.title}</strong>
+          <span>{t("threads.rounds", { count: String(item.rounds) })}</span>
+          {item.unread && !item.open ? <i className="mau-thread-dot" role="img" aria-label={t("threads.unread")} /> : null}
+          <ProductIcon name="next" size={14} />
+        </span>
+        <span className="mau-thread-entry-last">
+          <span>{item.running ? t("threads.working", { count: String(item.rounds) }) : oneLine(item.last?.text ?? "")}</span>
+          {!item.running && item.last ? <time>{clock(item.last.at)}</time> : null}
+        </span>
+      </button>
+    ) : null;
+    const index = views.length - 1;
+    if (entry && index >= 0) views[index] = views[index]!.body ? { ...views[index]!, body: <>{views[index]!.body}{entry}</> } : { ...views[index]!, actions: entry };
+    return { at: item.at, views };
+  });
+  // The page: the conversation, and each thread where it began.
+  const conversation = current && view && fold ? transcript(current, view, fold) : [];
+  const times = new Map<string, string>();
+  for (const item of fold?.items ?? []) { times.set(item.eventId, item.at); if (item.turnId && !times.has("turn:" + item.turnId)) times.set("turn:" + item.turnId, item.at); }
+  for (const turn of fold?.turns.values() ?? []) { const at = turn.inputEventIds.map((id) => times.get(id)).find(Boolean); if (at) times.set("turn:" + turn.turnId, at); }
+  let latest = "";
+  const timed = conversation.map((message) => {
+    const at = /^(pending|inflight):/.test(message.id) ? "\uffff" : times.get(message.id) ?? times.get(message.id.split(":")[0]!) ?? "";
+    if (at > latest) latest = at;
+    return { at: latest, message };
+  });
+  // The page shows the conversation and its threads from one moment on, and what is before it once the reader comes
+  // to the top: the oldest message read so far while the conversation has earlier ones, and after that the threads
+  // that are open. A thread that began within what is read of the conversation is opened without being asked for.
+  const oldest = timed[0]?.at;
+  const behind = !!view?.hasOlder && earlierThreads && oldest !== undefined && threadsFrom > oldest;
+  useEffect(() => { if (behind) void moreThreads().catch(() => undefined); }, [behind, book?.earlier]);
+  const since = view?.hasOlder ? oldest : threadsFrom;
+  const messages = grouped([...timed.filter((item) => view?.hasOlder || item.at >= threadsFrom), ...roots.filter((root) => since !== undefined && root.at >= since)
+    .flatMap((root) => root.views.map((message) => ({ at: root.at, message })))]
+    .sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0).map((item) => item.message));
+  // What the top of the page loads next: earlier messages of the conversation, then earlier threads. Not while threads are being read.
+  const pageEarlier = !current || threadsLoading ? undefined : view?.hasOlder ? () => client.loadOlder(current.chatId).catch((failed: unknown) => { setUploadError(failed); throw failed; })
+    : earlierThreads ? moreThreads : undefined;
+  // The thread open beside the conversation: all of it, and a place to write in it.
+  const opened = sideView?.kind === "thread" ? threadViews.find((item) => item.thread.id === sideView.sessionId) : undefined;
+  const openedMessages = opened ? grouped(transcript(opened.chat, opened.view, opened.fold, { panel: true, rounds: opened.rounds })) : [];
+  useEffect(() => {
+    if (!opened || opened.view.lastSeq <= opened.view.readSeq || document.visibilityState !== "visible") return;
+    void client.markRead(opened.chat.chatId, opened.view.lastSeq).catch(() => undefined);
+  }, [client, opened?.chat.chatId, opened?.view.lastSeq, opened?.view.readSeq]);
+  const replyInThread = useMutation({
+    mutationFn: (input: { agentId: string; sessionId: string; chatId: string; text: string; key: string }) =>
+      mauApi(session.token).replyInSession(input.agentId, input.sessionId, { text: input.text, key: input.key }),
+    onSuccess: (_sent, input) => {
+      if (replyKeys.current.get(input.chatId)?.key === input.key) replyKeys.current.delete(input.chatId);
+      return queries.invalidateQueries({ queryKey: ["partner-sessions", session.owner] });
+    },
+    // What was written is not lost: it goes back into the box.
+    onError: (failed, input) => {
+      setDrafts((values) => values[input.chatId] ? values : { ...values, [input.chatId]: input.text });
+      if (!(failed instanceof ApiError && failed.status === 401)) toast({ kind: "error", title: failureMessage(t, failed) });
+      void threads.refetch();
+    },
+  });
+  // A thread of one round stands whole on the page: reading the page reads it.
+  const shownWhole = threadViews.filter((item) => item.rounds === 1 && item.view.lastSeq > item.view.readSeq).map((item) => `${item.chat.chatId} ${item.view.lastSeq}`).join("\n");
+  useEffect(() => {
+    if (!shownWhole || document.visibilityState !== "visible") return;
+    for (const line of shownWhole.split("\n")) { const [chatId, seq] = line.split(" "); void client.markRead(chatId!, Number(seq)).catch(() => undefined); }
+  }, [client, shownWhole]);
+  // Threads with something new that are not open: one line above the box says which, and opens it.
+  const unreadThreads = threadViews.filter((item) => item.rounds > 1 && item.unread > 0 && !item.open);
+  const threadHint = unreadThreads.length ? (
+    <div className="mau-thread-hint"><button type="button" onClick={() => openThread(unreadThreads.at(-1)!.thread)}>
+      <i className="mau-thread-dot" aria-hidden="true" />
+      {unreadThreads.length > 1 ? t("threads.newReplies", { count: String(unreadThreads.length) }) : t("threads.newReply", { title: unreadThreads[0]!.thread.title })}
+    </button></div>
+  ) : null;
+  // The search of a conversation reaches into its threads: a match there opens the thread.
+  const threadSearch = threadViews.flatMap((item) => item.fold.items.filter((bubble) => bubble.kind === "message" && !bubble.redacted && bubble.text)
+    .map((bubble) => ({ id: `thread:${item.thread.id}:${bubble.role !== "user" && bubble.turnId ? "turn:" + bubble.turnId : bubble.eventId}`,
+      sender: bubble.sender.name, text: bubble.display?.partnerMessage?.text ?? bubble.text })));
+  const locate = (id: string) => {
+    const found = /^thread:([^:]+):(.+)$/.exec(id), inPage = document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`);
+    if (inPage || !found) return inPage?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const thread = threadViews.find((item) => item.thread.id === found[1])?.thread;
+    if (!thread) return;
+    openThread(thread);
+    setTimeout(() => document.querySelector(`.mau-thread-view [data-room-message-id="${CSS.escape(found[2]!)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+  };
 
   const canSend = !!current && !current.readOnly && (current.kind === "dm" || current.kind === "group");
   const insertMention = (chatId: string, name: string) => setDrafts((values) => {
@@ -721,8 +918,8 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
         {handoffCard && handoffUrl && sideView?.kind !== "browser" ? <button type="button" className="mau-header-button" aria-label={zh ? "接管浏览器" : "Browser handoff"}
           title={zh ? "接管浏览器" : "Browser handoff"} onClick={() => { setProfile(undefined); setSideView({ kind: "browser", cardId: handoffCard.cardId }); }}><ProductIcon name="globe" /></button> : null}
         <RoomHeaderActions roomId={current.chatId} roomTitle={current.title}
-          messages={messages.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : [])}
-          onLocateMessage={(id) => document.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })}
+          messages={[...conversation.flatMap((message) => message.copyText ? [{ id: message.id, sender: String(message.title ?? ""), text: message.copyText }] : []), ...threadSearch]}
+          onLocateMessage={locate}
           {...(room.group ? {
             onRename: (title: string) => void room.rename(title, (summary) => client.updateSummary(summary)).catch(setUploadError),
             onOpenSettings: () => setMembersOpen(true),
@@ -763,6 +960,23 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
             ) } : sideView?.kind === "file" ? { inspector: (
               <FileSideView key={sideView.attachment.attachmentId} api={api} attachment={sideView.attachment} onClose={() => setSideView(undefined)}
                 onDownload={() => void saveAttachment(api, sideView.attachment).catch(setUploadError)} />
+            ) } : sideView?.kind === "thread" && opened ? { inspector: (
+              <PartnerFigureProvider value={partnerFigure}><ThreadSideView key={opened.thread.id} chatId={opened.chat.chatId} title={opened.thread.title}
+                detail={t("threads.detail", { partner: names.get(sideView.agentId) ?? "", starter: names.get(opened.thread.startedBy.id) ?? opened.thread.startedBy.name, count: String(opened.rounds) })}
+                messages={openedMessages} onClose={() => setSideView(undefined)}
+                composer={{
+                  value: drafts[opened.chat.chatId] ?? "",
+                  onChange: (value) => setDrafts((values) => ({ ...values, [opened.chat.chatId]: value })),
+                  placeholder: t("threads.reply"),
+                  onSend: () => {
+                    const text = (drafts[opened.chat.chatId] ?? "").trim(), chatId = opened.chat.chatId;
+                    if (!text) return;
+                    const kept = replyKeys.current.get(chatId), key = kept?.text === text ? kept.key : crypto.randomUUID();
+                    replyKeys.current.set(chatId, { text, key });
+                    clearDraft(chatId);
+                    replyInThread.mutate({ agentId: sideView.agentId, sessionId: opened.thread.id, chatId, text, key });
+                  },
+                }} /></PartnerFigureProvider>
             ) } : sideView?.kind === "document" ? { inspector: (
               <DocumentSideView key={sideView.agentId + sideView.name} session={session} agentId={sideView.agentId} name={sideView.name} onClose={() => setSideView(undefined)} />
             ) } : {})}
@@ -780,6 +994,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                 },
               } : {})}>
             <PartnerFigureProvider value={partnerFigure}><Conversation conversationId={current.chatId}
+              {...(pageEarlier ? { onReachStart: pageEarlier } : {})}
               header={header}
               notice={<>
                 {failure}
@@ -794,12 +1009,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
                   </span>)}
                 </p> : null}
                 {client.connection.state === "reconnecting" ? <p className="mau-muted">{zh ? "正在重新连接…" : "Reconnecting…"}</p> : null}
-                {view.hasOlder ? <Button onClick={() => void client.loadOlder(current.chatId).catch(setUploadError)}>{zh ? "加载更早的消息" : "Load earlier messages"}</Button> : null}
               </>}
               {...(!view.loaded ? { empty: <LoadingSurface label={t("common.loading")} /> } : {})}
               messages={messages}
               {...(!canSend ? { trailing: <p className="mau-read-only-note">{zh ? "这个对话只能查看，不能在这里回复。" : "This conversation can be read here, not replied to."}</p> }
-                : room.hint(drafts[current.chatId] ?? "") ? { trailing: <p role="status" className="mau-mention-hint">{room.hint(drafts[current.chatId] ?? "")}</p> } : {})}
+                : room.hint(drafts[current.chatId] ?? "") ? { trailing: <p role="status" className="mau-mention-hint">{room.hint(drafts[current.chatId] ?? "")}</p> }
+                : threadHint ? { trailing: threadHint } : {})}
               composer={{
                 value: drafts[current.chatId] ?? "",
                 onChange: (value) => setDrafts((values) => ({ ...values, [current.chatId]: value })),

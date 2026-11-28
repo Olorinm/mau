@@ -27,15 +27,16 @@ it("enabled partner tools cross the native Host call boundary with the run's own
     confirmations: { ask: async proposal => { cards.push(proposal); }, answer: async () => ownerAnswer, withdraw: async () => {} } };
   const cards: any[] = []; let ownerAnswer: "pending" | "confirmed" = "pending";
   const proactive = new ProactiveWork(store, port);
-  const search = vi.fn(() => ({ data: [], coverage: "fixture_history", format: "original_text" }));
+  const mentions = vi.fn(() => ({ sessions: [{ id: "ps-1", places: 2, lastAt: "2026-11-01T00:00:00.000Z" }] }));
   // The partners service is given the admission of the run and the call's id by the server, never by the model.
   const asked: unknown[] = [];
   const delivered: unknown[] = [];
   const partners = { ...noPartners, memorySource: (admission: { kind: string }) => admission.kind === "delegation" ? { kind: "message", partners: [{ id: "p-1", name: "trip" }] } : undefined, turnContext: async (_admission: unknown, roster: boolean) => roster ? { partners: "The owner has no other partners now." } : {},
     delivered: (...call: unknown[]) => { delivered.push(call); },
+    contexts: async () => new Map([["ps-1", { title: "Seoul hotels", startedBy: "desk" }]]),
     execute: async (...call: unknown[]) => { asked.push(call); return { you: { name: "helper" }, partners: [] }; } } as unknown as Partners;
   const partner = new NativePartnerTools(owner, agentId, partners, facts, proactive, true, {
-    history: { search } as any, isMemoryReview: admission => admission.reference === "trusted-review",
+    history: { mentions } as any, isMemoryReview: admission => admission.reference === "trusted-review",
     reminders: () => "Maintain useful durable notes when appropriate.",
   });
   const http = new class extends ServiceHttp {
@@ -91,7 +92,7 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   await expect(partner.execute("memory", { action: "read" }, admission, "memory-read")).resolves.toMatchObject({ file: "MEMORY.md", entries: ["Prefers concise summaries", "A durable fact"], usage: { limit: 4000 } });
   // A memory review may use the memory tool and nothing else, and is told nothing about partners.
   const review = { ...narrow, reference: "trusted-review" };
-  await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review")).resolves.toMatchObject({ staged: true });
+  await expect(partner.execute("memory", { action: "remove", old_text: "A durable fact" }, review, "memory-review")).resolves.toMatchObject({ done: true });
   await expect(partner.execute("session_search", { query: "fact" }, review, "review-history")).rejects.toThrow("memory_review_tool_not_authorized");
   await expect(partner.execute("partners", { action: "roster" }, review, "review-partners")).rejects.toThrow("memory_review_tool_not_authorized");
   expect(await partner.turnContext(review, "session", ["partners", "memory"])).toEqual({});
@@ -99,8 +100,10 @@ it("enabled partner tools cross the native Host call boundary with the run's own
   expect(await partner.turnContext(admission, "session", ["work_sessions", "employee_memory"])).toEqual({});
   expect(await partner.turnContext(admission, "session", ["memory"])).toEqual({ memoryMaintenanceReminder: "Maintain useful durable notes when appropriate." });
   expect(await partner.turnContext(admission, "session", ["partners"])).toEqual({ partners: "The owner has no other partners now." });
-  await partner.execute("session_search", { query: "exact phrase" }, admission, "history-search");
-  expect(search).toHaveBeenCalledWith(owner, agentId, { query: "exact phrase", limit: 10, offset: 0 });
+  // What was said is the partner's own record; each session it names is told by its title.
+  expect(await partner.execute("session_search", { query: "exact phrase" }, admission, "history-search")).toEqual({ sessions: [{ id: "ps-1", places: 2, lastAt: "2026-11-01T00:00:00.000Z", title: "Seoul hotels", startedBy: "desk" }] });
+  expect(mentions).toHaveBeenCalledWith(owner, agentId, { query: "exact phrase" });
+  expect(await partner.execute("session_search", { limit: 5 }, admission, "history-nothing")).toMatchObject({ isError: true, error: "session_search_invalid_input" });
   // A schedule has none of these tools, whatever a reused conversation's catalog lists.
   const scheduled = { ...admission, kind: "schedule" as const, toolGrants: {} };
   expect(partner.context(scheduled, "Scheduled work", "scheduled-session")).toBeUndefined();

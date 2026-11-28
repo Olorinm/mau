@@ -157,12 +157,31 @@ an open dialog or form, or while an input has focus.
 Partners recruit and message one another with the `partners` tool ([Partners](native-work.md#partners)). The
 console shows that work in the conversations it belongs to.
 
-- **Messages and results.** A partner's message is a turn of the recipient's conversation with the owner, and
-  its result returns to the conversation the message was sent from. Either one is the first step of the reply it
-  started: a row under the other partner's figure ("chief asked", "reviewer replied") whose name opens the
-  conversation with that partner and whose chevron opens what the partner wrote. The reply's collapsed line
-  begins with it ("reviewer replied · Ran 1 command · Asked reviewer"), so a conversation reads as the owner and
-  one partner; a reply that is still working or did not finish says who wrote in all the same ("helper asked ·
+- **Threads.** A piece of work another partner sent a partner runs in a session of its own, and the console shows
+  it as a thread of that partner's page. The round it began with stands in the conversation where it began, as a
+  reply does. When more rounds followed, a line under it names the work, says how many rounds there are and how
+  the last one stands, and opens the thread beside the conversation: the round it began with, a rule that counts
+  the replies, and each later round as what the other partner asked (its first lines, and the rest when asked
+  for) and what this partner answered. The later rounds are not laid out in the conversation. A thread with
+  something new has a dot on its line, and a line above the composer says which thread it is and opens it; a
+  thread that is open is read. The box in the thread writes in that session: a turn of the session with the
+  owner's own words, of which the partner that opened it is not told. Sending the same words again after a reply
+  whose answer was lost is the same message, not a second turn. A thread never closes: when its session goes on in
+  a new context, the thread shows the divider of a new chat and is written in as before. The page follows the threads
+  that began last and the ones something happened in last, as the server lists them; coming to the top of the
+  conversation loads its earlier messages and then the threads that began earlier, a page at a time and without a
+  button, and leaves the reader where they were. Threads of earlier pages are read, not subscribed to, until
+  something happens in them. When more threads began than a page holds while the page was open, the pages between
+  them and the ones it has are read too. A reply's key is kept with its draft across "sign in again". A
+  thread is read from its first round, however long it is. The list of conversations has one row for a partner:
+  what is new or running in its threads shows on that row, and searching a conversation reaches into its threads.
+- **Messages and results.** A partner's message is a turn of a session of the recipient, and its result returns
+  to the conversation the message was sent from. Either one is the first step of the reply it started: a row
+  under the other partner's figure ("Asked by chief", "Reply from reviewer") whose name opens the conversation
+  with that partner and whose chevron opens what the partner wrote. The reply's collapsed line begins with it in
+  the reply's own voice ("Reply from reviewer · Ran 1 command · Asked reviewer"), and names the work when the
+  work is one round ("Asked by chief: Review the pricing plan"), so a conversation reads as the owner and one
+  partner; a reply that is still working or did not finish says who wrote in all the same ("Asked by helper ·
   Failed"). A result that is not a whole answer says so under its row: not completed, stopped, not run or
   outcome unknown (with the reason in a sentence where the console has one), or that a long answer was shortened
   and is whole in that partner's conversation. Where no reply followed (a result handed over in a notice), the

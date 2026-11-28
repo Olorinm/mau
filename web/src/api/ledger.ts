@@ -590,6 +590,14 @@ export class LedgerClient {
     if (!this.open.delete(chatId)) return;
     if (this.connection.state === "open") this.request("unsubscribe", [chatId]);
   }
+  /**
+   * Load the latest page of a chat once, without following it: what is read is not kept up to date, and takes none
+   * of the subscriptions a connection is allowed. `openChat` follows it from where this left it.
+   */
+  async readChat(chatId: string) {
+    const state = this.state(chatId);
+    if (!state.loaded) await this.snapshot(chatId);
+  }
   async loadOlder(chatId: string) {
     const state = this.state(chatId);
     if (!state.loaded || state.olderCursor === null) return;

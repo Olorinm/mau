@@ -131,7 +131,9 @@ export async function partnersFixture(cleanup: Array<() => unknown>, options: { 
     throw new Error("timeout_" + label);
   };
   const events = async (agentId: string) => (await web().events(chat(agentId), { limit: 200 })).events;
-  return { ...f, get mau() { return f.mau; }, get service() { return f.service; }, get base() { return f.base; }, ...scripted, until, events, web, chat,
+  /** What stands in one of a partner's task sessions, which the console reads as a chat of its own. */
+  const thread = async (agentId: string, sessionId: string) => (await web().events(`obs:${agentId}:${sessionId}`, { limit: 200 })).events;
+  return { ...f, get mau() { return f.mau; }, get service() { return f.service; }, get base() { return f.base; }, ...scripted, until, events, thread, web, chat,
     /** The owner writes to a partner in the web chat. */
     say: async (agentId: string, text: string) => { await web().openDm(agentId); return web().send(chat(agentId), { idempotencyKey: newIdempotencyKey(), text }); },
     name: (agentId: string) => f.service.agent(agentId).name,

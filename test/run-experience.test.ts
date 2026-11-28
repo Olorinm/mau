@@ -411,22 +411,22 @@ it.skipIf(!existsSync(webRoot + "index.html"))("keeps partner questions readable
   try {
     await signIn(page, f.base);
     for (const [label, state] of [["已取消", "canceled"], ["执行结果待确认", "unknown"]]) {
-      const toggle = page.getByRole("button", { name: "chief 询问 · " + label, exact: true });
+      const toggle = page.getByRole("button", { name: "收到 chief 的询问 · " + label, exact: true });
       await toggle.click();
       const run = page.locator(".mau-run").filter({ has: toggle });
       await run.getByRole("button", { name: "消息原文" }).click();
       await see(run.locator(".thread-activity-row-message")).toHaveText("Question " + state);
     }
-    const pending = page.getByRole("button", { name: "chief 询问", exact: true });
+    const pending = page.getByRole("button", { name: "收到 chief 的询问", exact: true });
     await pending.click();
-    const run = page.locator(".mau-run").filter({ has: page.getByRole("button", { name: /^chief 询问/ }) }).last();
+    const run = page.locator(".mau-run").filter({ has: page.getByRole("button", { name: /^收到 chief 的询问/ }) }).last();
     await run.getByRole("button", { name: "消息原文" }).click();
     turnReady.resolve();
     await see(run).toHaveAttribute("data-run-id", "finished");
     await see(run.locator(".og-disclosure--room-run")).toHaveCount(1);
     await see(run.locator(".thread-activity-row-message")).toHaveText("Question completed");
     historyReady.resolve();
-    await see(run.getByRole("button", { name: "chief 询问 · 已运行 1 条命令" })).toHaveAttribute("aria-expanded", "true");
+    await see(run.getByRole("button", { name: "收到 chief 的询问 · 已运行 1 条命令" })).toHaveAttribute("aria-expanded", "true");
     await see(run.locator(".thread-activity-row-message")).toHaveText("Question completed");
   } finally { turnReady.resolve(); historyReady.resolve(); }
 }, 30000);

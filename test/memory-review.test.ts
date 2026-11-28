@@ -15,7 +15,7 @@ function proof(): ReviewCapabilities {
   return { ...scope, status: "available", runtimeId: "review-runtime", policyId: "server-enforced-v1",
     isolation: "dedicated-runtime", enforcement: "runtime-tool-allowlist", otherTools: "denied",
     contextAccess: "copied-session-and-managed-memory-skills", sideEffects: "managed-memory-skills-only",
-    unattendedDestructiveWrites: "stage-for-owner-approval", delivery: "disabled", recursion: "disabled", memory: true, skills: true };
+    unattendedDestructiveWrites: "apply-and-record", delivery: "disabled", recursion: "disabled", memory: true, skills: true };
 }
 function fixture(options: { config?: MemoryReviewConfig; reviewer?: boolean; path?: string } = {}) {
   const store = new DurableStore(options.path ?? ":memory:", "review-test"); closers.push(() => store.close());

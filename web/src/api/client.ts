@@ -47,6 +47,14 @@ export interface PartnerView {
   waiting: { messages: number; approvals: number };
   sharesEnvironmentOf?: string; recruitedBy?: PartnerRef; recruitedAt?: string; dismissedAt?: string;
 }
+/**
+ * A session a partner works in beside its conversation with the owner: one piece of work another partner sent it, and
+ * what followed on it. The console shows it as a thread of that partner's page; `chatId` is the chat its events are read from.
+ */
+export interface PartnerThread {
+  id: string; chatId: string; title: string; startedBy: PartnerRef; createdAt: string; lastAt: string; turns: number; tokens?: number;
+  working: boolean;
+}
 /** Where a new partner runs: in an environment of its own, in another partner's (on its main kernel unless one is named), or on the owner's computer. */
 export type NewPartnerEnvironment = { profileId: string } | { shareWith: string; kernel?: string } | { kind: "external" };
 /** A partner another one can run in the environment of: it has its own, not destroyed. Sharing does not chain. */
@@ -182,6 +190,17 @@ export function mauApi(token: string) {
       request<AgentSummary & { pairing?: Pairing }>(mau + "/agents", { token, body: { name, ...environment, ...(duty ? { duty } : {}) } }),
     /** The owner's partners, dismissed ones included. */
     partners: () => request<{ data: PartnerView[] }>(mau + "/partners", { token }).then((r) => r.data),
+    /** The sessions a partner works in beside its conversation with the owner, oldest first. */
+    /**
+     * A partner's threads: the ones that began last, oldest first, with the ones something happened in last (`active`);
+     * or with `before` the ones that began before that thread. `earlier`: the thread to ask before for the page before this one.
+     */
+    sessions: (id: string, page: { before?: string; limit?: number } = {}) =>
+      request<{ data: PartnerThread[]; earlier: string | null; active?: PartnerThread[] }>(mau + agent(id) + "/sessions"
+        + (page.before ? `?before=${encodeURIComponent(page.before)}${page.limit ? `&limit=${page.limit}` : ""}` : ""), { token }),
+    /** Write in one of a partner's sessions as the owner. The same key is the same turn. */
+    replyInSession: (id: string, sessionId: string, body: { text: string; key: string }) =>
+      request<{ eventId: string; turnId: string }>(mau + agent(id) + "/sessions/" + encodeURIComponent(sessionId) + "/messages", { token, body }),
     /** Archive a partner (it keeps everything and leaves the roster), or bring it back. */
     editAgent: (id: string, change: { name?: string; duty?: string | null }) =>
       request<AgentSummary>(mau + agent(id), { token, method: "PATCH", body: change }),

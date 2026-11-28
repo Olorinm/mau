@@ -47,12 +47,17 @@ export class DurableStore {
    * The newest documents of a collection whose members equal the given values (`{ owner: "..." }`; a list of names
    * means any of them does), newest first. The database filters and stops at `limit`; nothing else is parsed.
    */
-  newest<T>(collection: string, where: Array<{ members: string[]; value: string }>, limit: number): Array<{ id: string; value: T }> {
+  newest<T>(collection: string, where: Array<{ members: string[]; value: string }>, limit: number,
+    /** `before`: only documents older than the one with this id. `by`: order by this member's value instead of by age, greatest first. `offset`: skip this many. */
+    page: { before?: string | undefined; by?: string | undefined; offset?: number | undefined } = {}): Array<{ id: string; value: T }> {
     const member = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$/;
-    if (where.some(item => !item.members.length || item.members.some(name => !member.test(name)))) throw new Error("invalid_document_member");
+    if (where.some(item => !item.members.length || item.members.some(name => !member.test(name))) || page.by !== undefined && !member.test(page.by)) throw new Error("invalid_document_member");
     const clauses = where.map(item => `(${item.members.map(name => `json_extract(value,'$.${name}')=?`).join(" OR ")})`);
-    return this.db.prepare(`SELECT id,value FROM documents WHERE collection=?${clauses.map(clause => ` AND ${clause}`).join("")} ORDER BY rowid DESC LIMIT ?`)
-      .all(collection, ...where.flatMap(item => item.members.map(() => item.value)), limit).map(row => ({ id: row.id as string, value: JSON.parse(row.value as string) as T }));
+    if (page.before !== undefined) clauses.push("rowid < COALESCE((SELECT rowid FROM documents WHERE collection=? AND id=?), 0)");
+    return this.db.prepare(`SELECT id,value FROM documents WHERE collection=?${clauses.map(clause => ` AND ${clause}`).join("")}
+      ORDER BY ${page.by ? `json_extract(value,'$.${page.by}') DESC, ` : ""}rowid DESC LIMIT ? OFFSET ?`)
+      .all(collection, ...where.flatMap(item => item.members.map(() => item.value)), ...(page.before !== undefined ? [collection, page.before] : []), limit, page.offset ?? 0)
+      .map(row => ({ id: row.id as string, value: JSON.parse(row.value as string) as T }));
   }
   /** Delete the documents of a collection in one of the statuses whose `createdAt` is before a time. Returns how many. */
   deleteBefore(collection: string, statuses: string[], createdBefore: string): number {

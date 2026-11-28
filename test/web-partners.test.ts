@@ -52,10 +52,10 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   // It follows helper's own reply, so it continues under the same figure and name.
   await see(answered).toHaveAttribute("data-continued", "true");
   const answeredSummary = answered.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").last();
-  await see(answeredSummary).toHaveText("korea-trip 回复 · visa 回复");
+  await see(answeredSummary).toHaveText("收到 korea-trip 的回复 · 收到 visa 的回复");
   await answeredSummary.click();
   const results = answered.locator(".room-run-group--incoming .thread-activity-row");
-  await see(results.locator(".thread-activity-row-title")).toHaveText(["korea-trip 回复", "visa 回复"]);
+  await see(results.locator(".thread-activity-row-title")).toHaveText(["收到 korea-trip 的回复", "收到 visa 的回复"]);
   const [booked, failed] = [results.nth(0), results.nth(1)];
   // Each row stands under its partner's figure, and is its title alone until its answer is opened.
   await see(booked.locator(".agent-pixel-avatar")).toBeVisible();
@@ -113,7 +113,7 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   await see(received.locator(".room-chat-author")).toContainText("korea-trip");
   await received.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle").click();
   const asked = received.locator(".room-run-group--incoming .thread-activity-row");
-  await see(asked.locator(".thread-activity-row-title")).toHaveText("helper 转达");
+  await see(asked.locator(".thread-activity-row-title")).toHaveText("收到 helper 转达的消息");
   await asked.getByRole("button", { name: "消息原文" }).click();
   await see(asked.locator(".thread-activity-row-message")).toHaveText(tripMessage.replace("\n\n", "\n"), { useInnerText: true });
   await see(asked.locator(".thread-activity-row-message p")).toHaveCount(2);
@@ -130,7 +130,7 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   await see(chip(page, scene.visa.id)).toHaveAttribute("aria-current", "true");
   // A reply that did not finish still says who wrote in, and what they wrote opens from its row.
   const unanswered = stream.locator("article.from-agent").first().locator(".og-disclosure--room-run");
-  await see(unanswered.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("helper 询问 · 处理失败");
+  await see(unanswered.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText(`收到 helper 的询问「${visaQuestion}」 · 处理失败`);
   await unanswered.locator("> .og-disclosure-row > .og-disclosure-toggle").click();
   await unanswered.getByRole("button", { name: "消息原文" }).click();
   await see(unanswered.locator(".thread-activity-row-message")).toHaveText(visaQuestion);
@@ -158,7 +158,7 @@ it.skipIf(!built)("shows what partners send each other as their own words, and t
   // The result was read inside the turn, so it is not handed over again: no reply begins with it.
   await f.settle(600);
   await see(blocks).toHaveCount(0);
-  await see(stream.locator(".room-run-incoming-figure")).toHaveCount(1);
+  await see(stream.locator(".og-disclosure--room-run > .og-disclosure-row > .og-disclosure-toggle", { hasText: /^收到 / })).toHaveCount(1);
   expect(tripAnswer).toContain("明洞站前酒店");
   expect(errors).toEqual([]);
 }, 90_000);
@@ -180,10 +180,10 @@ it.skipIf(!built)("an input recorded without what to show is its whole text; a l
   const stream = page.locator(".room-chat-stream");
   // The result is the first step of the reply it started, there before the reply has done anything.
   const reply = stream.locator("article.from-agent").last().locator(".og-disclosure--room-run");
-  await see(reply.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("notes 回复");
+  await see(reply.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("收到 notes 的回复");
   await reply.locator("> .og-disclosure-row > .og-disclosure-toggle").click();
   const result = reply.locator(".room-run-group--incoming .thread-activity-row");
-  await see(result.locator(".thread-activity-row-title")).toHaveText("notes 回复");
+  await see(result.locator(".thread-activity-row-title")).toHaveText("收到 notes 的回复");
   await see(result.locator(".thread-activity-row-detail")).toHaveText("回答较长，完整内容在 notes 的对话里。");
   await result.getByRole("button", { name: "回复原文" }).click();
   await see(result.locator(".thread-activity-row-message")).toHaveText(/^字{1000,19999}$/);
@@ -342,7 +342,7 @@ it.skipIf(!built)("a partner's request for approval is a card in the sender's co
   scene.end(await f.until(() => f.turns.find((item) => item.agentId === f.agent.id && item.text.includes("改好了，确认邮件没有发。")), "result turn"), "入住人改好了。");
   await page.keyboard.press("Escape");
   const returned = page.locator("article.from-agent", { hasText: "入住人改好了。" }).locator(".og-disclosure--room-run");
-  await see(returned.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("korea-trip 回复");
+  await see(returned.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("收到 korea-trip 的回复");
   await returned.locator("> .og-disclosure-row > .og-disclosure-toggle").click();
   await returned.getByRole("button", { name: "回复原文" }).click();
   await see(returned.locator(".thread-activity-row-message")).toHaveText("改好了，确认邮件没有发。");
@@ -471,7 +471,7 @@ it.skipIf(!built)("a partner is dismissed and restored from its profile and the 
   await partners.getByRole("button", { name: "已解散 · 1", exact: true }).click();
   await partners.locator(`[data-chat-key="agent:${scene.visa.id}"]`).click();
   await see(chip(page, scene.visa.id)).toHaveAttribute("aria-current", "true");
-  await see(page.locator(".room-chat-stream")).toContainText("helper 询问");
+  await see(page.locator(".room-chat-stream")).toContainText("收到 helper 的询问");
   // Restoring from the profile; a refusal of the server is said in words.
   await chip(page, scene.visa.id).click();
   await see(card.locator(".mau-profile-state")).toHaveText("已解散");
@@ -570,7 +570,7 @@ it.skipIf(!built)("the English console calls them partners, in conversations, ac
   await see(run.locator(".thread-activity-row-title")).toHaveText(["Looked at the partners", "Recruited korea-trip", "Recruited visa", "Informed korea-trip", "Could not ask flights"]);
   await see(run.getByRole("alert")).toHaveText("Partner not found.");
   const answered = page.locator("article.from-agent").last().locator(".og-disclosure--room-run");
-  await see(answered.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("korea-trip replied · visa replied");
+  await see(answered.locator("> .og-disclosure-row > .og-disclosure-toggle")).toHaveText("Reply from korea-trip · Reply from visa");
   await answered.locator("> .og-disclosure-row > .og-disclosure-toggle").click();
   const results = answered.locator(".room-run-group--incoming .thread-activity-row");
   await see(results.nth(1).locator(".thread-activity-row-detail")).toContainText("Not completed");

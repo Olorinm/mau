@@ -21,7 +21,8 @@ import { AgentSkills } from "./agent-skills.js";
 import { PartnerContext, MemoryError } from "./partner-context.js";
 import { ProactiveWork, confirmationCard, confirmationEvent, type ProactivePort } from "./proactive.js";
 import { NativePartnerTools } from "./native-work.js";
-import { Partners, environmentPresence } from "./partners.js";
+import { Partners, PartnerError, environmentPresence } from "./partners.js";
+import { runContextTokens } from "./context-size.js";
 import { ExternalPartners } from "./external-partners.js";
 import { closeRunApprovals } from "./connector-approvals.js";
 import { SessionHistory, historyQuery } from "./session-history.js";
@@ -268,7 +269,13 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     ...(dependencies.reviewer ? { reviewer: dependencies.reviewer } : {}),
     sourceSessions: scope => sessions(scope.owner, scope.agentId),
   });
-  const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.partnerTools);
+  /** How full a session's context was after a run, read from the run's events at the partner's Host without waking it. */
+  const contextAfter = async (agentId: string, runId: string) => {
+    const binding = environments.readyBindings().find(item => item.agentId === agentId);
+    return binding ? runContextTokens(new HttpAgentHost(environments.http(agentId, binding.operationId, false, { activity: false })), runId) : undefined;
+  };
+  const completedTurns = new CompletedTurns(businessStore, history, reviews, sessions, options.nativeWork.partnerTools,
+    async (owner, agentId, sessionId, runId) => partners.sessions.used(owner, agentId, sessionId, await contextAfter(agentId, runId).catch(() => undefined)));
   const nativeRelay = new NativeRelay(businessStore, {
     partners: () => options.nativeWork.partnerTools ? environments.readyBindings().filter(b => b.kernel === "codex").flatMap(b => {
       try { return [{ agentId: b.agentId, owner: router.service.agent(b.agentId).owner, operationId: b.operationId, runtimeId: b.runtimeId }]; }
@@ -324,6 +331,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
       return control.answer(cardId, answer);
     },
     closeApprovals: async (agentId, runId, withdraw) => { if (connectorAccounts.configured) await closeRunApprovals(businessStore, connectorAccounts, agentId, runId, withdraw); },
+    opening: (owner, agentId, contextId) => history.opening(owner, agentId, contextId),
   });
   business.setAdmissionValidator(admission => {
     const partner = partners.allows(admission);
@@ -569,6 +577,21 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
     const filter = z.object({ agentId: z.uuid().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).strict().parse(req.query);
     res.json({ data: partners.messages(res.locals.owner, filter) });
   });
+  // The sessions a partner works in beside its conversation with the owner: one for each piece of work a partner sent it.
+  product.get("/agents/:id/sessions", (req, res) => {
+    const owner = res.locals.owner as string;
+    const page = z.object({ before: z.string().max(160).optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).parse(req.query);
+    res.json(partners.threads(owner, router.service.owned(String(req.params.id), owner).id, page));
+  });
+  product.post("/agents/:id/sessions/:sessionId/messages", async (req, res) => {
+    const { text, key } = apiInput.sessionMessage.parse(req.body);
+    const owner = res.locals.owner as string, id = router.service.owned(String(req.params.id), owner).id;
+    try { res.status(202).json(await partners.reply(owner, id, String(req.params.sessionId), text, key)); }
+    catch (error) {
+      if (!(error instanceof PartnerError)) throw error;
+      throw new RouterError(error.message, error.message === "partner_session_not_found" ? 404 : 400);
+    }
+  });
   product.delete("/agents/:id", async (req, res) => {
     await router.service.delete(res.locals.owner, String(req.params.id));
     res.status(204).end();
@@ -645,7 +668,7 @@ export function createMau(config: ServiceConfig, optionsFile: string, dependenci
         ...(error instanceof MemoryError ? { details: error.details } : {}) });
   });
   const sshServers = new Set<() => void>();
-  return { app, router, environments, proactive, facts, reviews, partners, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); if (options.nativeWork.partnerTools) partners.start(); },
+  return { app, router, environments, proactive, facts, reviews, partners, completedTurns, start: async () => { await connectorRuntime?.start(); await router.start(); proactive.start(); reviews.start(); completedTurns.start(); nativeRelay.start(); if (options.nativeWork.partnerTools) partners.start(); },
     // One upgrade listener: Router's ledger event socket (`/_agent-router/v1/web/socket`) first, then SSH, which
     // answers 404 for every other path.
     attach: (server: Server) => { sshServers.add(attachSsh(server, async req => (await authenticateRequest(req)).ownerId,
