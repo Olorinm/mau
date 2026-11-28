@@ -101,9 +101,13 @@ it("keeps the sessions a deleted partner opened at others, and removes its own",
     sessions.open({ id: "ps-b", owner: alice, agentId: "desk", title: "Budget", startedBy: { agentId: "trip", name: "trip" } });
     sessions.used(alice, "trip", "ps-a", 12_000); sessions.used(alice, "desk", "ps-b", undefined); sessions.used(alice, "desk", "ps-b", 9_000);
     expect(sessions.use("desk", "ps-b")).toMatchObject({ turns: 2, tokens: 9_000 });
-    // A size reported once is kept when a later run reports none.
-    sessions.used(alice, "trip", "ps-a", undefined);
-    expect(sessions.use("trip", "ps-a")).toMatchObject({ turns: 2, tokens: 12_000 });
+    // A run that reports no size leaves none: the earlier one is not the context's size any more, and a context that
+    // was large then is not judged by it however long it stays unused. The next run that reports one is.
+    sessions.used(alice, "trip", "ps-a", SPENT_TOKENS + 10_000, 0); sessions.used(alice, "trip", "ps-a", undefined, 0);
+    expect(sessions.use("trip", "ps-a")).toEqual({ owner: alice, agentId: "trip", sessionId: "ps-a", turns: 3, lastAt: new Date(0).toISOString() });
+    expect(sessions.spentUses(3 * SPENT_IDLE_MS)).toEqual([]);
+    sessions.used(alice, "trip", "ps-a", SPENT_TOKENS + 10_000, 0);
+    expect(sessions.spentUses(3 * SPENT_IDLE_MS)).toMatchObject([{ sessionId: "ps-a", turns: 4 }]);
     sessions.forget("desk");
     expect(sessions.began(alice, "trip", 10)).toMatchObject([{ id: "ps-a", startedBy: { name: "desk" } }]);
     expect(sessions.began(alice, "desk", 10)).toEqual([]); expect(sessions.use("desk", "ps-b")).toBeUndefined();
@@ -147,7 +151,7 @@ it("a message opens a session of its own at the partner, and one that names a se
   expect(closest.body.sessionId).toBe(hotels.body.sessionId);
   expect((await hub.call({ action: "sessions", name: "trip" })).sessions[1]).toMatchObject({ id: first.message.session, turns: 1, tokens: 21_000, state: "working" });
   // What was said in a session stands there, in order, and nothing of it in the partner's conversation with the owner.
-  end(closest, "The Lotte.");
+  reports(f, closest, 23_000); end(closest, "The Lotte.");
   await f.until(() => f.record(more.messageId).status === "settled" || f.record(more.messageId).status === "returning", "second answer");
   expect((await f.thread(trip.id, first.message.session)).filter(event => event.kind === "message").map(event => [event.role, event.kind === "message" && event.text])).toEqual([
     ["user", expect.stringContaining("Find three hotels")], ["assistant", "Lotte, Shilla, Four Seasons."], ["user", expect.stringContaining("Which one is closest")], ["assistant", "The Lotte."]]);
@@ -159,7 +163,7 @@ it("a message opens a session of its own at the partner, and one that names a se
   // The one a turn runs in, then the one something happened in last.
   expect(listed.active.map((thread: { id: string }) => thread.id)).toEqual([second.session, first.message.session]);
   expect(listed.data).toMatchObject([
-    { id: first.message.session, chatId: `obs:${trip.id}:${first.message.session}`, title: "Seoul hotels", startedBy: { id: f.agent.id, name: "helper" }, turns: 2, tokens: 21_000, working: false },
+    { id: first.message.session, chatId: `obs:${trip.id}:${first.message.session}`, title: "Seoul hotels", startedBy: { id: f.agent.id, name: "helper" }, turns: 2, tokens: 23_000, working: false },
     { id: second.session, title: "Find restaurants near Myeongdong.", turns: 0, working: true }]);
   expect((await f.api(`/agents/${trip.id}/sessions`, undefined, "bob")).status).toBe(404);
   end(food, "Three places."); end(hub.turn);
@@ -204,7 +208,7 @@ it("continues a session in a new context when it has grown large and cold, and l
   const pool = await f.turnOf(trip.id, 2);
   await f.mau.partners.retire();
   expect(await windows(f, trip.id, session)).toBe(0);
-  end(pool, "The Shilla has one.");
+  reports(f, pool, SPENT_TOKENS + 2); end(pool, "The Shilla has one.");
   await use(f, trip.id, session, 2); cold(f, trip.id, session);
   // The other session is as large and colder still, and a partner's turn still runs in it.
   f.store(store => store.set("partner_session_use", `${trip.id}:${second.session}`, { owner: alice, agentId: trip.id, sessionId: second.session, turns: 3,
@@ -228,7 +232,7 @@ it("continues a session in a new context when it has grown large and cold, and l
   // earlier one, which it continues and which is closed.
   expect((await closest.call("partners", { action: "sessions" })).sessions).toMatchObject([
     { id: `${session}.w2`, title: "Find three hotels in Seoul.", turns: 0, state: "working", continues: session },
-    { id: session, title: "Find three hotels in Seoul.", startedBy: "helper", first: "Find three hotels in Seoul.", turns: 2, tokens: SPENT_TOKENS + 1, state: "closed", continuedIn: `${session}.w2` },
+    { id: session, title: "Find three hotels in Seoul.", startedBy: "helper", first: "Find three hotels in Seoul.", turns: 2, tokens: SPENT_TOKENS + 2, state: "closed", continuedIn: `${session}.w2` },
     { id: second.session, state: "working" }]);
   // What was said stays one history, and the next turn of the new context is not told again.
   end(closest, "The Lotte.");
@@ -282,7 +286,7 @@ it("continues a conversation with the owner in a new session when it is large an
   let release: (answer: string) => void = () => {};
   f.respond(async (turn: Turn) => {
     if (f.name(turn.agentId) === "trip") return new Promise<string>(resolve => { release = resolve; });
-    if (turn.delivered?.results) return "The trip partner found three hotels.";
+    if (turn.delivered?.results) { reports(f, turn, SPENT_TOKENS + 2); return "The trip partner found three hotels."; }
     if (turn.text.includes("hotels")) {
       await turn.call("partners", { action: "recruit", name: "trip", duty, intent: "ask", message: "Find three hotels in Seoul." });
       reports(f, turn, SPENT_TOKENS + 1);

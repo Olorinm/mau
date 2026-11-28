@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { OPEN_THREADS, openThreads, withPage, type ThreadBook } from "../web/src/screens/thread-paging";
+import { OPEN_THREADS, newestPages, openThreads, withPage, type ThreadBook } from "../web/src/screens/thread-paging";
 
 // What a partner's page does with its threads: the server pages them, and the console follows only some of them live,
 // because a connection is allowed 200 subscriptions.
@@ -50,4 +50,45 @@ it("follows the threads that began last and the ones something happened in last,
   expect(opened.live[0]!.lastAt).toBe(at(9999));
   // However many are active, the server lists sixty, so with the last sixty and the open one it stays far below 200.
   expect(openThreads(book, threads(60, 100), "t7").live).toHaveLength(121);
+});
+
+it("reads the pages between what it has and the first page when more threads began than a page holds", async () => {
+  // The server as it pages: the sixty that began last, or the sixty before a thread.
+  let count = 100;
+  const asked: Array<string | undefined> = [];
+  const read = async (before?: string) => {
+    asked.push(before);
+    const end = before ? Number(before.slice(1)) - 1 : count, from = Math.max(1, end - 59);
+    return { data: threads(end - from + 1, from), earlier: from > 1 ? `t${from}` : null, ...(before ? {} : { active: threads(1, count) }) };
+  };
+  // Nothing is known yet: one page, and where the list goes on.
+  let book = withPage(undefined, await newestPages(undefined, read), true);
+  expect(ids(book.paged)).toEqual(ids(threads(60, 41))); expect(asked).toEqual([undefined]);
+  // Two more began: they are on the first page with threads the page has, and nothing else is read.
+  count = 102;
+  book = withPage(book, await newestPages(book, read), true);
+  expect(ids(book.paged)).toEqual(ids(threads(62, 41))); expect(asked).toEqual([undefined, undefined]);
+  // Sixty-five more began at once: the first page is 108 to 167, and 103 to 107 are on the page before it.
+  count = 167;
+  const page = await newestPages(book, read);
+  expect(asked.slice(2)).toEqual([undefined, "t108"]); expect(page.active).toEqual(threads(1, 167));
+  book = withPage(book, page, true);
+  expect(ids(book.paged)).toEqual(ids(threads(127, 41)));
+  // Earlier threads are still asked for where the first answer said.
+  expect(book.earlier).toBe("t41");
+  // Several pages may lie between: all of them are read before anything is shown.
+  count = 400; asked.length = 0;
+  book = withPage(book, await newestPages(book, read), true);
+  expect(asked).toEqual([undefined, "t341", "t281", "t221"]); expect(ids(book.paged)).toEqual(ids(threads(360, 41)));
+});
+
+it("lets a reader page back after the first threads arrive in an empty conversation", async () => {
+  type Thread = ReturnType<typeof threads>[number];
+  const emptyBook = withPage<Thread>(undefined, { data: [], earlier: null }, true);
+  const page = await newestPages(emptyBook, async () => ({ data: threads(60, 6), earlier: "t6" }));
+  const latestBook = withPage(emptyBook, page, true);
+  expect(latestBook.earlier).toBe("t6");
+  const complete = withPage(latestBook, { data: threads(5), earlier: null }, false);
+  expect(ids(complete.paged)).toEqual(ids(threads(65)));
+  expect(complete.earlier).toBeNull();
 });

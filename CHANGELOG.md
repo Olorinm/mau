@@ -4,6 +4,13 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.72] - 2026-11-28
+
+- Each task delegated to a partner has its own thread. The owner can read earlier rounds and reply in the same thread. Retrying a reply after signing in again sends it once.
+- The conversation keeps the reader’s place when loading older messages. All threads remain reachable when many arrive while the page is open, including on a previously empty page.
+- A partner starts a fresh context for a large, idle conversation only when the latest run confirms its size. Earlier turns remain available. After upgrading, an existing conversation may show a one-time new-conversation divider when the partner tool definition changes.
+- Background memory reviews apply and record edits when write approval is disabled. The owner can review and undo those edits. Existing restricted reviewers provisioned with the previous policy need to be provisioned again.
+
 ## [0.1.0-alpha.71] - 2026-11-26
 
 - An approval that was answered or ended is no longer a separate record under the reply. The step it asked about says how it ended in the process ("Declined · git status, git log and 3 more", "Canceled · …"), a declined step never ran, and an allowed step is a step like any other. Without that step it is one row of the process that opens to the command it asked about. A pending approval is still the card it was.

@@ -171,7 +171,8 @@ console shows that work in the conversations it belongs to.
   that began last and the ones something happened in last, as the server lists them; coming to the top of the
   conversation loads its earlier messages and then the threads that began earlier, a page at a time and without a
   button, and leaves the reader where they were. Threads of earlier pages are read, not subscribed to, until
-  something happens in them. A reply's key is kept with its draft across "sign in again". A
+  something happens in them. When more threads began than a page holds while the page was open, the pages between
+  them and the ones it has are read too. A reply's key is kept with its draft across "sign in again". A
   thread is read from its first round, however long it is. The list of conversations has one row for a partner:
   what is new or running in its threads shows on that row, and searching a conversation reaches into its threads.
 - **Messages and results.** A partner's message is a turn of a session of the recipient, and its result returns

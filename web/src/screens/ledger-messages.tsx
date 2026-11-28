@@ -30,7 +30,7 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
-import { OPEN_THREADS, openThreads, withPage, type ThreadBook } from "./thread-paging";
+import { OPEN_THREADS, newestPages, openThreads, withPage, type ThreadBook } from "./thread-paging";
 import { liveViewUrl } from "../api/live-view";
 import { BrowserSideView, Clamped, DocumentSideView, type PartnerDocument, FileSideView, ThreadSideView } from "./side-views";
 import { ChatRoster, type ChatEntry, type ChatSection } from "./chat-switcher";
@@ -455,11 +455,13 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   // The sessions the partner on screen works in beside this conversation. Each is a thread of this page: its first
   // round stands in the conversation where it began, and the rest opens beside it.
   const threadAgent = current?.kind === "dm" && currentAgent && known.has(currentAgent) ? currentAgent : undefined;
-  const threads = useQuery({ queryKey: ["partner-sessions", session.owner, threadAgent], enabled: !!threadAgent, retry: false,
-    queryFn: () => mauApi(session.token).sessions(threadAgent!),
-    refetchInterval: (query) => [...query.state.data?.data ?? [], ...query.state.data?.active ?? []].some((item) => item.working) ? 3000 : 15_000 });
   // The threads of each partner the page has been given, page by page: the list is the server's, which keeps it however long it grows.
   const [books, setBooks] = useState<Record<string, ThreadBook<PartnerThread>>>({});
+  const given = useRef(books);
+  given.current = books;
+  const threads = useQuery({ queryKey: ["partner-sessions", session.owner, threadAgent], enabled: !!threadAgent, retry: false,
+    queryFn: () => newestPages(given.current[threadAgent!], (before) => mauApi(session.token).sessions(threadAgent!, before ? { before, limit: OPEN_THREADS } : {})),
+    refetchInterval: (query) => [...query.state.data?.data ?? [], ...query.state.data?.active ?? []].some((item) => item.working) ? 3000 : 15_000 });
   useEffect(() => {
     const page = threads.data;
     if (threadAgent && page) setBooks((values) => ({ ...values, [threadAgent]: withPage(values[threadAgent], page, true) }));

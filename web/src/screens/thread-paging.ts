@@ -16,7 +16,22 @@ export interface ThreadBook<T> { paged: T[]; earlier: string | null }
 export function withPage<T extends { id: string }>(book: ThreadBook<T> | undefined, page: { data: readonly T[]; earlier: string | null }, first: boolean): ThreadBook<T> {
   const given = new Map(page.data.map((item) => [item.id, item])), known = new Set(book?.paged.map((item) => item.id));
   const kept = (book?.paged ?? []).map((item) => given.get(item.id) ?? item), added = page.data.filter((item) => !known.has(item.id));
-  return first ? { paged: [...kept, ...added], earlier: book ? book.earlier : page.earlier } : { paged: [...added, ...kept], earlier: page.earlier };
+  return first ? { paged: [...kept, ...added], earlier: book?.paged.length ? book.earlier : page.earlier } : { paged: [...added, ...kept], earlier: page.earlier };
+}
+
+/**
+ * The first page of a partner's threads, asked for again: the ones that began last, and with them the pages between
+ * them and what the page has. More threads than one page holds may have begun since the last answer, and the ones
+ * before the first page would otherwise be in no page the reader comes to.
+ */
+export async function newestPages<T extends { id: string }, P extends { data: T[]; earlier: string | null }>(book: ThreadBook<T> | undefined, read: (before?: string) => Promise<P>): Promise<P> {
+  const first = await read(), known = new Set(book?.paged.map((item) => item.id));
+  let data = first.data, earlier = first.earlier;
+  while (known.size && earlier && !data.some((item) => known.has(item.id))) {
+    const page = await read(earlier);
+    data = [...page.data, ...data]; earlier = page.earlier;
+  }
+  return { ...first, data, earlier };
 }
 
 /**

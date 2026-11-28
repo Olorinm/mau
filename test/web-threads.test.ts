@@ -190,10 +190,22 @@ it.skipIf(!built)("a long thread is read from its first round, and the page load
   await see(entry).toHaveCount(0);
   await see(page.getByRole("button", { name: "加载更早的消息" })).toHaveCount(0);
   // Coming to the top loads what is earlier, page after page, and leaves the reader where they were reading.
-  const firstRead = (await bubbles.first().innerText()).trim();
-  await stream.evaluate((element) => { element.scrollTop = 0; });
+  const firstRead = (await bubbles.first().innerText()).trim(), read = stream.locator("article.from-agent").filter({ has: page.getByText(firstRead, { exact: true }) });
+  // Where a message stands below the top of the stream. The reader goes to the top: where it stands then is taken at
+  // once, before anything is loaded.
+  const below = (toTop = false) => read.evaluate((element, toTop) => {
+    const stream = element.closest(".room-message-stream")!;
+    if (toTop) stream.scrollTop = 0;
+    return Math.round(element.getBoundingClientRect().top - stream.getBoundingClientRect().top);
+  }, toTop);
+  const stood = await below(true);
   await see(bubbles.first()).not.toHaveText(firstRead);
   await see(stream.getByText(firstRead, { exact: true })).toBeInViewport();
+  // The messages put before it take their height over several frames: it stands where it stood, then and afterwards.
+  const moved = async () => Math.abs(await below() - stood);
+  await expect.poll(moved).toBeLessThanOrEqual(2);
+  await page.waitForTimeout(500);
+  expect(await moved()).toBeLessThanOrEqual(2);
   for (let pass = 0; pass < 12 && await entry.count() === 0; pass++) { await stream.evaluate((element) => { element.scrollTop = 0; }); await page.waitForTimeout(300); }
   // The thread stands where it began, before the conversation that followed, with all of its rounds counted.
   await see(entry).toHaveCount(1);

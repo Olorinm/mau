@@ -1,6 +1,6 @@
 {
   "name": "@olorinm/mau",
-  "version": "0.1.0-alpha.71",
+  "version": "0.1.0-alpha.72",
   "private": true,
   "description": "Mau: an agent product built on Agent Kit (Router, Host, Connectors, Environment).",
   "type": "module",

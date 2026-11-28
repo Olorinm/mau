@@ -59,11 +59,13 @@ export class PartnerSessions {
     return this.store.newest<PartnerSession>(SESSIONS, [{ members: ["owner"], value: owner }, { members: ["agentId"], value: agentId },
       ...(page.startedBy !== undefined ? [{ members: ["startedBy.agentId"], value: page.startedBy }] : [])], limit, { before: page.before, offset: page.offset }).map(entry => entry.value);
   }
-  /** A turn ended in a context. `tokens`: how full the context was then, when the kernel said so. */
+  /**
+   * A turn ended in a context. `tokens`: how full the context was then, when the kernel said so. A run that does not
+   * say leaves the context without a size: the one recorded before it is an earlier size.
+   */
   used(owner: string, agentId: string, sessionId: string, tokens: number | undefined, at = Date.now()) {
     const key = `${agentId}:${sessionId}`, prior = this.store.get<SessionUse>(USE, key);
-    this.store.set(USE, key, { owner, agentId, sessionId, turns: (prior?.turns ?? 0) + 1, lastAt: iso(at),
-      ...(tokens !== undefined ? { tokens } : prior?.tokens !== undefined ? { tokens: prior.tokens } : {}) } satisfies SessionUse);
+    this.store.set(USE, key, { owner, agentId, sessionId, turns: (prior?.turns ?? 0) + 1, lastAt: iso(at), ...(tokens !== undefined ? { tokens } : {}) } satisfies SessionUse);
   }
   use(agentId: string, sessionId: string) { return this.store.get<SessionUse>(USE, `${agentId}:${sessionId}`); }
   /** What was seen of a partner's contexts, the one used last first: at most `limit` of them, after `offset`. */
