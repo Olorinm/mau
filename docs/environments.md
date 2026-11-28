@@ -208,10 +208,14 @@ For a Cloudflare environment, set `githubCredentialFile` to the path of an opera
 Select its repositories and permissions on GitHub. Mau registers that token with the gateway at creation and resume. Use normal HTTPS Git remotes and
 `gh` commands for pulls, pushes and pull requests. All partners in this environment share the selected GitHub permissions. Git and `gh` contact GitHub
 directly through the gateway and these commands have no Mau connector approval cards. Rotating the file and resuming updates the gateway. Removing the
-selection and resuming revokes access for that environment.
+selection and resuming revokes access for that environment. With the token selected the partners can also download release assets, source archives,
+raw files of public repositories and Actions logs (`gh release download`, `gh run view --log`). Git LFS, SSH remotes and GitHub Enterprise are not reachable.
 
 Set `anthropicCredentialFile` the same way for a Claude partner using the official Anthropic API. Claude receives a placeholder in
-`ANTHROPIC_API_KEY`. The gateway replaces it on the allowed Anthropic inference and model-listing paths. Keep these operator files outside the profile's
+`ANTHROPIC_API_KEY`. The gateway replaces it on the allowed Anthropic inference and model-listing paths. For an Anthropic-compatible endpoint of
+your own, add `anthropicBaseUrl` (`https://host` with an optional path prefix): the environment starts with `ANTHROPIC_BASE_URL` set to it, the key
+is sent as `x-api-key` on the same paths there, and `api.anthropic.com` is closed to that environment. A model name the endpoint spells differently
+belongs in the Claude settings file among the profile's `files`. Keep these operator files outside the profile's
 guest `files` mappings. The starter ships the connector skills from the pinned official releases and installs them offline beside the Mau sandbox addendum.
 
 ### A DeepSeek Harness partner
@@ -255,8 +259,7 @@ this configuration.
   file of the entry's `files`) and `GEMINI_API_KEY` in the environment of the `agy` process. The key
   is a credential and does not belong in the Host configuration: supply it as a 0600 file through
   `files` with a destination that ends in `/.gemini/api-key`, and have the runtime's `command` read
-  it, as the example does. Antigravity's Google sign-in is not supported here: it is kept in a
-  desktop keyring a sandbox does not have, and the `google` service does not admit its hosts.
+  it, as the example does.
   - **A gateway that holds credentials** (Cloudflare) gets the key from Mau, and the key never
     enters the sandbox: the file there contains the placeholder `gateway-managed`, which is all
     Antigravity checks for, and the gateway replaces whatever key or token a request to
@@ -268,6 +271,13 @@ this configuration.
     one such file.
   - **A provider that holds none** gets the file as it is, and like every kernel's credential it is
     readable by all partners of the environment. The same Host configuration serves both cases.
+  - **Or a Google sign-in.** On Linux the CLI keeps its sign-in in two files, not in a keyring:
+    `~/.gemini/antigravity-cli/antigravity-oauth-token` and `~/.config/antigravity/credential-user-scope`.
+    Sign in once in a Linux container and supply both through `files`, without the settings file and
+    the key; the runtime's `command` then starts `agy acp` without `GEMINI_API_KEY`. A profile whose
+    files have no `/.gemini/api-key` asks the gateway for the `google-account` service in place of
+    `google`. The sign-in stays in the sandbox, where Antigravity renews it and every partner of the
+    environment can read it; the sandbox itself cannot sign in, since the consent pages are closed to it.
 - **Network.** What the `google` service admits on `generativelanguage.googleapis.com` depends on
   who holds the key. When the gateway holds it, the whole Gemini API there is open, any path and
   method (model listing, files, caches, the other generation methods): a partner can only use the
@@ -276,7 +286,10 @@ this configuration.
   the gateway cannot tell whose key a request carries (`modelAccounts` covers `openai` only), and
   with more admitted a partner that is talked into it could use someone else's key to upload the
   owner's files into that person's project. With an API key Antigravity offers Gemini models only;
-  the runtime's `allowedSettings` decides which a partner may select.
+  the runtime's `allowedSettings` decides which a partner may select. With a Google sign-in the
+  `google-account` service admits the Code Assist calls on the CLI's two backends, the renewal of
+  its token and the lookup of its account, and no other Google host. There too the gateway cannot
+  tell whose token a request carries.
 - **Instructions.** Antigravity reads its rule files (`AGENTS.md`, `GEMINI.md`) by its own rules; Mau
   writes neither.
 

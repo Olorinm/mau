@@ -24,6 +24,15 @@ it("uses Codex command receipts on the default Host", () => {
   for (const kernel of ["claude", "agy", "hermes", "constructor", undefined]) expect(shellRelay(kernel), String(kernel)).toBe(false);
 });
 
+it("takes an endpoint for the Claude key that is https without a query, and only beside a key file", () => {
+  const options = (extra: object) => ({ configFile: "providers.json", profiles: [{ id: "cloud", label: "Cloud", owners: ["alice"], provider: "cloud", template: "base",
+    kernel: "claude", runtimeId: "lead", hostConfigFile: "host.json", ...extra }] });
+  for (const anthropicBaseUrl of ["https://relay.example.test", "https://relay.example.test/api"])
+    expect(environmentOptionsSchema.parse(options({ anthropicCredentialFile: "key", anthropicBaseUrl })).profiles[0]).toMatchObject({ anthropicBaseUrl });
+  for (const anthropicBaseUrl of ["http://relay.example.test", "relay.example.test", "https://relay.example.test?x=1", "https://relay.example.test/#a", "https://relay example.test", "", "https://" + "a".repeat(512)])
+    expect(() => environmentOptionsSchema.parse(options({ anthropicCredentialFile: "key", anthropicBaseUrl })), anthropicBaseUrl).toThrow();
+});
+
 it("accepts agy among a profile's other kernels and refuses a kernel that is not offered this way", () => {
   const profile = (otherKernels: unknown) => ({ configFile: "providers.json", profiles: [{ id: "cloud", label: "Cloud", owners: ["alice"], provider: "cloud", template: "base",
     kernel: "codex", runtimeId: "personal", hostConfigFile: "host.json", otherKernels }] });

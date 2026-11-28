@@ -77,9 +77,9 @@ Codex 和可选的 DSH 都会从 `/home/user/.agents/skills` 发现官方技能�
 
 ### Git、GitHub CLI 和 Claude 的凭据
 
-Cloudflare 环境可以在方案中设置 `githubCredentialFile`，指向运营端保存 GitHub 访问令牌的文件。令牌能访问哪些仓库、能读还是能写，由 GitHub 上授予的权限决定。Mau 在创建和恢复环境时将它交给网关。伙伴可以直接使用 HTTPS Git 远程地址和 `gh` 命令拉取、推送和处理 PR。同一环境里的伙伴共用这项授权。Git 和 `gh` 通过网关访问 GitHub，没有 Mau 连接器审批卡。换令牌后暂停并恢复环境即可轮换，去掉这个字段后暂停并恢复即可撤销该环境的访问。
+Cloudflare 环境可以在方案中设置 `githubCredentialFile`，指向运营端保存 GitHub 访问令牌的文件。令牌能访问哪些仓库、能读还是能写，由 GitHub 上授予的权限决定。Mau 在创建和恢复环境时将它交给网关。伙伴可以直接使用 HTTPS Git 远程地址和 `gh` 命令拉取、推送和处理 PR。同一环境里的伙伴共用这项授权。Git 和 `gh` 通过网关访问 GitHub，没有 Mau 连接器审批卡。换令牌后暂停并恢复环境即可轮换，去掉这个字段后暂停并恢复即可撤销该环境的访问。选了令牌的环境还可以下载 Release 附件、源码压缩包、公开仓库的原始文件和 Actions 日志（`gh release download`、`gh run view --log`）。Git LFS、SSH 远程地址和 GitHub Enterprise 不通。
 
-Claude 使用官方 Anthropic API 时，方案中同样可设置 `anthropicCredentialFile`。沙箱中的 `ANTHROPIC_API_KEY` 是占位值，网关在允许的推理与模型查询请求上注入真实密钥。运营端的凭据文件须与方案中上传到沙箱的 `files` 分开。启动脚本会离线安装固定版本的官方连接器技能和单独的 Mau 沙箱补充说明。
+Claude 使用官方 Anthropic API 时，方案中同样可设置 `anthropicCredentialFile`。沙箱中的 `ANTHROPIC_API_KEY` 是占位值，网关在允许的推理与模型查询请求上注入真实密钥。使用自己的 Anthropic 兼容地址时，再写 `anthropicBaseUrl`（`https://host`，可带路径前缀）：环境启动时 `ANTHROPIC_BASE_URL` 指向它，密钥以 `x-api-key` 发到那里的同样几条路径，该环境不能再访问 `api.anthropic.com`。这个地址对模型的叫法不同时，写在方案 `files` 里的 Claude 设置文件中。运营端的凭据文件须与方案中上传到沙箱的 `files` 分开。启动脚本会离线安装固定版本的官方连接器技能和单独的 Mau 沙箱补充说明。
 
 ### DeepSeek Harness 伙伴
 
@@ -100,10 +100,11 @@ Claude 使用官方 Anthropic API 时，方案中同样可设置 `anthropicCrede
 - **runtime 配置**见 [host-agy-partner.json](../examples/cloud/host-agy-partner.json)。`model` 和 `allowedSettings.model` 的值是 Antigravity 模型选择器里的 ID，即 `agy models` 列出的 ID 去掉思考强度；`effort` 是它的思考强度。`allowedSettings.effort` 只写所列模型都支持的强度：Antigravity 不提供 Mau 能读取的逐模型列表，模型不支持的强度会让这一轮失败。
 - **权限。**Antigravity 执行命令前会询问，这些请求会成为所有者对话里的审批卡。由伙伴消息发起的一轮无法询问，所以伙伴用的 runtime 要写 `"args": ["acp", "--dangerously-skip-permissions"]`。只设 `auto` 模式（`"config": {"mode": "auto"}`）不够：它自动放行编辑和安全命令，但调用 Mau 的每个工具（`partners`、`memory`、`connected_apps`）前仍会询问，这一轮会一直等到 Host 的超时。加上该参数后，约束伙伴的是沙箱和出口网关；Mau 自己的审批（例如连接器写操作）不受影响。
 - **命令。**模板里要有 `agy`，并在 Host 用户的 `PATH` 上（或用 `command` 指定路径）。Cloudflare 启动脚本按 Host 方案安装固定版本的 Linux CLI。
-- **凭证。**使用 Gemini API key。Antigravity 需要两样东西，缺一不可：`/home/user/.gemini/antigravity-cli/settings.json` 里的 `{"modelProvider": "gemini"}`（通过该项的 `files` 放入），以及 `agy` 进程环境里的 `GEMINI_API_KEY`。key 是凭证，不写进 Host 配置：通过 `files` 以 0600 文件放入，目标路径以 `/.gemini/api-key` 结尾，由 runtime 的 `command` 读取，示例就是这样做的。这里不支持 Antigravity 的 Google 账号登录：登录状态存在桌面钥匙串里，沙箱没有，`google` 服务也不放行它用到的地址。
+- **凭证。**使用 Gemini API key。Antigravity 需要两样东西，缺一不可：`/home/user/.gemini/antigravity-cli/settings.json` 里的 `{"modelProvider": "gemini"}`（通过该项的 `files` 放入），以及 `agy` 进程环境里的 `GEMINI_API_KEY`。key 是凭证，不写进 Host 配置：通过 `files` 以 0600 文件放入，目标路径以 `/.gemini/api-key` 结尾，由 runtime 的 `command` 读取，示例就是这样做的。
   - **网关能代持凭证时**（Cloudflare），Mau 把 key 交给网关，真 key 不进沙箱：沙箱里的文件内容是占位值 `gateway-managed`（Antigravity 只检查它非空），发往 `generativelanguage.googleapis.com` 的请求无论带着什么 key 或令牌，网关都会换成所有者的 key。每次创建和恢复环境，Mau 都把 key 重新存到网关，所以轮换 key 时改掉文件内容，再恢复该方案的任意一个环境即可：网关立即改用新 key，共用这个文件的所有环境都生效。网关代持之前创建的环境，下次恢复时沙箱里的真 key 会被换成占位值。文件内容是一行一个 key，一个方案只能有一个这样的文件。
   - **云服务不支持代持时**，文件原样放入沙箱，和其他内核的凭证一样，环境里所有伙伴都能读到它。同一份 Host 配置两种情况都能用。
-- **网络。**`google` 服务在 `generativelanguage.googleapis.com` 上放行什么，取决于 key 在谁手里。网关代持时，放行那里的整个 Gemini API，任意路径和方法（模型列表、文件、缓存、其他生成接口）：伙伴只能用所有者的 key，发出去的数据到不了别人的账号。key 在沙箱里时，只放行一轮对话发出的那一种请求，`POST /v1beta/models/<模型>:streamGenerateContent`：网关分辨不出请求带的是谁的 key（`modelAccounts` 只支持 `openai`），放行更多的话，被诱导的伙伴可以带着别人的 key 把所有者的文件上传到别人的项目里。使用 API key 时 Antigravity 只提供 Gemini 模型，伙伴能选哪些由 runtime 的 `allowedSettings` 决定。
+  - **也可以用 Google 账号登录。**Linux 上 CLI 把登录状态存在两个文件里，不用钥匙串：`~/.gemini/antigravity-cli/antigravity-oauth-token` 和 `~/.config/antigravity/credential-user-scope`。在一个 Linux 容器里登录一次，把这两个文件通过 `files` 放入，不放设置文件和 key；runtime 的 `command` 启动 `agy acp` 时不带 `GEMINI_API_KEY`。方案的文件里没有 `/.gemini/api-key` 时，Mau 向网关申请的是 `google-account` 服务，不是 `google`。登录状态留在沙箱里，由 Antigravity 在那里续期，环境里所有伙伴都能读到它；沙箱自己无法完成登录，因为授权页面不放行。
+- **网络。**`google` 服务在 `generativelanguage.googleapis.com` 上放行什么，取决于 key 在谁手里。网关代持时，放行那里的整个 Gemini API，任意路径和方法（模型列表、文件、缓存、其他生成接口）：伙伴只能用所有者的 key，发出去的数据到不了别人的账号。key 在沙箱里时，只放行一轮对话发出的那一种请求，`POST /v1beta/models/<模型>:streamGenerateContent`：网关分辨不出请求带的是谁的 key（`modelAccounts` 只支持 `openai`），放行更多的话，被诱导的伙伴可以带着别人的 key 把所有者的文件上传到别人的项目里。使用 API key 时 Antigravity 只提供 Gemini 模型，伙伴能选哪些由 runtime 的 `allowedSettings` 决定。用 Google 账号登录时，`google-account` 服务放行 CLI 两个后端上的 Code Assist 调用、令牌续期和账号查询，不放行其他 Google 地址；网关同样分辨不出请求带的是谁的令牌。
 - **说明文件。**Antigravity 按自己的规则读它的规则文件（`AGENTS.md`、`GEMINI.md`），Mau 两者都不写。
 
 ## 伙伴共用环境
