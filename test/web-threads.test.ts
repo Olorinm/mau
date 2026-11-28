@@ -109,10 +109,20 @@ it.skipIf(!built)("a piece of work a partner was sent is a thread of its page: i
   // return to the box, and sending them again is the same message: the partner does one turn, not two.
   before = f.turns.length;
   const ofTrip = (item: Turn) => item.agentId === scene.trip.id, replies = `**/agents/${scene.trip.id}/sessions/${sessionId}/messages`;
-  let lost = 0;
-  await page.route(replies, async (route) => { if (lost++) return route.continue(); await route.fetch(); await route.abort(); });
+  let sent = 0;
+  await page.route(replies, async (route) => { if (++sent > 2) return route.continue(); await route.fetch(); await route.abort(); });
   await box.fill("再加一份早餐。"); await box.press("Enter");
   const breakfast = await f.until(() => f.turns.slice(before).find(ofTrip), "the turn of the reply whose answer was lost");
+  await see(box).toHaveValue("再加一份早餐。");
+  // Sent again on the same page, and that answer is lost too.
+  await box.press("Enter");
+  await expect.poll(() => sent).toBe(2);
+  await see(box).toHaveValue("再加一份早餐。");
+  // The sign-in has run out: "sign in again" keeps what was written and reloads the page. The words come back with
+  // the key they were sent under, so the third sending is still the same message.
+  await page.evaluate(() => { globalThis.dispatchEvent(new Event("mau:before-access-reload")); location.reload(); });
+  await see(chip(page, scene.trip.id)).toHaveAttribute("aria-current", "true");
+  await entry.click();
   await see(box).toHaveValue("再加一份早餐。");
   await box.press("Enter");
   await see(box).toHaveValue("");
@@ -121,7 +131,7 @@ it.skipIf(!built)("a piece of work a partner was sent is a thread of its page: i
   await see(panel).toContainText("已加早餐。");
   await see(panel.locator(".mau-side-head small")).toHaveText("korea-trip · helper 发起 · 共 4 轮");
   await f.settle(600);
-  expect(lost).toBe(2); expect(f.turns.slice(before).filter(ofTrip)).toHaveLength(1);
+  expect(sent).toBe(3); expect(f.turns.slice(before).filter(ofTrip)).toHaveLength(1);
 
   // The session has grown large and nobody used it for a day: it goes on in a new context. On the page it is the same
   // thread, with a divider where the context changed, and the box writes in it as before.

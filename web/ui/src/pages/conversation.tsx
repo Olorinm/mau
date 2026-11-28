@@ -134,11 +134,12 @@ export function Conversation({
     element.style.height = "auto";
     element.style.height = `${Math.min(element.scrollHeight, 130)}px`;
   }, [composer.value]);
-  // Where the reader is in the stream: at its end, or at a message that stood at a known place. A new message, or
-  // another conversation, shows the end. Messages put before the first one leave the reader at the message they were
-  // reading, and so does anything that takes its height after it is shown.
-  const first = messages[0]?.id;
-  const held = useRef<{ conversationId?: string | undefined; first?: string | undefined; atEnd: boolean; anchor?: { id: string; offset: number } }>({ atEnd: true });
+  // Where the reader is in the stream: at its end, or at a message that stood at a known place. Another conversation
+  // shows its end, and so does a message the reader has just sent. Anything else leaves a reader who is not at the end
+  // at the message they were reading: messages put before the first one or between the others, and whatever takes its
+  // height after it is shown.
+  const first = messages[0]?.id, last = messages.at(-1);
+  const held = useRef<{ conversationId?: string | undefined; last?: string | undefined; atEnd: boolean; anchor?: { id: string; offset: number } }>({ atEnd: true });
   const offsetOf = (element: HTMLElement, id: string) => {
     const node = element.querySelector(`[data-room-message-id="${CSS.escape(id)}"]`);
     return node ? node.getBoundingClientRect().top - element.getBoundingClientRect().top : undefined;
@@ -170,12 +171,12 @@ export function Conversation({
   useLayoutEffect(() => {
     const element = stream.current;
     if (!element) return;
-    const before = held.current, earlier = before.conversationId === conversationId && before.first !== undefined && before.first !== first && !before.atEnd;
-    held.current = { ...before, conversationId, first, atEnd: !earlier };
+    const before = held.current, sent = last?.role === "user" && last.id !== before.last;
+    held.current = { ...before, conversationId, last: last?.id, atEnd: before.atEnd || before.conversationId !== conversationId || sent };
     keep(element);
     look(element);
     nearStart();
-  }, [messages.length, conversationId, first]);
+  }, [messages.length, conversationId, first, last?.id]);
   useEffect(() => {
     const element = stream.current;
     if (!element) return;

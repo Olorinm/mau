@@ -22,7 +22,7 @@ import {
   type AttachmentRef, type Card, type ChatSummary, type LedgerApi, type LedgerBubble, type LedgerChatView, type LedgerFold, type LedgerSocket, type LedgerTurn,
   type MessageDisplay, type PartnerIntent, type PartnerResult, type PendingAnswer,
 } from "../api/ledger";
-import { beforeAccessReloadEvent, reloadDrafts, saveReloadDrafts, type Session } from "../api/session";
+import { beforeAccessReloadEvent, reloadDrafts, reloadReplyKeys, saveReloadDrafts, saveReloadReplyKeys, type Session } from "../api/session";
 import { errorMessage, errorSentence, failureMessage, useI18n, type Translate } from "../i18n";
 import { TaskSurface, WorkingSurface, type RunControls, type TaskLike } from "./run-surface";
 import { PartnerFigureProvider, type PartnerFigureResolver, type RunIncoming } from "@olorinm/agent-ui/pages";
@@ -30,7 +30,7 @@ import { LedgerCreateGroupDialog, LedgerGroupMembersDialog, useLedgerGroup } fro
 import { AgentDetail } from "./agent-detail";
 import { CreateAgentDialog } from "./create-agent";
 import { PurgeChatDialog } from "./purge-chat-dialog";
-import { OPEN_THREADS, openThreads } from "./thread-paging";
+import { OPEN_THREADS, openThreads, withPage, type ThreadBook } from "./thread-paging";
 import { liveViewUrl } from "../api/live-view";
 import { BrowserSideView, Clamped, DocumentSideView, type PartnerDocument, FileSideView, ThreadSideView } from "./side-views";
 import { ChatRoster, type ChatEntry, type ChatSection } from "./chat-switcher";
@@ -281,9 +281,12 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const [drafts, setDrafts] = useState<Record<string, string>>(() => reloadDrafts());
   const latestDrafts = useRef(drafts);
   latestDrafts.current = drafts;
+  // What was last sent in each thread and has not been answered for: sending the same words again is the same message,
+  // so a reply whose answer was lost on the way back does not become a second turn. Kept across that reload with the text.
+  const replyKeys = useRef(new Map(Object.entries(reloadReplyKeys())));
   useEffect(() => {
-    reloadDrafts(sessionStorage, true);
-    const save = () => saveReloadDrafts(latestDrafts.current);
+    reloadDrafts(sessionStorage, true); reloadReplyKeys(sessionStorage, true);
+    const save = () => { saveReloadDrafts(latestDrafts.current); saveReloadReplyKeys(Object.fromEntries(replyKeys.current)); };
     globalThis.addEventListener(beforeAccessReloadEvent, save);
     return () => globalThis.removeEventListener(beforeAccessReloadEvent, save);
   }, []);
@@ -454,20 +457,32 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   const threadAgent = current?.kind === "dm" && currentAgent && known.has(currentAgent) ? currentAgent : undefined;
   const threads = useQuery({ queryKey: ["partner-sessions", session.owner, threadAgent], enabled: !!threadAgent, retry: false,
     queryFn: () => mauApi(session.token).sessions(threadAgent!),
-    refetchInterval: (query) => query.state.data?.some((item) => item.working) ? 3000 : 15_000 });
-  const allThreads = threadAgent ? threads.data ?? [] : [];
-  // How far back the page has gone among this partner's threads, which the API lists from the first to the last.
-  const [threadWindows, setThreadWindows] = useState<Record<string, number>>({});
-  const threadWindow = threadAgent ? threadWindows[threadAgent] ?? OPEN_THREADS : 0;
-  const moreThreads = () => { if (threadAgent) setThreadWindows((values) => ({ ...values, [threadAgent]: (values[threadAgent] ?? OPEN_THREADS) + OPEN_THREADS })); };
+    refetchInterval: (query) => [...query.state.data?.data ?? [], ...query.state.data?.active ?? []].some((item) => item.working) ? 3000 : 15_000 });
+  // The threads of each partner the page has been given, page by page: the list is the server's, which keeps it however long it grows.
+  const [books, setBooks] = useState<Record<string, ThreadBook<PartnerThread>>>({});
+  useEffect(() => {
+    const page = threads.data;
+    if (threadAgent && page) setBooks((values) => ({ ...values, [threadAgent]: withPage(values[threadAgent], page, true) }));
+  }, [threads.data, threadAgent]);
+  const book = threadAgent ? books[threadAgent] : undefined, earlierThreads = !!book?.earlier;
+  const pagingThreads = useRef<Promise<void>>(undefined);
+  const moreThreads = () => pagingThreads.current ??= (async () => {
+    const before = book?.earlier;
+    if (!threadAgent || !before) return;
+    const page = await mauApi(session.token).sessions(threadAgent, { before, limit: OPEN_THREADS });
+    setBooks((values) => ({ ...values, [threadAgent]: withPage(values[threadAgent], page, false) }));
+  })().finally(() => { pagingThreads.current = undefined; });
   const openThreadId = sideView?.kind === "thread" ? sideView.sessionId : undefined;
-  const { open: threadList, earlier: earlierThreads, from: threadsFrom } = useMemo(() => openThreads(allThreads, threadWindow, openThreadId), [threads.data, threadAgent, threadWindow, openThreadId]);
-  const threadChats = threadList.map((item) => item.chatId).join("\n");
+  const { live: liveThreads, read: readThreads, from: threadsFrom } = useMemo(() => openThreads(book, threadAgent ? threads.data?.active ?? [] : [], openThreadId), [book, threads.data, threadAgent, openThreadId]);
+  const threadList = useMemo(() => [...liveThreads, ...readThreads], [liveThreads, readThreads]);
+  // Threads the page follows are subscribed to; the others are read once, and followed when something happens in them.
+  const threadChats = liveThreads.map((item) => item.chatId).join("\n"), readChats = readThreads.map((item) => item.chatId).join("\n");
   useEffect(() => {
     const ids = threadChats ? threadChats.split("\n") : [];
     for (const id of ids) void client.openChat(id).catch(() => undefined);
     return () => { for (const id of ids) client.closeChat(id); };
   }, [client, threadChats]);
+  useEffect(() => { for (const id of readChats ? readChats.split("\n") : []) void client.readChat(id).catch(() => undefined); }, [client, readChats]);
   // A thread is read from its first round: the page shows where it began, and counts its rounds. One at a time; a
   // thread whose earlier part could not be read is shown from what was read, and tried again when the page is opened again.
   const [stalled, setStalled] = useState<ReadonlySet<string>>(new Set());
@@ -771,7 +786,7 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
   // that are open. A thread that began within what is read of the conversation is opened without being asked for.
   const oldest = timed[0]?.at;
   const behind = !!view?.hasOlder && earlierThreads && oldest !== undefined && threadsFrom > oldest;
-  useEffect(() => { if (behind) moreThreads(); }, [behind, threadWindow]);
+  useEffect(() => { if (behind) void moreThreads().catch(() => undefined); }, [behind, book?.earlier]);
   const since = view?.hasOlder ? oldest : threadsFrom;
   const messages = grouped([...timed.filter((item) => view?.hasOlder || item.at >= threadsFrom), ...roots.filter((root) => since !== undefined && root.at >= since)
     .flatMap((root) => root.views.map((message) => ({ at: root.at, message })))]
@@ -786,9 +801,6 @@ export function LedgerMessagesScreen({ session, initialAgentId, onStartHandled, 
     if (!opened || opened.view.lastSeq <= opened.view.readSeq || document.visibilityState !== "visible") return;
     void client.markRead(opened.chat.chatId, opened.view.lastSeq).catch(() => undefined);
   }, [client, opened?.chat.chatId, opened?.view.lastSeq, opened?.view.readSeq]);
-  // What was last sent in each thread and has not been answered for: sending the same words again is the same message,
-  // so a reply whose answer was lost on the way back does not become a second turn.
-  const replyKeys = useRef(new Map<string, { text: string; key: string }>());
   const replyInThread = useMutation({
     mutationFn: (input: { agentId: string; sessionId: string; chatId: string; text: string; key: string }) =>
       mauApi(session.token).replyInSession(input.agentId, input.sessionId, { text: input.text, key: input.key }),

@@ -191,7 +191,13 @@ export function mauApi(token: string) {
     /** The owner's partners, dismissed ones included. */
     partners: () => request<{ data: PartnerView[] }>(mau + "/partners", { token }).then((r) => r.data),
     /** The sessions a partner works in beside its conversation with the owner, oldest first. */
-    sessions: (id: string) => request<{ data: PartnerThread[] }>(mau + agent(id) + "/sessions", { token }).then((r) => r.data),
+    /**
+     * A partner's threads: the ones that began last, oldest first, with the ones something happened in last (`active`);
+     * or with `before` the ones that began before that thread. `earlier`: the thread to ask before for the page before this one.
+     */
+    sessions: (id: string, page: { before?: string; limit?: number } = {}) =>
+      request<{ data: PartnerThread[]; earlier: string | null; active?: PartnerThread[] }>(mau + agent(id) + "/sessions"
+        + (page.before ? `?before=${encodeURIComponent(page.before)}${page.limit ? `&limit=${page.limit}` : ""}` : ""), { token }),
     /** Write in one of a partner's sessions as the owner. The same key is the same turn. */
     replyInSession: (id: string, sessionId: string, body: { text: string; key: string }) =>
       request<{ eventId: string; turnId: string }>(mau + agent(id) + "/sessions/" + encodeURIComponent(sessionId) + "/messages", { token, body }),

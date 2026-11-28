@@ -1,34 +1,53 @@
 import { expect, it } from "vitest";
-import { OPEN_THREADS, openThreads } from "../web/src/screens/thread-paging";
+import { OPEN_THREADS, openThreads, withPage, type ThreadBook } from "../web/src/screens/thread-paging";
 
-// Which of a partner's threads its page has open: the console cannot keep a chat open for every thread a partner ever had.
+// What a partner's page does with its threads: the server pages them, and the console follows only some of them live,
+// because a connection is allowed 200 subscriptions.
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 1, 0, minute)).toISOString();
-const threads = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `t${index + 1}`, createdAt: at(index), lastAt: at(index) }));
+const threads = (count: number, from = 1) => Array.from({ length: count }, (_, index) => ({ id: `t${from + index}`, createdAt: at(from + index), lastAt: at(from + index) }));
+const ids = (list: Array<{ id: string }>) => list.map(item => item.id);
 
-it("opens every thread of a partner that has few, and shows the page from its beginning", () => {
-  const all = threads(OPEN_THREADS);
-  expect(openThreads(all, OPEN_THREADS)).toEqual({ open: all, earlier: false, from: "" });
-  expect(openThreads([], OPEN_THREADS)).toEqual({ open: [], earlier: false, from: "" });
+it("follows every thread of a partner that has few, and shows the page from its beginning", () => {
+  const all = threads(OPEN_THREADS), book = withPage(undefined, { data: all, earlier: null }, true);
+  expect(openThreads(book, all)).toEqual({ live: all, read: [], from: "" });
+  expect(openThreads(undefined, [])).toEqual({ live: [], read: [], from: "" });
 });
 
-it("opens the threads that began last, more of them as the reader goes back, and says from when the page is whole", () => {
-  const all = threads(150), first = openThreads(all, OPEN_THREADS);
-  expect(first.open.map(item => item.id)).toEqual(all.slice(-OPEN_THREADS).map(item => item.id));
-  expect(first).toMatchObject({ earlier: true, from: all[150 - OPEN_THREADS]!.createdAt });
-  const second = openThreads(all, 2 * OPEN_THREADS);
-  expect(second.open).toHaveLength(2 * OPEN_THREADS); expect(second).toMatchObject({ earlier: true, from: all[30]!.createdAt });
-  expect(openThreads(all, 3 * OPEN_THREADS)).toEqual({ open: all, earlier: false, from: "" });
+it("keeps the threads it was given when the first page moves on, and puts earlier pages before them", () => {
+  // The first answer: threads 141 to 200, and where the list goes on.
+  let book: ThreadBook<{ id: string; createdAt: string; lastAt: string }> = withPage(undefined, { data: threads(60, 141), earlier: "t141" }, true);
+  // Asked again after two more threads began: the first page is now 143 to 202. Nothing that was shown is lost, the
+  // new ones follow, what is known of the others is replaced, and the list still goes on before 141.
+  const again = threads(60, 143).map(item => item.id === "t150" ? { ...item, lastAt: at(999) } : item);
+  book = withPage(book, { data: again, earlier: "t143" }, true);
+  expect(ids(book.paged)).toEqual(ids(threads(62, 141))); expect(book.earlier).toBe("t141");
+  expect(book.paged.find(item => item.id === "t150")!.lastAt).toBe(at(999));
+  // An earlier page stands before them, and says where the next one begins; the last one says there is none.
+  book = withPage(book, { data: threads(60, 81), earlier: "t81" }, false);
+  expect(ids(book.paged)).toEqual(ids(threads(122, 81))); expect(book.earlier).toBe("t81");
+  book = withPage(book, { data: threads(80, 1), earlier: null }, false);
+  expect(ids(book.paged)).toEqual(ids(threads(202))); expect(book.earlier).toBeNull();
 });
 
-it("keeps a thread open that began long ago when something happened in it lately, and the one open beside the conversation", () => {
-  const all = threads(150);
-  // The fifth thread got an answer after every other thread; the ninth is the one the owner has open.
-  all[4] = { ...all[4]!, lastAt: at(1000) };
-  const { open, from } = openThreads(all, OPEN_THREADS, "t9");
-  expect(open.map(item => item.id)).toEqual(["t5", "t9", ...all.slice(-OPEN_THREADS).map(item => item.id)]);
-  // The page is still whole only from where the window begins: the old thread is shown by what is new in it, not in its place.
-  expect(from).toBe(all[90]!.createdAt);
-  // Many threads active at once: the ones something happened in last, counted like the window.
-  const busy = threads(200).map((item, index) => index < 100 ? { ...item, lastAt: at(2000 + index) } : item);
-  expect(openThreads(busy, OPEN_THREADS).open.map(item => item.id)).toEqual([...busy.slice(40, 100), ...busy.slice(-OPEN_THREADS)].map(item => item.id));
+it("follows the threads that began last and the ones something happened in last, and only reads the rest: never more than a connection may follow", () => {
+  let book = withPage(undefined, { data: threads(60, 442), earlier: "t442" }, true);
+  // The first thread of 501 got an answer just now: the server lists it among the active ones, and the page follows it
+  // although it began before everything the page has.
+  const first = { id: "t1", createdAt: at(1), lastAt: at(9999) }, active = [first, ...threads(59, 443).reverse()];
+  let opened = openThreads(book, active);
+  expect(opened.live[0]).toBe(first); expect(opened.live).toHaveLength(61); expect(opened.read).toEqual([]);
+  // The page is whole only from where its threads begin: the old one is reached by what is new in it.
+  expect(opened.from).toBe(at(442));
+  // The reader goes back through every page, with one thread open beside the conversation.
+  for (let from = 382; from >= 22; from -= 60) book = withPage(book, { data: threads(60, from), earlier: `t${from}` }, false);
+  book = withPage(book, { data: threads(21, 1), earlier: null }, false);
+  opened = openThreads(book, active, "t7");
+  expect(book.paged).toHaveLength(501);
+  expect(ids(opened.live)).toEqual(["t1", "t7", ...ids(threads(60, 442))]);
+  expect(opened.live.length).toBeLessThanOrEqual(2 * OPEN_THREADS + 1);
+  expect(opened.live.length + opened.read.length).toBe(501); expect(opened.from).toBe("");
+  // What the server says of an active thread is what the page shows of it.
+  expect(opened.live[0]!.lastAt).toBe(at(9999));
+  // However many are active, the server lists sixty, so with the last sixty and the open one it stays far below 200.
+  expect(openThreads(book, threads(60, 100), "t7").live).toHaveLength(121);
 });

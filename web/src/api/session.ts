@@ -79,6 +79,27 @@ export function saveReloadDrafts(drafts: Record<string, string>, storage: Storag
   const kept = Object.fromEntries(Object.entries(drafts).filter(([, text]) => text.trim()));
   if (Object.keys(kept).length) storage.setItem(draftsKey, JSON.stringify(kept));
 }
+const replyKeysKey = "mau.reloadReplyKeys";
+/** What was sent in a thread and not answered for: the words, and the key they were sent under (`replyInSession`). */
+export type ReplyKeys = Record<string, { text: string; key: string }>;
+/**
+ * Kept with the drafts across the reload: a reply the server may already have taken is sent again under the same key
+ * after the owner has signed in again, and so is the same message.
+ */
+export function saveReloadReplyKeys(keys: ReplyKeys, storage: Storage = sessionStorage) {
+  if (Object.keys(keys).length) storage.setItem(replyKeysKey, JSON.stringify(keys));
+}
+/** Reply keys saved by `reloadForAccess`; `clear` removes them once restored. */
+export function reloadReplyKeys(storage: Storage = sessionStorage, clear = false): ReplyKeys {
+  try {
+    const value = JSON.parse(storage.getItem(replyKeysKey) ?? "{}") as unknown;
+    if (clear) storage.removeItem(replyKeysKey);
+    return value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, { text: string; key: string }] => {
+      const item = entry[1] as { text?: unknown; key?: unknown } | null;
+      return !!item && typeof item.text === "string" && typeof item.key === "string";
+    })) : {};
+  } catch { return {}; }
+}
 /** Drafts saved by `reloadForAccess`; `clear` removes them once restored. */
 export function reloadDrafts(storage: Storage = sessionStorage, clear = false): Record<string, string> {
   try {

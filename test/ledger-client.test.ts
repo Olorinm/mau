@@ -190,6 +190,28 @@ it("loads the latest page, subscribes after its seq, pages older history and app
   expect(client.view(chatId).hasOlder).toBe(false);
 });
 
+it("reads a chat without following it, and follows it from there once it is opened", async () => {
+  const { server, client } = setup();
+  for (const text of ["a", "b", "c", "d", "e"]) server.append(say(text), {}, false);
+  client.connect();
+  await tick();
+  // Read: its latest page and, asked for, its earlier ones. It takes none of the subscriptions a connection is allowed.
+  await client.readChat(chatId);
+  await client.loadOlder(chatId);
+  expect(texts(client)).toEqual(["a", "b", "c", "d", "e"]);
+  expect(server.live.subscriptions.has(chatId)).toBe(false);
+  expect(server.live.sent.filter(frame => frame !== "ping")).toEqual([]);
+  // What happens in it afterwards is not shown, and reading it again asks for nothing.
+  server.publish(server.append(say("f")));
+  await client.readChat(chatId);
+  expect(texts(client)).toEqual(["a", "b", "c", "d", "e"]);
+  // Opened, it is followed from where the reading left it.
+  await client.openChat(chatId);
+  await tick();
+  expect(server.live.subscriptions.has(chatId)).toBe(true);
+  expect(texts(client)).toEqual(["a", "b", "c", "d", "e", "f"]);
+});
+
 it("repairs a seq gap from history and drops the frames it already has", async () => {
   const { server, client } = setup();
   server.append(say("one"), {}, false);

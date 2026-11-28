@@ -1,17 +1,35 @@
 /**
- * Threads of one partner the page opens at a time: this many of the ones that began last, this many more each time
- * the reader comes to the top, and beside them the ones something happened in last, however long ago they began.
+ * Threads of one partner the page follows live: this many of the ones that began last, and this many of the ones
+ * something happened in last. Router admits 200 subscriptions on one connection; the threads of earlier pages are
+ * read, not followed.
  */
 export const OPEN_THREADS = 60;
 
+/** The threads of one partner the page has been given so far, in the order they began, and the thread to ask before for the ones that began earlier. */
+export interface ThreadBook<T> { paged: T[]; earlier: string | null }
+
 /**
- * Which threads of a partner the page has open, of all of them in the order they began. `open`: the `window` that
- * began last, the `OPEN_THREADS` something happened in last, and the one open beside the conversation, in the same
- * order. `earlier`: threads that began before the window are not open. `from`: when that is so, the moment the window
- * begins; before it a thread may be missing from the page, so the page shows nothing from before it.
+ * A page of a partner's threads added to what the page has. The first page is asked for again and again: its threads
+ * replace what was known of them, and new ones follow the others; where the list goes on is what the first answer
+ * said, because threads that have since left the first page are still here. An earlier page stands before the others.
  */
-export function openThreads<T extends { id: string; createdAt: string; lastAt: string }>(all: readonly T[], window: number, beside?: string): { open: T[]; earlier: boolean; from: string } {
-  const earlier = all.length > window, first = Math.max(0, all.length - window);
-  const active = new Set([...all].sort((a, b) => b.lastAt.localeCompare(a.lastAt)).slice(0, OPEN_THREADS).map((item) => item.id));
-  return { open: all.filter((item, index) => index >= first || active.has(item.id) || item.id === beside), earlier, from: earlier ? all[first]!.createdAt : "" };
+export function withPage<T extends { id: string }>(book: ThreadBook<T> | undefined, page: { data: readonly T[]; earlier: string | null }, first: boolean): ThreadBook<T> {
+  const given = new Map(page.data.map((item) => [item.id, item])), known = new Set(book?.paged.map((item) => item.id));
+  const kept = (book?.paged ?? []).map((item) => given.get(item.id) ?? item), added = page.data.filter((item) => !known.has(item.id));
+  return first ? { paged: [...kept, ...added], earlier: book ? book.earlier : page.earlier } : { paged: [...added, ...kept], earlier: page.earlier };
+}
+
+/**
+ * What the page does with a partner's threads. `live`: followed as they change, which takes a subscription each: the
+ * `OPEN_THREADS` that began last, the ones something happened in last (`active`, as the server lists them), and the
+ * one open beside the conversation. `read`: the rest of what was paged, read once. `from`: while threads began before
+ * the ones paged, the moment the paged ones begin; before it a thread may be missing, so the page shows nothing from
+ * before it. An active thread that began before that is reached by what is new in it, not where it began.
+ */
+export function openThreads<T extends { id: string; createdAt: string }>(book: ThreadBook<T> | undefined, active: readonly T[], beside?: string): { live: T[]; read: T[]; from: string } {
+  const paged = book?.paged ?? [], recent = new Set(paged.slice(-OPEN_THREADS).map((item) => item.id)), current = new Map(active.map((item) => [item.id, item]));
+  const followed = (item: T) => recent.has(item.id) || current.has(item.id) || item.id === beside;
+  const shown = new Set(paged.map((item) => item.id));
+  return { live: [...active.filter((item) => !shown.has(item.id)), ...paged.filter(followed).map((item) => current.get(item.id) ?? item)],
+    read: paged.filter((item) => !followed(item)), from: book?.earlier && paged.length ? paged[0]!.createdAt : "" };
 }
