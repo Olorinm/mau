@@ -677,6 +677,42 @@ it("rejects a DeepSeek profile whose provider cannot hold its key or whose files
   }
 }, 60_000);
 
+it("asks for the Google account's endpoints when Antigravity has a sign-in file and no API key", async () => {
+  const f = await mauFixture(cleanup, { runtimes: { agy: { kernel: "agy" } }, profile: { otherKernels: [{ kernel: "agy", runtimeId: "agy" }] } });
+  const signIn = join(f.directory, "agy-sign-in");
+  writeFileSync(signIn, "sign-in-fixture\n", { mode: 0o600 });
+  f.mau.environments.options.profiles[0]!.otherKernels[0]!.files.push({ source: signIn, destination: "/home/user/.gemini/antigravity-cli/antigravity-oauth-token" });
+  const stored = holding(f), create = vi.spyOn(f.provider, "create"), resume = vi.spyOn(f.provider, "resume");
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  // The sign-in is the kernel's own: the gateway holds nothing for it and the file arrives as it is.
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ modelServices: ["openai", "google-account"] });
+  expect(create.mock.calls[0]?.[0].modelCredentials ?? {}).not.toHaveProperty("google");
+  expect(stored.map(entry => (entry.input as { service: string }).service)).not.toContain("google");
+  expect(Buffer.from([...f.cloud.values()][0]!.files.get("/home/user/.gemini/antigravity-cli/antigravity-oauth-token")!).toString()).toBe("sign-in-fixture\n");
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(resume.mock.calls[0]?.[2]).toMatchObject({ modelServices: ["openai", "google-account"] });
+}, 60_000);
+
+it("stores a Claude key for the operator's own endpoint with that endpoint, as another credential than the official one", async () => {
+  const f = await mauFixture(cleanup, { runtimes: { claude: { kernel: "claude" } }, profile: { otherKernels: [{ kernel: "claude", runtimeId: "claude" }] } });
+  const profile = f.mau.environments.options.profiles[0]!, key = join(f.directory, "claude-key"), endpoint = "https://relay.example.test/api";
+  writeFileSync(key, "only-at-the-endpoint\n", { mode: 0o600 });
+  profile.anthropicCredentialFile = key; profile.anthropicBaseUrl = endpoint;
+  const stored = holding(f), create = vi.spyOn(f.provider, "create"), resume = vi.spyOn(f.provider, "resume");
+  const digest = (text: string) => "anthropic-" + createHash("sha256").update(text).digest("hex");
+  await f.api(f.path, { profileId: "cloud" }); expect((await f.settled()).state).toBe("ready");
+  expect(stored).toContainEqual({ id: digest(key + "\n" + endpoint), input: { service: "anthropic", mode: "api_key", apiKey: "only-at-the-endpoint", baseUrl: endpoint }, options: undefined });
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ modelServices: ["openai", "anthropic"], modelCredentials: { anthropic: digest(key + "\n" + endpoint) } });
+  for (const bytes of [...f.cloud.values()][0]!.files.values()) expect(Buffer.from(bytes).toString()).not.toContain("only-at-the-endpoint");
+  // Without the endpoint the same file is the official API's key, under its own ID.
+  await f.api(f.path + "/pause", {}); expect((await f.settled()).state).toBe("paused");
+  delete profile.anthropicBaseUrl;
+  await f.api(f.path + "/resume", {}); expect((await f.settled()).state).toBe("ready");
+  expect(stored.at(-1)).toEqual({ id: digest(key), input: { service: "anthropic", mode: "api_key", apiKey: "only-at-the-endpoint" }, options: undefined });
+  expect(resume.mock.calls[0]?.[2]).toMatchObject({ modelCredentials: { anthropic: digest(key) } });
+}, 60_000);
+
 it("holds GitHub and Claude credentials in the gateway and removes their selections when the profile changes", async () => {
   const f = await mauFixture(cleanup, { runtimes: { claude: { kernel: "claude" } }, profile: { otherKernels: [{ kernel: "claude", runtimeId: "claude" }] } });
   const profile = f.mau.environments.options.profiles[0]!;

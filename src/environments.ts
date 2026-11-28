@@ -48,6 +48,11 @@ export const environmentOptionsSchema = z
             hostConfigFile: z.string().min(1),
             /** Operator-local Anthropic API key for the model gateway. */
             anthropicCredentialFile: z.string().min(1).optional(),
+            /**
+             * The operator's own Anthropic-compatible endpoint the key in `anthropicCredentialFile` is for, in place of
+             * the official API: `https://host` with an optional path prefix. The gateway sends the key there only.
+             */
+            anthropicBaseUrl: z.string().max(512).regex(/^https:\/\/[^\s?#]+$/).optional(),
             /** Operator-local DeepSeek API key for the model gateway. */
             deepseekCredentialFile: z.string().min(1).optional(),
             /** A scoped GitHub token the operator sends to the egress gateway for HTTPS Git and gh. */
@@ -148,7 +153,10 @@ const runtimes = (p: Profile) => [{ runtimeId: p.runtimeId, kernel: p.kernel }, 
  * default decides; so does one with a kernel that is not known here.
  */
 const admitted = (p: Profile, managed?: GatewayCredentials) => {
-  const services = p.otherKernels.length || p.deepseekCredentialFile || p.anthropicCredentialFile ? modelServices(runtimes(p).map(({ kernel }) => kernel)) : undefined, accounts = modelAccounts(p);
+  // Antigravity reaches Gemini with the API key among the profile's files, or else as the Google account it is signed in as.
+  const account = !privateFiles(p).some(file => geminiKeyFile(file.destination));
+  const services = p.otherKernels.length || p.deepseekCredentialFile || p.anthropicCredentialFile
+    ? modelServices(runtimes(p).map(({ kernel }) => kernel))?.map(service => service === "google" && account ? "google-account" : service) : undefined, accounts = modelAccounts(p);
   const codex = managed?.codex, gemini = managed?.gemini, anthropic = managed?.anthropic, deepseek = managed?.deepseek, github = managed?.github;
   return services || accounts || codex || gemini || anthropic || deepseek || github
     ? { ...(services ? { modelServices: services } : {}), ...(accounts ? { modelAccounts: accounts } : {}),
@@ -277,9 +285,12 @@ async function syncOperatorKey(provider: EnvironmentProvider, profile: Profile, 
     throw new WorkError(`ambiguous_${service}_credential_source`, 409);
   const secret = readFileSync(path, "utf8").trim();
   if (!/^[!-~]{1,4096}$/.test(secret)) throw new WorkError(`invalid_managed_${service}_credential`, 409);
-  const id = service + "-" + hash(source);
-  const input: ModelCredentialInput = service === "github"
-    ? { service, mode: "token", accessToken: secret } : { service, mode: "api_key", apiKey: secret };
+  // A key for the operator's own endpoint is another credential than the same file sent to the official API.
+  const endpoint = service === "anthropic" ? profile.anthropicBaseUrl : undefined;
+  const id = service + "-" + hash(endpoint ? source + "\n" + endpoint : source);
+  const input: ModelCredentialInput = service === "github" ? { service, mode: "token", accessToken: secret }
+    : service === "anthropic" ? { service, mode: "api_key", apiKey: secret, ...(endpoint ? { baseUrl: endpoint } : {}) }
+    : { service, mode: "api_key", apiKey: secret };
   const saved = await provider.putModelCredential(id, input);
   if (saved.id !== id || saved.service !== service || saved.mode !== input.mode)
     throw new WorkError(`managed_${service}_credential_mismatch`, 409);
@@ -370,6 +381,7 @@ export class EnvironmentManager {
       throw new Error("duplicate_environment_profile");
     for (const p of this.options.profiles) {
       if (p.ssh?.port === p.port) throw new Error("ssh_port_conflicts_with_host");
+      if (p.anthropicBaseUrl && !p.anthropicCredentialFile) throw new Error("anthropic_endpoint_requires_credential");
       if (new Set(runtimes(p).map((r) => r.kernel)).size !== runtimes(p).length || new Set(runtimes(p).map((r) => r.runtimeId)).size !== runtimes(p).length)
         throw new Error("duplicate_environment_kernel");
       p.hostConfigFile = resolve(base, p.hostConfigFile);

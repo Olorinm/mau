@@ -4,6 +4,12 @@ Notable changes to Mau, newest first. Each version has a GitHub Release with the
 archives. When releasing, add the new section here in the version-bump commit; the Release notes are
 copied from it.
 
+## [0.1.0-alpha.73] - 2026-11-29
+
+- A profile can send its Claude key to an Anthropic-compatible endpoint of the operator's own with `anthropicBaseUrl`. The gateway holds the key, the environment starts with `ANTHROPIC_BASE_URL` set, and the official API is closed to it.
+- An Antigravity kernel can use a Google sign-in instead of a Gemini API key: supply the two sign-in files of the Linux CLI through `files`. A profile without a Gemini key file asks the gateway for the `google-account` service.
+- Agent Kit 0.11.0-alpha.18. In a Cloudflare environment with a GitHub token, partners can download release assets, source archives, raw files and Actions logs. Python packages can be installed from PyPI. An image of a type Claude does not take stays a workspace file and no longer fails the turn.
+
 ## [0.1.0-alpha.72] - 2026-11-28
 
 - Each task delegated to a partner has its own thread. The owner can read earlier rounds and reply in the same thread. Retrying a reply after signing in again sends it once.
